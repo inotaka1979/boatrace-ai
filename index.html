@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>競艇予想AI</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="競艇AI">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2196f3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #06080f;
+  --card: rgba(17,24,42,0.75);
+  --card2: rgba(22,32,56,0.6);
+  --text: #e8eaf0;
+  --dim: #8892a4;
+  --border: rgba(255,255,255,0.08);
+  --blue: #2196f3;
+  --gold: #ffc107;
+  --silver: #b0bec5;
+  --bronze: #ff8a65;
+  --green: #00c853;
+  --red: #ff5252;
+  --cyan: #4dd0e1;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse 80% 50% at 15% 20%, rgba(33,150,243,0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 75%, rgba(0,200,83,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(255,193,7,0.05) 0%, transparent 50%);
+  pointer-events: none; z-index: 0;
+}
+.app { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding: 0 8px 80px; }
+
+/* Header */
+.app-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+}
+.app-header h1 { font-size: 17px; font-weight: 900; }
+.app-header h1 .accent { color: var(--blue); }
+.header-right { display: flex; gap: 8px; align-items: center; }
+.update-time { font-size: 10px; color: var(--dim); }
+.back-btn {
+  padding: 6px 12px; background: var(--card2); color: var(--cyan);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  font-size: 12px; font-family: 'Noto Sans JP', sans-serif;
+}
+.refresh-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, rgba(33,150,243,0.2), rgba(0,200,83,0.1));
+  color: var(--cyan); border: 1px solid rgba(77,208,225,0.2); border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-family: 'Noto Sans JP', sans-serif;
+}
+
+/* Loading */
+.loading { display: flex; align-items: center; justify-content: center; padding: 60px; color: var(--dim); }
+.spinner {
+  width: 20px; height: 20px; border: 2px solid var(--border);
+  border-top-color: var(--cyan); border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin-right: 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Stadium cards */
+.stadium-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stadium-card {
+  background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px; cursor: pointer; transition: all 0.2s;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.stadium-card:active { transform: scale(0.97); }
+.stadium-name { font-size: 18px; font-weight: 900; margin-bottom: 4px; }
+.stadium-event { font-size: 11px; color: var(--dim); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stadium-progress { font-size: 11px; color: var(--cyan); }
+
+/* Race list */
+.race-list { display: flex; flex-direction: column; gap: 6px; }
+.race-item {
+  background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.race-item:active { transform: scale(0.98); }
+.race-num { font-size: 16px; font-weight: 900; min-width: 36px; }
+.race-name { flex: 1; font-size: 13px; color: var(--dim); margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-status {
+  font-size: 10px; padding: 3px 8px; border-radius: 8px; font-weight: 700;
+}
+.status-before { background: rgba(33,150,243,0.15); color: var(--blue); }
+.status-preview { background: rgba(255,193,7,0.15); color: var(--gold); }
+.status-done { background: rgba(0,200,83,0.15); color: var(--green); }
+.race-result { font-size: 12px; font-weight: 700; color: var(--gold); margin-left: 8px; }
+
+/* Race detail */
+.race-header {
+  background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 12px; margin-bottom: 10px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.race-title { font-size: 16px; font-weight: 900; margin-bottom: 6px; }
+.weather-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--dim);
+}
+.weather-item { display: flex; align-items: center; gap: 3px; }
+
+/* Boat cards */
+.boat-card {
+  background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 10px 12px; margin-bottom: 6px;
+  display: flex; align-items: flex-start; gap: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.boat-num {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 900; flex-shrink: 0;
+}
+.boat-info { flex: 1; min-width: 0; }
+.boat-name-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.boat-name { font-size: 14px; font-weight: 700; }
+.boat-class {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700;
+}
+.class-a1 { background: rgba(255,193,7,0.2); color: var(--gold); }
+.class-a2 { background: rgba(33,150,243,0.2); color: var(--blue); }
+.class-b1 { background: rgba(255,255,255,0.08); color: var(--dim); }
+.class-b2 { background: rgba(255,82,82,0.15); color: var(--red); }
+.boat-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px 8px;
+  font-size: 10px; color: var(--dim);
+}
+.boat-stats .val { color: var(--text); font-weight: 500; }
+.boat-score-bar {
+  width: 60px; height: 28px; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 900; flex-shrink: 0; border-radius: 8px;
+}
+
+/* AI Prediction section */
+.ai-section {
+  background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(33,150,243,0.2); border-radius: 16px;
+  padding: 14px; margin-top: 10px;
+  box-shadow: 0 4px 24px rgba(33,150,243,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.ai-title {
+  font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+.prediction-row {
+  display: flex; gap: 6px; margin-bottom: 12px; justify-content: center;
+}
+.pred-boat {
+  width: 40px; height: 44px; border-radius: 10px; display: flex;
+  flex-direction: column; align-items: center; justify-content: center;
+}
+.pred-rank { font-size: 9px; font-weight: 700; opacity: 0.7; }
+.pred-num { font-size: 18px; font-weight: 900; }
+.confidence-bar {
+  text-align: center; padding: 8px; border-radius: 10px;
+  font-size: 12px; font-weight: 700; margin-bottom: 10px;
+}
+.bet-section {
+  background: var(--card2); border-radius: 10px; padding: 10px; margin-bottom: 8px;
+}
+.bet-title { font-size: 11px; color: var(--dim); margin-bottom: 6px; }
+.bet-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.bet-item {
+  font-size: 11px; padding: 3px 8px; background: rgba(255,255,255,0.06);
+  border-radius: 6px; font-weight: 500;
+}
+.score-breakdown {
+  font-size: 10px; color: var(--dim); margin-top: 8px;
+}
+.score-breakdown table { width: 100%; border-collapse: collapse; }
+.score-breakdown th {
+  text-align: left; padding: 4px; border-bottom: 1px solid var(--border);
+  font-weight: 500; color: var(--dim); font-size: 10px;
+}
+.score-breakdown td {
+  padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 10px;
+}
+
+/* No races */
+.no-data {
+  text-align: center; padding: 60px 20px; color: var(--dim); font-size: 14px;
+}
+
+/* Section title */
+.section-title {
+  font-size: 12px; color: var(--dim); margin: 12px 0 6px; padding-left: 4px;
+}
+
+/* Error toast */
+.error-toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(42,16,32,0.95); border: 1px solid var(--red); color: var(--red);
+  padding: 8px 16px; border-radius: 10px; font-size: 12px; z-index: 100;
+  display: none; backdrop-filter: blur(8px);
+}
+
+/* Footer disclaimer */
+.disclaimer {
+  text-align: center; font-size: 9px; color: #4a5060;
+  padding: 16px 0; border-top: 1px solid var(--border); margin-top: 16px;
+}
+
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <div class="app-header" id="appHeader">
+    <h1>&#x1F6A4; <span class="accent">&#31478;&#33351;&#20104;&#24819;</span>AI</h1>
+    <div class="header-right">
+      <span class="update-time" id="updateTime"></span>
+      <button class="back-btn hidden" id="backBtn" onclick="goBack()">&#x2190; &#25147;&#12427;</button>
+      <button class="refresh-btn" id="refreshBtn" onclick="refreshData()">&#x21BB;</button>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading hidden" id="loading"><div class="spinner"></div>&#12487;&#12540;&#12479;&#21462;&#24471;&#20013;...</div>
+
+  <!-- Screen: Stadium list -->
+  <div id="screenStadiums"></div>
+
+  <!-- Screen: Race list -->
+  <div id="screenRaces" class="hidden"></div>
+
+  <!-- Screen: Race detail -->
+  <div id="screenDetail" class="hidden"></div>
+
+  <div class="disclaimer">
+    &#9888;&#65039; &#20104;&#24819;&#12399;&#32113;&#35336;&#12514;&#12487;&#12523;&#12395;&#12424;&#12427;&#21442;&#32771;&#24773;&#22577;&#12391;&#12377;&#12290;&#30340;&#20013;&#12434;&#20445;&#35388;&#12377;&#12427;&#12418;&#12398;&#12391;&#12399;&#12354;&#12426;&#12414;&#12379;&#12435;&#12290;<br>
+    &#33311;&#21048;&#12398;&#36092;&#20837;&#12399;&#33258;&#24049;&#36012;&#20219;&#12391;&#34892;&#12387;&#12390;&#12367;&#12384;&#12373;&#12356;&#12290;BoatraceOpenAPI&#20351;&#29992;&#12290;
+  </div>
+</div>
+
+<div class="error-toast" id="errorToast"></div>
+
+<script>
+// ============================================================
+// Constants
+// ============================================================
+const STADIUMS = {
+  "01":"桐生","02":"戸田","03":"江戸川","04":"平和島",
+  "05":"多摩川","06":"浜名湖","07":"蒲郡","08":"常滑",
+  "09":"津","10":"三国","11":"びわこ","12":"住之江",
+  "13":"尼崎","14":"鳴門","15":"丸亀","16":"児島",
+  "17":"宮島","18":"徳山","19":"下関","20":"若松",
+  "21":"芦屋","22":"福岡","23":"唐津","24":"大村"
+};
+
+const BOAT_COLORS = {
+  1: {bg:"#FFFFFF", text:"#000000", border:"#888"},
+  2: {bg:"#1a1a1a", text:"#FFFFFF", border:"#444"},
+  3: {bg:"#E8333F", text:"#FFFFFF", border:"transparent"},
+  4: {bg:"#0068B7", text:"#FFFFFF", border:"transparent"},
+  5: {bg:"#FFD700", text:"#000000", border:"transparent"},
+  6: {bg:"#00A550", text:"#FFFFFF", border:"transparent"},
+};
+
+const COURSE_BASE = {1:50, 2:18, 3:13, 4:10, 5:6, 6:3};
+const CLASS_BONUS = {"A1":8, "A2":4, "B1":0, "B2":-4};
+
+const API_BASE = 'https://boatraceopenapi.github.io';
+
+let programData = null;
+let previewData = null;
+let resultData = null;
+let currentStadium = null;
+let currentRace = null;
+let navStack = [];
+
+// ============================================================
+// Data fetching
+// ============================================================
+async function fetchJSON(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function loadAllData() {
+  showLoading(true);
+  try {
+    const [prog, prev, res] = await Promise.allSettled([
+      fetchJSON(`${API_BASE}/programs/v2/today.json`),
+      fetchJSON(`${API_BASE}/previews/v2/today.json`),
+      fetchJSON(`${API_BASE}/results/v2/today.json`),
+    ]);
+    programData = prog.status === 'fulfilled' ? prog.value : null;
+    previewData = prev.status === 'fulfilled' ? prev.value : null;
+    resultData = res.status === 'fulfilled' ? res.value : null;
+
+    if (!programData) throw new Error('出走表データを取得できません');
+
+    // Cache to localStorage
+    try {
+      localStorage.setItem('br_prog', JSON.stringify(programData));
+      localStorage.setItem('br_prev', JSON.stringify(previewData));
+      localStorage.setItem('br_res', JSON.stringify(resultData));
+      localStorage.setItem('br_ts', Date.now().toString());
+    } catch(e) {}
+
+    document.getElementById('updateTime').textContent =
+      new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}) + ' 更新';
+
+    renderCurrentScreen();
+  } catch(e) {
+    // Try localStorage cache
+    try {
+      const cached = localStorage.getItem('br_prog');
+      if (cached) {
+        programData = JSON.parse(cached);
+        previewData = JSON.parse(localStorage.getItem('br_prev') || 'null');
+        resultData = JSON.parse(localStorage.getItem('br_res') || 'null');
+        document.getElementById('updateTime').textContent = 'キャッシュ';
+        renderCurrentScreen();
+      } else {
+        showError(e.message);
+      }
+    } catch(e2) { showError(e.message); }
+  } finally {
+    showLoading(false);
+  }
+}
+
+function showLoading(v) { document.getElementById('loading').classList.toggle('hidden', !v); }
+function showError(msg) {
+  const el = document.getElementById('errorToast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+// ============================================================
+// Navigation
+// ============================================================
+function showScreen(name) {
+  ['screenStadiums','screenRaces','screenDetail'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+  document.getElementById('screen' + name).classList.remove('hidden');
+  document.getElementById('backBtn').classList.toggle('hidden', name === 'Stadiums');
+}
+
+function goBack() {
+  if (currentRace !== null) { currentRace = null; showRaces(currentStadium); }
+  else if (currentStadium !== null) { currentStadium = null; renderStadiums(); }
+}
+
+function renderCurrentScreen() {
+  if (currentRace !== null) showRaceDetail(currentStadium, currentRace);
+  else if (currentStadium !== null) showRaces(currentStadium);
+  else renderStadiums();
+}
+
+function refreshData() { loadAllData(); }
+
+// ============================================================
+// Screen 1: Stadium list
+// ============================================================
+function renderStadiums() {
+  showScreen('Stadiums');
+  const el = document.getElementById('screenStadiums');
+
+  if (!programData) { el.innerHTML = '<div class="no-data">本日の開催データがありません</div>'; return; }
+
+  // Find active stadiums
+  const stadiumMap = {};
+  const races = programData.race_cards || programData;
+  const raceList = Array.isArray(races) ? races : (races.races || []);
+
+  for (const race of raceList) {
+    const sc = race.stadium_code || race.stadiumCode || '';
+    const code = sc.toString().padStart(2, '0');
+    if (!stadiumMap[code]) {
+      stadiumMap[code] = {
+        code, name: STADIUMS[code] || code,
+        event: race.event_name || race.eventName || race.race_name || '',
+        raceCount: 0, doneCount: 0
+      };
+    }
+    stadiumMap[code].raceCount++;
+    // Check if result exists
+    if (resultData) {
+      const resList = Array.isArray(resultData) ? resultData : (resultData.races || resultData.race_results || []);
+      const hasResult = resList.some(r => {
+        const rsc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+        const rn = r.race_number || r.raceNumber;
+        return rsc === code && rn === (race.race_number || race.raceNumber);
+      });
+      if (hasResult) stadiumMap[code].doneCount++;
+    }
+  }
+
+  const stadiums = Object.values(stadiumMap);
+  if (!stadiums.length) { el.innerHTML = '<div class="no-data">本日の開催はありません</div>'; return; }
+
+  el.innerHTML = '<div class="section-title">本日の開催場</div><div class="stadium-grid">' +
+    stadiums.map(s => `
+      <div class="stadium-card" onclick="selectStadium('${s.code}')">
+        <div class="stadium-name">${s.name}</div>
+        <div class="stadium-event">${s.event || '開催中'}</div>
+        <div class="stadium-progress">${s.doneCount}/${s.raceCount}R 確定</div>
+      </div>
+    `).join('') + '</div>';
+}
+
+function selectStadium(code) {
+  currentStadium = code;
+  showRaces(code);
+}
+
+// ============================================================
+// Screen 2: Race list
+// ============================================================
+function showRaces(stadiumCode) {
+  showScreen('Races');
+  const el = document.getElementById('screenRaces');
+  const name = STADIUMS[stadiumCode] || stadiumCode;
+
+  const raceList = Array.isArray(programData) ? programData : (programData.race_cards || programData.races || []);
+  const races = raceList.filter(r => {
+    const sc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+    return sc === stadiumCode;
+  }).sort((a, b) => (a.race_number || a.raceNumber) - (b.race_number || b.raceNumber));
+
+  let html = `<div class="section-title">${name} &#8212; &#12524;&#12540;&#12473;&#19968;&#35239;</div><div class="race-list">`;
+
+  for (const race of races) {
+    const rn = race.race_number || race.raceNumber;
+    const raceName = race.race_name || race.raceName || '';
+
+    // Check result
+    let status = 'before', statusText = 'レース前', resultText = '';
+    if (resultData) {
+      const resList = Array.isArray(resultData) ? resultData : (resultData.races || resultData.race_results || []);
+      const res = resList.find(r => {
+        const rsc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+        return rsc === stadiumCode && (r.race_number || r.raceNumber) == rn;
+      });
+      if (res) {
+        status = 'done'; statusText = '確定';
+        const results = res.results || res.race_results || [];
+        const top3 = results.filter(r => (r.rank || r.arrival) <= 3)
+          .sort((a, b) => (a.rank || a.arrival) - (b.rank || b.arrival));
+        if (top3.length) resultText = top3.map(r => r.boat_number || r.boatNumber || r.lane).join('-');
+      }
+    }
+    // Check preview
+    if (status === 'before' && previewData) {
+      const prevList = Array.isArray(previewData) ? previewData : (previewData.races || previewData.previews || []);
+      const prev = prevList.find(r => {
+        const rsc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+        return rsc === stadiumCode && (r.race_number || r.raceNumber) == rn;
+      });
+      if (prev) { status = 'preview'; statusText = '展示済'; }
+    }
+
+    html += `
+      <div class="race-item" onclick="selectRace('${stadiumCode}', ${rn})">
+        <span class="race-num">${rn}R</span>
+        <span class="race-name">${raceName}</span>
+        <span class="race-status status-${status}">${statusText}</span>
+        ${resultText ? `<span class="race-result">${resultText}</span>` : ''}
+      </div>`;
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function selectRace(stadiumCode, raceNum) {
+  currentRace = raceNum;
+  showRaceDetail(stadiumCode, raceNum);
+}
+
+// ============================================================
+// Screen 3: Race detail + AI prediction
+// ============================================================
+function showRaceDetail(stadiumCode, raceNum) {
+  showScreen('Detail');
+  const el = document.getElementById('screenDetail');
+  const stadiumName = STADIUMS[stadiumCode] || stadiumCode;
+
+  // Get race program
+  const raceList = Array.isArray(programData) ? programData : (programData.race_cards || programData.races || []);
+  const race = raceList.find(r => {
+    const sc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+    return sc === stadiumCode && (r.race_number || r.raceNumber) == raceNum;
+  });
+
+  if (!race) { el.innerHTML = '<div class="no-data">レースデータがありません</div>'; return; }
+
+  // Get preview data
+  let preview = null;
+  if (previewData) {
+    const prevList = Array.isArray(previewData) ? previewData : (previewData.races || previewData.previews || []);
+    preview = prevList.find(r => {
+      const sc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+      return sc === stadiumCode && (r.race_number || r.raceNumber) == raceNum;
+    });
+  }
+
+  // Get result
+  let raceResult = null;
+  if (resultData) {
+    const resList = Array.isArray(resultData) ? resultData : (resultData.races || resultData.race_results || []);
+    raceResult = resList.find(r => {
+      const sc = (r.stadium_code || r.stadiumCode || '').toString().padStart(2, '0');
+      return sc === stadiumCode && (r.race_number || r.raceNumber) == raceNum;
+    });
+  }
+
+  // Racers
+  const racers = race.racers || race.entries || race.boats || [];
+  const previewRacers = preview ? (preview.racers || preview.entries || preview.boats || []) : [];
+
+  // Weather
+  const weather = preview ? (preview.weather || preview.conditions || {}) : {};
+
+  let html = '';
+
+  // Race header
+  html += `<div class="race-header">
+    <div class="race-title">${stadiumName} ${raceNum}R ${race.race_name || race.raceName || ''}</div>
+    <div class="weather-bar">`;
+  if (weather.weather || weather.天候) html += `<span class="weather-item">&#x1F324; ${weather.weather || weather.天候 || ''}</span>`;
+  if (weather.wind_speed != null || weather.windSpeed != null || weather.風速 != null)
+    html += `<span class="weather-item">&#x1F4A8; ${weather.wind_speed ?? weather.windSpeed ?? weather.風速 ?? ''}m</span>`;
+  if (weather.wave != null || weather.波高 != null)
+    html += `<span class="weather-item">&#x1F30A; ${weather.wave ?? weather.波高 ?? ''}cm</span>`;
+  if (weather.temperature != null || weather.気温 != null)
+    html += `<span class="weather-item">&#x1F321; ${weather.temperature ?? weather.気温 ?? ''}\u2103</span>`;
+  html += `</div></div>`;
+
+  // Calculate scores for all boats
+  const boatScores = [];
+  const exhibitionTimes = [];
+
+  // Collect exhibition times first
+  for (let i = 0; i < racers.length; i++) {
+    const bn = racers[i].boat_number || racers[i].boatNumber || racers[i].lane || (i + 1);
+    const pr = previewRacers.find(p =>
+      (p.boat_number || p.boatNumber || p.lane) == bn
+    ) || {};
+    const et = parseFloat(pr.exhibition_time || pr.exhibitionTime || pr.展示タイム || 0);
+    if (et > 0) exhibitionTimes.push(et);
+  }
+
+  for (let i = 0; i < racers.length; i++) {
+    const r = racers[i];
+    const bn = r.boat_number || r.boatNumber || r.lane || (i + 1);
+    const pr = previewRacers.find(p =>
+      (p.boat_number || p.boatNumber || p.lane) == bn
+    ) || {};
+
+    const name = r.racer_name || r.racerName || r.name || r.選手名 || '';
+    const cls = r.class || r.rank_class || r.級別 || '';
+    const branch = r.branch || r.支部 || '';
+    const weight = parseFloat(r.weight || r.体重 || 0);
+    const natWin = parseFloat(r.national_win_rate || r.nationalWinRate || r.全国勝率 || 0);
+    const nat2ren = parseFloat(r.national_2ren_rate || r.national2RenRate || r.全国2連率 || 0);
+    const localWin = parseFloat(r.local_win_rate || r.localWinRate || r.当地勝率 || 0);
+    const local2ren = parseFloat(r.local_2ren_rate || r.local2RenRate || r.当地2連率 || 0);
+    const motor = parseFloat(r.motor_2ren_rate || r.motor2RenRate || r.モーター2連率 || 0);
+    const boat = parseFloat(r.boat_2ren_rate || r.boat2RenRate || r.ボート2連率 || 0);
+    const et = parseFloat(pr.exhibition_time || pr.exhibitionTime || pr.展示タイム || 0);
+    const tilt = pr.tilt || pr.チルト || '';
+    const parts = pr.parts || pr.部品交換 || '';
+    const regNo = r.racer_id || r.racerId || r.registration_number || r.登録番号 || '';
+
+    // Score calculation
+    const course = parseInt(bn);
+    let score = COURSE_BASE[course] || 0;
+    const details = {course: COURSE_BASE[course] || 0};
+
+    // Player skill
+    const skillScore = natWin * 3;
+    score += skillScore;
+    details.skill = +skillScore.toFixed(1);
+
+    // National 2-ren
+    const n2s = nat2ren * 0.3;
+    score += n2s;
+
+    // Local
+    const localScore = localWin * 1.5;
+    score += localScore;
+    details.local = +localScore.toFixed(1);
+
+    // Motor
+    const motorScore = motor * 0.5;
+    score += motorScore;
+    details.motor = +motorScore.toFixed(1);
+
+    // Boat
+    score += boat * 0.3;
+
+    // Exhibition time bonus
+    let etBonus = 0;
+    if (et > 0 && exhibitionTimes.length >= 3) {
+      const sorted = [...exhibitionTimes].sort((a, b) => a - b);
+      const rank = sorted.indexOf(et) + 1;
+      const bonuses = {1:8, 2:5, 3:3, 4:1, 5:0, 6:-2};
+      etBonus = bonuses[rank] || 0;
+    }
+    score += etBonus;
+    details.exhibition = etBonus;
+
+    // Class bonus
+    const cb = CLASS_BONUS[cls] || 0;
+    score += cb;
+    details.classBonus = cb;
+
+    // Weight
+    const wb = weight > 0 ? (55 - weight) * 0.3 : 0;
+    score += wb;
+
+    boatScores.push({
+      bn: course, name, cls, branch, weight, regNo,
+      natWin, nat2ren, localWin, local2ren, motor, boat,
+      et, tilt, parts,
+      score: +score.toFixed(1), details
+    });
+  }
+
+  // Sort by score for prediction
+  const predicted = [...boatScores].sort((a, b) => b.score - a.score);
+  const maxScore = predicted[0]?.score || 1;
+
+  // Render boat cards
+  html += '<div class="section-title">&#20986;&#36208;&#34920;</div>';
+  for (const b of boatScores) {
+    const c = BOAT_COLORS[b.bn] || BOAT_COLORS[1];
+    const clsCls = b.cls === 'A1' ? 'class-a1' : b.cls === 'A2' ? 'class-a2' : b.cls === 'B1' ? 'class-b1' : 'class-b2';
+    const scorePct = maxScore > 0 ? (b.score / maxScore * 100) : 0;
+    const rank = predicted.indexOf(b) + 1;
+    const barColor = rank === 1 ? 'var(--gold)' : rank === 2 ? 'var(--silver)' : rank === 3 ? 'var(--bronze)' : 'var(--dim)';
+
+    html += `
+      <div class="boat-card">
+        <div class="boat-num" style="background:${c.bg};color:${c.text};border:1px solid ${c.border}">${b.bn}</div>
+        <div class="boat-info">
+          <div class="boat-name-row">
+            <span class="boat-name">${b.name}</span>
+            <span class="boat-class ${clsCls}">${b.cls}</span>
+            <span style="font-size:10px;color:var(--dim)">${b.branch}</span>
+          </div>
+          <div class="boat-stats">
+            <span>&#20840;&#22269; <span class="val">${b.natWin || '-'}</span></span>
+            <span>&#24403;&#22320; <span class="val">${b.localWin || '-'}</span></span>
+            <span>&#12514;&#12540;&#12479;&#12540; <span class="val">${b.motor || '-'}%</span></span>
+            <span>2&#36899; <span class="val">${b.nat2ren || '-'}%</span></span>
+            <span>&#24403;2&#36899; <span class="val">${b.local2ren || '-'}%</span></span>
+            <span>&#12508;&#12540;&#12488; <span class="val">${b.boat || '-'}%</span></span>
+            ${b.et > 0 ? `<span>&#23637;&#31034; <span class="val" style="color:var(--cyan)">${b.et.toFixed(2)}</span></span>` : ''}
+            ${b.tilt ? `<span>&#12481;&#12523;&#12488; <span class="val">${b.tilt}</span></span>` : ''}
+            ${b.weight > 0 ? `<span>&#20307;&#37325; <span class="val">${b.weight}kg</span></span>` : ''}
+          </div>
+        </div>
+        <div class="boat-score-bar" style="background:linear-gradient(135deg,${barColor}33,${barColor}11);color:${barColor}">
+          ${b.score}
+        </div>
+      </div>`;
+  }
+
+  // AI Prediction section
+  const top3 = predicted.slice(0, 3);
+  const gap = predicted[0].score - predicted[1].score;
+  let conf, confColor, confText;
+  if (gap > 15) { conf = '高'; confColor = 'var(--green)'; confText = '本命レース'; }
+  else if (gap > 8) { conf = '中'; confColor = 'var(--gold)'; confText = '標準'; }
+  else { conf = '低'; confColor = 'var(--red)'; confText = '混戦・荒れ注意'; }
+
+  html += `
+    <div class="ai-section">
+      <div class="ai-title">&#x1F916; AI&#20104;&#24819;</div>
+      <div class="prediction-row">`;
+
+  for (let i = 0; i < predicted.length; i++) {
+    const b = predicted[i];
+    const c = BOAT_COLORS[b.bn] || BOAT_COLORS[1];
+    const rankLabel = i === 0 ? '1着' : i === 1 ? '2着' : i === 2 ? '3着' : `${i+1}着`;
+    html += `
+      <div class="pred-boat" style="background:${c.bg};color:${c.text};border:1px solid ${c.border}">
+        <span class="pred-rank">${rankLabel}</span>
+        <span class="pred-num">${b.bn}</span>
+      </div>`;
+  }
+
+  html += `</div>
+    <div class="confidence-bar" style="background:${confColor}15;color:${confColor};border:1px solid ${confColor}33">
+      &#20449;&#38972;&#24230;: ${conf}&#65288;${confText}&#65289;&#12473;&#12467;&#12450;&#24046;: ${gap.toFixed(1)}
+    </div>`;
+
+  // Bet suggestions
+  const t3 = top3.map(b => b.bn);
+  // 3連単BOX (6 combos)
+  const sanrentan = [];
+  for (let a = 0; a < 3; a++)
+    for (let b = 0; b < 3; b++)
+      for (let c = 0; c < 3; c++)
+        if (a !== b && b !== c && a !== c) sanrentan.push(`${t3[a]}-${t3[b]}-${t3[c]}`);
+
+  // 2連単 from 1st
+  const nirentan = [];
+  for (let i = 1; i < top3.length; i++) nirentan.push(`${t3[0]}-${t3[i]}`);
+
+  html += `
+    <div class="bet-section">
+      <div class="bet-title">&#x1F3AF; &#25512;&#22888;&#36023;&#12356;&#30446;&#65288;3&#36899;&#21336;BOX&#65289;${sanrentan.length}&#28857;</div>
+      <div class="bet-items">${sanrentan.map(s => `<span class="bet-item">${s}</span>`).join('')}</div>
+    </div>
+    <div class="bet-section">
+      <div class="bet-title">&#x1F3AF; 2&#36899;&#21336;&#65288;1&#30528;&#22266;&#23450;&#65289;</div>
+      <div class="bet-items">${nirentan.map(s => `<span class="bet-item">${s}</span>`).join('')}</div>
+    </div>`;
+
+  // Score breakdown table
+  html += `
+    <div class="score-breakdown">
+      <div style="font-size:11px;font-weight:700;margin-bottom:4px;color:var(--text)">&#12473;&#12467;&#12450;&#20869;&#35379;</div>
+      <table>
+        <tr><th>&#33351;</th><th>&#36984;&#25163;</th><th>&#12467;&#12540;&#12473;</th><th>&#23455;&#21147;</th><th>&#24403;&#22320;</th><th>&#12514;&#12540;&#12479;&#12540;</th><th>&#23637;&#31034;</th><th>&#32026;&#21029;</th><th>&#21512;&#35336;</th></tr>
+        ${predicted.map(b => `
+          <tr>
+            <td style="font-weight:700">${b.bn}</td>
+            <td>${b.name.substring(0, 4)}</td>
+            <td>${b.details.course}</td>
+            <td>${b.details.skill}</td>
+            <td>${b.details.local}</td>
+            <td>${b.details.motor}</td>
+            <td>${b.details.exhibition}</td>
+            <td>${b.details.classBonus}</td>
+            <td style="font-weight:700;color:var(--cyan)">${b.score}</td>
+          </tr>
+        `).join('')}
+      </table>
+    </div>`;
+
+  // Show actual result if available
+  if (raceResult) {
+    const results = raceResult.results || raceResult.race_results || [];
+    const top3res = results.filter(r => (r.rank || r.arrival) <= 3)
+      .sort((a, b) => (a.rank || a.arrival) - (b.rank || b.arrival));
+    if (top3res.length) {
+      const actualOrder = top3res.map(r => r.boat_number || r.boatNumber || r.lane).join('-');
+      const predictedOrder = `${predicted[0].bn}-${predicted[1].bn}-${predicted[2].bn}`;
+      const hit = actualOrder === predictedOrder;
+      html += `
+        <div style="margin-top:10px;padding:10px;border-radius:10px;text-align:center;
+          background:${hit ? 'rgba(0,200,83,0.12)' : 'rgba(255,82,82,0.08)'};
+          border:1px solid ${hit ? 'var(--green)' : 'var(--red)'}33;font-size:13px">
+          <div style="font-weight:700;color:${hit ? 'var(--green)' : 'var(--red)'};margin-bottom:2px">
+            ${hit ? '&#x1F389; &#30340;&#20013;!' : '&#32080;&#26524;&#30906;&#23450;'}
+          </div>
+          <div>&#23455;&#38555;: <strong>${actualOrder}</strong></div>
+        </div>`;
+    }
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ============================================================
+// Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  loadAllData();
+  // Auto refresh every 5 minutes
+  setInterval(loadAllData, 300000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "競艇予想AI",
+  "short_name": "競艇AI",
+  "description": "全24場対応 競艇AI予想アプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#2196f3",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
