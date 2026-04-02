@@ -171,7 +171,7 @@ button.action-btn:active{background:var(--border)}
   </div>
   <div class="header-right">
     <div id="headerDate"></div>
-    <button class="refresh-btn" onclick="location.reload()">更新</button>
+    <button class="refresh-btn" onclick="if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})});caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k)})})}setTimeout(function(){location.reload(true)},300)">更新</button>
   </div>
 </div>
 
@@ -373,15 +373,19 @@ function indexPreviews(apiJson){
 }
 
 // results: boats配列にplace情報あり、payoutsにrefund
+// CRITICAL: results API returns ALL 120 races even if not finished.
+// A race is finished only when race_technique_number !== null AND boats have valid racer_place_number.
 function indexResults(apiJson){
   var indexed=indexByStadiumRace(apiJson,'results');
   if(!indexed) return null;
   for(var sid in indexed){
     for(var rn in indexed[sid]){
       var r=indexed[sid][rn];
-      // results配列を作成(boats→results にリネーム互換)
-      if(r.boats&&Array.isArray(r.boats)){
-        r.results=r.boats.map(function(b){
+      // Check if race is actually finished
+      var isFinished=r.race_technique_number!=null;
+      // results配列を作成(boats→results にリネーム互換) — only for finished races
+      if(isFinished&&r.boats&&Array.isArray(r.boats)){
+        r.results=r.boats.filter(function(b){return b.racer_place_number!=null}).map(function(b){
           return{
             place:b.racer_place_number,
             racer_boat_number:b.racer_boat_number,
@@ -395,6 +399,7 @@ function indexResults(apiJson){
       // refundをpayoutsから
       if(r.payouts) r.refund=r.payouts;
       r.technique_number=r.race_technique_number;
+      r.isFinished=isFinished;
     }
   }
   return indexed;
@@ -412,7 +417,7 @@ function updateDBFromResults(resultsJson, programsJson){
 
     for(var rn in races){
       var race=races[rn];
-      if(!race||!race.results||!race.results.length) continue;
+      if(!race||!race.isFinished||!race.results||!race.results.length) continue;
       var sortedRes=race.results.slice().sort(function(a,b){return a.place-b.place});
       var techNum=race.technique_number||0;
       var winner=sortedRes[0];
@@ -537,7 +542,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
   var reasons=[];
   var risks=[];
   var bn=boat.racer_boat_number;
-  var course=preview?preview.racer_course_number||preview.racer_boat_number:bn;
+  var course=(preview&&preview.racer_course_number!=null)?preview.racer_course_number:(preview?preview.racer_boat_number:bn);
   var rid=boat.racer_number||0;
 
   // [A] コース補正 (max ~20pt)
@@ -556,7 +561,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
   score+=coursePt;
 
   // 前付け補正
-  if(preview&&preview.racer_course_number||preview.racer_boat_number){
+  if(preview&&preview.racer_course_number!=null){
     if(bn>course){score+=3;reasons.push('前付け成功('+bn+'→'+course+'コース)')}
     else if(bn<course){score-=2;risks.push('押し出され('+bn+'→'+course+'コース)')}
   }
@@ -586,7 +591,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     for(var ci=1;ci<=6;ci++){
       if(ci===bn) continue;
       var cpv=allPreviews.boats[String(ci)];
-      var cCourse=cpv?cpv.racer_course_number:ci;
+      var cCourse=(cpv&&cpv.racer_course_number!=null)?cpv.racer_course_number:ci;
       // 該当コースの選手を特定
       var cBoat=allBoats.find(function(b){return b.racer_boat_number===ci});
       if(!cBoat) continue;
@@ -638,7 +643,8 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     var times=[];
     for(var ei=1;ei<=6;ei++){
       var epv=allPreviews.boats[String(ei)];
-      times.push({boat:ei,time:epv?pf(epv.racer_exhibition_time)||99:99});
+      var etime=(epv&&epv.racer_exhibition_time!=null&&epv.racer_exhibition_time>0)?pf(epv.racer_exhibition_time):99;
+      times.push({boat:ei,time:etime});
     }
     times.sort(function(a,b){return a.time-b.time});
     etRank=times.findIndex(function(t){return t.boat===bn});
@@ -661,7 +667,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     if(etRank===0) reasons.push('展示タイム最速('+etTime+'s)');
 
     // E2: ST分析
-    if(myPv){
+    if(myPv&&myPv.racer_start_timing!=null){
       var st=pf(myPv.racer_start_timing);
       if(st>0&&st<=0.05){score+=4;reasons.push('ST鋭い('+st+'s)')}
       else if(st>0&&st<=0.10) score+=2;
@@ -748,12 +754,12 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
 // 予測エンジン v2: Layer 2 (ロジスティック回帰)
 // ═══════════════════════════════════════════
 function getL2Features(boat,preview,weather,etRank,stRank,sid){
-  var course=preview?preview.racer_course_number||preview.racer_boat_number:boat.racer_boat_number;
+  var course=(preview&&preview.racer_course_number!=null)?preview.racer_course_number:(preview?preview.racer_boat_number:boat.racer_boat_number);
   var rid=boat.racer_number||0;
   var racerCWR=getRacerCourseWinRate(rid,course);
   var stadCWR=getStadiumCourseWinRate(String(sid),course);
   var myPv=preview||{};
-  var st=pf(myPv.racer_start_timing);
+  var st=(myPv.racer_start_timing!=null)?pf(myPv.racer_start_timing):99;
   var tilt=pf(myPv.racer_tilt_adjustment);
 
   // 風×コース交互作用
@@ -866,7 +872,8 @@ function predictRace(sid,raceNum){
     var sts=[];
     for(var si=1;si<=6;si++){
       var spv=preview.boats[String(si)];
-      sts.push({boat:si,st:spv?pf(spv.racer_start_timing)||99:99});
+      var stVal=(spv&&spv.racer_start_timing!=null)?pf(spv.racer_start_timing):99;
+      sts.push({boat:si,st:stVal});
     }
     sts.sort(function(a,b){return a.st-b.st});
     for(var sr=0;sr<sts.length;sr++) stRanks[sts[sr].boat]=sr;
@@ -1043,7 +1050,7 @@ function savePrediction(date,sid,rn,pred,result){
       raceType:pred.raceType,
       actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false
     };
-    if(result&&result.results){
+    if(result&&result.isFinished&&result.results){
       var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
       entry.actual=sorted.map(function(r){return r.racer_boat_number});
       checkHit(entry);
@@ -1074,7 +1081,7 @@ function updateHistoryWithResults(){
       if(h.actual) return;
       if(resultData&&resultData[String(h.stadium)]&&resultData[String(h.stadium)][String(h.race)]){
         var res=resultData[String(h.stadium)][String(h.race)];
-        if(res.results&&res.results.length>0){
+        if(res.isFinished&&res.results&&res.results.length>0){
           h.actual=res.results.slice().sort(function(a,b){return a.place-b.place}).map(function(r){return r.racer_boat_number});
           checkHit(h);
           if(res.refund){
@@ -1137,7 +1144,7 @@ function learnFromResults(){
     var races=resultData[sid];
     for(var rn in races){
       var race=races[rn];
-      if(!race||!race.results||!race.results.length) continue;
+      if(!race||!race.isFinished||!race.results||!race.results.length) continue;
       var prog=programData[sid]&&programData[sid][rn];
       var prev=previewData[sid]&&previewData[sid][rn];
       if(!prog||!prog.boats||!Array.isArray(prog.boats)) continue;
@@ -1151,7 +1158,8 @@ function learnFromResults(){
         var sts=[];
         for(var si=1;si<=6;si++){
           var spv=prev.boats[String(si)];
-          sts.push({boat:si,st:spv?pf(spv.racer_start_timing)||99:99});
+          var stVal=(spv&&spv.racer_start_timing!=null)?pf(spv.racer_start_timing):99;
+          sts.push({boat:si,st:stVal});
         }
         sts.sort(function(a,b){return a.st-b.st});
         sts.forEach(function(s,idx){stRanks[s.boat]=idx});
@@ -1163,7 +1171,8 @@ function learnFromResults(){
         var ets=[];
         for(var ei=1;ei<=6;ei++){
           var epv=prev.boats[String(ei)];
-          ets.push({boat:ei,time:epv?pf(epv.racer_exhibition_time)||99:99});
+          var etVal=(epv&&epv.racer_exhibition_time!=null&&epv.racer_exhibition_time>0)?pf(epv.racer_exhibition_time):99;
+          ets.push({boat:ei,time:etVal});
         }
         ets.sort(function(a,b){return a.time-b.time});
         ets.forEach(function(e,idx){etRanks[e.boat]=idx});
@@ -1282,7 +1291,7 @@ function renderStadiums(){
     var totalRaces=raceNums.length;
     var doneCount=0;
     if(resultData&&resultData[sid]){
-      raceNums.forEach(function(rn){if(resultData[sid][rn]&&resultData[sid][rn].results) doneCount++});
+      raceNums.forEach(function(rn){if(resultData[sid][rn]&&resultData[sid][rn].isFinished) doneCount++});
     }
     var previewCount=0;
     if(previewData&&previewData[sid]){
@@ -1318,7 +1327,7 @@ function openStadium(sid){
   raceNums.forEach(function(rn){
     var race=stadium[rn];
     var pred=predictRace(sid,parseInt(rn));
-    var hasResult=resultData&&resultData[sid]&&resultData[sid][rn]&&resultData[sid][rn].results;
+    var hasResult=resultData&&resultData[sid]&&resultData[sid][rn]&&resultData[sid][rn].isFinished;
 
     if(pred) savePrediction(todayStr(),sid,rn,pred,hasResult?resultData[sid][rn]:null);
 
@@ -1384,9 +1393,9 @@ function openRace(sid,rn){
   }
   document.getElementById('detailWeather').innerHTML=weatherHtml;
 
-  // 結果
+  // 結果（isFinished=trueのレースのみ表示）
   var resHtml='';
-  if(result&&result.results&&result.results.length>0){
+  if(result&&result.isFinished&&result.results&&result.results.length>0){
     var places=result.results.slice().sort(function(a,b){return a.place-b.place});
     resHtml='<div class="result-box"><div class="result-title">🏆 レース結果</div>';
     resHtml+='<div class="result-places">';
@@ -1515,7 +1524,7 @@ function openRace(sid,rn){
       boatsHtml+=' <span class="boat-name">'+escText(b.racer_name||'')+'</span>';
       boatsHtml+=' <span class="boat-class" style="background:'+CLASS_COLOR[b.racer_class_number]+';color:#fff">'+CLASS_NAME[b.racer_class_number]+'</span>';
       boatsHtml+=popHtml;
-      if(pv&&pv.racer_course_number&&pv.racer_course_number!==bn)
+      if(pv&&pv.racer_course_number!=null&&pv.racer_course_number!==bn)
         boatsHtml+=' <span style="font-size:10px;color:var(--warn)">→'+pv.racer_course_number+'コース</span>';
       if(m) boatsHtml+='<span class="boat-mark-label" style="color:'+(m.mark==='◎'?'var(--accent)':'var(--text)')+'">'+m.mark+'</span><span class="boat-prob">'+probPct+'%</span>';
       boatsHtml+='</div>';
@@ -1557,18 +1566,20 @@ function openRace(sid,rn){
 
       // 展示情報
       if(pv){
-        boatsHtml+='<div><span class="boat-stat">展示T</span> <span class="boat-val">'+(pv.racer_exhibition_time||'---')+'s';
-        if(m){
+        var etDisplay=(pv.racer_exhibition_time!=null&&pv.racer_exhibition_time>0)?pv.racer_exhibition_time:'---';
+        boatsHtml+='<div><span class="boat-stat">展示T</span> <span class="boat-val">'+etDisplay+'s';
+        if(m&&etDisplay!=='---'){
           var etCls=m.etRank===0?'color:var(--win)':m.etRank===1?'color:var(--accent)':m.etRank>=4?'color:var(--lose)':'';
           boatsHtml+=' <span style="font-size:10px;'+etCls+'">'+(m.etRank+1)+'位</span>';
         }
         boatsHtml+='</span></div>';
-        boatsHtml+='<div><span class="boat-stat">ST</span> <span class="boat-val">'+(pv.racer_start_timing||'---')+'s</span></div>';
-        if(pv.racer_tilt_adjustment!==undefined) boatsHtml+='<div><span class="boat-stat">チルト</span> <span class="boat-val">'+pv.racer_tilt_adjustment+'°</span></div>';
+        var stDisplay=(pv.racer_start_timing!=null)?pv.racer_start_timing:'---';
+        boatsHtml+='<div><span class="boat-stat">ST</span> <span class="boat-val">'+stDisplay+'s</span></div>';
+        if(pv.racer_tilt_adjustment!=null) boatsHtml+='<div><span class="boat-stat">チルト</span> <span class="boat-val">'+pv.racer_tilt_adjustment+'°</span></div>';
       }
 
       // コース別成績(DB)
-      var course=pv?pv.racer_course_number:bn;
+      var course=(pv&&pv.racer_course_number!=null)?pv.racer_course_number:bn;
       var cwr=getRacerCourseWinRate(rid,course);
       if(cwr!==null){
         var rdb=racerDB[rid];
