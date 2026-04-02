@@ -1,0 +1,24 @@
+name: Scrape Odds
+on:
+  schedule:
+    - cron: '*/15 1-12 * * *'  # JST 10:00-21:00に15分間隔
+  workflow_dispatch:
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - run: python scripts/scrape_odds.py
+      - name: Commit
+        run: |
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "odds: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
