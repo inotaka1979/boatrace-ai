@@ -3,213 +3,156 @@
 BoatRace Oracle - オッズ自動取得スクリプト
 GitHub Actionsから15分間隔で実行される
 
-処理フロー:
-1. Open API programs/today.json から本日の開催場・レース一覧を取得
-2. 各レースのオッズページ(boatrace.jp)をスクレイピング
-3. data/odds/today.json に出力
-4. オッズ推移を data/odds/history.json に蓄積
+処理:
+1. Boatrace Open API programs/today.json → 本日の開催場+レース一覧を取得
+2. 各レースのオッズページ(boatrace.jp)をBeautifulSoupでスクレイピング
+3. data/odds/today.json にJSON出力
 """
 
-import json
-import os
-import sys
-import time
-from datetime import datetime, timezone, timedelta
-
-import requests
+import json, os, time, datetime
+from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
 
-JST = timezone(timedelta(hours=9))
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0)"}
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
-OUTPUT_FILE = "data/odds/today.json"
-HISTORY_FILE = "data/odds/history.json"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+INTERVAL = 3  # リクエスト間隔（秒）
+OUTPUT = "data/odds/today.json"
 
+def fetch_json(url):
+    req = Request(url, headers=HEADERS)
+    with urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode())
 
-def get_today_races():
-    """Open APIから本日の開催場・レース一覧を取得"""
+def fetch_html(url):
+    req = Request(url, headers=HEADERS)
+    with urlopen(req, timeout=15) as r:
+        return r.read().decode()
+
+def scrape_odds_page(url, bet_type):
+    """オッズページからオッズを取得"""
     try:
-        resp = requests.get(PROGRAMS_URL, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        races = []
-        for sid, stadium_races in data.items():
-            for rno in stadium_races.keys():
-                races.append({"stadium": int(sid), "race": int(rno)})
-        return races
-    except Exception as e:
-        print(f"ERROR: プログラム取得失敗: {e}", file=sys.stderr)
-        return []
-
-
-def scrape_trifecta(jcd, rno, date_str):
-    """3連単オッズを取得"""
-    url = f"{ODDS_BASE}/odds3t?rno={rno}&jcd={jcd:02d}&hd={date_str}"
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return {}
-        soup = BeautifulSoup(resp.text, "lxml")
+        html = fetch_html(url)
+        soup = BeautifulSoup(html, "html.parser")
         odds = {}
-        cells = soup.select("td.oddsPoint")
-        # 3連単は120通り (6*5*4)
-        combos = []
-        for i in range(1, 7):
-            for j in range(1, 7):
-                if j == i:
-                    continue
-                for k in range(1, 7):
-                    if k == i or k == j:
-                        continue
-                    combos.append(f"{i}-{j}-{k}")
-        for idx, cell in enumerate(cells):
-            if idx < len(combos):
-                text = cell.get_text(strip=True).replace(",", "")
-                try:
-                    odds[combos[idx]] = float(text)
-                except ValueError:
-                    odds[combos[idx]] = 999.9
+
+        if bet_type == "win":
+            # 単勝: oddstf ページ
+            for row in soup.select("table.is-w495 tbody tr"):
+                tds = row.select("td")
+                if len(tds) >= 2:
+                    boat = tds[0].get_text(strip=True)
+                    val = tds[1].get_text(strip=True)
+                    try:
+                        odds[boat] = float(val)
+                    except ValueError:
+                        pass
+
+        elif bet_type == "exacta":
+            # 2連単: odds2tf ページ
+            points = soup.select("td.oddsPoint")
+            combos = []
+            for i in range(1, 7):
+                for j in range(1, 7):
+                    if i != j:
+                        combos.append(f"{i}-{j}")
+            for k, el in enumerate(points):
+                if k < len(combos):
+                    try:
+                        odds[combos[k]] = float(el.get_text(strip=True))
+                    except ValueError:
+                        pass
+
+        elif bet_type == "trifecta":
+            # 3連単: odds3t ページ
+            points = soup.select("td.oddsPoint")
+            combos = []
+            for i in range(1, 7):
+                for j in range(1, 7):
+                    if j == i: continue
+                    for k2 in range(1, 7):
+                        if k2 == i or k2 == j: continue
+                        combos.append(f"{i}-{j}-{k2}")
+            for k, el in enumerate(points):
+                if k < len(combos):
+                    try:
+                        odds[combos[k]] = float(el.get_text(strip=True))
+                    except ValueError:
+                        pass
+
         return odds
     except Exception as e:
-        print(f"  3連単取得失敗 {jcd}-{rno}: {e}", file=sys.stderr)
+        print(f"  Error scraping {url}: {e}")
         return {}
-
-
-def scrape_exacta(jcd, rno, date_str):
-    """2連単オッズを取得"""
-    url = f"{ODDS_BASE}/odds2tf?rno={rno}&jcd={jcd:02d}&hd={date_str}"
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return {}
-        soup = BeautifulSoup(resp.text, "lxml")
-        odds = {}
-        cells = soup.select("td.oddsPoint")
-        combos = []
-        for i in range(1, 7):
-            for j in range(1, 7):
-                if j == i:
-                    continue
-                combos.append(f"{i}-{j}")
-        for idx, cell in enumerate(cells):
-            if idx < len(combos):
-                text = cell.get_text(strip=True).replace(",", "")
-                try:
-                    odds[combos[idx]] = float(text)
-                except ValueError:
-                    odds[combos[idx]] = 999.9
-        return odds
-    except Exception as e:
-        print(f"  2連単取得失敗 {jcd}-{rno}: {e}", file=sys.stderr)
-        return {}
-
-
-def scrape_win(jcd, rno, date_str):
-    """単勝オッズを取得"""
-    url = f"{ODDS_BASE}/oddstf?rno={rno}&jcd={jcd:02d}&hd={date_str}"
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return {}
-        soup = BeautifulSoup(resp.text, "lxml")
-        odds = {}
-        cells = soup.select("td.oddsPoint")
-        for idx, cell in enumerate(cells[:6]):
-            text = cell.get_text(strip=True).replace(",", "")
-            try:
-                odds[str(idx + 1)] = float(text)
-            except ValueError:
-                odds[str(idx + 1)] = 999.9
-        return odds
-    except Exception as e:
-        print(f"  単勝取得失敗 {jcd}-{rno}: {e}", file=sys.stderr)
-        return {}
-
-
-def update_history(today_data):
-    """オッズ推移を蓄積"""
-    history = {"snapshots": []}
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r") as f:
-                history = json.load(f)
-        except (json.JSONDecodeError, KeyError):
-            history = {"snapshots": []}
-
-    # 本日分のみ保持
-    today_str = datetime.now(JST).strftime("%Y-%m-%d")
-    history["snapshots"] = [
-        s for s in history.get("snapshots", [])
-        if s.get("time", "").startswith(today_str)
-    ]
-
-    # 変動があったデータのみ記録
-    snapshot = {
-        "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "odds": {}
-    }
-    for race_odds in today_data.get("odds", []):
-        key = f"{race_odds['stadium']}-{race_odds['race']}"
-        if race_odds.get("win"):
-            snapshot["odds"][key] = {"win": race_odds["win"]}
-
-    if snapshot["odds"]:
-        history["snapshots"].append(snapshot)
-        # 最大48スナップショット(12時間×15分間隔)
-        if len(history["snapshots"]) > 48:
-            history["snapshots"] = history["snapshots"][-48:]
-
-    os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f, ensure_ascii=False)
-
 
 def main():
-    date_str = datetime.now(JST).strftime("%Y%m%d")
-    races = get_today_races()
-    if not races:
-        print("本日のレースがありません")
+    os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
+
+    # 1. 本日の開催情報を取得
+    print("Fetching today's programs...")
+    try:
+        prog = fetch_json(PROGRAMS_URL)
+    except Exception as e:
+        print(f"Failed to fetch programs: {e}")
         return
 
-    print(f"本日のレース数: {len(races)}")
+    programs = prog.get("programs", [])
+    if not programs:
+        print("No programs today")
+        with open(OUTPUT, "w") as f:
+            json.dump({"updated_at": datetime.datetime.utcnow().isoformat() + "Z", "odds": []}, f)
+        return
 
+    # 場+レース番号の一覧
+    races = set()
+    date_str = ""
+    for p in programs:
+        sid = p.get("race_stadium_number")
+        rn = p.get("race_number")
+        if sid and rn:
+            races.add((sid, rn))
+        if not date_str:
+            date_str = p.get("race_date", "").replace("-", "")
+
+    if not date_str:
+        date_str = datetime.datetime.now().strftime("%Y%m%d")
+
+    print(f"Date: {date_str}, {len(races)} races found")
+
+    # 2. 各レースのオッズを取得
     all_odds = []
-    for race in races:
-        jcd = race["stadium"]
-        rno = race["race"]
-        print(f"  取得中: {jcd}場 {rno}R...")
+    for sid, rn in sorted(races):
+        jcd = f"{sid:02d}"
+        print(f"  Scraping stadium={sid} race={rn}...")
 
-        win = scrape_win(jcd, rno, date_str)
-        time.sleep(3)
+        race_odds = {"stadium": sid, "race": rn}
 
-        exacta = scrape_exacta(jcd, rno, date_str)
-        time.sleep(3)
+        # 単勝
+        url_win = f"{ODDS_BASE}/oddstf?rno={rn}&jcd={jcd}&hd={date_str}"
+        race_odds["win"] = scrape_odds_page(url_win, "win")
+        time.sleep(INTERVAL)
 
-        trifecta = scrape_trifecta(jcd, rno, date_str)
-        time.sleep(3)
+        # 2連単
+        url_exacta = f"{ODDS_BASE}/odds2tf?rno={rn}&jcd={jcd}&hd={date_str}"
+        race_odds["exacta"] = scrape_odds_page(url_exacta, "exacta")
+        time.sleep(INTERVAL)
 
-        if win or exacta or trifecta:
-            all_odds.append({
-                "stadium": jcd,
-                "race": rno,
-                "win": win,
-                "exacta": exacta,
-                "trifecta": trifecta,
-            })
+        # 3連単
+        url_tri = f"{ODDS_BASE}/odds3t?rno={rn}&jcd={jcd}&hd={date_str}"
+        race_odds["trifecta"] = scrape_odds_page(url_tri, "trifecta")
+        time.sleep(INTERVAL)
 
-    output = {
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "odds": all_odds,
+        all_odds.append(race_odds)
+
+    # 3. JSON出力
+    result = {
+        "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "odds": all_odds
     }
+    with open(OUTPUT, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False)
 
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(output, f, ensure_ascii=False)
-
-    update_history(output)
-    print(f"完了: {len(all_odds)}レースのオッズを保存")
-
+    print(f"Done! {len(all_odds)} races written to {OUTPUT}")
 
 if __name__ == "__main__":
     main()

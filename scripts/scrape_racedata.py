@@ -1,281 +1,205 @@
 #!/usr/bin/env python3
 """
-BoatRace Oracle - 今節成績・部品交換・選手写真取得スクリプト
+BoatRace Oracle - 今節成績・部品交換・選手写真 取得スクリプト
 GitHub Actionsから1日2回実行される
 
-処理フロー:
-1. Open API programs/today.json から本日の開催場・レース一覧を取得
-2. 各場の1Rの出走表ページから今節成績を取得
-3. 各場の直前情報ページから部品交換情報を取得
-4. 本日出走する選手の写真をダウンロード（未取得分のみ）
-5. data/racedata/today.json に出力
+処理:
+1. Open API programs/today.json → 本日の開催場を特定
+2. 各場の出走表ページ(racelist) → 今節成績を取得
+3. 各場の直前情報ページ(beforeinfo) → 部品交換情報を取得
+4. 出走選手の写真をダウンロード（未取得分のみ）
 """
 
-import json
-import os
-import sys
-import time
-from datetime import datetime, timezone, timedelta
-
-import requests
+import json, os, time, datetime, re
+from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
 
-try:
-    import pandas as pd
-    HAS_PANDAS = True
-except ImportError:
-    HAS_PANDAS = False
-
-JST = timezone(timedelta(hours=9))
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0)"}
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
-RACELIST_URL = "https://www.boatrace.jp/owpc/pc/race/racelist?rno={rno}&jcd={jcd:02d}&hd={date}"
-BEFOREINFO_URL = "https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
+BASE_URL = "https://www.boatrace.jp/owpc/pc/race"
 PHOTO_URL = "https://www.boatrace.jp/racerphoto/{}.jpg"
-OUTPUT_FILE = "data/racedata/today.json"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+INTERVAL = 3
+OUTPUT_RACEDATA = "data/racedata/today.json"
 PHOTO_DIR = "data/photos"
 
+def fetch_json(url):
+    req = Request(url, headers=HEADERS)
+    with urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode())
 
-def get_today_programs():
-    """Open APIから本日の開催場・レース一覧を取得"""
-    try:
-        resp = requests.get(PROGRAMS_URL, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        print(f"ERROR: プログラム取得失敗: {e}", file=sys.stderr)
-        return {}
+def fetch_html(url):
+    req = Request(url, headers=HEADERS)
+    with urlopen(req, timeout=15) as r:
+        return r.read().decode()
 
-
-def scrape_current_series(jcd, date_str, boats_info):
+def scrape_racelist(jcd, rno, date_str):
     """出走表ページから今節成績を取得"""
-    url = RACELIST_URL.format(rno=1, jcd=jcd, date=date_str)
+    url = f"{BASE_URL}/racelist?rno={rno}&jcd={jcd}&hd={date_str}"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return {}
+        html = fetch_html(url)
+        soup = BeautifulSoup(html, "html.parser")
+        boats = []
 
-        results = {}
-
-        if HAS_PANDAS:
-            # pandasでテーブル解析
-            try:
-                tables = pd.read_html(resp.text)
-                # 出走表テーブルを探す
-                for tbl in tables:
-                    cols = list(tbl.columns)
-                    # 今節成績列を含むテーブルを特定
-                    for col in cols:
-                        if "節" in str(col) or "成績" in str(col):
-                            break
-            except Exception:
-                pass
-
-        # BeautifulSoupでもパース（フォールバック）
-        soup = BeautifulSoup(resp.text, "lxml")
-
-        # 選手ごとの今節成績を抽出
-        rows = soup.select("tbody.is-fs12")
-        for idx, row in enumerate(rows):
-            if idx >= 6:
-                break
-            boat_num = idx + 1
-            # 今節成績セルを探す
+        for i, row in enumerate(soup.select("tbody.is-fs12"), 1):
+            if i > 6: break
             tds = row.select("td")
-            series_results = []
+            series_text = ""
             for td in tds:
                 text = td.get_text(strip=True)
-                # 着順は1-6の数字
-                if text.isdigit() and 1 <= int(text) <= 6:
-                    series_results.append(int(text))
-                elif text in ["妨", "失", "転", "落", "沈", "不", "欠", "エ", "返"]:
-                    series_results.append(6)  # 事故等は6着扱い
+                if re.match(r'^[\d\s]+$', text) and len(text) > 2:
+                    series_text = text
+                    break
 
-            if series_results:
-                avg = sum(series_results) / len(series_results) if series_results else 0
-                win = sum(1 for r in series_results if r == 1)
-                top2 = sum(1 for r in series_results if r <= 2)
-                top3 = sum(1 for r in series_results if r <= 3)
-                results[boat_num] = {
-                    "results": series_results,
-                    "summary": {
-                        "races": len(series_results),
-                        "avg_place": round(avg, 2),
-                        "win": win,
-                        "top2": top2,
-                        "top3": top3,
-                    }
+            results = []
+            if series_text:
+                for ch in series_text.split():
+                    try:
+                        results.append(int(ch))
+                    except ValueError:
+                        pass
+
+            avg = sum(results) / len(results) if results else 0
+            wins = results.count(1)
+            top2 = sum(1 for r in results if r <= 2)
+            top3 = sum(1 for r in results if r <= 3)
+
+            boats.append({
+                "boat_number": i,
+                "current_series_results": results,
+                "current_series_summary": {
+                    "races": len(results),
+                    "avg_place": round(avg, 2),
+                    "win": wins,
+                    "top2": top2,
+                    "top3": top3
                 }
+            })
 
-        return results
+        return boats
     except Exception as e:
-        print(f"  今節成績取得失敗 {jcd}: {e}", file=sys.stderr)
-        return {}
+        print(f"  Error scraping racelist: {e}")
+        return []
 
-
-def scrape_parts(jcd, rno, date_str):
+def scrape_beforeinfo(jcd, rno, date_str):
     """直前情報ページから部品交換情報を取得"""
-    url = BEFOREINFO_URL.format(rno=rno, jcd=jcd, date=date_str)
+    url = f"{BASE_URL}/beforeinfo?rno={rno}&jcd={jcd}&hd={date_str}"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            return {}
-
-        soup = BeautifulSoup(resp.text, "lxml")
+        html = fetch_html(url)
+        soup = BeautifulSoup(html, "html.parser")
         parts = {}
 
-        # 部品交換テーブルを探す
-        note_bodies = soup.select(".table1_noteBody")
-        for note in note_bodies:
+        for note in soup.select(".table1_noteBody"):
             text = note.get_text(strip=True)
-            if not text:
-                continue
-            # 部品名を含むセルを探す
-            part_keywords = [
-                "ピストン", "リング", "シリンダー", "クランク",
-                "キャリア", "ギヤ", "電気", "キャブ",
-            ]
-            found_parts = [kw for kw in part_keywords if kw in text]
-            if found_parts:
-                # 対応する艇番を特定（親要素から推定）
+            if text and text != "\xa0":
                 parent_row = note.find_parent("tr")
                 if parent_row:
-                    first_td = parent_row.find("td")
-                    if first_td:
-                        td_text = first_td.get_text(strip=True)
-                        if td_text.isdigit():
-                            parts[int(td_text)] = found_parts
+                    boat_td = parent_row.select_one(".table1_boatImage1Number")
+                    if boat_td:
+                        bn = boat_td.get_text(strip=True)
+                        try:
+                            parts[int(bn)] = text.split()
+                        except ValueError:
+                            pass
 
         return parts
     except Exception as e:
-        print(f"  部品交換取得失敗 {jcd}-{rno}: {e}", file=sys.stderr)
+        print(f"  Error scraping beforeinfo: {e}")
         return {}
 
-
-def download_photos(racer_numbers):
+def download_photo(racer_number):
     """選手写真をダウンロード（未取得分のみ）"""
-    os.makedirs(PHOTO_DIR, exist_ok=True)
-    downloaded = 0
-    skipped = 0
-
-    for rn in racer_numbers:
-        path = os.path.join(PHOTO_DIR, f"{rn}.jpg")
-        if os.path.exists(path):
-            skipped += 1
-            continue
-        try:
-            resp = requests.get(
-                PHOTO_URL.format(rn),
-                headers=HEADERS,
-                timeout=10
-            )
-            if resp.status_code == 200 and len(resp.content) > 100:
-                with open(path, "wb") as f:
-                    f.write(resp.content)
-                downloaded += 1
-            time.sleep(1)
-        except Exception:
-            pass
-
-    print(f"  写真: {downloaded}枚ダウンロード, {skipped}枚キャッシュ済み")
-
-
-def cleanup_old_photos(active_racers, max_age_days=60):
-    """古い写真を削除"""
-    if not os.path.exists(PHOTO_DIR):
+    path = f"{PHOTO_DIR}/{racer_number}.jpg"
+    if os.path.exists(path):
         return
-    now = time.time()
-    removed = 0
-    for fname in os.listdir(PHOTO_DIR):
-        fpath = os.path.join(PHOTO_DIR, fname)
-        # アクティブな選手の写真は残す
-        rn = fname.replace(".jpg", "")
-        if rn in active_racers:
-            continue
-        # 古いファイルを削除
-        if now - os.path.getmtime(fpath) > max_age_days * 86400:
-            os.remove(fpath)
-            removed += 1
-    if removed > 0:
-        print(f"  古い写真 {removed}枚を削除")
-
+    try:
+        url = PHOTO_URL.format(racer_number)
+        req = Request(url, headers=HEADERS)
+        with urlopen(req, timeout=10) as r:
+            if r.status == 200:
+                os.makedirs(PHOTO_DIR, exist_ok=True)
+                with open(path, "wb") as f:
+                    f.write(r.read())
+        time.sleep(1)
+    except Exception:
+        pass
 
 def main():
-    date_str = datetime.now(JST).strftime("%Y%m%d")
-    programs = get_today_programs()
-    if not programs:
-        print("本日のレースがありません")
+    os.makedirs(os.path.dirname(OUTPUT_RACEDATA), exist_ok=True)
+
+    print("Fetching today's programs...")
+    try:
+        prog = fetch_json(PROGRAMS_URL)
+    except Exception as e:
+        print(f"Failed: {e}")
         return
 
-    all_racedata = []
-    all_racers = set()
+    programs = prog.get("programs", [])
+    if not programs:
+        print("No programs today")
+        with open(OUTPUT_RACEDATA, "w") as f:
+            json.dump({"updated_at": datetime.datetime.utcnow().isoformat() + "Z", "racedata": []}, f)
+        return
 
-    for sid, stadium_races in programs.items():
-        jcd = int(sid)
-        race_nums = sorted(stadium_races.keys(), key=int)
-        print(f"場{jcd}: {len(race_nums)}R")
+    stadiums = {}
+    date_str = ""
+    racer_numbers = set()
+    for p in programs:
+        sid = p["race_stadium_number"]
+        rn = p["race_number"]
+        if not date_str:
+            date_str = p.get("race_date", "").replace("-", "")
+        if sid not in stadiums:
+            stadiums[sid] = []
+        stadiums[sid].append(rn)
+        for b in p.get("boats", []):
+            if b.get("racer_number"):
+                racer_numbers.add(b["racer_number"])
 
-        # 全選手の登録番号を収集
-        for rn, race in stadium_races.items():
-            if race.get("boats") and isinstance(race["boats"], list):
-                for boat in race["boats"]:
-                    rid = boat.get("racer_registration_number")
-                    if rid:
-                        all_racers.add(str(rid))
+    print(f"Date: {date_str}, {len(stadiums)} stadiums, {len(racer_numbers)} racers")
 
-        # 今節成績（1Rの出走表から取得）
-        series = scrape_current_series(jcd, date_str, stadium_races.get("1", {}).get("boats", []))
-        time.sleep(3)
+    all_data = []
+    for sid, race_nums in sorted(stadiums.items()):
+        jcd = f"{sid:02d}"
+        print(f"  Stadium {sid}...")
 
-        # 部品交換（1Rの直前情報から）
-        parts = scrape_parts(jcd, 1, date_str)
-        time.sleep(3)
+        for rn in sorted(race_nums):
+            boats = scrape_racelist(jcd, rn, date_str)
+            time.sleep(INTERVAL)
 
-        # レースデータ構築
-        for rn in race_nums:
-            race = stadium_races[rn]
-            boats_data = []
-            if race.get("boats") and isinstance(race["boats"], list):
-                for boat in race["boats"]:
-                    bn = boat.get("racer_boat_number", 0)
-                    rid = boat.get("racer_registration_number", 0)
-                    boat_entry = {
-                        "boat_number": bn,
-                        "racer_number": rid,
-                        "racer_name": boat.get("racer_name", ""),
-                    }
-                    # 今節成績
-                    if bn in series:
-                        boat_entry["current_series"] = series[bn]["results"]
-                        boat_entry["current_series_summary"] = series[bn]["summary"]
-                    # 部品交換
-                    if bn in parts:
-                        boat_entry["parts_replaced"] = parts[bn]
+            parts = scrape_beforeinfo(jcd, rn, date_str)
+            time.sleep(INTERVAL)
 
-                    boats_data.append(boat_entry)
+            for b in boats:
+                b["parts_replaced"] = parts.get(b["boat_number"], [])
 
-            all_racedata.append({
-                "stadium": jcd,
-                "race": int(rn),
-                "boats": boats_data,
+            all_data.append({
+                "stadium": sid,
+                "race": rn,
+                "boats": boats
             })
 
-    # 選手写真ダウンロード
-    print(f"選手写真チェック: {len(all_racers)}人")
-    download_photos(all_racers)
-    cleanup_old_photos(all_racers)
+    print(f"Downloading photos for {len(racer_numbers)} racers...")
+    for rn in sorted(racer_numbers):
+        download_photo(rn)
 
-    # 出力
-    output = {
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "racedata": all_racedata,
+    if os.path.exists(PHOTO_DIR):
+        now = time.time()
+        for fname in os.listdir(PHOTO_DIR):
+            fpath = os.path.join(PHOTO_DIR, fname)
+            if fname == ".gitkeep":
+                continue
+            if now - os.path.getmtime(fpath) > 60 * 86400:
+                os.remove(fpath)
+                print(f"  Removed old photo: {fname}")
+
+    result = {
+        "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "racedata": all_data
     }
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(output, f, ensure_ascii=False)
+    with open(OUTPUT_RACEDATA, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False)
 
-    print(f"完了: {len(all_racedata)}レースのデータを保存")
-
+    print(f"Done! {len(all_data)} races written")
 
 if __name__ == "__main__":
     main()
