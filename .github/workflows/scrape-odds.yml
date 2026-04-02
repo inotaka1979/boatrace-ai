@@ -1,8 +1,10 @@
 name: Scrape Odds
 on:
   schedule:
-    - cron: '*/15 1-12 * * *'  # JST 10:00-21:00に15分間隔
+    - cron: '*/5 1-12 * * *'  # JST 10:00-21:00に5分間隔
   workflow_dispatch:
+  repository_dispatch:
+    types: [refresh-odds]
 jobs:
   scrape:
     runs-on: ubuntu-latest
