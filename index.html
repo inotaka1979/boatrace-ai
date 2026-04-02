@@ -337,6 +337,69 @@ function fetchWithFallback(url){
     });
 }
 
+// API配列→{場番号:{レース番号:データ}}に変換
+function indexByStadiumRace(apiJson, key){
+  if(!apiJson||!apiJson[key]) return null;
+  var arr=apiJson[key];
+  var result={};
+  arr.forEach(function(item){
+    var sid=String(item.race_stadium_number);
+    var rn=String(item.race_number);
+    if(!result[sid]) result[sid]={};
+    result[sid][rn]=item;
+  });
+  return result;
+}
+
+// previews: boatsがオブジェクト形式 + weather情報をトップレベルに持つ
+function indexPreviews(apiJson){
+  var indexed=indexByStadiumRace(apiJson,'previews');
+  if(!indexed) return null;
+  for(var sid in indexed){
+    for(var rn in indexed[sid]){
+      var p=indexed[sid][rn];
+      // weather情報をまとめる
+      p.weather={
+        wind_speed:p.race_wind||0,
+        wind_direction:p.race_wind_direction_number||0,
+        wave_height:p.race_wave||0,
+        temperature:p.race_temperature||0,
+        water_temperature:p.race_water_temperature||0,
+        weather_number:p.race_weather_number||0
+      };
+    }
+  }
+  return indexed;
+}
+
+// results: boats配列にplace情報あり、payoutsにrefund
+function indexResults(apiJson){
+  var indexed=indexByStadiumRace(apiJson,'results');
+  if(!indexed) return null;
+  for(var sid in indexed){
+    for(var rn in indexed[sid]){
+      var r=indexed[sid][rn];
+      // results配列を作成(boats→results にリネーム互換)
+      if(r.boats&&Array.isArray(r.boats)){
+        r.results=r.boats.map(function(b){
+          return{
+            place:b.racer_place_number,
+            racer_boat_number:b.racer_boat_number,
+            racer_course_number:b.racer_course_number,
+            racer_number:b.racer_number,
+            racer_name:b.racer_name,
+            racer_start_timing:b.racer_start_timing
+          };
+        });
+      }
+      // refundをpayoutsから
+      if(r.payouts) r.refund=r.payouts;
+      r.technique_number=r.race_technique_number;
+    }
+  }
+  return indexed;
+}
+
 // ═══════════════════════════════════════════
 // DB管理: racerDB / stadiumDB
 // ═══════════════════════════════════════════
@@ -356,7 +419,7 @@ function updateDBFromResults(resultsJson, programsJson){
 
       // 各選手のDB更新
       sortedRes.forEach(function(r){
-        var rid=r.racer_registration_number||r.racer_number;
+        var rid=r.racer_number||r.racer_number;
         if(!rid) return;
         if(!racerDB[rid]) racerDB[rid]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
         var rdb=racerDB[rid];
@@ -474,8 +537,8 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
   var reasons=[];
   var risks=[];
   var bn=boat.racer_boat_number;
-  var course=preview?preview.racer_course_number:bn;
-  var rid=boat.racer_registration_number||0;
+  var course=preview?preview.racer_course_number||preview.racer_boat_number:bn;
+  var rid=boat.racer_number||0;
 
   // [A] コース補正 (max ~20pt)
   var scwr=getStadiumCourseWinRate(String(sid),course);
@@ -493,7 +556,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
   score+=coursePt;
 
   // 前付け補正
-  if(preview&&preview.racer_course_number){
+  if(preview&&preview.racer_course_number||preview.racer_boat_number){
     if(bn>course){score+=3;reasons.push('前付け成功('+bn+'→'+course+'コース)')}
     else if(bn<course){score-=2;risks.push('押し出され('+bn+'→'+course+'コース)')}
   }
@@ -527,7 +590,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
       // 該当コースの選手を特定
       var cBoat=allBoats.find(function(b){return b.racer_boat_number===ci});
       if(!cBoat) continue;
-      var cRid=cBoat.racer_registration_number||0;
+      var cRid=cBoat.racer_number||0;
       var style=getRacerCourseStyle(cRid,cCourse);
       if(!style){
         // フォールバック: 場のデフォルト
@@ -575,12 +638,12 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     var times=[];
     for(var ei=1;ei<=6;ei++){
       var epv=allPreviews.boats[String(ei)];
-      times.push({boat:ei,time:epv?pf(epv.exhibition_time)||99:99});
+      times.push({boat:ei,time:epv?pf(epv.racer_exhibition_time)||99:99});
     }
     times.sort(function(a,b){return a.time-b.time});
     etRank=times.findIndex(function(t){return t.boat===bn});
     var myPv=allPreviews.boats[String(bn)];
-    etTime=myPv?pf(myPv.exhibition_time):99;
+    etTime=myPv?pf(myPv.racer_exhibition_time):99;
     var bestTime=times[0].time;
 
     // E1: 展示タイム順位（コース別減衰適用）
@@ -599,7 +662,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
 
     // E2: ST分析
     if(myPv){
-      var st=pf(myPv.start_timing);
+      var st=pf(myPv.racer_start_timing);
       if(st>0&&st<=0.05){score+=4;reasons.push('ST鋭い('+st+'s)')}
       else if(st>0&&st<=0.10) score+=2;
       else if(st>=0.20){score-=2;risks.push('ST出遅れ傾向('+st+'s)')}
@@ -612,7 +675,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
       else if(etRank>=4&&st>=0.15) score-=3;
 
       // E5: チルト整合性
-      var tilt=pf(myPv.tilt);
+      var tilt=pf(myPv.racer_tilt_adjustment);
       if(course<=2&&tilt<=-0.5) score+=2;
       else if(course>=4&&tilt>=0.5) score+=2;
       else if(course<=2&&tilt>=0.5) score-=1;
@@ -656,7 +719,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
   }
 
   // [G] F/Lペナルティ
-  var fc=boat.racer_flying_count_in_current_term||boat.racer_flying_count||0;
+  var fc=boat.racer_flying_count||boat.racer_flying_count||0;
   var lc=boat.racer_late_start_count_in_current_term||boat.racer_late_count||0;
   if(fc>=2){score-=25;risks.push('F2持ち')}
   else if(fc>=1){score-=15;risks.push('F1持ち')}
@@ -685,13 +748,13 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
 // 予測エンジン v2: Layer 2 (ロジスティック回帰)
 // ═══════════════════════════════════════════
 function getL2Features(boat,preview,weather,etRank,stRank,sid){
-  var course=preview?preview.racer_course_number:boat.racer_boat_number;
-  var rid=boat.racer_registration_number||0;
+  var course=preview?preview.racer_course_number||preview.racer_boat_number:boat.racer_boat_number;
+  var rid=boat.racer_number||0;
   var racerCWR=getRacerCourseWinRate(rid,course);
   var stadCWR=getStadiumCourseWinRate(String(sid),course);
   var myPv=preview||{};
-  var st=pf(myPv.start_timing);
-  var tilt=pf(myPv.tilt);
+  var st=pf(myPv.racer_start_timing);
+  var tilt=pf(myPv.racer_tilt_adjustment);
 
   // 風×コース交互作用
   var windCourse=0;
@@ -803,7 +866,7 @@ function predictRace(sid,raceNum){
     var sts=[];
     for(var si=1;si<=6;si++){
       var spv=preview.boats[String(si)];
-      sts.push({boat:si,st:spv?pf(spv.start_timing)||99:99});
+      sts.push({boat:si,st:spv?pf(spv.racer_start_timing)||99:99});
     }
     sts.sort(function(a,b){return a.st-b.st});
     for(var sr=0;sr<sts.length;sr++) stRanks[sts[sr].boat]=sr;
@@ -1057,7 +1120,8 @@ async function buildInitialDB(){
     var yyyy=yyyymmdd.slice(0,4);
     msg.textContent='DB構築中... ('+d+'/'+days+'日)';
     prog.style.width=(d/days*40)+'%';
-    var resData=await fetchWithFallback(API_BASE+'/results/v2/'+yyyy+'/'+yyyymmdd+'.json');
+    var rawRes=await fetchWithFallback(API_BASE+'/results/v2/'+yyyy+'/'+yyyymmdd+'.json');
+    var resData=indexResults(rawRes);
     if(resData) updateDBFromResults(resData,null);
     await sleep(1200);
   }
@@ -1087,7 +1151,7 @@ function learnFromResults(){
         var sts=[];
         for(var si=1;si<=6;si++){
           var spv=prev.boats[String(si)];
-          sts.push({boat:si,st:spv?pf(spv.start_timing)||99:99});
+          sts.push({boat:si,st:spv?pf(spv.racer_start_timing)||99:99});
         }
         sts.sort(function(a,b){return a.st-b.st});
         sts.forEach(function(s,idx){stRanks[s.boat]=idx});
@@ -1099,7 +1163,7 @@ function learnFromResults(){
         var ets=[];
         for(var ei=1;ei<=6;ei++){
           var epv=prev.boats[String(ei)];
-          ets.push({boat:ei,time:epv?pf(epv.exhibition_time)||99:99});
+          ets.push({boat:ei,time:epv?pf(epv.racer_exhibition_time)||99:99});
         }
         ets.sort(function(a,b){return a.time-b.time});
         ets.forEach(function(e,idx){etRanks[e.boat]=idx});
@@ -1128,17 +1192,20 @@ async function loadAllData(){
   prog.style.width='40%';
   msg.textContent='出走表を取得中...';
 
-  programData=await fetchWithFallback(API_BASE+'/programs/v2/today.json');
+  var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json');
+  programData=indexByStadiumRace(rawPrograms,'programs');
   prog.style.width='55%';
   await sleep(800);
 
   msg.textContent='直前情報を取得中...';
-  previewData=await fetchWithFallback(API_BASE+'/previews/v2/today.json');
+  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json');
+  previewData=indexPreviews(rawPreviews);
   prog.style.width='75%';
   await sleep(800);
 
   msg.textContent='結果を取得中...';
-  resultData=await fetchWithFallback(API_BASE+'/results/v2/today.json');
+  var rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json');
+  resultData=indexResults(rawResults);
   prog.style.width='85%';
 
   // オッズ・今節成績の取得（同一オリジンまたはフォールバック）
@@ -1426,7 +1493,7 @@ function openRace(sid,rn){
       var bn=b.racer_boat_number;
       var pv=preview&&preview.boats?preview.boats[String(bn)]:null;
       var m=pred?pred.marks.find(function(x){return x.boat===bn}):null;
-      var rid=b.racer_registration_number||0;
+      var rid=b.racer_number||0;
 
       // 確率バー
       var probPct=m?Math.round(m.prob*100):0;
@@ -1465,7 +1532,7 @@ function openRace(sid,rn){
         +'</div>';
 
       // F持ち警告
-      var fc=b.racer_flying_count_in_current_term||b.racer_flying_count||0;
+      var fc=b.racer_flying_count||b.racer_flying_count||0;
       if(fc>0) boatsHtml+='<div style="font-size:10px;background:rgba(255,68,102,0.2);color:var(--lose);padding:2px 6px;border-radius:4px;display:inline-block;margin-bottom:4px">⚠️ F'+fc+'</div>';
 
       // 部品交換
@@ -1490,14 +1557,14 @@ function openRace(sid,rn){
 
       // 展示情報
       if(pv){
-        boatsHtml+='<div><span class="boat-stat">展示T</span> <span class="boat-val">'+(pv.exhibition_time||'---')+'s';
+        boatsHtml+='<div><span class="boat-stat">展示T</span> <span class="boat-val">'+(pv.racer_exhibition_time||'---')+'s';
         if(m){
           var etCls=m.etRank===0?'color:var(--win)':m.etRank===1?'color:var(--accent)':m.etRank>=4?'color:var(--lose)':'';
           boatsHtml+=' <span style="font-size:10px;'+etCls+'">'+(m.etRank+1)+'位</span>';
         }
         boatsHtml+='</span></div>';
-        boatsHtml+='<div><span class="boat-stat">ST</span> <span class="boat-val">'+(pv.start_timing||'---')+'s</span></div>';
-        if(pv.tilt!==undefined) boatsHtml+='<div><span class="boat-stat">チルト</span> <span class="boat-val">'+pv.tilt+'°</span></div>';
+        boatsHtml+='<div><span class="boat-stat">ST</span> <span class="boat-val">'+(pv.racer_start_timing||'---')+'s</span></div>';
+        if(pv.racer_tilt_adjustment!==undefined) boatsHtml+='<div><span class="boat-stat">チルト</span> <span class="boat-val">'+pv.racer_tilt_adjustment+'°</span></div>';
       }
 
       // コース別成績(DB)
