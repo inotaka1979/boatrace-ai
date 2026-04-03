@@ -1597,7 +1597,10 @@ function openStadium(sid){
     var typeCls=pred?pred.typeCls:'';
 
     html+='<tr onclick="openRace(\''+sid+'\',\''+rn+'\')">';
-    html+='<td class="race-num-cell">'+rn+'<span class="race-type-icon"><span class="type-badge '+typeCls+'">'+typeIcon+'</span></span></td>';
+    var closedAt=race.race_closed_at||'';
+    var closedTime=closedAt?closedAt.split(' ')[1]||'':'';
+    if(closedTime) closedTime=closedTime.slice(0,5); // HH:MM
+    html+='<td class="race-num-cell">'+rn+'<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">'+closedTime+'</span><span class="race-type-icon"><span class="type-badge '+typeCls+'">'+typeIcon+'</span></span></td>';
 
     if(race.boats&&Array.isArray(race.boats)){
       var boatMap={};
@@ -1647,10 +1650,13 @@ function openRace(sid,rn){
   currentStadium=sid;
   currentRace=rn;
   var name=STADIUMS[parseInt(sid)]||('場'+sid);
-  document.getElementById('detailTitle').textContent=name+' '+rn+'R';
+  var race=programData[sid][rn];
+  var closedAt=race?race.race_closed_at||'':'';
+  var closedTime=closedAt?closedAt.split(' ')[1]||'':'';
+  if(closedTime) closedTime=closedTime.slice(0,5);
+  document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'');
   document.getElementById('detailBack').onclick=function(){openStadium(sid)};
 
-  var race=programData[sid][rn];
   var preview=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
   var result=resultData&&resultData[sid]&&resultData[sid][rn]?resultData[sid][rn]:null;
   var pred=predictRace(sid,parseInt(rn));
