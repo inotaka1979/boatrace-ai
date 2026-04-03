@@ -289,7 +289,7 @@ button.action-btn:active{background:#F0F0F0}
   <button class="back-btn" id="detailBack">← レース一覧に戻る</button>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
     <div style="font-weight:700;font-size:16px" id="detailTitle"></div>
-    <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshOdds()">🔄 オッズ更新</button>
+    <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshThisRace()">🔄 このレースを更新</button>
     <span class="odds-stale" id="oddsStaleMsg"></span>
   </div>
   <div id="detailWeather"></div>
@@ -1605,7 +1605,7 @@ function openStadium(sid){
       for(var bn=1;bn<=6;bn++){
         var bt=boatMap[bn];
         if(!bt){html+='<td>-</td>';continue}
-        var racerName=familyName(bt.racer_name||'');
+        var racerName=escText(bt.racer_name||'');
         var isTop=pred&&pred.marks[0]&&pred.marks[0].boat===bn;
         var nameClass=isTop?'name-bold':'';
         var markStr=isTop?'◎ ':'';
@@ -1771,7 +1771,7 @@ function openRace(sid,rn){
       if(bn===5) nameColor='#B8860B';
       var m=pred?pred.marks.find(function(x){return x.boat===bn}):null;
       var markStr=m?' <span style="font-size:10px;color:var(--accent)">'+m.mark+'</span>':'';
-      boatsHtml+='<td><span style="font-weight:700;font-size:14px;color:'+nameColor+'">'+escText(familyName(bt.racer_name))+'</span>'+markStr+'</td>';
+      boatsHtml+='<td><span style="font-weight:700;font-size:13px;color:'+nameColor+'">'+escText(bt.racer_name||'')+'</span>'+markStr+'</td>';
     }
     boatsHtml+='<th>選手</th></tr>';
 
@@ -1907,7 +1907,7 @@ function openRace(sid,rn){
   if(preview&&preview.boats){
     exhHtml='<div class="section-title">展示情報</div>';
     exhHtml+='<div class="detail-table-wrap"><table class="exhibition-table">';
-    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示タイム</th><th>一周</th><th>まわり足</th><th>直線</th><th>チルト</th></tr></thead><tbody>';
+    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示タイム</th><th>チルト</th></tr></thead><tbody>';
 
     for(var bn=1;bn<=6;bn++){
       var pv=pvMap[bn];
@@ -1929,9 +1929,6 @@ function openRace(sid,rn){
       exhHtml+='<td style="background:'+BOAT_COLORS[bn]+';color:'+BOAT_TEXT[bn]+';font-weight:700;border:1px solid '+(bn===1?'#ccc':'transparent')+'">'+bn+'</td>';
       exhHtml+='<td class="'+stCls+'">'+stDisp+'</td>';
       exhHtml+='<td class="'+etCls+'">'+(etVal!==null?etVal:'---')+'</td>';
-      exhHtml+='<td>-</td>';
-      exhHtml+='<td>-</td>';
-      exhHtml+='<td>-</td>';
       exhHtml+='<td>'+(tiltVal!==null?tiltVal:'---')+'</td>';
       exhHtml+='</tr>';
     }
@@ -2404,7 +2401,85 @@ function checkPAT(){
 }
 
 // ===============================================
-// Odds Refresh via GitHub Actions (PRESERVED)
+// レース単位の即時更新（Open API再取得+公式データマージ）
+// ===============================================
+async function refreshThisRace(){
+  if(!currentStadium||!currentRace) return;
+  var btn=document.getElementById('oddsRefreshBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ 更新中...';}
+
+  try{
+    // Open APIから3つとも最新取得
+    var ts='?t='+Date.now();
+    var rawPg=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
+    var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
+    var rawRs=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
+    if(rawPg) programData=indexByStadiumRace(rawPg,'programs');
+    if(rawPv) previewData=indexPreviews(rawPv);
+    if(rawRs) resultData=indexResults(rawRs);
+
+    // 公式展示データもマージ
+    try{
+      var liveResp=await fetch('data/previews/today.json?t='+Date.now());
+      if(liveResp.ok){
+        var liveData=await liveResp.json();
+        if(liveData.races){
+          liveData.races.forEach(function(lr){
+            var sid=String(lr.stadium);var rn=String(lr.race);
+            if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
+              var pv=previewData[sid][rn];
+              for(var bn in lr.boats){
+                var lb=lr.boats[bn];
+                if(!pv.boats) pv.boats={};
+                if(!pv.boats[bn]) pv.boats[bn]={racer_boat_number:parseInt(bn)};
+                if(lb.racer_exhibition_time>0) pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;
+                if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined) pv.boats[bn].racer_start_timing=lb.racer_start_timing;
+                if(lb.racer_tilt_adjustment!==null&&lb.racer_tilt_adjustment!==undefined) pv.boats[bn].racer_tilt_adjustment=lb.racer_tilt_adjustment;
+                if(lb.racer_course_number) pv.boats[bn].racer_course_number=lb.racer_course_number;
+              }
+            }
+            if(lr.finished&&lr.result&&lr.result.places&&resultData){
+              var sid2=String(lr.stadium);var rn2=String(lr.race);
+              if(!resultData[sid2]) resultData[sid2]={};
+              if(!resultData[sid2][rn2]||!resultData[sid2][rn2].isFinished){
+                resultData[sid2][rn2]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:1,isFinished:true,
+                  results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),
+                  refund:lr.result.payouts||{}};
+              }
+            }
+          });
+        }
+      }
+    }catch(e){}
+
+    // オッズも再取得
+    try{
+      var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
+      if(oddsResp.ok){
+        var od=await oddsResp.json();
+        if(od.updated_at){
+          var oddsDate=od.updated_at.slice(0,10);
+          var todayDate=new Date().toISOString().slice(0,10);
+          if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}
+        }
+      }
+    }catch(e){}
+
+    if(resultData) updateDBFromResults(resultData,programData);
+    updateHistoryWithResults();
+
+    // 現在のレース詳細を再描画
+    openRace(currentStadium,currentRace);
+    if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
+    setTimeout(function(){if(btn) btn.textContent='🔄 このレースを更新'},2000);
+  }catch(e){
+    console.warn('refreshThisRace error:',e);
+    if(btn){btn.textContent='🔄 このレースを更新';btn.disabled=false;}
+  }
+}
+
+// ===============================================
+// Odds Refresh via GitHub Actions
 // ===============================================
 function refreshOdds(){
   var btn=document.getElementById('oddsRefreshBtn');
