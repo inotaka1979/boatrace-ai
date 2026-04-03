@@ -172,7 +172,7 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 /* Macour trifecta odds table */
 .trifecta-macour{width:100%;border-collapse:collapse;font-size:10px;background:var(--card-bg);border:1px solid var(--border)}
 .trifecta-macour th{padding:4px 2px;font-weight:700;text-align:center;border:1px solid var(--border);font-size:10px}
-.trifecta-macour td{padding:2px 3px;text-align:center;border:1px solid var(--border);font-size:10px;white-space:nowrap}
+.trifecta-macour td{padding:2px 3px;text-align:right;border:1px solid var(--border);font-size:10px;white-space:nowrap;min-width:58px;font-variant-numeric:tabular-nums}
 .trifecta-macour .group-sep{border-top:2px solid #999}
 .trifecta-macour .alt-bg{background:#FAFAFA}
 .odds-low{color:var(--danger);font-weight:700}
@@ -289,7 +289,7 @@ button.action-btn:active{background:#F0F0F0}
   <button class="back-btn" id="detailBack">← レース一覧に戻る</button>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
     <div style="font-weight:700;font-size:16px" id="detailTitle"></div>
-    <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshOdds()" style="display:none">オッズ更新</button>
+    <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshOdds()">🔄 オッズ更新</button>
     <span class="odds-stale" id="oddsStaleMsg"></span>
   </div>
   <div id="detailWeather"></div>
@@ -1581,8 +1581,7 @@ function openRace(sid,rn){
   var popularity=calcPopularity(raceOdds);
   var rdForRace=getRaceDataForRace(sid,rn);
 
-  var pat=localStorage.getItem('boatrace_github_pat');
-  document.getElementById('oddsRefreshBtn').style.display=pat?'inline-block':'none';
+  document.getElementById('oddsRefreshBtn').style.display='inline-block';
   updateOddsUI();
 
   // Weather
@@ -2006,8 +2005,8 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
         for(var first=1;first<=6;first++){
           if(first===second){
-            // 1着=2着は存在しない → 空セル
-            html+='<td class="'+(isGroupStart?'group-sep':'')+'"></td>';
+            // 1着=2着は存在しない → グレー空セル
+            html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="background:#E8E8E8"></td>';
             continue;
           }
           // 3着候補: 1-6から1着と2着を除いた4つ、固定順
@@ -2030,7 +2029,8 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
           var thirdLabel='<span style="display:inline-block;width:14px;height:14px;line-height:14px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
-          html+='<td class="'+cellClass+'">'+thirdLabel+' <span class="'+oddsClass+'">'+(oddsVal?oddsVal.toFixed(1):'-')+'</span></td>';
+          var oddsStr=oddsVal?oddsVal.toFixed(1):'-';
+          html+='<td class="'+cellClass+'">'+thirdLabel+'<span class="'+oddsClass+'" style="display:inline-block;min-width:36px;text-align:right">'+oddsStr+'</span></td>';
         }
 
         // 右端ラベル列: 2着番号（グループ先頭のみ）+ 3着候補
@@ -2330,40 +2330,37 @@ function checkPAT(){
 // Odds Refresh via GitHub Actions (PRESERVED)
 // ===============================================
 function refreshOdds(){
-  var pat=localStorage.getItem('boatrace_github_pat');
-  if(!pat){alert('設定画面でGitHub PATを設定してください');return}
   var btn=document.getElementById('oddsRefreshBtn');
-  if(btn){btn.disabled=true;btn.textContent='更新中...';}
+  if(btn){btn.disabled=true;btn.textContent='取得中...';}
 
-  fetch('https://api.github.com/repos/'+getRepoOwnerName()+'/dispatches',{
-    method:'POST',
-    headers:{
-      'Authorization':'Bearer '+pat,
-      'Accept':'application/vnd.github.v3+json',
-      'Content-Type':'application/json'
-    },
-    body:JSON.stringify({event_type:'refresh-odds'})
-  }).then(function(r){
-    if(r.status===204||r.ok){
-      if(btn) btn.textContent='トリガー済';
-      setTimeout(function(){
-        fetch('data/odds/today.json?t='+Date.now())
-          .then(function(r2){if(r2.ok) return r2.json();throw new Error('fetch error')})
-          .then(function(d){
-            oddsData=d;
-            oddsLastFetched=Date.now();
-            if(btn){btn.textContent='オッズ更新';btn.disabled=false;}
-            updateOddsUI();
-            if(currentStadium&&currentRace) openRace(currentStadium,currentRace);
-          }).catch(function(){if(btn){btn.textContent='オッズ更新';btn.disabled=false;}});
-      },30000);
-    } else {
-      throw new Error('HTTP '+r.status);
-    }
-  }).catch(function(e){
-    if(btn){btn.textContent='エラー';btn.disabled=false;}
-    console.warn('Odds refresh failed:',e);
-    setTimeout(function(){if(btn) btn.textContent='オッズ更新'},2000);
+  // PAT設定済みならGitHub Actionsもトリガー（オプション）
+  var pat=localStorage.getItem('boatrace_github_pat');
+  var dispatchPromise=Promise.resolve();
+  if(pat){
+    dispatchPromise=fetch('https://api.github.com/repos/'+getRepoOwnerName()+'/dispatches',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
+      body:JSON.stringify({event_type:'refresh-odds'})
+    }).catch(function(){});
+  }
+
+  // PATの有無に関わらず、最新JSONを取得
+  var waitTime=pat?30000:500;
+  dispatchPromise.then(function(){
+    setTimeout(function(){
+      fetch('data/odds/today.json?t='+Date.now())
+        .then(function(r){if(r.ok) return r.json();throw new Error('fetch error')})
+        .then(function(d){
+          oddsData=d;
+          oddsLastFetched=Date.now();
+          if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
+          updateOddsUI();
+          if(currentStadium&&currentRace) openRace(currentStadium,currentRace);
+          setTimeout(function(){if(btn) btn.textContent='🔄 オッズ更新'},2000);
+        }).catch(function(){
+          if(btn){btn.textContent='🔄 オッズ更新';btn.disabled=false;}
+        });
+    },waitTime);
   });
 }
 
