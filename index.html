@@ -1262,19 +1262,71 @@ async function loadAllData(){
   resultData=indexResults(rawResults);
   prog.style.width='80%';
 
+  msg.textContent='公式展示データを取得中...';
+  // 公式サイト経由の展示データ（GitHub Actionsが5分間隔で更新）
+  try{
+    var liveResp=await fetch('data/previews/today.json?t='+Date.now());
+    if(liveResp.ok){
+      var liveData=await liveResp.json();
+      // 公式データでOpen APIのpreviewsを上書きマージ
+      if(liveData.races&&liveData.races.length>0){
+        liveData.races.forEach(function(lr){
+          var sid=String(lr.stadium);
+          var rn=String(lr.race);
+          // 展示データのマージ
+          if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
+            var pv=previewData[sid][rn];
+            for(var bn in lr.boats){
+              var lb=lr.boats[bn];
+              if(!pv.boats) pv.boats={};
+              if(!pv.boats[bn]) pv.boats[bn]={racer_boat_number:parseInt(bn)};
+              // 公式データが有効なら上書き
+              if(lb.racer_exhibition_time>0) pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;
+              if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined) pv.boats[bn].racer_start_timing=lb.racer_start_timing;
+              if(lb.racer_tilt_adjustment!==null&&lb.racer_tilt_adjustment!==undefined) pv.boats[bn].racer_tilt_adjustment=lb.racer_tilt_adjustment;
+              if(lb.racer_course_number) pv.boats[bn].racer_course_number=lb.racer_course_number;
+            }
+          } else if(lr.boats&&previewData){
+            // Open APIにまだないレースのデータを追加
+            if(!previewData[sid]) previewData[sid]={};
+            previewData[sid][rn]={
+              race_stadium_number:lr.stadium,race_number:lr.race,
+              boats:lr.boats,
+              weather:{wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0}
+            };
+          }
+          // 結果データのマージ
+          if(lr.finished&&lr.result&&lr.result.places&&resultData){
+            if(!resultData[sid]) resultData[sid]={};
+            if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){
+              var places=lr.result.places.map(function(p){
+                return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place};
+              });
+              resultData[sid][rn]={
+                race_stadium_number:lr.stadium,race_number:lr.race,
+                race_technique_number:1,isFinished:true,
+                results:places,
+                refund:lr.result.payouts||{}
+              };
+            }
+          }
+        });
+        console.log('公式展示データ反映: '+liveData.races.length+'R');
+      }
+    }
+  }catch(e){console.warn('公式展示データ取得失敗:',e)}
+
   msg.textContent='オッズ・今節成績を取得中...';
   try{
     var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
     if(oddsResp.ok){
       var od=await oddsResp.json();
-      // 日付チェック: 今日のデータのみ使用
       if(od.updated_at){
         var oddsDate=od.updated_at.slice(0,10);
         var todayDate=new Date().toISOString().slice(0,10);
         if(oddsDate===todayDate){
           oddsData=od;oddsLastFetched=Date.now();
         } else {
-          console.warn('オッズデータが古い('+oddsDate+')、無視');
           oddsData=null;
         }
       }
