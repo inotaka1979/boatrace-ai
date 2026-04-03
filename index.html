@@ -1829,7 +1829,7 @@ function openRace(sid,rn){
       var lwr=pf(bt.racer_local_top_1_percent);
       var lt2=pf(bt.racer_local_top_2_percent);
       var hlCls=(lwr>=6.0)?'hl-pink':'';
-      boatsHtml+='<td class="'+hlCls+'"><b>'+(lwr>0?lwr.toFixed(2):'---')+'</b><br><span style="font-size:9px">2連:'+(lt2>0?lt2.toFixed(1)+'%':'---')+'</span></td>';
+      boatsHtml+='<td class="'+hlCls+'"><b>'+lwr.toFixed(2)+'</b><br><span style="font-size:9px">2連:'+lt2.toFixed(1)+'%</span></td>';
     }
     boatsHtml+='<th>当地勝率</th></tr>';
 
@@ -1838,8 +1838,8 @@ function openRace(sid,rn){
     for(var bn=1;bn<=6;bn++){
       var bt=boatMap[bn];
       if(!bt){boatsHtml+='<td>-</td>';continue}
-      var avgSt=pf(bt.racer_national_start_timing);
-      boatsHtml+='<td>'+(avgSt>0?avgSt.toFixed(2):'---')+'</td>';
+      var avgSt=pf(bt.racer_average_start_timing);
+      boatsHtml+='<td>'+(bt.racer_average_start_timing!=null?avgSt.toFixed(2):'---')+'</td>';
     }
     boatsHtml+='<th>平均ST</th></tr>';
 
