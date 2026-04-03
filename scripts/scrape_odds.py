@@ -37,16 +37,22 @@ def scrape_odds_page(url, bet_type):
         odds = {}
 
         if bet_type == "win":
-            # 単勝: oddstf ページ
-            for row in soup.select("table.is-w495 tbody tr"):
-                tds = row.select("td")
-                if len(tds) >= 2:
-                    boat = tds[0].get_text(strip=True)
-                    val = tds[1].get_text(strip=True)
-                    try:
-                        odds[boat] = float(val)
-                    except ValueError:
-                        pass
+            # 単勝: oddstf ページの最初のis-w495テーブル
+            # 各行: td[0]=艇番, td[1]=選手名, td[2]=オッズ
+            win_tables = soup.select("table.is-w495")
+            if win_tables:
+                for row in win_tables[0].select("tbody tr"):
+                    tds = row.select("td")
+                    if len(tds) >= 3:
+                        boat = tds[0].get_text(strip=True)
+                        val = tds[2].get_text(strip=True)
+                        # 範囲表示(1.0-1.1)の場合は先頭の値を使用
+                        if "-" in val and "." in val:
+                            val = val.split("-")[0]
+                        try:
+                            odds[boat] = float(val)
+                        except ValueError:
+                            pass
 
         elif bet_type == "exacta":
             # 2連単: odds2tf ページ

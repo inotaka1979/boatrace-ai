@@ -424,12 +424,14 @@ function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
 function pf(v){return parseFloat(v)||0}
 
 function fetchWithFallback(url){
-  return fetch(url,{signal:AbortSignal.timeout(15000)})
+  // キャッシュキーはクエリパラメータを除いたベースURL
+  var baseUrl=url.split('?')[0];
+  return fetch(url,{signal:AbortSignal.timeout(15000),cache:'no-store'})
     .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
-    .then(function(d){try{localStorage.setItem(cacheKey(url),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
+    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
     .catch(function(e){
-      console.warn('API error:',url,e.message);
-      try{var c=localStorage.getItem(cacheKey(url));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
+      console.warn('API error:',baseUrl,e.message);
+      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
       return null;
     });
 }
@@ -1235,38 +1237,51 @@ function learnFromResults(){
 async function loadAllData(){
   var prog=document.getElementById('progressFill');
   var msg=document.getElementById('progressMsg');
+  var topLoading=document.getElementById('topLoading');
+  if(topLoading) topLoading.style.display='block';
+
   await buildInitialDB();
   prog.style.width='40%';
   msg.textContent='出走表を取得中...';
 
-  var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json');
+  // キャッシュバスター付きでAPIから直接取得
+  var ts='?t='+Date.now();
+  var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
   programData=indexByStadiumRace(rawPrograms,'programs');
   prog.style.width='55%';
-  await sleep(800);
+  await sleep(300);
 
   msg.textContent='直前情報を取得中...';
-  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json');
+  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
   previewData=indexPreviews(rawPreviews);
-  prog.style.width='75%';
-  await sleep(800);
+  prog.style.width='70%';
+  await sleep(300);
 
   msg.textContent='結果を取得中...';
-  var rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json');
+  var rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
   resultData=indexResults(rawResults);
-  prog.style.width='85%';
+  prog.style.width='80%';
 
   msg.textContent='オッズ・今節成績を取得中...';
   try{
-    var oddsUrl='data/odds/today.json'+(oddsLastFetched?'':'?t='+Date.now());
-    var oddsResp=await fetch(oddsUrl);
-    if(oddsResp.ok){oddsData=await oddsResp.json();oddsLastFetched=Date.now()}
+    var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
+    if(oddsResp.ok){
+      var od=await oddsResp.json();
+      // 日付チェック: 今日のデータのみ使用
+      if(od.updated_at){
+        var oddsDate=od.updated_at.slice(0,10);
+        var todayDate=new Date().toISOString().slice(0,10);
+        if(oddsDate===todayDate){
+          oddsData=od;oddsLastFetched=Date.now();
+        } else {
+          console.warn('オッズデータが古い('+oddsDate+')、無視');
+          oddsData=null;
+        }
+      }
+    }
   }catch(e){oddsData=null}
   try{
-    var histResp=await fetch('data/odds/history.json');
-    if(histResp.ok) oddsHistory=await histResp.json();
-  }catch(e){oddsHistory=null}
-  try{
-    var rdResp=await fetch('data/racedata/today.json');
+    var rdResp=await fetch('data/racedata/today.json?t='+Date.now());
     if(rdResp.ok) raceData=await rdResp.json();
   }catch(e){raceData=null}
   prog.style.width='90%';
@@ -1277,7 +1292,17 @@ async function loadAllData(){
 
   prog.style.width='100%';
   msg.textContent='完了';
-  renderStadiums();
+
+  // 現在のページに応じて再描画
+  var activePage=document.querySelector('.page.active');
+  var activeId=activePage?activePage.id:'';
+  if(activeId==='pageDetail'&&currentStadium&&currentRace){
+    openRace(currentStadium,currentRace);
+  } else if(activeId==='pageRaces'&&currentStadium){
+    openStadium(currentStadium);
+  } else {
+    renderStadiums();
+  }
 }
 
 // ===============================================
