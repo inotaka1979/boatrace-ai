@@ -1831,7 +1831,7 @@ function openRace(sid,rn){
   if(preview&&preview.boats){
     exhHtml='<div class="section-title">展示情報</div>';
     exhHtml+='<div class="detail-table-wrap"><table class="exhibition-table">';
-    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示タイム</th><th>チルト</th></tr></thead><tbody>';
+    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示タイム</th><th>一周</th><th>まわり足</th><th>直線</th><th>チルト</th></tr></thead><tbody>';
 
     for(var bn=1;bn<=6;bn++){
       var pv=pvMap[bn];
@@ -1853,6 +1853,9 @@ function openRace(sid,rn){
       exhHtml+='<td style="background:'+BOAT_COLORS[bn]+';color:'+BOAT_TEXT[bn]+';font-weight:700;border:1px solid '+(bn===1?'#ccc':'transparent')+'">'+bn+'</td>';
       exhHtml+='<td class="'+stCls+'">'+stDisp+'</td>';
       exhHtml+='<td class="'+etCls+'">'+(etVal!==null?etVal:'---')+'</td>';
+      exhHtml+='<td>-</td>';
+      exhHtml+='<td>-</td>';
+      exhHtml+='<td>-</td>';
       exhHtml+='<td>'+(tiltVal!==null?tiltVal:'---')+'</td>';
       exhHtml+='</tr>';
     }
@@ -1976,42 +1979,46 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
     html+='<div class="odds-section-header"><span class="odds-section-title">3連単オッズ</span></div>';
     html+='<div class="detail-table-wrap"><table class="trifecta-macour">';
 
-    // Header: 6 columns = 1着 boats
+    // Header: 6 columns(1着) + 右端に2着/3着ラベル列
     html+='<thead><tr>';
     for(var first=1;first<=6;first++){
       var hName=boatNames[first]||first;
       html+='<th style="background:'+BOAT_COLORS[first]+';color:'+BOAT_TEXT[first]+';border:1px solid '+(first===1?'#ccc':'transparent')+'">'+first+'.'+escText(hName)+'</th>';
     }
+    html+='<th style="background:#F8F8F8;font-size:9px;color:#999">2着<br>3着</th>';
     html+='</tr></thead><tbody>';
 
-    // For each 1着, show 5 groups (2着 candidates), 4 rows per group (3着 candidates)
-    // Find max rows needed
-    var otherBoats=function(exclude1,exclude2){
-      var arr=[];
-      for(var b=1;b<=6;b++){if(b!==exclude1&&(exclude2===undefined||b!==exclude2))arr.push(b)}
-      return arr;
-    };
+    // 2着は固定順(1,2,3,4,5,6)で回す。1着と同じ番号はスキップ。
+    // 全列で同じ2着・3着の並びにする（右端列で明示）
+    // 2着の候補: 1-6の固定順
+    var allBoatNums=[1,2,3,4,5,6];
 
-    // Build: for each 2着 candidate (sorted 1-6, skip 1着), for each 3着 candidate
-    // All columns share the same row structure: 5 groups of 4 rows = 20 rows
-    // Group g (0-4): 2着 = g-th boat excluding 1着
-    // Row within group (0-3): 3着 = r-th boat excluding 1着 and 2着
-
-    for(var g=0;g<5;g++){
-      for(var r=0;r<4;r++){
-        var rowIdx=g*4+r;
-        var isGroupStart=(r===0);
-        var isAlt=(g%2===1);
+    for(var second=1;second<=6;second++){
+      // 3着の候補: 1-6から1着(列ごとに異なる)と2着を除いた残り → 固定順で並べる
+      var thirdsForLabel=allBoatNums.filter(function(b){return b!==second});
+      // ただし各列の1着も除くので3着は列ごとに異なる → 右端ラベルは2着番号のみ表示
+      for(var ti=0;ti<4;ti++){
+        // この行で表示する3着候補（固定順のti番目、ただし1着と2着を除く）
+        var isGroupStart=(ti===0);
+        var isAlt=(second%2===0);
 
         html+='<tr'+(isAlt?' class="alt-bg"':'')+'>';
 
         for(var first=1;first<=6;first++){
-          var seconds=otherBoats(first);
-          var secondBoat=seconds[g];
-          var thirds=otherBoats(first,secondBoat);
-          var thirdBoat=thirds[r];
+          if(first===second){
+            // 1着=2着は存在しない → 空セル
+            html+='<td class="'+(isGroupStart?'group-sep':'')+'"></td>';
+            continue;
+          }
+          // 3着候補: 1-6から1着と2着を除いた4つ、固定順
+          var thirds=allBoatNums.filter(function(b){return b!==first&&b!==second});
+          if(ti>=thirds.length){
+            html+='<td class="'+(isGroupStart?'group-sep':'')+'">-</td>';
+            continue;
+          }
+          var thirdBoat=thirds[ti];
 
-          var combo=first+'-'+secondBoat+'-'+thirdBoat;
+          var combo=first+'-'+second+'-'+thirdBoat;
           var oddsVal=raceOdds.trifecta[combo];
 
           var cellClass=isGroupStart?'group-sep':'';
@@ -2021,16 +2028,23 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
             else if(oddsVal>=100) oddsClass='odds-high';
           }
 
-          // Show 2着 label on first row of group
-          var secondLabel='';
-          if(isGroupStart){
-            secondLabel='<span style="font-size:8px;color:var(--text-dim)">'+secondBoat+'着</span> ';
-          }
+          var thirdLabel='<span style="display:inline-block;width:14px;height:14px;line-height:14px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
-          var thirdLabel='<span class="odds-cell-3rd" style="display:inline-block;width:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:8px;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
-
-          html+='<td class="'+cellClass+'">'+thirdLabel+' <span class="'+oddsClass+'">'+(oddsVal||'-')+'</span></td>';
+          html+='<td class="'+cellClass+'">'+thirdLabel+' <span class="'+oddsClass+'">'+(oddsVal?oddsVal.toFixed(1):'-')+'</span></td>';
         }
+
+        // 右端ラベル列: 2着番号（グループ先頭のみ）+ 3着候補
+        var labelThirds=allBoatNums.filter(function(b){return b!==second});
+        var rightLabel='';
+        if(isGroupStart){
+          rightLabel='<span style="display:inline-block;width:16px;height:16px;line-height:16px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:2px;font-size:10px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
+        }
+        if(ti<labelThirds.length){
+          var lt=labelThirds[ti];
+          rightLabel+=' <span style="font-size:9px;color:#999">-'+lt+'</span>';
+        }
+        html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="background:#F8F8F8;font-size:9px;text-align:center">'+rightLabel+'</td>';
+
         html+='</tr>';
       }
     }
