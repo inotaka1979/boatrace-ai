@@ -426,10 +426,13 @@ function pf(v){return parseFloat(v)||0}
 function fetchWithFallback(url){
   // キャッシュキーはクエリパラメータを除いたベースURL
   var baseUrl=url.split('?')[0];
-  return fetch(url,{signal:AbortSignal.timeout(15000),cache:'no-store'})
-    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+  var controller=new AbortController();
+  var tid=setTimeout(function(){controller.abort()},15000);
+  return fetch(url,{signal:controller.signal,cache:'no-store'})
+    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
     .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
     .catch(function(e){
+      clearTimeout(tid);
       console.warn('API error:',baseUrl,e.message);
       try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
       return null;
@@ -1161,21 +1164,21 @@ function getAccuracy(){
 // ===============================================
 async function buildInitialDB(){
   if(Object.keys(racerDB).length>100) return;
-  var prog=document.getElementById('progressFill');
-  var msg=document.getElementById('progressMsg');
   var days=14;
   for(var d=1;d<=days;d++){
-    var date=new Date(Date.now()-d*86400000);
-    var yyyymmdd=date.getFullYear()+('0'+(date.getMonth()+1)).slice(-2)+('0'+date.getDate()).slice(-2);
-    var yyyy=yyyymmdd.slice(0,4);
-    msg.textContent='DB構築中... ('+d+'/'+days+'日)';
-    prog.style.width=(d/days*40)+'%';
-    var rawRes=await fetchWithFallback(API_BASE+'/results/v2/'+yyyy+'/'+yyyymmdd+'.json');
-    var resData=indexResults(rawRes);
-    if(resData) updateDBFromResults(resData,null);
-    await sleep(1200);
+    try{
+      var date=new Date(Date.now()-d*86400000);
+      var yyyymmdd=date.getFullYear()+('0'+(date.getMonth()+1)).slice(-2)+('0'+date.getDate()).slice(-2);
+      var yyyy=yyyymmdd.slice(0,4);
+      var rawRes=await fetchWithFallback(API_BASE+'/results/v2/'+yyyy+'/'+yyyymmdd+'.json');
+      var resData=indexResults(rawRes);
+      if(resData) updateDBFromResults(resData,null);
+      await sleep(1500);
+    }catch(e){
+      continue;
+    }
   }
-  msg.textContent='DB構築完了 (選手'+Object.keys(racerDB).length+'人)';
+  console.log('DB構築完了: 選手'+Object.keys(racerDB).length+'人');
 }
 
 // ===============================================
@@ -1240,29 +1243,29 @@ async function loadAllData(){
   var topLoading=document.getElementById('topLoading');
   if(topLoading) topLoading.style.display='block';
 
-  await buildInitialDB();
-  prog.style.width='40%';
-  msg.textContent='出走表を取得中...';
+  try{
+  if(msg) msg.textContent='出走表を取得中...';
+  if(prog) prog.style.width='20%';
 
   // キャッシュバスター付きでAPIから直接取得
   var ts='?t='+Date.now();
   var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
   programData=indexByStadiumRace(rawPrograms,'programs');
-  prog.style.width='55%';
+  if(prog) prog.style.width='45%';
   await sleep(300);
 
-  msg.textContent='直前情報を取得中...';
+  if(msg) msg.textContent='直前情報を取得中...';
   var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
   previewData=indexPreviews(rawPreviews);
-  prog.style.width='70%';
+  if(prog) prog.style.width='65%';
   await sleep(300);
 
-  msg.textContent='結果を取得中...';
+  if(msg) msg.textContent='結果を取得中...';
   var rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
   resultData=indexResults(rawResults);
-  prog.style.width='80%';
+  if(prog) prog.style.width='80%';
 
-  msg.textContent='公式展示データを取得中...';
+  if(msg) msg.textContent='公式展示データを取得中...';
   // 公式サイト経由の展示データ（GitHub Actionsが5分間隔で更新）
   try{
     var liveResp=await fetch('data/previews/today.json?t='+Date.now());
@@ -1316,7 +1319,7 @@ async function loadAllData(){
     }
   }catch(e){console.warn('公式展示データ取得失敗:',e)}
 
-  msg.textContent='オッズ・今節成績を取得中...';
+  if(msg) msg.textContent='オッズ・今節成績を取得中...';
   try{
     var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
     if(oddsResp.ok){
@@ -1336,16 +1339,20 @@ async function loadAllData(){
     var rdResp=await fetch('data/racedata/today.json?t='+Date.now());
     if(rdResp.ok) raceData=await rdResp.json();
   }catch(e){raceData=null}
-  prog.style.width='90%';
+  if(prog) prog.style.width='90%';
 
   if(resultData) updateDBFromResults(resultData,programData);
   learnFromResults();
   updateHistoryWithResults();
 
-  prog.style.width='100%';
-  msg.textContent='完了';
+  if(prog) prog.style.width='100%';
+  if(msg) msg.textContent='完了';
+  }catch(e){
+    console.error('loadAllData error:',e);
+    if(msg) msg.textContent='一部データの取得に失敗しました';
+  }
 
-  // 現在のページに応じて再描画
+  // ★ エラーが起きても必ず画面を表示
   var activePage=document.querySelector('.page.active');
   var activeId=activePage?activePage.id:'';
   if(activeId==='pageDetail'&&currentStadium&&currentRace){
@@ -1355,6 +1362,9 @@ async function loadAllData(){
   } else {
     renderStadiums();
   }
+
+  // ★ DB構築はバックグラウンドで（画面表示後に開始）
+  setTimeout(function(){buildInitialDB()},3000);
 }
 
 // ===============================================
@@ -2576,9 +2586,22 @@ function updateOddsUI(){
 document.getElementById('headerDate').innerHTML=formatDate();
 loadAllData();
 
-// 5min auto-refresh
-setInterval(function(){
-  loadAllData();
+// 5min auto-refresh（画面遷移しない、データのみ静かに更新）
+setInterval(async function(){
+  try{
+    var ts='?t='+Date.now();
+    var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
+    if(rawP) programData=indexByStadiumRace(rawP,'programs');
+    var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
+    if(rawPv) previewData=indexPreviews(rawPv);
+    var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
+    if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}
+    // 公式展示データも再取得
+    try{var liveResp=await fetch('data/previews/today.json?t='+Date.now());if(liveResp.ok){var liveData=await liveResp.json();if(liveData.races&&liveData.races.length>0&&previewData){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}})}}}catch(e){}
+    // オッズも再取得
+    try{var o=await fetch('data/odds/today.json?t='+Date.now());if(o.ok){var od=await o.json();if(od.updated_at){var oddsDate=od.updated_at.slice(0,10);var todayDate=new Date().toISOString().slice(0,10);if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}}}}catch(e){}
+  }catch(e){console.warn('Auto refresh error:',e)}
+  // ★ 画面遷移しない（現在の表示を維持）
 },300000);
 </script>
 </body>
