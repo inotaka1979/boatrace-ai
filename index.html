@@ -1272,6 +1272,10 @@ async function loadAllData(){
     var liveResp=await fetch('data/previews/today.json?t='+Date.now());
     if(liveResp.ok){
       var liveData=await liveResp.json();
+      // 日付チェック: 昨日以前のデータはスキップ
+      var liveDate=liveData.updated_at?liveData.updated_at.slice(0,10):'';
+      var todayDate=new Date().toISOString().slice(0,10);
+      if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+'), スキップ');liveData.races=[]}
       // 公式データでOpen APIのpreviewsを上書きマージ
       if(liveData.races&&liveData.races.length>0){
         liveData.races.forEach(function(lr){
@@ -2598,7 +2602,7 @@ setInterval(async function(){
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
     if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}
     // 公式展示データも再取得
-    try{var liveResp=await fetch('data/previews/today.json?t='+Date.now());if(liveResp.ok){var liveData=await liveResp.json();if(liveData.races&&liveData.races.length>0&&previewData){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}}})}}}catch(e){}
+    try{var liveResp=await fetch('data/previews/today.json?t='+Date.now());if(liveResp.ok){var liveData=await liveResp.json();var ld=liveData.updated_at?liveData.updated_at.slice(0,10):'';var td=new Date().toISOString().slice(0,10);if(ld&&ld!==td){liveData.races=[]}if(liveData.races&&liveData.races.length>0&&previewData){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}}})}}}catch(e){}
     // オッズも再取得
     try{var o=await fetch('data/odds/today.json?t='+Date.now());if(o.ok){var od=await o.json();if(od.updated_at){var oddsDate=od.updated_at.slice(0,10);var todayDate=new Date().toISOString().slice(0,10);if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}}}}catch(e){}
   }catch(e){console.warn('Auto refresh error:',e)}
