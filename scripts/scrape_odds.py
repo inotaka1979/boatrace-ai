@@ -50,7 +50,9 @@ def scrape_odds_page(url, bet_type):
                         if "-" in val and "." in val:
                             val = val.split("-")[0]
                         try:
-                            odds[boat] = float(val)
+                            v = float(val)
+                            if v > 0:
+                                odds[boat] = v
                         except ValueError:
                             pass
 
@@ -65,7 +67,9 @@ def scrape_odds_page(url, bet_type):
             for k, el in enumerate(points):
                 if k < len(combos):
                     try:
-                        odds[combos[k]] = float(el.get_text(strip=True))
+                        v = float(el.get_text(strip=True))
+                        if v > 0:
+                            odds[combos[k]] = v
                     except ValueError:
                         pass
 
@@ -82,7 +86,9 @@ def scrape_odds_page(url, bet_type):
             for k, el in enumerate(points):
                 if k < len(combos):
                     try:
-                        odds[combos[k]] = float(el.get_text(strip=True))
+                        v = float(el.get_text(strip=True))
+                        if v > 0:
+                            odds[combos[k]] = v
                     except ValueError:
                         pass
 

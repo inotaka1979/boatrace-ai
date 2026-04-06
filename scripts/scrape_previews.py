@@ -18,7 +18,7 @@ PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 BEFOREINFO_URL = "https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
 RESULTS_URL = "https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd:02d}&hd={date}"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-INTERVAL = 3  # リクエスト間隔（秒）
+INTERVAL = 1  # リクエスト間隔（秒）
 OUTPUT = "data/previews/today.json"
 
 
