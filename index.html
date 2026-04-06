@@ -1143,8 +1143,9 @@ function updateHistoryWithResults(){
 }
 
 function getAccuracy(){
+  var today=todayStr();
   var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
-  var verified=history.filter(function(h){return h.actual&&h.actual.length>0});
+  var verified=history.filter(function(h){return h.date===today&&h.actual&&h.actual.length>0});
   if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0};
   var th=0,eh=0,tp3=0,tp2=0;
   verified.forEach(function(h){
