@@ -1,7 +1,9 @@
 name: Scrape Odds
+# NOTE: cron schedule disabled — RPi5ローカルcronに移行済み (2026-04-06)
+# フォールバック用にworkflow_dispatchは残す
 on:
-  schedule:
-    - cron: '*/5 1-12 * * *'  # JST 10:00-21:00に5分間隔
+  # schedule:
+  #   - cron: '*/5 1-12 * * *'  # JST 10:00-21:00に5分間隔 (disabled)
   workflow_dispatch:
   repository_dispatch:
     types: [refresh-odds]

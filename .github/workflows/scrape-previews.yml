@@ -1,8 +1,10 @@
 name: Scrape Previews
+# NOTE: cron schedule disabled — RPi5ローカルcronに移行済み (2026-04-06)
+# フォールバック用にworkflow_dispatchは残す
 on:
-  schedule:
-    # JST 09:00-21:00 (UTC 00:00-12:00) に5分間隔
-    - cron: '*/5 0-12 * * *'
+  # schedule:
+  #   # JST 09:00-21:00 (UTC 00:00-12:00) に5分間隔 (disabled)
+  #   - cron: '*/5 0-12 * * *'
   workflow_dispatch:
   repository_dispatch:
     types: [refresh-previews]

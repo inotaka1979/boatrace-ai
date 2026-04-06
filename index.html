@@ -415,8 +415,9 @@ var oddsLastFetched=null;
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function cacheKey(url){var h=0;for(var i=0;i<url.length;i++){h=((h<<5)-h)+url.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
 function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function todayStr(){var d=new Date();return d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2)}
-function formatDate(){var d=new Date();return(d.getMonth()+1)+'/'+d.getDate()+' ('+['日','月','火','水','木','金','土'][d.getDay()]+')';}
+function getJSTDate(){return new Date(Date.now()+9*3600000)}
+function todayStr(){var d=getJSTDate();return d.getUTCFullYear()+('0'+(d.getUTCMonth()+1)).slice(-2)+('0'+d.getUTCDate()).slice(-2)}
+function formatDate(){var d=getJSTDate();return(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' ('+['日','月','火','水','木','金','土'][d.getUTCDay()]+')';}
 
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
 function boatBadgeLg(num){return'<span class="boat-badge boat-badge-lg" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
@@ -1273,9 +1274,10 @@ async function loadAllData(){
     if(liveResp.ok){
       var liveData=await liveResp.json();
       // 日付チェック: 昨日以前のデータはスキップ
-      var liveDate=liveData.updated_at?liveData.updated_at.slice(0,10):'';
+      // updated_atはUTCなのでJSTに変換して日付比較
+      var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
       var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-      if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+'), スキップ');liveData.races=[]}
+      if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');liveData.races=[]}
       // 公式データでOpen APIのpreviewsを上書きマージ
       if(liveData.races&&liveData.races.length>0){
         liveData.races.forEach(function(lr){
@@ -1312,7 +1314,7 @@ async function loadAllData(){
               });
               resultData[sid][rn]={
                 race_stadium_number:lr.stadium,race_number:lr.race,
-                race_technique_number:1,isFinished:true,
+                race_technique_number:lr.result.technique||null,isFinished:true,
                 results:places,
                 refund:lr.result.payouts||{}
               };
@@ -1330,7 +1332,7 @@ async function loadAllData(){
     if(oddsResp.ok){
       var od=await oddsResp.json();
       if(od.updated_at){
-        var oddsDate=od.updated_at.slice(0,10);
+        var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
         var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
         if(oddsDate===todayDate){
           oddsData=od;oddsLastFetched=Date.now();
@@ -2444,10 +2446,10 @@ async function refreshThisRace(){
       var liveResp=await fetch('data/previews/today.json?t='+Date.now());
       if(liveResp.ok){
         var liveData=await liveResp.json();
-        // 日付チェック: 昨日以前のデータはスキップ
-        var liveDate=liveData.updated_at?liveData.updated_at.slice(0,10):'';
+        // 日付チェック: 昨日以前のデータはスキップ（updated_atはUTCなのでJST変換）
+        var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
         var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+'), スキップ');liveData.races=[]}
+        if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');liveData.races=[]}
         if(liveData.races&&liveData.races.length>0){
           liveData.races.forEach(function(lr){
             var sid=String(lr.stadium);var rn=String(lr.race);
@@ -2467,7 +2469,7 @@ async function refreshThisRace(){
               var sid2=String(lr.stadium);var rn2=String(lr.race);
               if(!resultData[sid2]) resultData[sid2]={};
               if(!resultData[sid2][rn2]||!resultData[sid2][rn2].isFinished){
-                resultData[sid2][rn2]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:1,isFinished:true,
+                resultData[sid2][rn2]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:lr.result.technique||null,isFinished:true,
                   results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),
                   refund:lr.result.payouts||{}};
               }
@@ -2483,7 +2485,7 @@ async function refreshThisRace(){
       if(oddsResp.ok){
         var od=await oddsResp.json();
         if(od.updated_at){
-          var oddsDate=od.updated_at.slice(0,10);
+          var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
           var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
           if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}
         }
@@ -2606,9 +2608,9 @@ setInterval(async function(){
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
     if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}
     // 公式展示データも再取得
-    try{var liveResp=await fetch('data/previews/today.json?t='+Date.now());if(liveResp.ok){var liveData=await liveResp.json();var ld=liveData.updated_at?liveData.updated_at.slice(0,10):'';var td=new Date().toISOString().slice(0,10);if(ld&&ld!==td){liveData.races=[]}if(liveData.races&&liveData.races.length>0&&previewData){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}}})}}}catch(e){}
+    try{var liveResp=await fetch('data/previews/today.json?t='+Date.now());if(liveResp.ok){var liveData=await liveResp.json();var ld=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';var td=new Date(Date.now()+9*3600000).toISOString().slice(0,10);if(ld&&ld!==td){liveData.races=[]}if(liveData.races&&liveData.races.length>0){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}}if(lr.finished&&lr.result&&lr.result.places&&resultData){if(!resultData[sid])resultData[sid]={};if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){resultData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:lr.result.technique||null,isFinished:true,results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),refund:lr.result.payouts||{}}}}})}}}catch(e){}
     // オッズも再取得
-    try{var o=await fetch('data/odds/today.json?t='+Date.now());if(o.ok){var od=await o.json();if(od.updated_at){var oddsDate=od.updated_at.slice(0,10);var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}}}}catch(e){}
+    try{var o=await fetch('data/odds/today.json?t='+Date.now());if(o.ok){var od=await o.json();if(od.updated_at){var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}}}}catch(e){}
   }catch(e){console.warn('Auto refresh error:',e)}
   // ★ 画面遷移しない（現在の表示を維持）
 },300000);

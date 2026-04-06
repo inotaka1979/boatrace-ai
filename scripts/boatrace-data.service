@@ -1,0 +1,14 @@
+[Unit]
+Description=BoatRace Data HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/boatrace-ai
+ExecStart=/usr/bin/python3 /home/pi/boatrace-ai/scripts/serve_data.py --port 8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
