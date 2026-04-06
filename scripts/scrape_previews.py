@@ -142,6 +142,10 @@ def select_target_races(closing_map, existing_data, now=None):
                 priority = -minutes_to_close  # 締切直後が最優先
             targets.append((sid, rno, action, priority))
 
+        # 締切15分以上経過だが未確定: キャッチアップ（取りこぼし防止）
+        elif minutes_to_close < -WINDOW_AFTER_CLOSE:
+            targets.append((sid, rno, RaceAction.FETCH_RESULT, 200 + (-minutes_to_close)))
+
         # 締切35分以上前で展示データなし → 低優先で取得試行 (早期レース)
         elif minutes_to_close > WINDOW_BEFORE_CLOSE and minutes_to_close <= 60:
             if not has_exhibition:
