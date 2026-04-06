@@ -252,13 +252,18 @@ def main():
         date_str = datetime.datetime.now().strftime("%Y%m%d")
 
     # 既存データを読み込み（差分更新のため）
+    # 日付が変わっていたら既存データを破棄（前日のfinishedが残る問題を防止）
     existing = {}
     if os.path.exists(OUTPUT):
         try:
             with open(OUTPUT, "r") as f:
                 old = json.load(f)
-                for r in old.get("races", []):
-                    existing[(r["stadium"], r["race"])] = r
+                old_date = old.get("updated_at", "")[:10].replace("-", "")
+                if old_date == date_str:
+                    for r in old.get("races", []):
+                        existing[(r["stadium"], r["race"])] = r
+                else:
+                    print(f"Date changed ({old_date} -> {date_str}), discarding old data")
         except Exception:
             pass
 
