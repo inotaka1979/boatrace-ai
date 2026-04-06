@@ -293,14 +293,15 @@ def main():
             boats = scrape_beforeinfo(sid, rn, date_str)
             time.sleep(INTERVAL)
 
+            race_data = {
+                "stadium": sid,
+                "race": rn,
+                "boats": {},
+                "finished": False,
+                "result": None,
+            }
+
             if boats:
-                race_data = {
-                    "stadium": sid,
-                    "race": rn,
-                    "boats": {},
-                    "finished": False,
-                    "result": None,
-                }
                 for bn, data in boats.items():
                     race_data["boats"][str(bn)] = {
                         "racer_exhibition_time": data["exhibition_time"],
@@ -309,24 +310,19 @@ def main():
                         "racer_course_number": data["course"],
                     }
 
-                # 結果も取得（締切済みレースのみ）
-                result = scrape_result(sid, rn, date_str)
-                if result and result["places"]:
-                    race_data["finished"] = True
-                    race_data["result"] = result
-                    print(f" 確定({result['places'][0]['boat']}号艇1着)")
-                else:
-                    print(f" 展示OK")
-                time.sleep(INTERVAL)
-
-                all_races.append(race_data)
+            # 結果を取得（展示データの有無に関わらず）
+            result = scrape_result(sid, rn, date_str)
+            if result and result["places"]:
+                race_data["finished"] = True
+                race_data["result"] = result
+                print(f" 確定({result['places'][0]['boat']}号艇1着)")
+            elif boats:
+                print(f" 展示OK")
             else:
-                # 展示未実施 → 既存データがあればそれを使用
-                if key in existing:
-                    all_races.append(existing[key])
-                    print(f" 既存データ流用")
-                else:
-                    print(f" データなし")
+                print(f" 展示なし")
+            time.sleep(INTERVAL)
+
+            all_races.append(race_data)
 
     # 出力
     output = {

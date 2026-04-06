@@ -5,9 +5,13 @@ on:
   workflow_dispatch:
   repository_dispatch:
     types: [refresh-odds]
+concurrency:
+  group: scrape-odds
+  cancel-in-progress: true
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
