@@ -258,12 +258,12 @@ def main():
         try:
             with open(OUTPUT, "r") as f:
                 old = json.load(f)
-                old_date = old.get("updated_at", "")[:10].replace("-", "")
-                if old_date == date_str:
+                old_race_date = old.get("race_date", old.get("updated_at", "")[:10].replace("-", ""))
+                if old_race_date == date_str:
                     for r in old.get("races", []):
                         existing[(r["stadium"], r["race"])] = r
                 else:
-                    print(f"Date changed ({old_date} -> {date_str}), discarding old data")
+                    print(f"Date changed ({old_race_date} -> {date_str}), discarding old data")
         except Exception:
             pass
 
@@ -331,6 +331,7 @@ def main():
     # 出力
     output = {
         "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "race_date": date_str,
         "races": all_races,
     }
     with open(OUTPUT, "w", encoding="utf-8") as f:
