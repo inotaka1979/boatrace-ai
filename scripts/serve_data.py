@@ -20,6 +20,7 @@ import json
 import argparse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from functools import partial
+from urllib.parse import urlparse, parse_qs
 
 
 class CORSDataHandler(SimpleHTTPRequestHandler):
@@ -41,6 +42,69 @@ class CORSDataHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == '/api/race':
+            params = parse_qs(parsed.query)
+            try:
+                stadium = int(params.get('stadium', [0])[0])
+                race = int(params.get('race', [0])[0])
+            except (ValueError, IndexError):
+                self.send_response(400)
+                self.end_headers()
+                return
+            self._serve_race(stadium, race)
+        else:
+            super().do_GET()
+
+    def _serve_race(self, stadium, race):
+        """特定の場・レースのデータのみを返すエンドポイント"""
+        result = {'stadium': stadium, 'race': race}
+
+        # 直前情報
+        previews_path = os.path.join(self.data_dir, 'previews', 'today.json')
+        if os.path.exists(previews_path):
+            try:
+                with open(previews_path, encoding='utf-8') as f:
+                    data = json.load(f)
+                result['previews_updated_at'] = data.get('updated_at')
+                for r in data.get('races', []):
+                    if r.get('stadium') == stadium and r.get('race') == race:
+                        result['preview'] = r
+                        break
+            except Exception:
+                pass
+
+        # オッズ
+        odds_path = os.path.join(self.data_dir, 'odds', 'today.json')
+        if os.path.exists(odds_path):
+            try:
+                with open(odds_path, encoding='utf-8') as f:
+                    data = json.load(f)
+                result['odds_updated_at'] = data.get('updated_at')
+                for o in data.get('odds', []):
+                    if o.get('stadium') == stadium and o.get('race') == race:
+                        result['odds'] = o
+                        break
+            except Exception:
+                pass
+
+        # 今節成績データ（全体を返す — ファイルが小さいため）
+        racedata_path = os.path.join(self.data_dir, 'racedata', 'today.json')
+        if os.path.exists(racedata_path):
+            try:
+                with open(racedata_path, encoding='utf-8') as f:
+                    result['racedata'] = json.load(f)
+            except Exception:
+                pass
+
+        body = json.dumps(result, ensure_ascii=False).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format, *args):
         # アクセスログを簡潔に

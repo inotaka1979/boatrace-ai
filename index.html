@@ -335,6 +335,18 @@ button.action-btn:active{background:#F0F0F0}
     </div>
   </div>
   <div class="card">
+    <div style="padding:12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">RPi データサーバー URL</div>
+    <div style="padding:12px">
+      <input type="text" class="pat-input" id="rpiUrlInput" placeholder="http://192.168.1.x:8080">
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="action-btn" onclick="saveRpiUrl()">保存</button>
+        <button class="action-btn" onclick="testRpiUrl()">テスト</button>
+      </div>
+      <div class="pat-status" id="rpiUrlStatus"></div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:6px">RPiで serve_data.py を起動中の場合、レース更新を高速化できます</div>
+    </div>
+  </div>
+  <div class="card">
     <div style="padding:12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">GitHub PAT (オッズ更新用)</div>
     <div style="padding:12px">
       <input type="password" class="pat-input" id="patInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
@@ -379,6 +391,7 @@ var TECHNIQUE={1:"逃げ",2:"差し",3:"まくり",4:"まくり差し",5:"抜き
 var WIND_DIR={1:"N",2:"NNE",3:"NE",4:"ENE",5:"E",6:"ESE",7:"SE",8:"SSE",9:"S",10:"SSW",11:"SW",12:"WSW",13:"W",14:"WNW",15:"NW",16:"NNW",17:"無風"};
 var GRADE_CLASS={1:{name:"SG",cls:"grade-sg"},2:{name:"G1",cls:"grade-g1"},3:{name:"G2",cls:"grade-g2"},4:{name:"G3",cls:"grade-g3"},5:{name:"一般",cls:"grade-general"}};
 var API_BASE='https://boatraceopenapi.github.io';
+var LOCAL_RPI_URL=localStorage.getItem('boatrace_rpi_url')||'';
 
 var COURSE_MULTIPLIER=35;
 var ET_COURSE_DECAY={1:1.0,2:1.0,3:0.9,4:0.8,5:0.6,6:0.5};
@@ -1256,6 +1269,45 @@ function learnFromResults(){
 }
 
 // ===============================================
+// LIVE DATA MERGE HELPER
+// ===============================================
+function _applyLiveDataMerge(liveData){
+  if(!liveData||!liveData.races||!liveData.races.length) return 0;
+  var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
+  var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');return 0;}
+  liveData.races.forEach(function(lr){
+    var sid=String(lr.stadium);var rn=String(lr.race);
+    if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
+      var pv=previewData[sid][rn];
+      for(var bn in lr.boats){
+        var lb=lr.boats[bn];
+        if(!pv.boats) pv.boats={};
+        if(!pv.boats[bn]) pv.boats[bn]={racer_boat_number:parseInt(bn)};
+        if(lb.racer_exhibition_time>0) pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;
+        if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined) pv.boats[bn].racer_start_timing=lb.racer_start_timing;
+        if(lb.racer_tilt_adjustment!==null&&lb.racer_tilt_adjustment!==undefined) pv.boats[bn].racer_tilt_adjustment=lb.racer_tilt_adjustment;
+        if(lb.racer_course_number) pv.boats[bn].racer_course_number=lb.racer_course_number;
+      }
+    } else if(lr.boats&&previewData){
+      if(!previewData[sid]) previewData[sid]={};
+      previewData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,boats:lr.boats,
+        weather:{wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0}};
+    }
+    if(lr.finished&&lr.result&&lr.result.places&&resultData){
+      if(!resultData[sid]) resultData[sid]={};
+      if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){
+        resultData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,
+          race_technique_number:lr.result.technique||null,isFinished:true,
+          results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),
+          refund:lr.result.payouts||{}};
+      }
+    }
+  });
+  return liveData.races.length;
+}
+
+// ===============================================
 // DATA LOADING (PRESERVED)
 // ===============================================
 async function loadAllData(){
@@ -1292,56 +1344,8 @@ async function loadAllData(){
     var liveResp=await fetch('data/previews/today.json?t='+Date.now());
     if(liveResp.ok){
       var liveData=await liveResp.json();
-      // 日付チェック: 昨日以前のデータはスキップ
-      // updated_atはUTCなのでJSTに変換して日付比較
-      var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
-      var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-      if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');liveData.races=[]}
-      // 公式データでOpen APIのpreviewsを上書きマージ
-      if(liveData.races&&liveData.races.length>0){
-        liveData.races.forEach(function(lr){
-          var sid=String(lr.stadium);
-          var rn=String(lr.race);
-          // 展示データのマージ
-          if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
-            var pv=previewData[sid][rn];
-            for(var bn in lr.boats){
-              var lb=lr.boats[bn];
-              if(!pv.boats) pv.boats={};
-              if(!pv.boats[bn]) pv.boats[bn]={racer_boat_number:parseInt(bn)};
-              // 公式データが有効なら上書き
-              if(lb.racer_exhibition_time>0) pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;
-              if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined) pv.boats[bn].racer_start_timing=lb.racer_start_timing;
-              if(lb.racer_tilt_adjustment!==null&&lb.racer_tilt_adjustment!==undefined) pv.boats[bn].racer_tilt_adjustment=lb.racer_tilt_adjustment;
-              if(lb.racer_course_number) pv.boats[bn].racer_course_number=lb.racer_course_number;
-            }
-          } else if(lr.boats&&previewData){
-            // Open APIにまだないレースのデータを追加
-            if(!previewData[sid]) previewData[sid]={};
-            previewData[sid][rn]={
-              race_stadium_number:lr.stadium,race_number:lr.race,
-              boats:lr.boats,
-              weather:{wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0}
-            };
-          }
-          // 結果データのマージ
-          if(lr.finished&&lr.result&&lr.result.places&&resultData){
-            if(!resultData[sid]) resultData[sid]={};
-            if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){
-              var places=lr.result.places.map(function(p){
-                return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place};
-              });
-              resultData[sid][rn]={
-                race_stadium_number:lr.stadium,race_number:lr.race,
-                race_technique_number:lr.result.technique||null,isFinished:true,
-                results:places,
-                refund:lr.result.payouts||{}
-              };
-            }
-          }
-        });
-        console.log('公式展示データ反映: '+liveData.races.length+'R');
-      }
+      var merged=_applyLiveDataMerge(liveData);
+      if(merged>0) console.log('公式展示データ反映: '+merged+'R');
     }
   }catch(e){console.warn('公式展示データ取得失敗:',e)}
 
@@ -2386,6 +2390,10 @@ function loadSettings(){
   document.getElementById('setBetCount2').value=settings.betCount2||5;
   document.getElementById('setBetMethod').value=settings.betMethod||'auto';
 
+  var rpiUrl=localStorage.getItem('boatrace_rpi_url')||'';
+  document.getElementById('rpiUrlInput').value=rpiUrl;
+  document.getElementById('rpiUrlStatus').innerHTML=rpiUrl?'<span class="pat-ok">URL設定済み</span>':'<span class="pat-ng">未設定</span>';
+
   var pat=localStorage.getItem('boatrace_github_pat');
   var patInput=document.getElementById('patInput');
   if(pat) patInput.value=pat;
@@ -2408,6 +2416,32 @@ function clearCache(){var keys=[];for(var i=0;i<localStorage.length;i++){var k=l
 function clearHistory(){if(confirm('成績履歴を全て削除しますか?')){localStorage.removeItem('boatrace_history');alert('履歴を削除しました')}}
 function rebuildDB(){if(confirm('選手/場DBを再構築しますか?')){localStorage.removeItem('boatrace_racerDB');localStorage.removeItem('boatrace_stadiumDB');location.reload()}}
 function resetWeights(){if(confirm('学習重みをリセットしますか?')){localStorage.removeItem('boatrace_weights');l2weights=L2_INIT_WEIGHTS.slice();alert('重みをリセットしました')}}
+
+// ===============================================
+// RPi URL Management
+// ===============================================
+function saveRpiUrl(){
+  var val=document.getElementById('rpiUrlInput').value.trim().replace(/\/$/,'');
+  if(!val){
+    localStorage.removeItem('boatrace_rpi_url');
+    LOCAL_RPI_URL='';
+    document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ng">URL削除済み</span>';
+    return;
+  }
+  LOCAL_RPI_URL=val;
+  localStorage.setItem('boatrace_rpi_url',val);
+  document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ok">URL保存済み</span>';
+}
+
+function testRpiUrl(){
+  var url=document.getElementById('rpiUrlInput').value.trim().replace(/\/$/,'');
+  if(!url){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ng">URLを入力してください</span>';return;}
+  document.getElementById('rpiUrlStatus').textContent='テスト中...';
+  fetch(url+'/api/race?stadium=1&race=1')
+    .then(function(r){return r.ok?r.json():Promise.reject('HTTP '+r.status)})
+    .then(function(){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ok">接続OK</span>';})
+    .catch(function(e){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ng">エラー: '+escText(String(e))+'</span>';});
+}
 
 // ===============================================
 // GitHub PAT Management (PRESERVED)
@@ -2460,56 +2494,41 @@ async function refreshThisRace(){
     if(rawPv) previewData=indexPreviews(rawPv);
     if(rawRs) resultData=indexResults(rawRs);
 
-    // 公式展示データもマージ
-    try{
-      var liveResp=await fetch('data/previews/today.json?t='+Date.now());
-      if(liveResp.ok){
-        var liveData=await liveResp.json();
-        // 日付チェック: 昨日以前のデータはスキップ（updated_atはUTCなのでJST変換）
-        var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
-        var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');liveData.races=[]}
-        if(liveData.races&&liveData.races.length>0){
-          liveData.races.forEach(function(lr){
-            var sid=String(lr.stadium);var rn=String(lr.race);
-            if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
-              var pv=previewData[sid][rn];
-              for(var bn in lr.boats){
-                var lb=lr.boats[bn];
-                if(!pv.boats) pv.boats={};
-                if(!pv.boats[bn]) pv.boats[bn]={racer_boat_number:parseInt(bn)};
-                if(lb.racer_exhibition_time>0) pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;
-                if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined) pv.boats[bn].racer_start_timing=lb.racer_start_timing;
-                if(lb.racer_tilt_adjustment!==null&&lb.racer_tilt_adjustment!==undefined) pv.boats[bn].racer_tilt_adjustment=lb.racer_tilt_adjustment;
-                if(lb.racer_course_number) pv.boats[bn].racer_course_number=lb.racer_course_number;
-              }
-            }
-            if(lr.finished&&lr.result&&lr.result.places&&resultData){
-              var sid2=String(lr.stadium);var rn2=String(lr.race);
-              if(!resultData[sid2]) resultData[sid2]={};
-              if(!resultData[sid2][rn2]||!resultData[sid2][rn2].isFinished){
-                resultData[sid2][rn2]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:lr.result.technique||null,isFinished:true,
-                  results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),
-                  refund:lr.result.payouts||{}};
-              }
-            }
-          });
+    // ローカルデータの更新（RPi URL設定時は race-specific API、未設定時は全体ファイル）
+    if(LOCAL_RPI_URL){
+      // RPi serve_data.py の /api/race エンドポイントで必要な1レース分のみ取得
+      try{
+        var rpiResp=await fetch(LOCAL_RPI_URL+'/api/race?stadium='+currentStadium+'&race='+currentRace+'&t='+Date.now());
+        if(rpiResp.ok){
+          var rpiData=await rpiResp.json();
+          if(rpiData.preview) _applyLiveDataMerge({updated_at:rpiData.previews_updated_at,races:[rpiData.preview]});
+          if(rpiData.odds){
+            if(!oddsData) oddsData={odds:[],updated_at:rpiData.odds_updated_at};
+            var idx=oddsData.odds.findIndex(function(o){return o.stadium===parseInt(currentStadium)&&o.race===parseInt(currentRace)});
+            if(idx>=0) oddsData.odds[idx]=rpiData.odds; else oddsData.odds.push(rpiData.odds);
+            oddsLastFetched=Date.now();
+          }
+          if(rpiData.racedata) raceData=rpiData.racedata;
         }
-      }
-    }catch(e){}
-
-    // オッズも再取得
-    try{
-      var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
-      if(oddsResp.ok){
-        var od=await oddsResp.json();
-        if(od.updated_at){
-          var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
-          var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-          if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}
+      }catch(e){console.warn('RPi API取得失敗:',e);}
+    } else {
+      // フォールバック: 全体ファイルを取得してマージ
+      try{
+        var liveResp=await fetch('data/previews/today.json?t='+Date.now());
+        if(liveResp.ok){var liveData=await liveResp.json();_applyLiveDataMerge(liveData);}
+      }catch(e){}
+      try{
+        var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
+        if(oddsResp.ok){
+          var od=await oddsResp.json();
+          if(od.updated_at){
+            var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
+            var todayDate2=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+            if(oddsDate===todayDate2){oddsData=od;oddsLastFetched=Date.now();}
+          }
         }
-      }
-    }catch(e){}
+      }catch(e){}
+    }
 
     if(resultData) updateDBFromResults(resultData,programData);
     updateHistoryWithResults();
