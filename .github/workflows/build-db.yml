@@ -1,0 +1,25 @@
+name: Build DB from Official Data
+on:
+  schedule:
+    # 毎日 JST 07:00 = UTC 22:00（前日の結果が確定した後）
+    - cron: '0 22 * * *'
+  workflow_dispatch:  # 手動実行可
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - run: python scripts/build_db.py
+      - run: |
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "db: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push

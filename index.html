@@ -1349,6 +1349,62 @@ async function loadAllData(){
     }
   }catch(e){console.warn('公式展示データ取得失敗:',e)}
 
+  // ★ 公式データDB読み込み（GitHub Actionsが構築済み）
+  if(msg) msg.textContent='選手DB読み込み中...';
+  try{
+    var dbResp=await fetch('data/db/racerDB.json?t='+Date.now());
+    if(dbResp.ok){
+      var dbData=await dbResp.json();
+      if(dbData.racers){
+        for(var rn in dbData.racers){
+          var r=dbData.racers[rn];
+          if(!racerDB[rn]) racerDB[rn]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
+          racerDB[rn].name=r.name;
+          racerDB[rn].classNum=r.classNum;
+          if(r.courseStats){
+            if(!racerDB[rn].courseStats) racerDB[rn].courseStats={};
+            for(var c in r.courseStats){
+              var cs=r.courseStats[c];
+              racerDB[rn].courseStats[c]={
+                races:cs.entries||0,
+                win:cs.wins||0,
+                top2:Math.round((cs.entries||0)*(cs.top2Rate||0)/100),
+                top3:Math.round((cs.entries||0)*(cs.top2Rate||0)/100*1.3),
+                avgST:cs.avgST||0
+              };
+            }
+          }
+          if(r.recentResults&&r.recentResults.length>0){
+            racerDB[rn].recentResults=r.recentResults;
+          }
+          racerDB[rn].lastUpdated=dbData.updated_at?dbData.updated_at.slice(0,10).replace(/-/g,''):'';
+        }
+        try{localStorage.setItem('boatrace_racerDB',JSON.stringify(racerDB))}catch(e){}
+        console.log('公式DB読み込み完了: '+Object.keys(dbData.racers).length+'選手');
+      }
+    }
+  }catch(e){console.log('公式DB読み込みスキップ:',e.message)}
+
+  // 場別統計DB読み込み
+  try{
+    var sdbResp=await fetch('data/db/stadiumDB.json?t='+Date.now());
+    if(sdbResp.ok){
+      var sdbData=await sdbResp.json();
+      if(sdbData.stadiums){
+        for(var sid in sdbData.stadiums){
+          var s=sdbData.stadiums[sid];
+          if(!stadiumDB[sid]) stadiumDB[sid]={courseWinRate:{},techniqueRate:{},courseTechnique:{}};
+          if(s.courseWinRate){
+            for(var c in s.courseWinRate){
+              stadiumDB[sid].courseWinRate[c]={races:s.totalRaces||100,win:Math.round((s.totalRaces||100)*s.courseWinRate[c])};
+            }
+          }
+        }
+        try{localStorage.setItem('boatrace_stadiumDB',JSON.stringify(stadiumDB))}catch(e){}
+      }
+    }
+  }catch(e){}
+
   if(msg) msg.textContent='オッズ・今節成績を取得中...';
   try{
     var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
@@ -1393,8 +1449,10 @@ async function loadAllData(){
     renderStadiums();
   }
 
-  // ★ DB構築はバックグラウンドで（画面表示後に開始）
-  setTimeout(function(){buildInitialDB()},3000);
+  // ★ 公式DBがない場合のみ旧方式でバックグラウンドDB構築
+  if(Object.keys(racerDB).length<50){
+    setTimeout(function(){buildInitialDB()},5000);
+  }
 }
 
 // ===============================================
