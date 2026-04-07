@@ -1,0 +1,27 @@
+# 実行結果
+
+日時: 2026-04-07 15:01:56
+
+完了しました。実施内容をまとめます：
+
+---
+
+## 実施内容
+
+### P0 — `scripts/serve_data.py`
+- **`/api/race?stadium=X&race=Y` エンドポイント追加**
+  - `previews/today.json`・`odds/today.json`・`racedata/today.json` から指定レースのデータのみ抽出して返す
+  - 全体ファイルを送らず1レース分のみ配信するため帯域節約
+
+### P1 — `index.html`
+
+| 変更内容 | 効果 |
+|---|---|
+| `_applyLiveDataMerge()` ヘルパー抽出 | `loadAllData()` と `refreshThisRace()` の ~50行の重複を解消 |
+| `LOCAL_RPI_URL` 変数追加 | localStorage から RPi URL を読込 |
+| 設定ページに「RPiデータサーバーURL」カード追加 | `保存` / `テスト` ボタン付き |
+| `saveRpiUrl()` / `testRpiUrl()` 関数追加 | URL の保存・疎通確認 |
+| `refreshThisRace()` を RPi API 対応に更新 | URL設定時は `/api/race` で1レース分のみ取得、未設定時は従来動作にフォールバック |
+
+### GitHub
+- ローカルの未push コミット3件 + 今回の改善 1件、計4コミットを push 済み (`14c29c7..d8885e4`)
