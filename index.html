@@ -427,7 +427,7 @@ var oddsLastFetched=null;
 // ===============================================
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
-async function forceRefresh(){if('caches' in window){var keys=await caches.keys();await Promise.all(keys.map(function(k){return caches.delete(k)}));console.log('All caches cleared')}if('serviceWorker' in navigator){var regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(function(r){return r.unregister()}));console.log('SW unregistered')}setTimeout(function(){location.reload(true)},500)}
+async function forceRefresh(){if('caches' in window){var keys=await caches.keys();for(var i=0;i<keys.length;i++){if(keys[i].indexOf('api')!==-1){await caches.delete(keys[i])}}}try{var t=Date.now();var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);if(rawP)programData=indexByStadiumRace(rawP,'programs');var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);if(rawPv)previewData=indexPreviews(rawPv);var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}try{var o=await fetch('data/odds/today.json?t='+t);if(o.ok)oddsData=await o.json()}catch(e){}}catch(e){console.warn('Refresh error:',e)}var currentPage=document.querySelector('.page.active');if(currentPage){var pid=currentPage.id;if(pid==='pageTop')renderStadiums();else if(pid==='pageRaces'&&currentStadium)openStadium(currentStadium);else if(pid==='pageDetail'&&currentStadium&&currentRace)openRace(currentStadium,currentRace)}}
 function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function getJSTDate(){return new Date(Date.now()+9*3600000)}
 function todayStr(){var d=getJSTDate();return d.getUTCFullYear()+('0'+(d.getUTCMonth()+1)).slice(-2)+('0'+d.getUTCDate()).slice(-2)}
@@ -2888,11 +2888,12 @@ function updateOddsUI(){
 // ===============================================
 // INITIALIZATION
 // ===============================================
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').then(function(reg){console.log('SW registered');reg.update();setInterval(function(){reg.update()},1800000)}).catch(function(e){console.warn('SW registration failed:',e)});navigator.serviceWorker.addEventListener('controllerchange',function(){console.log('New SW activated')})}
 document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
 loadAllData();
 
-// 5min auto-refresh（画面遷移しない、データのみ静かに更新）
+// 5min auto-refresh
 setInterval(async function(){
   try{
     var t=Date.now();
@@ -2902,10 +2903,7 @@ setInterval(async function(){
     if(rawPv) previewData=indexPreviews(rawPv);
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}
-    // 公式展示データも再取得
-    try{var liveResp=await fetch('data/previews/today.json?_='+t);if(liveResp.ok){var liveData=await liveResp.json();var ld=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';var td=new Date(Date.now()+9*3600000).toISOString().slice(0,10);if(ld&&ld!==td){liveData.races=[]}if(liveData.races&&liveData.races.length>0){liveData.races.forEach(function(lr){var sid=String(lr.stadium);var rn=String(lr.race);if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){var pv=previewData[sid][rn];for(var bn in lr.boats){var lb=lr.boats[bn];if(!pv.boats)pv.boats={};if(!pv.boats[bn])pv.boats[bn]={racer_boat_number:parseInt(bn)};if(lb.racer_exhibition_time>0)pv.boats[bn].racer_exhibition_time=lb.racer_exhibition_time;if(lb.racer_start_timing!==null&&lb.racer_start_timing!==undefined)pv.boats[bn].racer_start_timing=lb.racer_start_timing}}if(lr.finished&&lr.result&&lr.result.places&&resultData){if(!resultData[sid])resultData[sid]={};if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){resultData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,race_technique_number:lr.result.technique||null,isFinished:true,results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),refund:lr.result.payouts||{}}}}})}}}catch(e){}
-    // オッズも再取得
-    try{var o=await fetch('data/odds/today.json?_='+t);if(o.ok){var od=await o.json();if(od.updated_at){var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now()}}}}catch(e){}
+    try{var o=await fetch('data/odds/today.json?t='+t);if(o.ok)oddsData=await o.json()}catch(e){}
   }catch(e){console.warn('Auto refresh error:',e)}
 },300000);
 </script>
