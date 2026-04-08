@@ -1419,27 +1419,42 @@ async function loadAllData(){
   if(prog) prog.style.width='45%';
   await sleep(300);
 
+  // ★ 直前情報: まず自前スクレイピング結果を試す → Open APIフォールバック
   if(msg) msg.textContent='直前情報を取得中...';
-  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
+  if(prog) prog.style.width='40%';
+  var rawPreviews=null;
+  try{
+    var pvResp=await fetch('data/previews/today.json?t='+Date.now());
+    if(pvResp.ok){
+      var pvData=await pvResp.json();
+      if(pvData.previews&&pvData.previews.length>0){
+        var pvDate=pvData.previews[0].race_date;
+        var todayPv=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        if(pvDate===todayPv){rawPreviews=pvData;console.log('Using scraped previews:',pvData.previews.length,'races')}
+      }
+    }
+  }catch(e){}
+  if(!rawPreviews){rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts)}
   previewData=indexPreviews(rawPreviews);
-  if(prog) prog.style.width='65%';
-  await sleep(300);
+  if(prog) prog.style.width='60%';
 
+  // ★ 結果: まず自前スクレイピング結果を試す → Open APIフォールバック
   if(msg) msg.textContent='結果を取得中...';
-  var rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
+  var rawResults=null;
+  try{
+    var resResp=await fetch('data/results/today.json?t='+Date.now());
+    if(resResp.ok){
+      var resData=await resResp.json();
+      if(resData.results&&resData.results.length>0){
+        var resDate=resData.results[0].race_date;
+        var todayRes=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        if(resDate===todayRes){rawResults=resData;console.log('Using scraped results:',resData.results.length,'races')}
+      }
+    }
+  }catch(e){}
+  if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
   resultData=indexResults(rawResults);
   if(prog) prog.style.width='80%';
-
-  if(msg) msg.textContent='公式展示データを取得中...';
-  // 公式サイト経由の展示データ（GitHub Actionsが5分間隔で更新）
-  try{
-    var liveResp=await fetch('data/previews/today.json?t='+Date.now());
-    if(liveResp.ok){
-      var liveData=await liveResp.json();
-      var merged=_applyLiveDataMerge(liveData);
-      if(merged>0) console.log('公式展示データ反映: '+merged+'R');
-    }
-  }catch(e){console.warn('公式展示データ取得失敗:',e)}
 
   // ★ 公式データDB読み込み（GitHub Actionsが構築済み）
   if(msg) msg.textContent='選手DB読み込み中...';
