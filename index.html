@@ -1043,6 +1043,97 @@ function predictRace(sid,raceNum){
 }
 
 // ===============================================
+// 番組予想（展示・風なし、出走表データのみ）
+// ===============================================
+function predictRaceProgram(sid,raceNum){
+  if(!programData) return null;
+  var stadiumProg=programData[String(sid)];
+  if(!stadiumProg) return null;
+  var race=stadiumProg[String(raceNum)];
+  if(!race||!race.boats) return null;
+  var boats=race.boats;
+  if(!Array.isArray(boats)) return null;
+
+  // preview=null, weather=null で scoreBoatV2 を呼ぶ → E(展示)とF(風)がスキップ
+  var l1scores=[];
+  boats.forEach(function(b){
+    var s=scoreBoatV2(b,null,null,boats,null,sid);
+    l1scores.push(s);
+  });
+
+  var l1total=l1scores.reduce(function(a,s){return a+Math.exp(s.score/15)},0);
+  var l1probs=l1scores.map(function(s){return Math.exp(s.score/15)/l1total});
+
+  // Layer2（展示なしの特徴量）
+  var features6=boats.map(function(b){
+    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
+    return getL2Features(b,null,null,l1s?l1s.etRank:5,5,sid);
+  });
+  var l2probs=l2Predict(features6);
+
+  // 融合（番組予想ではL1比率を高めに。展示情報がないのでルールベース重視）
+  var dbSize=Object.keys(racerDB).length;
+  var alpha=dbSize>200?0.50:0.70;
+  var beta=1-alpha;
+
+  var finalProbs=boats.map(function(b,i){
+    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
+    var idx=boats.indexOf(b);
+    var fp=alpha*l1probs[idx]+beta*l2probs[idx];
+    return{
+      boat:b.racer_boat_number,prob:fp,score:l1s.score,course:l1s.course,
+      reasons:l1s.reasons,risks:l1s.risks,
+      motorLabel:l1s.motorLabel,motorEmoji:l1s.motorEmoji,motorRate:l1s.motorRate,classNum:l1s.classNum
+    };
+  });
+  finalProbs.sort(function(a,b){return b.prob-a.prob});
+  finalProbs.forEach(function(p,i){
+    p.mark=i===0?'◎':i===1?'○':i===2?'▲':i===3?'△':'×';
+  });
+
+  var topProb=finalProbs[0].prob;
+  var top2Prob=finalProbs[0].prob+finalProbs[1].prob;
+  var raceType,typeLabel;
+  if(topProb>0.40&&top2Prob>0.55){raceType='honmei';typeLabel='本命'}
+  else if(topProb<0.25){raceType='ana';typeLabel='穴'}
+  else{raceType='middle';typeLabel='混戦'}
+
+  return{marks:finalProbs,raceType:raceType,typeLabel:typeLabel,confidence:Math.round(topProb*100)};
+}
+
+// ===============================================
+// 番組予想 vs 直前予想の差分分析
+// ===============================================
+function comparePredictions(progPred,livePred){
+  if(!progPred||!livePred) return null;
+  var changes=[];
+  livePred.marks.forEach(function(live){
+    var prog=progPred.marks.find(function(p){return p.boat===live.boat});
+    if(!prog) return;
+    var progRank=progPred.marks.indexOf(prog)+1;
+    var liveRank=livePred.marks.indexOf(live)+1;
+    var rankDiff=progRank-liveRank;
+    var probDiff=live.prob-prog.prob;
+    // 変化の要因推定
+    var addedReasons=[],addedRisks=[];
+    if(live.reasons){live.reasons.forEach(function(r){if(!prog.reasons||prog.reasons.indexOf(r)<0) addedReasons.push(r)})}
+    if(live.risks){live.risks.forEach(function(r){if(!prog.risks||prog.risks.indexOf(r)<0) addedRisks.push(r)})}
+    changes.push({boat:live.boat,progRank:progRank,liveRank:liveRank,rankDiff:rankDiff,
+      progProb:prog.prob,liveProb:live.prob,probDiff:probDiff,progMark:prog.mark,liveMark:live.mark,
+      addedReasons:addedReasons,addedRisks:addedRisks});
+  });
+  changes.sort(function(a,b){return Math.abs(b.rankDiff)-Math.abs(a.rankDiff)});
+  return{
+    changes:changes,
+    biggestRiser:changes.find(function(c){return c.rankDiff>0}),
+    biggestFaller:changes.find(function(c){return c.rankDiff<0}),
+    typeChanged:progPred.raceType!==livePred.raceType,
+    progType:progPred.typeLabel,
+    liveType:livePred.typeLabel
+  };
+}
+
+// ===============================================
 // BET GENERATION V2 (PRESERVED)
 // ===============================================
 function generateBetsV2(marks,method,count3,count2){
@@ -1687,27 +1778,45 @@ function openStadium(sid){
   raceNums.forEach(function(rn){
     var race=stadium[rn];
     var pred=predictRace(sid,parseInt(rn));
+    var progPred=predictRaceProgram(sid,parseInt(rn));
     var hasResult=resultData&&resultData[sid]&&resultData[sid][rn]&&resultData[sid][rn].isFinished;
 
     if(pred) savePrediction(todayStr(),sid,rn,pred,hasResult?resultData[sid][rn]:null);
 
-    var typeIcon=pred?(pred.raceType==='honmei'?'⚡':pred.raceType==='ana'?'🔥':'📊'):'';
-    var typeCls=pred?pred.typeCls:'';
+    // 直前予想があるか判定
+    var pvData=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
+    var hasRealPv=false;
+    if(pvData&&pvData.boats){for(var pk in pvData.boats){if(pvData.boats[pk]&&pvData.boats[pk].racer_exhibition_time!=null){hasRealPv=true;break}}}
+
+    // 表示用の予想（直前あれば直前、なければ番組）
+    var dispPred=(hasRealPv&&pred)?pred:null;
+    var typeSource=dispPred||progPred;
+    var typeIcon=typeSource?(typeSource.raceType==='honmei'?'⚡':typeSource.raceType==='ana'?'🔥':'📊'):'';
+    var typeCls=dispPred?dispPred.typeCls:(progPred?('type-'+(progPred.raceType||'middle')):'');
+
+    // 番組→直前で最も上昇した艇の番号
+    var riserStr='';
+    if(dispPred&&progPred){
+      var diff=comparePredictions(progPred,dispPred);
+      if(diff&&diff.biggestRiser) riserStr=' <span style="color:#43A047;font-size:9px">↑'+diff.biggestRiser.boat+'</span>';
+    }
 
     html+='<tr onclick="openRace(\''+sid+'\',\''+rn+'\')">';
     var closedAt=race.race_closed_at||'';
     var closedTime=closedAt?closedAt.split(' ')[1]||'':'';
-    if(closedTime) closedTime=closedTime.slice(0,5); // HH:MM
-    html+='<td class="race-num-cell">'+rn+'<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">'+closedTime+'</span><span class="race-type-icon"><span class="type-badge '+typeCls+'">'+typeIcon+'</span></span></td>';
+    if(closedTime) closedTime=closedTime.slice(0,5);
+    var stageLabel=hasRealPv?'<span style="font-size:8px;color:#E65100">直前</span>':'<span style="font-size:8px;color:#1A237E">番組</span>';
+    html+='<td class="race-num-cell">'+rn+'<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">'+closedTime+'</span><span class="race-type-icon"><span class="type-badge '+typeCls+'">'+typeIcon+'</span></span><br>'+stageLabel+riserStr+'</td>';
 
     if(race.boats&&Array.isArray(race.boats)){
       var boatMap={};
       race.boats.forEach(function(bt){boatMap[bt.racer_boat_number]=bt});
+      var activePredMarks=dispPred?dispPred.marks:(progPred?progPred.marks:null);
       for(var bn=1;bn<=6;bn++){
         var bt=boatMap[bn];
         if(!bt){html+='<td>-</td>';continue}
         var racerName=escText(bt.racer_name||'');
-        var isTop=pred&&pred.marks[0]&&pred.marks[0].boat===bn;
+        var isTop=activePredMarks&&activePredMarks[0]&&activePredMarks[0].boat===bn;
         var nameClass=isTop?'name-bold':'';
         var markStr=isTop?'◎ ':'';
         html+='<td class="racer-cell"><span class="'+nameClass+'">'+markStr+escText(racerName)+'</span></td>';
@@ -2062,39 +2171,92 @@ function openRace(sid,rn){
   document.getElementById('detailExhibition').innerHTML=exhHtml;
 
   // ==========================================
-  // 3c. AI予想セクション (keep existing logic, white theme)
+  // 3c. 2段階AI予想セクション（番組予想 + 直前予想）
   // ==========================================
   var predHtml='';
-  if(pred){
-    predHtml='<div class="prediction-box">';
-    predHtml+='<div class="pred-title">AI予想 <span class="type-badge '+pred.typeCls+'">'+pred.typeLabel+'</span></div>';
-    predHtml+='<div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">信頼度: <span class="confidence-stars">'+starsHtml(pred.confStars)+'</span> '+pred.confidence+'%</div>';
+  var progPred=predictRaceProgram(sid,parseInt(rn));
+  var boats=race&&race.boats?race.boats:[];
 
-    predHtml+='<div class="pred-ranking">';
+  // ========= 番組予想 =========
+  if(progPred){
+    predHtml+='<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
+    predHtml+='<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">番組予想 <span style="font-size:11px;color:#666;font-weight:400">出走表データのみ</span></div>';
+    progPred.marks.forEach(function(m,i){
+      if(i>=4) return;
+      var boatInfo=boats.find(function(b){return b.racer_boat_number===m.boat});
+      var nm=boatInfo?(boatInfo.racer_name||'').split(/\s|\u3000/)[0]:'';
+      var probPct=Math.round(m.prob*100);
+      predHtml+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+      predHtml+='<span style="font-weight:700;width:20px">'+m.mark+'</span>';
+      predHtml+=boatBadge(m.boat);
+      predHtml+='<span>'+escText(nm)+'</span>';
+      predHtml+='<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">'+probPct+'%</span>';
+      predHtml+='</div>';
+    });
+    var progTypeIcon=progPred.raceType==='honmei'?'⚡':progPred.raceType==='ana'?'🔥':'📊';
+    predHtml+='<div style="font-size:11px;color:#666;margin-top:6px">'+progTypeIcon+progPred.typeLabel+'  信頼度: '+progPred.confidence+'%</div>';
+    if(progPred.marks[0].reasons&&progPred.marks[0].reasons.length>0){
+      predHtml+='<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
+      progPred.marks[0].reasons.slice(0,3).forEach(function(r){predHtml+='<div>・'+escText(r)+'</div>'});
+      predHtml+='</div>';
+    }
+    predHtml+='</div>';
+  }
+
+  // ========= 直前予想 =========
+  var hasRealPreview=false;
+  if(preview&&preview.boats){
+    for(var pk in preview.boats){if(preview.boats[pk]&&preview.boats[pk].racer_exhibition_time!=null){hasRealPreview=true;break}}
+  }
+
+  predHtml+='<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
+  predHtml+='<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">直前予想 <span style="font-size:11px;color:#666;font-weight:400">展示航走反映</span></div>';
+
+  if(hasRealPreview&&pred){
+    var diff=comparePredictions(progPred,pred);
     pred.marks.forEach(function(m,i){
       if(i>=4) return;
+      var boatInfo=boats.find(function(b){return b.racer_boat_number===m.boat});
+      var nm=boatInfo?(boatInfo.racer_name||'').split(/\s|\u3000/)[0]:'';
       var probPct=Math.round(m.prob*100);
-      var barColor=i===0?'var(--accent)':i===1?'var(--gold)':i===2?'var(--warn)':'var(--text-dim)';
-      predHtml+='<div class="pred-rank-item">'+boatBadge(m.boat)
-        +' <span style="font-weight:700;font-size:14px">'+m.mark+'</span>'
-        +' <span style="font-weight:700;font-size:13px">'+Math.round(m.score)+'pt</span>'
-        +' <span style="font-size:11px;color:var(--text-dim)">'+probPct+'%</span>'
-        +'</div>'
-        +'<div class="prob-bar"><div class="prob-fill" style="width:'+probPct+'%;background:'+barColor+'"></div></div>';
+      var change=diff?diff.changes.find(function(c){return c.boat===m.boat}):null;
+      var diffStr='';
+      if(change&&change.rankDiff>0){
+        diffStr=' <span style="color:#43A047;font-size:11px;font-weight:700">↑+'+Math.round(change.probDiff*100)+'%</span>';
+      } else if(change&&change.rankDiff<0){
+        diffStr=' <span style="color:#E53935;font-size:11px;font-weight:700">↓'+Math.round(change.probDiff*100)+'%</span>';
+      }
+      predHtml+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+      predHtml+='<span style="font-weight:700;width:20px">'+m.mark+'</span>';
+      predHtml+=boatBadge(m.boat);
+      predHtml+='<span>'+escText(nm)+'</span>';
+      predHtml+='<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">'+probPct+'%</span>';
+      predHtml+=diffStr;
+      predHtml+='</div>';
     });
-    predHtml+='</div>';
+    var liveTypeIcon=pred.raceType==='honmei'?'⚡':pred.raceType==='ana'?'🔥':'📊';
+    predHtml+='<div style="font-size:11px;color:#666;margin-top:6px">'+liveTypeIcon+pred.typeLabel+'  信頼度: '+starsHtml(pred.confStars)+' '+pred.confidence+'%</div>';
 
-    var topReasons=pred.marks[0].reasons;
-    if(topReasons&&topReasons.length>0){
-      predHtml+='<ul class="pred-reason">';
-      topReasons.forEach(function(r){predHtml+='<li>'+escText(r)+'</li>'});
-      predHtml+='</ul>';
-    }
-    var topRisks=pred.marks[0].risks;
-    if(topRisks&&topRisks.length>0){
-      predHtml+='<ul class="pred-risk">';
-      topRisks.forEach(function(r){predHtml+='<li>'+escText(r)+'</li>'});
-      predHtml+='</ul>';
+    // 展示による変動サマリー
+    if(diff){
+      var hasChange=diff.changes.some(function(c){return c.rankDiff!==0});
+      if(hasChange){
+        predHtml+='<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
+        predHtml+='<div style="font-weight:700;color:#E65100;margin-bottom:4px">展示による変動</div>';
+        diff.changes.forEach(function(c){
+          if(c.rankDiff>0){
+            var reasons=c.addedReasons.length>0?c.addedReasons.slice(0,2).join(', '):'展示好調';
+            predHtml+='<div style="color:#2E7D32">↑ '+c.boat+'号艇: '+escText(reasons)+'</div>';
+          } else if(c.rankDiff<0){
+            var risks=c.addedRisks.length>0?c.addedRisks.slice(0,2).join(', '):'展示不調';
+            predHtml+='<div style="color:#C62828">↓ '+c.boat+'号艇: '+escText(risks)+'</div>';
+          }
+        });
+        if(diff.typeChanged){
+          predHtml+='<div style="color:#D84315;font-weight:700;margin-top:4px">⚠ '+diff.progType+' → '+diff.liveType+' に変化</div>';
+        }
+        predHtml+='</div>';
+      }
     }
 
     // AI vs popularity divergence
@@ -2105,24 +2267,59 @@ function openRace(sid,rn){
         predHtml+='<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI予想◎'+aiTop+'号艇 vs 1番人気'+popTop+'号艇 -- 逆張り注目</div>';
       }
     }
-
-    predHtml+='<div class="bet-section">';
-    predHtml+='<div class="bet-label">3連単推奨 <span class="bet-method">['+escText(pred.methodLabel)+']</span></div><div class="bet-combos">';
-    pred.trifecta.forEach(function(t){
-      var odds3=raceOdds&&raceOdds.trifecta?raceOdds.trifecta[t.combo]:null;
-      var ev3=odds3?calcEV(t.prob,odds3):null;
-      var evHtml=evBadge(ev3);
-      var oddsStr=odds3?'<span class="odds-val"> '+odds3+'倍</span>':'';
-      predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+'</span>';
-    });
+  } else {
+    // 直前情報なし
+    predHtml+='<div style="text-align:center;padding:16px;color:#999">';
+    predHtml+='<div style="font-size:24px;margin-bottom:8px">⏳</div>';
+    predHtml+='<div style="font-size:12px">展示航走後に更新されます</div>';
+    predHtml+='<div style="font-size:10px;color:#BBB;margin-top:4px">レース開始約30分前に直前情報が配信されます</div>';
     predHtml+='</div>';
+  }
+  predHtml+='</div>';
 
-    if(!raceOdds) predHtml+='<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
+  // ========= 買い目（直前予想ベースを優先） =========
+  var activePred=(hasRealPreview&&pred)?pred:null;
+  var activePredLabel=hasRealPreview?'直前予想':'番組予想';
+  if(activePred||progPred){
+    predHtml+='<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
+    predHtml+='<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">推奨買い目 <span style="font-size:10px;color:var(--text-dim);font-weight:400">★'+activePredLabel+'ベース</span></div>';
 
-    predHtml+='<div class="bet-label">2連単推奨</div><div class="bet-combos">';
-    pred.exacta.forEach(function(t){predHtml+='<span class="bet-chip">'+t.combo+'</span>'});
-    predHtml+='</div></div>';
-
+    if(activePred&&activePred.trifecta){
+      // 直前予想の買い目
+      predHtml+='<div class="bet-label">3連単推奨 <span class="bet-method">['+escText(activePred.methodLabel||'')+']</span></div><div class="bet-combos">';
+      activePred.trifecta.forEach(function(t){
+        var odds3=raceOdds&&raceOdds.trifecta?raceOdds.trifecta[t.combo]:null;
+        var ev3=odds3?calcEV(t.prob,odds3):null;
+        var evHtml=evBadge(ev3);
+        var oddsStr=odds3?'<span class="odds-val"> '+odds3+'倍</span>':'';
+        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+'</span>';
+      });
+      predHtml+='</div>';
+      if(!raceOdds) predHtml+='<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
+      predHtml+='<div class="bet-label">2連単推奨</div><div class="bet-combos">';
+      activePred.exacta.forEach(function(t){predHtml+='<span class="bet-chip">'+t.combo+'</span>'});
+      predHtml+='</div>';
+    } else if(progPred){
+      // 番組予想ベースの買い目
+      var betCount3=parseInt(settings.betCount3)||10;
+      var betCount2=parseInt(settings.betCount2)||5;
+      var method=settings.betMethod||'auto';
+      if(method==='auto'){
+        if(progPred.raceType==='honmei') method='prob';
+        else if(progPred.raceType==='ana') method='box';
+        else method='formation';
+      }
+      var progBets=generateBetsV2(progPred.marks,method,betCount3,betCount2);
+      predHtml+='<div class="bet-label">3連単推奨</div><div class="bet-combos">';
+      progBets.trifecta.forEach(function(t){
+        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span></span>';
+      });
+      predHtml+='</div>';
+      predHtml+='<div class="bet-label">2連単推奨</div><div class="bet-combos">';
+      progBets.exacta.forEach(function(t){predHtml+='<span class="bet-chip">'+t.combo+'</span>'});
+      predHtml+='</div>';
+      predHtml+='<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
+    }
     predHtml+='</div>';
   }
   document.getElementById('detailPrediction').innerHTML=predHtml;
