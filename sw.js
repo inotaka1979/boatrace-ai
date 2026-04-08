@@ -1,6 +1,6 @@
-// BoatRace Oracle - Service Worker v3
-const CACHE_NAME = 'br-oracle-v3';
-const API_BASE = 'https://boatraceopenapi.github.io';
+// BoatRace Oracle - Service Worker v4
+const CACHE_NAME = 'br-oracle-v4';
+const API_CACHE = 'br-api-v4';
 
 // キャッシュする静的アセット（index.htmlは含めない）
 const STATIC_ASSETS = [
@@ -18,51 +18,55 @@ self.addEventListener('install', e => {
   );
 });
 
-// アクティベート: 古いキャッシュを全て削除
+// アクティベート: 古いキ���ッシュを全て削除
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_NAME && k !== API_CACHE).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
 
-// フェッチ: index.html と data/ はネットワーク優先、それ以外はキャッシュ優先
+// フェッチ
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // index.html は常にネットワークから取得（キャッシュしない）
-  if (url.endsWith('/') || url.endsWith('/index.html') || url.includes('index.html')) {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  // data/ ディレクトリは常にネットワークから取得（オッズ等の最新データ）
+  // data/ ディレクトリ: キャッシュしない（常に最新取得）
   if (url.includes('/data/')) {
     e.respondWith(
-      fetch(e.request).catch(() => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      fetch(e.request).catch(() =>
+        caches.match(e.request).then(c =>
+          c || new Response('{}', {status: 200, headers: {'Content-Type': 'application/json'}})
+        )
+      )
     );
     return;
   }
 
-  // Open API は10分キャッシュ（ネットワーク優先）
-  if (url.startsWith(API_BASE)) {
+  // Open API: Network First（まずネットワーク、失敗時のみキャッシュ）
+  if (url.includes('boatraceopenapi.github.io')) {
     e.respondWith(
-      fetch(e.request).then(resp => {
-        if (resp.ok) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+      caches.open(API_CACHE).then(async cache => {
+        try {
+          const resp = await fetch(e.request);
+          if (resp.ok) {
+            cache.put(e.request, resp.clone());
+          }
+          return resp;
+        } catch {
+          const cached = await cache.match(e.request);
+          return cached || new Response('{"error":"offline"}', {
+            status: 503,
+            headers: {'Content-Type': 'application/json'}
+          });
         }
-        return resp;
-      }).catch(() => caches.match(e.request))
+      })
     );
     return;
   }
 
-  // 静的アセット（アイコン、manifest等）: キャッシュ優先
+  // 静的アセット: Cache First
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    caches.match(e.request).then(c => c || fetch(e.request))
   );
 });
