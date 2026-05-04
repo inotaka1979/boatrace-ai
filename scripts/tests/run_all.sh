@@ -63,6 +63,10 @@ step "JS helper tests (softmax / safeDiv / safeParse / safeSet / jstYmd)" \
 step "X1 EV/Kelly/divergence tests" \
      "node scripts/tests/test_ev_kelly.js"
 
+# 10) X2 正規化テスト
+step "X2 normalization tests" \
+     "node scripts/tests/test_normalization.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

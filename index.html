@@ -464,6 +464,9 @@ function _bootParseLS(key, fallback){
 var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
 var racerDB=_bootParseLS('boatrace_racerDB', {});
 var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
+// X2: 場別正規化用統計（モーター / 展示タイム）
+var stadiumMotorStats=_bootParseLS('boatrace_motorStats', {});
+var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
@@ -763,6 +766,160 @@ function indexResults(apiJson){
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
+// ===============================================
+// X2: 場別正規化用の統計学習
+// ===============================================
+
+// 場別モーター 2連率の mean/std を Welford 法で日次更新
+function learnMotorStatsFromPrograms(programsJson){
+  if(!programsJson || !Array.isArray(programsJson.programs)) return;
+  var today = todayStr();
+  var byStadium = {};
+  programsJson.programs.forEach(function(p){
+    var sid = String(p.race_stadium_number);
+    if(!byStadium[sid]) byStadium[sid] = [];
+    (p.boats || []).forEach(function(b){
+      var r = pf(b.racer_assigned_motor_top_2_percent);
+      if(r > 0) byStadium[sid].push(r);
+    });
+  });
+  Object.keys(byStadium).forEach(function(sid){
+    if(!stadiumMotorStats[sid]){
+      stadiumMotorStats[sid] = { sum:0, sumSq:0, count:0, mean:0, std:0, lastDate:'' };
+    }
+    var s = stadiumMotorStats[sid];
+    if(s.lastDate === today) return;   // 同日重複集計を防ぐ
+    byStadium[sid].forEach(function(r){
+      s.sum += r;
+      s.sumSq += r * r;
+      s.count++;
+    });
+    if(s.count > 0){
+      s.mean = s.sum / s.count;
+      var variance = (s.sumSq / s.count) - (s.mean * s.mean);
+      s.std = Math.sqrt(Math.max(0.5, variance));   // std 最低 0.5（過剰な z-score 暴発防止）
+    }
+    s.lastDate = today;
+  });
+  safeSet('boatrace_motorStats', stadiumMotorStats);
+}
+
+// 場別展示タイムの mean/std を Welford 法で日次更新
+function learnExhibitionStatsFromPreviews(previewsJson){
+  if(!previewsJson || !previewsJson.previews) return;
+  var today = todayStr();
+  var byStadium = {};
+  (previewsJson.previews || []).forEach(function(pv){
+    var sid = String(pv.race_stadium_number);
+    if(!byStadium[sid]) byStadium[sid] = [];
+    var boats = pv.boats || {};
+    for(var bn in boats){
+      var et = pf(boats[bn].racer_exhibition_time);
+      if(et > 6.0 && et < 8.0) byStadium[sid].push(et);
+    }
+  });
+  Object.keys(byStadium).forEach(function(sid){
+    if(!stadiumExhibitionStats[sid]){
+      stadiumExhibitionStats[sid] = { sum:0, sumSq:0, count:0, mean:0, std:0, lastDate:'' };
+    }
+    var s = stadiumExhibitionStats[sid];
+    if(s.lastDate === today) return;
+    byStadium[sid].forEach(function(t){
+      s.sum += t;
+      s.sumSq += t * t;
+      s.count++;
+    });
+    if(s.count > 0){
+      s.mean = s.sum / s.count;
+      var variance = (s.sumSq / s.count) - (s.mean * s.mean);
+      s.std = Math.sqrt(Math.max(0.02, variance));   // 最低 0.02s で発散防止
+    }
+    s.lastDate = today;
+  });
+  safeSet('boatrace_exhibitionStats', stadiumExhibitionStats);
+}
+
+// 選手×コース別の平均 ST（Welford）— previews から学習
+function learnRacerStFromPreviews(previewsJson, programsJson){
+  if(!previewsJson || !previewsJson.previews || !programsJson) return;
+  // 出走表から racer_number → boat マップ作成（コース番号取得用）
+  (previewsJson.previews || []).forEach(function(pv){
+    var sid = String(pv.race_stadium_number);
+    var rno = String(pv.race_number);
+    var prog = programsJson.programs && programsJson.programs.find(function(p){
+      return String(p.race_stadium_number)===sid && String(p.race_number)===rno;
+    });
+    if(!prog) return;
+    var boats = pv.boats || {};
+    for(var bn in boats){
+      var st = pf(boats[bn].racer_start_timing);
+      var course = boats[bn].racer_course_number || parseInt(bn);
+      // racer_number を出走表から特定
+      var pBoat = (prog.boats || []).find(function(pb){return pb.racer_boat_number===parseInt(bn)});
+      var rid = pBoat ? pBoat.racer_number : null;
+      if(!rid || !course || st <= -0.5 || st >= 0.5) continue;
+      if(!racerDB[rid]) return;   // 既存選手のみ
+      if(!racerDB[rid].stStats) racerDB[rid].stStats = {};
+      var key = String(course);
+      if(!racerDB[rid].stStats[key]){
+        racerDB[rid].stStats[key] = { sum:0, sumSq:0, count:0, mean:0.16 };
+      }
+      var s = racerDB[rid].stStats[key];
+      s.sum += st;
+      s.sumSq += st * st;
+      s.count++;
+      s.mean = s.sum / s.count;
+    }
+  });
+}
+
+// X2: モーター z-score スコア（場別正規化）
+function motorScoreNormalized(motorRate, sid){
+  var s = stadiumMotorStats[String(sid)];
+  if(!s || s.count < 50){
+    // フォールバック: 旧 5 段階閾値
+    if(motorRate>=50) return {score:12, label:'超抜', emoji:'A'};
+    if(motorRate>=43) return {score: 8, label:'好機', emoji:'B'};
+    if(motorRate>=36) return {score: 4, label:'並機', emoji:'C'};
+    if(motorRate>=28) return {score: 0, label:'低調', emoji:'D'};
+    return {score:-3, label:'整備要', emoji:'E'};
+  }
+  var z = (motorRate - s.mean) / s.std;
+  if(z >= 1.5)  return {score:12, label:'超抜', emoji:'A', z:z};
+  if(z >= 0.7)  return {score: 8, label:'好機', emoji:'B', z:z};
+  if(z >= -0.7) return {score: 4, label:'並機', emoji:'C', z:z};
+  if(z >= -1.5) return {score: 0, label:'低調', emoji:'D', z:z};
+  return            {score:-3, label:'整備要', emoji:'E', z:z};
+}
+
+// X2: 展示タイム場別 z-score（補助スコア。順位ベースの etBonus と併用）
+function exhibitionZScore(etTime, sid){
+  var s = stadiumExhibitionStats[String(sid)];
+  if(!s || s.count < 50 || !etTime || etTime > 8) return 0;
+  return (etTime - s.mean) / s.std;   // 速いほど負（良い）
+}
+
+// X2: ST 個人乖離スコア（自分の平均 ST との比較）
+function stDivergenceScore(thisSt, rid, course){
+  if(thisSt < 0) return -6;   // フライング
+  var rdb = racerDB[rid];
+  var key = String(course);
+  if(!rdb || !rdb.stStats || !rdb.stStats[key] || rdb.stStats[key].count < 5){
+    // フォールバック: 旧絶対値判定
+    if(thisSt <= 0.05) return +4;
+    if(thisSt <= 0.10) return +2;
+    if(thisSt >= 0.20) return -2;
+    return 0;
+  }
+  var personalAvg = rdb.stStats[key].mean;
+  var z = (thisSt - personalAvg) / 0.04;
+  if(z <= -1.0) return +5;   // 自己平均より +1σ 以上鋭い → 神スタ
+  if(z <= -0.5) return +3;
+  if(z <= +0.5) return 0;
+  if(z <= +1.0) return -2;
+  return -4;
+}
+
 function updateDBFromResults(resultsJson, programsJson){
   if(!resultsJson) return;
   for(var sid in resultsJson){
@@ -985,13 +1142,14 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     }
   }
 
+  // X2 R-05: 場別 z-score でモーター評価（フォールバック付き）
   var motorRate=pf(boat.racer_assigned_motor_top_2_percent);
-  var motorLabel='',motorEmoji='';
-  if(motorRate>=50){score+=12;motorLabel='超抜';motorEmoji='A';reasons.push('超抜モーター('+motorRate+'%)')}
-  else if(motorRate>=43){score+=8;motorLabel='好機';motorEmoji='B'}
-  else if(motorRate>=36){score+=4;motorLabel='並機';motorEmoji='C'}
-  else if(motorRate>=28){score+=0;motorLabel='低調';motorEmoji='D'}
-  else{score-=3;motorLabel='整備要';motorEmoji='E';risks.push('モーター不調('+motorRate+'%)')}
+  var motorEval = motorScoreNormalized(motorRate, sid);
+  score += motorEval.score;
+  var motorLabel = motorEval.label;
+  var motorEmoji = motorEval.emoji;
+  if(motorEval.label === '超抜') reasons.push('超抜モーター('+motorRate+'%' + (motorEval.z!=null ? ' z='+motorEval.z.toFixed(1) : '') + ')');
+  else if(motorEval.label === '整備要') risks.push('モーター不調('+motorRate+'%)');
   var boatRate=pf(boat.racer_assigned_boat_top_2_percent);
   score+=boatRate*0.08;
 
@@ -1021,13 +1179,21 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     }
     score+=etBonus*decay;
     if(etRank===0) reasons.push('展示タイム最速('+etTime+'s)');
+    // X2 R-06: 展示タイム場別 z-score 補助（速いほど負 → +スコア）
+    var ezAux = exhibitionZScore(etTime, sid);
+    if(ezAux !== 0) score += -ezAux * 2 * decay;
+    if(ezAux <= -1.0) reasons.push('展示タイム場相対的に超速(z='+ezAux.toFixed(1)+')');
 
     if(myPv&&myPv.racer_start_timing!=null){
       var st=pf(myPv.racer_start_timing);
-      if(st>0&&st<=0.05){score+=4;reasons.push('ST鋭い('+st+'s)')}
-      else if(st>0&&st<=0.10) score+=2;
-      else if(st>=0.20){score-=2;risks.push('ST出遅れ傾向('+st+'s)')}
-      else if(st<0){score-=6;risks.push('Fスタート気味('+st+'s)')}
+      // X2 R-08: 絶対値判定 + 個人平均との乖離（max を取る）
+      var absScore = (st<0) ? -6 : (st<=0.05 ? 4 : st<=0.10 ? 2 : st>=0.20 ? -2 : 0);
+      var perScore = stDivergenceScore(st, rid, course);
+      var stScore = Math.max(absScore, perScore);
+      score += stScore;
+      if(stScore >= 4) reasons.push('ST鋭い('+st+'s)');
+      else if(stScore <= -2 && st > 0) risks.push('ST出遅れ('+st+'s)');
+      else if(st < 0) risks.push('Fスタート気味('+st+'s)');
 
       if(etRank<=1&&st>0&&st<=0.10) score+=3;
       else if(etRank<=1&&st>0.15) score+=1;
@@ -1933,6 +2099,10 @@ async function loadAllData(){
   if(prog) prog.style.width='90%';
 
   if(resultData) updateDBFromResults(resultData,programData);
+  // X2: 場別統計の学習（programs / previews から）
+  if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
+  if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
+  if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
   learnFromResults();
   updateHistoryWithResults();
 
