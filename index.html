@@ -1298,8 +1298,11 @@ function savePrediction(date,sid,rn,pred,result){
       entry.actual=sorted.map(function(r){return r.racer_boat_number});
       checkHit(entry);
       if(result.refund){
-        if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0]) entry.payout3=result.refund.trifecta[0].amount;
-        if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0]) entry.payout2=result.refund.exacta[0].amount;
+        // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
+        if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+          entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
+        if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
+          entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
       }
     }
     history.push(entry);
@@ -1321,17 +1324,26 @@ function updateHistoryWithResults(){
     var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
     var updated=false;
     history.forEach(function(h){
-      if(h.actual) return;
-      if(resultData&&resultData[String(h.stadium)]&&resultData[String(h.stadium)][String(h.race)]){
-        var res=resultData[String(h.stadium)][String(h.race)];
-        if(res.isFinished&&res.results&&res.results.length>0){
-          h.actual=res.results.slice().sort(function(a,b){return a.place-b.place}).map(function(r){return r.racer_boat_number});
-          checkHit(h);
-          if(res.refund){
-            if(h.trifecta_hit&&res.refund.trifecta&&res.refund.trifecta[0]) h.payout3=res.refund.trifecta[0].amount;
-            if(h.exacta_hit&&res.refund.exacta&&res.refund.exacta[0]) h.payout2=res.refund.exacta[0].amount;
-          }
-          updated=true;
+      if(!resultData||!resultData[String(h.stadium)]||!resultData[String(h.stadium)][String(h.race)]) return;
+      var res=resultData[String(h.stadium)][String(h.race)];
+      if(!res.isFinished||!res.results||res.results.length===0) return;
+
+      // F6: 既に actual がある場合でも payout が欠けていれば遡及補完
+      if(!h.actual){
+        h.actual=res.results.slice().sort(function(a,b){return a.place-b.place}).map(function(r){return r.racer_boat_number});
+        checkHit(h);
+        updated=true;
+      }
+      if(res.refund){
+        if(h.trifecta_hit && (!h.payout3 || h.payout3===0) &&
+           res.refund.trifecta && res.refund.trifecta[0]){
+          h.payout3 = res.refund.trifecta[0].payout || res.refund.trifecta[0].amount || 0;
+          if(h.payout3) updated=true;
+        }
+        if(h.exacta_hit && (!h.payout2 || h.payout2===0) &&
+           res.refund.exacta && res.refund.exacta[0]){
+          h.payout2 = res.refund.exacta[0].payout || res.refund.exacta[0].amount || 0;
+          if(h.payout2) updated=true;
         }
       }
     });
