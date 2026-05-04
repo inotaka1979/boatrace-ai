@@ -59,6 +59,10 @@ step "manifest.json validity" \
 step "JS helper tests (softmax / safeDiv / safeParse / safeSet / jstYmd)" \
      "node scripts/tests/test_predictor_helpers.js"
 
+# 9) X1 EV/Kelly/乖離テスト
+step "X1 EV/Kelly/divergence tests" \
+     "node scripts/tests/test_ev_kelly.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

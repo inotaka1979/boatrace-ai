@@ -344,9 +344,47 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row">
       <span class="setting-label">買い目方式</span>
       <select id="setBetMethod" onchange="saveSetting('betMethod',this.value)">
-        <option value="auto" selected>自動</option><option value="prob">確率順</option>
-        <option value="formation">フォーメーション</option><option value="box">BOX</option>
+        <option value="auto" selected>自動</option>
+        <option value="ev">EV (期待値ベース)</option>
+        <option value="prob">確率順</option>
+        <option value="formation">フォーメーション</option>
+        <option value="box">BOX</option>
       </select>
+    </div>
+  </div>
+  <!-- X1: EV モード設定 -->
+  <div class="card">
+    <div style="padding:12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">期待値（EV）戦略</div>
+    <div class="setting-row">
+      <span class="setting-label">EV モード</span>
+      <select id="setEvMode" onchange="saveSetting('evMode',this.value==='true')">
+        <option value="false">OFF（従来のロジック）</option>
+        <option value="true">ON（オッズ揃い時に EV 優先）</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">EV 最低閾値</span>
+      <select id="setEvMin" onchange="saveSetting('evMin',this.value)">
+        <option value="1.05">1.05（緩め）</option>
+        <option value="1.15" selected>1.15（標準）</option>
+        <option value="1.30">1.30（厳しめ）</option>
+        <option value="1.50">1.50（極厳）</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Kelly 比率</span>
+      <select id="setKellyFrac" onchange="saveSetting('kellyFrac',this.value)">
+        <option value="0">0（均等配分）</option>
+        <option value="0.25">0.25（保守）</option>
+        <option value="0.5" selected>0.5（half-Kelly 推奨）</option>
+        <option value="1">1.0（full-Kelly／ハイリスク）</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">資金 (円)</span>
+      <input type="number" id="setBankroll" min="1000" step="1000" value="10000"
+             onchange="saveSetting('bankroll',parseInt(this.value)||10000)"
+             style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
     </div>
   </div>
   <div class="card">
@@ -1224,14 +1262,41 @@ function predictRace(sid,raceNum){
   var betCount3=parseInt(settings.betCount3)||10;
   var betCount2=parseInt(settings.betCount2)||5;
   var method=settings.betMethod||'auto';
+  // X1: EV モード優先（オッズが揃っていれば）
+  var evMode = settings.evMode === true || settings.evMode === 'true';
+  var evOpt = {
+    evMin: parseFloat(settings.evMin)||1.15,
+    maxBets: betCount3,
+    kellyFrac: parseFloat(settings.kellyFrac)||0.5,
+    bankroll: parseInt(settings.bankroll)||10000,
+  };
+  // 当該レースのオッズを取得
+  var raceOddsForEV = null;
+  if(oddsData && oddsData.odds){
+    var found = oddsData.odds.find(function(o){
+      return o.stadium===parseInt(sid) && o.race===parseInt(raceNum);
+    });
+    if(found) raceOddsForEV = found;
+  }
   if(method==='auto'){
-    if(raceType==='honmei') method='prob';
+    if(evMode && raceOddsForEV && raceOddsForEV.trifecta) method='ev';
+    else if(raceType==='honmei') method='prob';
     else if(raceType==='ana') method='box';
     else method='formation';
   }
 
-  var bets=generateBetsV2(marks,method,betCount3,betCount2);
+  var bets=generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
   bets.marks=marks;
+  bets.evApplied = (method==='ev');
+  // X1: 単勝オッズ乖離を計算
+  if(raceOddsForEV && raceOddsForEV.win){
+    var aiByBoat = [];
+    for(var bi=1; bi<=6; bi++){
+      var fp = finalProbs.find(function(p){ return p.boat===bi; });
+      aiByBoat.push(fp ? fp.prob : 0);
+    }
+    bets.divergence = calcOddsDivergence(aiByBoat, raceOddsForEV.win);
+  }
   bets.raceType=raceType;
   bets.typeLabel=typeLabel;
   bets.typeCls=typeCls;
@@ -1338,6 +1403,95 @@ function comparePredictions(progPred,livePred){
 }
 
 // ===============================================
+// X1: EV / Kelly / オッズ乖離 ヘルパ
+// ===============================================
+/**
+ * EV ベースで買い目を選定。
+ * @param probs   {Object<combo, prob>}
+ * @param odds    {Object<combo, odds>}
+ * @param opt     {evMin, maxBets, kellyFrac, bankroll}
+ * @returns       Array<{combo, ev, prob, odds, stakeRatio, stakeYen}>
+ */
+function selectBetsByEV(probs, odds, opt){
+  opt = opt || {};
+  var evMin = opt.evMin != null ? opt.evMin : 1.15;
+  var maxBets = opt.maxBets != null ? opt.maxBets : 8;
+  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : 0.5;
+  var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
+  if(!probs || !odds) return [];
+  var ranked = Object.keys(probs)
+    .filter(function(k){ return odds[k] && probs[k] > 0; })
+    .map(function(k){
+      return { combo: k, prob: probs[k], odds: odds[k], ev: probs[k] * odds[k] };
+    })
+    .filter(function(b){ return b.ev >= evMin; })
+    .sort(function(a, b){ return b.ev - a.ev; })
+    .slice(0, maxBets);
+  // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
+  ranked.forEach(function(b){
+    var bn = b.odds - 1;
+    if(bn <= 0){ b.stakeRatio = 0; b.stakeYen = 0; return; }
+    var f = (bn * b.prob - (1 - b.prob)) / bn;
+    b.stakeRatio = Math.max(0, f * kellyFrac);
+    b.stakeYen = Math.max(100, Math.round(bankroll * b.stakeRatio / 100) * 100);
+  });
+  return ranked;
+}
+
+/**
+ * 各艇の AI 確率 vs 市場確率（人気）の乖離を計算。
+ * delta > 0 → AI が高評価（過小評価＝妙味）
+ * delta < 0 → AI が低評価（過大評価＝危険）
+ */
+function calcOddsDivergence(aiProbsByBoat, oddsWin){
+  if(!oddsWin) return null;
+  var sumInv = 0;
+  for(var b=1; b<=6; b++){ if(oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)]; }
+  if(sumInv === 0) return null;
+  var result = {};
+  for(var b2=1; b2<=6; b2++){
+    var ai = aiProbsByBoat[b2-1] || 0;
+    var market = oddsWin[String(b2)] ? (1/oddsWin[String(b2)]) / sumInv : 0;
+    result[b2] = {
+      ai_prob: ai,
+      market_prob: market,
+      delta: ai - market,
+      ev: oddsWin[String(b2)] ? ai * oddsWin[String(b2)] : null,
+    };
+  }
+  return result;
+}
+
+/**
+ * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成
+ */
+function buildTrifectaProbDist(marks){
+  var dist = {};
+  for(var i=0;i<marks.length;i++){
+    for(var j=0;j<marks.length;j++){
+      if(j===i) continue;
+      for(var k=0;k<marks.length;k++){
+        if(k===i || k===j) continue;
+        var key = marks[i].boat + '-' + marks[j].boat + '-' + marks[k].boat;
+        dist[key] = marks[i].prob * marks[j].prob * marks[k].prob * 6;   // 簡易補正
+      }
+    }
+  }
+  return dist;
+}
+function buildExactaProbDist(marks){
+  var dist = {};
+  for(var i=0;i<marks.length;i++){
+    for(var j=0;j<marks.length;j++){
+      if(j===i) continue;
+      var key = marks[i].boat + '-' + marks[j].boat;
+      dist[key] = marks[i].prob * marks[j].prob * 2;
+    }
+  }
+  return dist;
+}
+
+// ===============================================
 // BET GENERATION V2 (PRESERVED)
 // ===============================================
 function generateBetsV2(marks,method,count3,count2){
@@ -1359,7 +1513,30 @@ function generateBetsV2(marks,method,count3,count2){
 
   var selTri,methodLabel;
 
-  if(method==='formation'){
+  // X1: EV モード
+  if(method==='ev' && arguments.length>=5){
+    var raceOdds = arguments[4];   // { trifecta: {...}, exacta: {...}, win: {...} }
+    var evOpt = arguments[5] || {};
+    if(raceOdds && raceOdds.trifecta){
+      var triProbDist = buildTrifectaProbDist(marks);
+      selTri = selectBetsByEV(triProbDist, raceOdds.trifecta, evOpt);
+    } else {
+      selTri = trifecta.slice(0, count3);   // オッズ未取得時は確率順フォールバック
+    }
+    var selExa = [];
+    if(raceOdds && raceOdds.exacta){
+      var exaProbDist = buildExactaProbDist(marks);
+      selExa = selectBetsByEV(exaProbDist, raceOdds.exacta, evOpt);
+    } else {
+      selExa = exacta.slice(0, count2);
+    }
+    return {
+      trifecta: selTri,
+      exacta: selExa.slice(0, count2),
+      quinella: quinella.slice(0, count2),
+      methodLabel: 'EV(≥' + (evOpt.evMin||1.15) + ')',
+    };
+  } else if(method==='formation'){
     var top2=marks.slice(0,2).map(function(m){return m.boat});
     var top4=marks.slice(0,4).map(function(m){return m.boat});
     var top5=marks.slice(0,5).map(function(m){return m.boat});
@@ -1858,7 +2035,7 @@ function familyName(n){return (n||'').split(/[\s\u3000]/)[0].slice(0,3)}
 // ===============================================
 // HELPER: Racer badges (form, class, F count)
 // ===============================================
-function racerBadges(boat,form){
+function racerBadges(boat,form,divergence){
   var badges=[];
   var cn=boat.racer_class_number;
   var fc=boat.racer_flying_count||0;
@@ -1876,6 +2053,13 @@ function racerBadges(boat,form){
     if(form.trend>0.5) badges.push('<span class="racer-badge badge-rising">上昇</span>');
   }
   if(fc>=1) badges.push('<span class="racer-badge badge-f1">F'+fc+'</span>');
+  // X1: 妙味 / 危険バッジ（AI vs 市場確率の乖離）
+  if(divergence){
+    if(divergence.delta >= 0.08) badges.push('<span class="racer-badge" style="background:#E8F5E9;color:#2E7D32;border:1px solid #2E7D32">🎯妙味+'+(divergence.delta*100).toFixed(0)+'pt</span>');
+    else if(divergence.delta >= 0.04) badges.push('<span class="racer-badge" style="background:#E8F5E9;color:#2E7D32">🎯妙味</span>');
+    else if(divergence.delta <= -0.08) badges.push('<span class="racer-badge" style="background:#FFEBEE;color:#C62828;border:1px solid #C62828">⚠過大評価</span>');
+    if(divergence.ev != null && divergence.ev >= 1.20) badges.push('<span class="racer-badge" style="background:#FFF3E0;color:#E65100">EV'+divergence.ev.toFixed(2)+'</span>');
+  }
   return badges.join('');
 }
 
@@ -2230,7 +2414,9 @@ function openRace(sid,rn){
       var bt=boatMap[bn];
       if(!bt){boatsHtml+='<td>-</td>';continue}
       var form=getRacerForm(bt.racer_number||0);
-      var badges=racerBadges(bt,form);
+      // X1: 妙味バッジ用に divergence を渡す
+      var div = (pred && pred.divergence) ? pred.divergence[bn] : null;
+      var badges=racerBadges(bt,form,div);
       boatsHtml+='<td>'+(badges||'-')+'</td>';
     }
     boatsHtml+='<th>特徴</th></tr>';
@@ -2512,13 +2698,20 @@ function openRace(sid,rn){
       // 直前予想の買い目
       predHtml+='<div class="bet-label">3連単推奨 <span class="bet-method">['+escText(activePred.methodLabel||'')+']</span></div><div class="bet-combos">';
       activePred.trifecta.forEach(function(t){
-        var odds3=raceOdds&&raceOdds.trifecta?raceOdds.trifecta[t.combo]:null;
-        var ev3=odds3?calcEV(t.prob,odds3):null;
+        var odds3=t.odds || (raceOdds&&raceOdds.trifecta?raceOdds.trifecta[t.combo]:null);
+        var ev3 = t.ev != null ? t.ev : (odds3?calcEV(t.prob,odds3):null);
         var evHtml=evBadge(ev3);
         var oddsStr=odds3?'<span class="odds-val"> '+odds3+'倍</span>':'';
-        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+'</span>';
+        // X1: EV モードの場合、Kelly 配分（円）を表示
+        var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥'+t.stakeYen.toLocaleString()+'</span>' : '';
+        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+stakeStr+'</span>';
       });
       predHtml+='</div>';
+      // X1: EV モード時の合計投資額表示
+      if(activePred.evApplied){
+        var totalStake = activePred.trifecta.reduce(function(a,t){return a+(t.stakeYen||0)},0);
+        predHtml+='<div style="font-size:10px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥'+totalStake.toLocaleString()+'</div>';
+      }
       if(!raceOdds) predHtml+='<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
       predHtml+='<div class="bet-label">2連単推奨</div><div class="bet-combos">';
       activePred.exacta.forEach(function(t){predHtml+='<span class="bet-chip">'+t.combo+'</span>'});
@@ -2860,6 +3053,15 @@ function loadSettings(){
   document.getElementById('setBetCount3').value=settings.betCount3||10;
   document.getElementById('setBetCount2').value=settings.betCount2||5;
   document.getElementById('setBetMethod').value=settings.betMethod||'auto';
+  // X1: EV モード関連の初期化
+  var ev = document.getElementById('setEvMode');
+  if(ev) ev.value = (settings.evMode===true || settings.evMode==='true') ? 'true' : 'false';
+  var em = document.getElementById('setEvMin');
+  if(em) em.value = String(settings.evMin || 1.15);
+  var kf = document.getElementById('setKellyFrac');
+  if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.5);
+  var br = document.getElementById('setBankroll');
+  if(br) br.value = settings.bankroll || 10000;
 
   var rpiUrl=localStorage.getItem('boatrace_rpi_url')||'';
   document.getElementById('rpiUrlInput').value=rpiUrl;
