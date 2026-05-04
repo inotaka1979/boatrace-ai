@@ -642,6 +642,8 @@ async function forceRefresh(){
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
     // F17: 全場の確定レースに対して予想 backfill
     if(typeof _backfillTodayPredictions === 'function') _backfillTodayPredictions();
+    // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
+    updateHistoryWithResults();
 
     // 4) 鮮度表示と現在ページを再描画
     if(typeof _renderFreshness==='function') _renderFreshness();
@@ -3001,6 +3003,9 @@ async function loadAllData(){
   // F17: 全場の確定レースに対して予想を一括 backfill
   // (ユーザーが開いた場以外も成績ページに反映されるように)
   _backfillTodayPredictions();
+  // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
+  // (savePrediction 時に resultData.refund がまだ無かったケース対策)
+  updateHistoryWithResults();
 
   if(prog) prog.style.width='100%';
   if(msg) msg.textContent='完了';
@@ -4021,14 +4026,28 @@ function calcTodayStats(){
   var exa={hits:0, invest:0, payout:0};
   var typeStats={honmei:{total:0,hit3:0,payout3:0,invest:0}, middle:{total:0,hit3:0,payout3:0,invest:0}, ana:{total:0,hit3:0,payout3:0,invest:0}};
   var stadiumStats={};
+  // F18: 的中フラグはあるが payout が 0 / 未取得のレースを検出
+  var warnings = { tri_zero: [], exa_zero: [] };
 
   verified.forEach(function(h){
     var triInvest=betCount3*unitBet;
     var exaInvest=betCount2*unitBet;
     tri.invest+=triInvest;
     exa.invest+=exaInvest;
-    if(h.trifecta_hit){ tri.hits++; tri.payout+=(h.payout3||0); }
-    if(h.exacta_hit){ exa.hits++; exa.payout+=(h.payout2||0); }
+    if(h.trifecta_hit){
+      tri.hits++;
+      tri.payout+=(h.payout3||0);
+      if(!h.payout3 || h.payout3 === 0){
+        warnings.tri_zero.push((STADIUMS[parseInt(h.stadium)]||('場'+h.stadium))+' '+h.race+'R');
+      }
+    }
+    if(h.exacta_hit){
+      exa.hits++;
+      exa.payout+=(h.payout2||0);
+      if(!h.payout2 || h.payout2 === 0){
+        warnings.exa_zero.push((STADIUMS[parseInt(h.stadium)]||('場'+h.stadium))+' '+h.race+'R');
+      }
+    }
 
     var t=h.raceType||'middle';
     if(!typeStats[t]) typeStats[t]={total:0,hit3:0,payout3:0,invest:0};
@@ -4050,6 +4069,7 @@ function calcTodayStats(){
   return {
     today:today, total:verified.length, tri:tri, exa:exa,
     typeStats:typeStats, stadiumStats:stadiumStats,
+    warnings:warnings,
     unitBet:unitBet, betCount3:betCount3, betCount2:betCount2,
   };
 }
@@ -4126,6 +4146,23 @@ function renderStats(){
       recHtml+='<tr><td><b>'+escText(ss.name)+'</b></td><td>'+ss.total+'</td><td>'+ss.hit3+' ('+hr+'%)</td><td>¥'+ss.invest3.toLocaleString()+'</td><td>¥'+ss.payout3.toLocaleString()+'</td><td class="'+_rateColor(ss.rate3)+'">'+ss.rate3+'%</td></tr>';
     });
     recHtml+='</tbody></table></div>';
+  }
+
+  // F18: データ整合性 警告（的中だが payout 未取得の件）
+  var w = s.warnings;
+  if(w.tri_zero.length > 0 || w.exa_zero.length > 0){
+    recHtml+='<div class="card" style="padding:12px;background:#FFF3E0;border-left:4px solid var(--warn)">';
+    recHtml+='<div style="font-weight:700;color:#E65100;margin-bottom:6px">⚠ データ整合性の警告</div>';
+    if(w.tri_zero.length > 0){
+      recHtml+='<div style="font-size:11px;margin-bottom:4px">3連単的中だが払戻未取得: <b>'+w.tri_zero.length+'件</b></div>';
+      recHtml+='<div style="font-size:10px;color:var(--text-sub)">'+escText(w.tri_zero.join(', '))+'</div>';
+    }
+    if(w.exa_zero.length > 0){
+      recHtml+='<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2連単的中だが払戻未取得: <b>'+w.exa_zero.length+'件</b></div>';
+      recHtml+='<div style="font-size:10px;color:var(--text-sub)">'+escText(w.exa_zero.join(', '))+'</div>';
+    }
+    recHtml+='<div style="font-size:9px;color:var(--text-dim);margin-top:6px">※ 該当レースの結果データが Open API / 自前スクレイパーにまだ反映されていない可能性。「更新」を押すと再取得・再補完されます。</div>';
+    recHtml+='</div>';
   }
 
   document.getElementById('statRecovery').innerHTML=recHtml;
