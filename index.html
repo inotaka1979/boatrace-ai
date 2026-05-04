@@ -180,11 +180,15 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .pop-3{background:#F5F5F5;color:var(--text-dim)}
 
 /* Macour trifecta odds table */
-.trifecta-macour{width:100%;border-collapse:collapse;font-size:10px;background:var(--card-bg);border:1px solid var(--border)}
-.trifecta-macour th{padding:4px 2px;font-weight:700;text-align:center;border:1px solid var(--border);font-size:10px}
-.trifecta-macour td{padding:2px 3px;text-align:right;border:1px solid var(--border);font-size:10px;white-space:nowrap;min-width:58px;font-variant-numeric:tabular-nums}
+.trifecta-macour{width:100%;border-collapse:collapse;font-size:11px;background:var(--card-bg);border:1px solid var(--border);table-layout:fixed}
+.trifecta-macour th{padding:5px 2px;font-weight:700;text-align:center;border:1px solid var(--border);font-size:11px}
+.trifecta-macour td{padding:3px 4px;border:1px solid var(--border);font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .trifecta-macour .group-sep{border-top:2px solid #999}
 .trifecta-macour .alt-bg{background:#FAFAFA}
+.trifecta-macour .cell-flex{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.trifecta-macour .cell-flex .badge{flex:0 0 auto}
+.trifecta-macour .cell-flex .odds{flex:1 1 auto;text-align:right;font-weight:600}
+.trifecta-macour .left-col{width:36px;background:#F8F8F8;text-align:center;padding:3px 2px;border:0}
 .odds-low{color:var(--danger);font-weight:700}
 .odds-high{color:#CCC}
 .odds-cell-3rd{font-size:9px;color:var(--text-dim);margin-right:1px}
@@ -2573,14 +2577,13 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
     html+='<div class="odds-section-header"><span class="odds-section-title">3連単オッズ</span></div>';
     html+='<div class="detail-table-wrap"><table class="trifecta-macour">';
 
-    // Header: 左端「2着」ラベル + 6 columns(1着) + 右端「2着/3着」ラベル
+    // Header: 左端「2着」ラベル + 6 columns(1着)（右端の冗長ラベル列は撤去）
     html+='<thead><tr>';
-    html+='<th style="background:#F8F8F8;font-size:9px;color:#999;min-width:28px;border:0">2着</th>';   // F8: 左号艇列ヘッダ（線なし）
+    html+='<th class="left-col" style="font-size:10px;color:#999">2着</th>';
     for(var first=1;first<=6;first++){
       var hName=boatNames[first]||first;
       html+='<th style="background:'+BOAT_COLORS[first]+';color:'+BOAT_TEXT[first]+';border:1px solid '+(first===1?'#ccc':'transparent')+'">'+first+'.'+escText(hName)+'</th>';
     }
-    html+='<th style="background:#F8F8F8;font-size:9px;color:#999">2着<br>3着</th>';
     html+='</tr></thead><tbody>';
 
     // 2着は固定順(1,2,3,4,5,6)で回す。1着と同じ番号はスキップ。
@@ -2599,27 +2602,24 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
         html+='<tr'+(isAlt?' class="alt-bg"':'')+'>';
 
-        // F8: 左端 2着号艇列（グループ先頭のみ大きいバッジ、それ以外は空）— 線なし
+        // 左端「2着」号艇列（グループ先頭のみバッジ、罫線なし）
         var leftLabel='';
         if(isGroupStart){
-          leftLabel='<span style="display:inline-block;width:20px;height:20px;line-height:20px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:3px;font-size:11px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
+          leftLabel='<span style="display:inline-block;width:22px;height:22px;line-height:22px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:3px;font-size:12px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
         }
-        html+='<td style="background:#F8F8F8;text-align:center;padding:2px;border:0">'+leftLabel+'</td>';
+        html+='<td class="left-col">'+leftLabel+'</td>';
 
         for(var first=1;first<=6;first++){
           if(first===second){
-            // 1着=2着は存在しない → グレー空セル
             html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="background:#E8E8E8"></td>';
             continue;
           }
-          // 3着候補: 1-6から1着と2着を除いた4つ、固定順
           var thirds=allBoatNums.filter(function(b){return b!==first&&b!==second});
           if(ti>=thirds.length){
-            html+='<td class="'+(isGroupStart?'group-sep':'')+'">-</td>';
+            html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="text-align:center;color:#CCC">-</td>';
             continue;
           }
           var thirdBoat=thirds[ti];
-
           var combo=first+'-'+second+'-'+thirdBoat;
           var oddsVal=raceOdds.trifecta[combo];
 
@@ -2630,23 +2630,11 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
             else if(oddsVal>=100) oddsClass='odds-high';
           }
 
-          var thirdLabel='<span style="display:inline-block;width:14px;height:14px;line-height:14px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
+          var badge='<span class="badge" style="display:inline-block;width:16px;height:16px;line-height:16px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:10px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
           var oddsStr=oddsVal?oddsVal.toFixed(1):'-';
-          html+='<td class="'+cellClass+'">'+thirdLabel+'<span class="'+oddsClass+'" style="display:inline-block;min-width:36px;text-align:right">'+oddsStr+'</span></td>';
+          html+='<td class="'+cellClass+'"><div class="cell-flex">'+badge+'<span class="odds '+oddsClass+'">'+oddsStr+'</span></div></td>';
         }
-
-        // 右端ラベル列: 2着番号（グループ先頭のみ）+ 3着候補
-        var labelThirds=allBoatNums.filter(function(b){return b!==second});
-        var rightLabel='';
-        if(isGroupStart){
-          rightLabel='<span style="display:inline-block;width:16px;height:16px;line-height:16px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:2px;font-size:10px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
-        }
-        if(ti<labelThirds.length){
-          var lt=labelThirds[ti];
-          rightLabel+=' <span style="font-size:9px;color:#999">-'+lt+'</span>';
-        }
-        html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="background:#F8F8F8;font-size:9px;text-align:center">'+rightLabel+'</td>';
 
         html+='</tr>';
       }
