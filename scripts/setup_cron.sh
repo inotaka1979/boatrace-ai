@@ -44,6 +44,10 @@ LANG=ja_JP.UTF-8
 # --- 潮汐: 1日1回 (JST 8:00) X4 R-02 ---
 0 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh tide >> /dev/null 2>&1
 
+# --- 今節成績データ: 1日2回 (JST 8:30 朝, 12:00 昼) F15 ---
+30 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh racedata >> /dev/null 2>&1
+0 12 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh racedata >> /dev/null 2>&1
+
 # --- 日次: レースデータ+スケジュール (JST 8:30, 12:00) ---
 # ※racedata はGitHub Actionsのままでも可（頻度が低いため）
 # 30 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape_racedata.sh >> /dev/null 2>&1

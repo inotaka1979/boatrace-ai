@@ -36,8 +36,8 @@ export TZ="Asia/Tokyo"
 
 # --- 引数チェック ---
 MODE="${1:-all}"
-if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" ]]; then
-    echo "Usage: $0 {odds|previews|all|tide}" >&2
+if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" ]]; then
+    echo "Usage: $0 {odds|previews|all|tide|racedata}" >&2
     exit 1
 fi
 
@@ -199,6 +199,10 @@ case "$MODE" in
     tide)
         run_scrape "scrape_tide.py" "tide" || overall=$?
         git_push_if_changed "tide" || overall=$?
+        ;;
+    racedata)
+        run_scrape "scrape_racedata.py" "racedata" || overall=$?
+        git_push_if_changed "racedata" || overall=$?
         ;;
 esac
 
