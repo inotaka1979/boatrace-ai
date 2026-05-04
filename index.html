@@ -2448,7 +2448,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
     // Header: 左端「2着」ラベル + 6 columns(1着) + 右端「2着/3着」ラベル
     html+='<thead><tr>';
-    html+='<th style="background:#F8F8F8;font-size:9px;color:#999;min-width:28px">2着</th>';   // F8: 左号艇列ヘッダ
+    html+='<th style="background:#F8F8F8;font-size:9px;color:#999;min-width:28px;border:0">2着</th>';   // F8: 左号艇列ヘッダ（線なし）
     for(var first=1;first<=6;first++){
       var hName=boatNames[first]||first;
       html+='<th style="background:'+BOAT_COLORS[first]+';color:'+BOAT_TEXT[first]+';border:1px solid '+(first===1?'#ccc':'transparent')+'">'+first+'.'+escText(hName)+'</th>';
@@ -2472,12 +2472,12 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
         html+='<tr'+(isAlt?' class="alt-bg"':'')+'>';
 
-        // F8: 左端 2着号艇列（グループ先頭のみ大きいバッジ、それ以外は空）
+        // F8: 左端 2着号艇列（グループ先頭のみ大きいバッジ、それ以外は空）— 線なし
         var leftLabel='';
         if(isGroupStart){
           leftLabel='<span style="display:inline-block;width:20px;height:20px;line-height:20px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:3px;font-size:11px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
         }
-        html+='<td class="'+(isGroupStart?'group-sep':'')+'" style="background:#F8F8F8;text-align:center;padding:2px">'+leftLabel+'</td>';
+        html+='<td style="background:#F8F8F8;text-align:center;padding:2px;border:0">'+leftLabel+'</td>';
 
         for(var first=1;first<=6;first++){
           if(first===second){
