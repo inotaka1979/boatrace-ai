@@ -151,6 +151,12 @@ def select_target_races(closing_map, existing_data, now=None):
             if not has_exhibition:
                 targets.append((sid, rno, RaceAction.FETCH_EXHIBITION, 100 + minutes_to_close))
 
+        # F-CATCHUP: 締切から15分以上経過したが is_finished が False のレースを救済
+        # ダウンタイム後の back-fill 用。最大 6 時間前まで。優先度は低め（200+経過分）
+        elif minutes_to_close < -WINDOW_AFTER_CLOSE:
+            if not is_finished and minutes_to_close >= -360:
+                targets.append((sid, rno, RaceAction.FETCH_RESULT, 200 + (-minutes_to_close)))
+
     # 優先度順にソート
     targets.sort(key=lambda x: x[3])
     return targets
