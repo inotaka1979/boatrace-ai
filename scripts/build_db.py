@@ -46,23 +46,45 @@ FAN_URL = "https://www.boatrace.jp/static_extra/pc_static/download/data/kibetsu/
 RESULTS_BASE = "http://www1.mbrace.or.jp/od2/K/"
 
 
-def download(url):
-    """URLからバイナリをダウンロード"""
+def download(url: str) -> bytes:
+    """URL からバイナリをダウンロードする。
+
+    Args:
+        url: 取得対象 URL（HTTPS 推奨）
+
+    Returns:
+        レスポンス本文の bytes
+
+    Raises:
+        urllib.error.URLError: ネットワークエラー
+        urllib.error.HTTPError: HTTP エラー
+    """
     req = Request(url, headers=HEADERS)
     with urlopen(req, timeout=30) as r:
         return r.read()
 
 
-def extract_lzh(data):
-    """LZHファイルを解凍して文字列を返す（後方互換用）"""
+def extract_lzh(data: bytes) -> str:
+    """LZH 圧縮データを Shift-JIS でデコードした str として返す（後方互換用）。"""
     raw = extract_lzh_bytes(data)
     if raw:
         return raw.decode('shift_jis', errors='replace')
     return ""
 
 
-def extract_lzh_bytes(data):
-    """LZH ファイルを解凍して bytes を返す（バイト幅処理用）"""
+def extract_lzh_bytes(data: bytes) -> bytes:
+    """LZH 圧縮データを解凍して bytes を返す。
+
+    lhafile が利用可能ならそれを使い、無ければ system の `lha` コマンドに
+    フォールバックする。固定長レコードを Shift-JIS でデコードする際、
+    漢字（2 byte）の位置をバイト幅で扱う必要があるため bytes で返す。
+
+    Args:
+        data: LZH ファイルの生バイト列
+
+    Returns:
+        最初のエントリの解凍済 bytes。失敗時は b""
+    """
     try:
         import lhafile
         f = lhafile.Lhafile(BytesIO(data))
@@ -86,12 +108,19 @@ def extract_lzh_bytes(data):
     return b""
 
 
-def parse_fan_handbook(text_or_bytes):
-    """ファン手帳をパースして racerDB を構築（bytes / str 両対応）
+def parse_fan_handbook(text_or_bytes: bytes | str) -> dict[str, dict]:
+    """ファン手帳（公式選手データ）をパースして racerDB を構築する。
 
-    ファン手帳は Shift-JIS のバイト幅で固定長レイアウト定義されているため、
+    ファン手帳は Shift-JIS バイト幅で固定長レイアウトが定義されているため、
     Python 文字列ベースの slice では漢字（2 byte）含むフィールドで
-    位置がずれてしまう。bytes 単位でスライスしてからデコードする。
+    位置がずれる。bytes 単位でスライスしてからデコードする。
+
+    Args:
+        text_or_bytes: ファン手帳の生バイト列または str
+
+    Returns:
+        登番（4 桁文字列）→ 選手情報 dict のマップ。
+        各値は {name, kana, branch, class, course_winrate_2, top2Rate, ...} を含む。
     """
     racers = {}
     # bytes に統一
@@ -217,14 +246,18 @@ def parse_fan_handbook(text_or_bytes):
     return racers
 
 
-def parse_results_text(text, racers, stadium_stats):
-    """
-    競走成績テキストから直近成績と場別統計を更新。
+def parse_results_text(text: str, racers: dict, stadium_stats: dict) -> None:
+    """競走成績テキストから直近成績と場別統計を in-place 更新する。
 
     競走成績ファイル (kYYMMDD.txt) のレイアウト概要:
-    - 各レースブロックはヘッダ行で始まる
-    - レース結果行: 着順(2) 枠番(1) 登番(4) 選手名(8) ... の固定長
-    - 場番号・レース番号はヘッダ行から取得
+        - 各レースブロックはヘッダ行で始まる
+        - レース結果行: 着順(2) 枠番(1) 登番(4) 選手名(8) ... の固定長
+        - 場番号・レース番号はヘッダ行から取得
+
+    Args:
+        text: kYYMMDD.txt の本文（Shift-JIS デコード済み）
+        racers: 登番→選手 dict（recentResults に append される）
+        stadium_stats: 場番号→統計 dict（コース別 wins/races が更新される）
     """
     current_stadium = None
     current_race = None
@@ -288,7 +321,9 @@ def parse_results_text(text, racers, stadium_stats):
                 continue
 
 
-def main():
+def main() -> None:
+    """エントリーポイント: ファン手帳と過去 30 日分の競走成績をダウンロードし、
+    racerDB.json / stadiumDB.json を atomic に出力する。"""
     os.makedirs(os.path.dirname(OUTPUT_RACER), exist_ok=True)
     os.makedirs(os.path.dirname(OUTPUT_STADIUM), exist_ok=True)
 

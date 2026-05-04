@@ -21,8 +21,18 @@ def fetch(url: str) -> str:
     return fetch_text(url, timeout=20)
 
 
-def parse_raceresult(html, stadium, race_num):
-    """raceresultページから結果を抽出"""
+def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
+    """raceresult ページの HTML から 1 レース分の結果を抽出する。
+
+    Args:
+        html: raceresult ページの生 HTML
+        stadium: 場番号 (1..24)
+        race_num: レース番号 (1..12)
+
+    Returns:
+        Open API 互換の dict。決勝に至っていなければ
+        race_technique_number=None / boats=[] が返る。
+    """
     result = {
         "race_stadium_number": stadium,
         "race_number": race_num,
@@ -145,7 +155,8 @@ def parse_raceresult(html, stadium, race_num):
     return result
 
 
-def main():
+def main() -> None:
+    """エントリーポイント: 本日の全レース結果を取得し OUTPUT に書き出す。"""
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
 
     print("Fetching today's programs...")

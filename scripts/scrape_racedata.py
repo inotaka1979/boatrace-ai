@@ -32,8 +32,18 @@ def fetch_html(url: str) -> str:
     """URL から HTML を取得（http_utils.fetch_text の alias）。"""
     return fetch_text(url)
 
-def scrape_racelist(jcd, rno, date_str):
-    """出走表ページから今節成績を取得"""
+def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
+    """出走表ページから今節成績（直近 6 艇分）を取得する。
+
+    Args:
+        jcd: 場番号 2 桁文字列 (例 "01")
+        rno: レース番号 (1..12)
+        date_str: 日付 YYYYMMDD 文字列
+
+    Returns:
+        艇番順の dict 配列。各 dict は current_series_results / summary を含む。
+        失敗時は空リスト。
+    """
     url = f"{BASE_URL}/racelist?rno={rno}&jcd={jcd}&hd={date_str}"
     try:
         html = fetch_html(url)
@@ -80,8 +90,8 @@ def scrape_racelist(jcd, rno, date_str):
         print(f"  Error scraping racelist: {e}")
         return []
 
-def scrape_beforeinfo(jcd, rno, date_str):
-    """直前情報ページから部品交換情報を取得"""
+def scrape_beforeinfo(jcd: str, rno: int, date_str: str) -> dict[int, list[str]]:
+    """直前情報ページから艇番→部品交換タグ配列のマップを取得する。"""
     url = f"{BASE_URL}/beforeinfo?rno={rno}&jcd={jcd}&hd={date_str}"
     try:
         html = fetch_html(url)
@@ -106,8 +116,8 @@ def scrape_beforeinfo(jcd, rno, date_str):
         print(f"  Error scraping beforeinfo: {e}")
         return {}
 
-def download_photo(racer_number):
-    """選手写真をダウンロード（未取得分のみ）"""
+def download_photo(racer_number: int | str) -> None:
+    """選手写真を data/photos/{番号}.jpg にダウンロード（既存ならスキップ）。"""
     path = f"{PHOTO_DIR}/{racer_number}.jpg"
     if os.path.exists(path):
         return
@@ -124,7 +134,8 @@ def download_photo(racer_number):
         # PC-9: 写真ダウンロード失敗は致命的ではないが観測可能に
         print(f"[photo] download skip ({url}): {e}")
 
-def main():
+def main() -> None:
+    """エントリーポイント: 本日の出走表 / 直前情報 / 写真を取得し OUTPUT_RACEDATA に出力。"""
     os.makedirs(os.path.dirname(OUTPUT_RACEDATA), exist_ok=True)
 
     print("Fetching today's programs...")

@@ -42,8 +42,15 @@ GRADE_MAP = {
 }
 
 
-def scrape_month(year_month):
-    """月間スケジュールを取得"""
+def scrape_month(year_month: str) -> list[dict]:
+    """指定月（YYYYMM）の全場開催イベントを取得する。
+
+    Args:
+        year_month: "202605" 等 6 桁文字列
+
+    Returns:
+        各イベント dict のリスト。失敗時は空リスト。
+    """
     url = SCHEDULE_URL.format(ym=year_month)
     try:
         # PC-1: http_utils.fetch_text に統一（retry / 共通 UA）

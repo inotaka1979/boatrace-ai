@@ -507,6 +507,30 @@ var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5];
 var L2_BIAS=0;
 var L2_LR=0.01;
 
+// PC-3: 主要しきい値の集約（マジックナンバー撲滅、変更履歴の追跡性向上）
+//       根拠: CLAUDE.md 修正履歴の Review 系 / X1 EV/Kelly 改善設計を参照
+var TUNING = Object.freeze({
+  // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
+  RACE_TYPE: Object.freeze({
+    HONMEI_TOP1_MIN: 0.40,        // top1 これ以上で本命候補
+    HONMEI_TOP2_MIN: 0.55,        // 本命は top1+top2 ≥ 0.55 を満たす必要
+    ANA_TOP1_MAX: 0.25,           // top1 これ未満は穴候補
+    ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
+    ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
+  }),
+  // EV / Kelly（X1 設計）
+  KELLY: Object.freeze({
+    DEFAULT_FRAC: 0.5,            // half-Kelly を既定（過大ベット抑止）
+    MIN_FRAC: 0.0,                // 最低 fraction（負ベット禁止）
+    MAX_STAKE_RATIO: 1.0,         // bankroll 比 stake 上限
+  }),
+  // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
+  L2: Object.freeze({
+    LR: 0.01,
+    BIAS_INIT: 0,
+  }),
+});
+
 // ===============================================
 // STATE (PRESERVED)
 // ===============================================
@@ -2367,8 +2391,10 @@ function predictRace(sid,raceNum){
   var raceType,typeLabel,typeCls;
   var wh=(weather?weather.wave_height||weather.race_wave||0:0);
   var ws2=(weather?weather.wind_speed||weather.race_wind||0:0);
-  if(topProb>0.40&&top2Prob>0.55){raceType='honmei';typeLabel='本命';typeCls='type-honmei'}
-  else if(topProb<0.25||wh>=7||ws2>=5){raceType='ana';typeLabel='穴';typeCls='type-ana'}
+  // PC-3: TUNING.RACE_TYPE 集約定数を使用
+  var RT=TUNING.RACE_TYPE;
+  if(topProb>RT.HONMEI_TOP1_MIN && top2Prob>RT.HONMEI_TOP2_MIN){raceType='honmei';typeLabel='本命';typeCls='type-honmei'}
+  else if(topProb<RT.ANA_TOP1_MAX || wh>=RT.ANA_WAVE_HEIGHT_CM || ws2>=RT.ANA_WIND_SPEED_MS){raceType='ana';typeLabel='穴';typeCls='type-ana'}
   else{raceType='middle';typeLabel='混戦';typeCls='type-middle'}
 
   var betCount3=parseInt(settings.betCount3)||10;
@@ -2484,8 +2510,10 @@ function predictRaceProgram(sid,raceNum){
   var topProb=finalProbs[0].prob;
   var top2Prob=finalProbs[0].prob+finalProbs[1].prob;
   var raceType,typeLabel;
-  if(topProb>0.40&&top2Prob>0.55){raceType='honmei';typeLabel='本命'}
-  else if(topProb<0.25){raceType='ana';typeLabel='穴'}
+  // PC-3: TUNING.RACE_TYPE 集約定数を使用（環境補正は呼出側で済んでいる前提）
+  var RT2=TUNING.RACE_TYPE;
+  if(topProb>RT2.HONMEI_TOP1_MIN && top2Prob>RT2.HONMEI_TOP2_MIN){raceType='honmei';typeLabel='本命'}
+  else if(topProb<RT2.ANA_TOP1_MAX){raceType='ana';typeLabel='穴'}
   else{raceType='middle';typeLabel='混戦'}
 
   return{marks:finalProbs,raceType:raceType,typeLabel:typeLabel,confidence:Math.round(topProb*100)};
