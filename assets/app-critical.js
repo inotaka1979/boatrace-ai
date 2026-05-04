@@ -831,9 +831,10 @@ var _workerHeavyLoaded = false;
 // LIVE DATA MERGE HELPER
 // ===============================================
 
-// 公式 API previews/v2/today.json は前日データを残す傾向があるため、
-// race_date が今日 (JST) と一致しない場合は破棄。
-// 早朝〜展示走行前は previews 空表示が正しい状態。
+// 公式 API previews/v2/today.json は (1) 前日データを残す、
+// (2) 当日の race_date に切り替わっても展示走行前は exhibition_time=0 /
+// start_timing=null のままという 2 つの性質がある。
+// レース単位で「展示済みのレースだけ」残す（展示前は前日値が紛れる原因）。
 /* MOVED: function _filterStalePreviews */
 
 /* MOVED: function _applyLiveDataMerge */
@@ -1392,12 +1393,21 @@ async function _yieldToMain(){
 function _filterStalePreviews(raw){
   if(!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
   var today = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  var first = raw.previews[0].race_date || '';
-  if(first && first !== today){
-    console.warn('公式 API previews は古い('+first+' JST), 全件 skip');
+  var firstDate = raw.previews[0].race_date || '';
+  if(firstDate && firstDate !== today){
+    console.warn('公式 API previews は古い('+firstDate+' JST), 全件 skip');
     return { previews: [], updated_at: raw.updated_at };
   }
-  return raw;
+  // 展示済みのみ残す（boat の exhibition_time が 1 つでも >0 ならそのレースは展示済）
+  var filtered = raw.previews.filter(function(p){
+    var bs = p.boats || [];
+    if(!Array.isArray(bs)) bs = Object.keys(bs).map(function(k){return bs[k]});
+    return bs.some(function(b){ return b && (b.racer_exhibition_time||0) > 0; });
+  });
+  if(filtered.length !== raw.previews.length){
+    console.info('previews: '+raw.previews.length+' → '+filtered.length+' (展示前のレースを除外)');
+  }
+  return { previews: filtered, updated_at: raw.updated_at };
 }
 
 function _applyLiveDataMerge(liveData){
