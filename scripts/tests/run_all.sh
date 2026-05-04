@@ -33,7 +33,7 @@ step "Python unit tests (io_utils / time_utils)" \
 
 # 2) Python シンタックスチェック（main は実行しない）
 step "Python parse check" \
-     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/serve_data.py scripts/io_utils.py scripts/time_utils.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
+     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
 
 # 3) Bash テスト
 step "Shell tests (cron_scrape / cron_monitor)" \
