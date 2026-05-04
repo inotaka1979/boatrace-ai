@@ -640,6 +640,8 @@ async function forceRefresh(){
       }
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
+    // F17: 全場の確定レースに対して予想 backfill
+    if(typeof _backfillTodayPredictions === 'function') _backfillTodayPredictions();
 
     // 4) 鮮度表示と現在ページを再描画
     if(typeof _renderFreshness==='function') _renderFreshness();
@@ -2608,6 +2610,32 @@ function generateBetsV2(marks,method,count3,count2){
 // ===============================================
 // HISTORY MANAGEMENT (PRESERVED)
 // ===============================================
+// F17: 全場の確定レースに対して predictRace + savePrediction を一括実行
+// ユーザーが開いていない場の成績も「本日の場別」に反映されるようにする
+function _backfillTodayPredictions(){
+  if(!programData || !resultData) return;
+  var today = todayStr();
+  var saved = 0;
+  for(var sid in programData){
+    var stadium = programData[sid];
+    for(var rn in stadium){
+      var hasResult = resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
+      if(!hasResult) continue;   // 結果未確定はスキップ（成績集計に乗らない）
+      try {
+        var pred = predictRace(sid, parseInt(rn));
+        if(pred){
+          // savePrediction 内で重複チェックされるので毎回呼んで OK
+          savePrediction(today, sid, rn, pred, resultData[sid][rn]);
+          saved++;
+        }
+      } catch(e){
+        // 予想計算エラーは黙殺（特定レースのデータ欠損で続行）
+      }
+    }
+  }
+  if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races');
+}
+
 function savePrediction(date,sid,rn,pred,result){
   try{
     var key='boatrace_history';
@@ -2970,6 +2998,9 @@ async function loadAllData(){
   if(resultData) learnSeriesAndPairwiseFromResults(resultData);
   learnFromResults();
   updateHistoryWithResults();
+  // F17: 全場の確定レースに対して予想を一括 backfill
+  // (ユーザーが開いた場以外も成績ページに反映されるように)
+  _backfillTodayPredictions();
 
   if(prog) prog.style.width='100%';
   if(msg) msg.textContent='完了';
