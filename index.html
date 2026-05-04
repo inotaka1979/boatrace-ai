@@ -400,26 +400,94 @@ var L2_LR=0.01;
 // STATE (PRESERVED)
 // ===============================================
 var programData=null,previewData=null,resultData=null;
-var oddsData=null,raceData=null,oddsHistory=null;
+var oddsData=null,raceData=null;   // P3 L-17: oddsHistory 死コード削除
 var currentStadium=null,currentRace=null;
-var settings=JSON.parse(localStorage.getItem('boatrace_settings')||'{"betCount3":10,"betCount2":5,"betMethod":"auto"}');
-var racerDB=JSON.parse(localStorage.getItem('boatrace_racerDB')||'{}');
-var stadiumDB=JSON.parse(localStorage.getItem('boatrace_stadiumDB')||'{}');
-var l2weights=JSON.parse(localStorage.getItem('boatrace_weights')||'null')||L2_INIT_WEIGHTS.slice();
+// P3 L-04: 安全 parse（破損データで起動失敗するのを防ぐ）。safeParse は次セクションで定義。
+function _bootParseLS(key, fallback){
+  try{ var raw=localStorage.getItem(key); if(raw==null) return fallback;
+       var v=JSON.parse(raw); return (v!==null&&v!==undefined)?v:fallback; }
+  catch(e){ console.warn('[boot] parse failed', key, e); return fallback; }
+}
+var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
+var racerDB=_bootParseLS('boatrace_racerDB', {});
+var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
+var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;
 
 // ===============================================
-// UTILITIES (PRESERVED)
+// UTILITIES (P3 共通ヘルパ拡張版)
 // ===============================================
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
 async function forceRefresh(){if('caches' in window){var keys=await caches.keys();for(var i=0;i<keys.length;i++){if(keys[i].indexOf('api')!==-1){await caches.delete(keys[i])}}}try{var t=Date.now();var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);if(rawP)programData=indexByStadiumRace(rawP,'programs');var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);if(rawPv)previewData=indexPreviews(rawPv);var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}try{var o=await fetch('data/odds/today.json?t='+t);if(o.ok)oddsData=await o.json()}catch(e){}}catch(e){console.warn('Refresh error:',e)}var currentPage=document.querySelector('.page.active');if(currentPage){var pid=currentPage.id;if(pid==='pageTop')renderStadiums();else if(pid==='pageRaces'&&currentStadium)openStadium(currentStadium);else if(pid==='pageDetail'&&currentStadium&&currentRace)openRace(currentStadium,currentRace)}}
 function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function getJSTDate(){return new Date(Date.now()+9*3600000)}
-function todayStr(){var d=getJSTDate();return d.getUTCFullYear()+('0'+(d.getUTCMonth()+1)).slice(-2)+('0'+d.getUTCDate()).slice(-2)}
-function formatDate(){var d=getJSTDate();return(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' ('+['日','月','火','水','木','金','土'][d.getUTCDay()]+')';}
+
+// P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
+function getJSTDate(offsetDays){
+  var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
+  return new Date(t);
+}
+function jstYmd(offsetDays){
+  var d=getJSTDate(offsetDays);
+  return d.getUTCFullYear()+('0'+(d.getUTCMonth()+1)).slice(-2)+('0'+d.getUTCDate()).slice(-2);
+}
+function todayStr(){return jstYmd(0)}
+function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' ('+['日','月','火','水','木','金','土'][d.getUTCDay()]+')';}
+
+// P3 L-04: localStorage 安全 parse（破損時は default を返し、破損データは隔離保存）
+function safeParse(key, fallback){
+  try{
+    var raw=localStorage.getItem(key);
+    if(raw==null) return fallback;
+    var v=JSON.parse(raw);
+    return (v!==null && v!==undefined) ? v : fallback;
+  }catch(e){
+    console.warn('[storage] parse failed', key, e);
+    try{ localStorage.setItem(key+'__corrupt_'+Date.now(), localStorage.getItem(key)||''); }catch(_){}
+    return fallback;
+  }
+}
+
+// P3 L-05: localStorage 安全 set（QuotaExceededError で履歴を間引いてリトライ）
+function safeSet(key, value){
+  var s = (typeof value==='string') ? value : JSON.stringify(value);
+  try{ localStorage.setItem(key, s); return true; }
+  catch(e){
+    if(e && (e.name==='QuotaExceededError' || e.code===22)){
+      try{
+        var hist=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
+        if(hist.length>1000){ hist=hist.slice(-1000); localStorage.setItem('boatrace_history', JSON.stringify(hist)); }
+        // bc_ キャッシュも掃除
+        var keys=[]; for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i); if(k&&k.indexOf('bc_')===0) keys.push(k)}
+        keys.forEach(function(k){ try{localStorage.removeItem(k)}catch(_){} });
+        localStorage.setItem(key, s);
+        return true;
+      }catch(_){}
+    }
+    console.warn('[storage] set failed', key, e);
+    return false;
+  }
+}
+
+// P3 L-06/L-10: softmax 安全化（NaN/Infinity 入力でも崩れない）
+function softmax(logits){
+  if(!Array.isArray(logits) || logits.length===0) return [];
+  var clean=logits.map(function(v){ return Number.isFinite(v)?v:0; });
+  var max=clean.reduce(function(a,b){return b>a?b:a}, -Infinity);
+  if(!Number.isFinite(max)) max=0;
+  var exps=clean.map(function(v){ return Math.exp(Math.min(v-max, 50)); });
+  var sum=exps.reduce(function(a,b){return a+b},0);
+  if(sum===0 || !Number.isFinite(sum)) return clean.map(function(){return 1/clean.length});
+  return exps.map(function(x){return x/sum});
+}
+
+// P3 L-08/L-09: ゼロ除算ガード
+function safeDiv(num, den, fallback){
+  if(!Number.isFinite(num) || !Number.isFinite(den) || den===0) return (fallback==null?0:fallback);
+  return num/den;
+}
 
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
 function boatBadgeLg(num){return'<span class="boat-badge boat-badge-lg" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
@@ -519,7 +587,7 @@ function updateDBFromResults(resultsJson, programsJson){
       var winner=sortedRes[0];
 
       sortedRes.forEach(function(r){
-        var rid=r.racer_number||r.racer_number;
+        var rid=r.racer_number||0;   // P3 L-01: 自己参照typo修正
         if(!rid) return;
         if(!racerDB[rid]) racerDB[rid]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
         var rdb=racerDB[rid];
@@ -589,10 +657,9 @@ function cleanOldData(){
 }
 
 function saveDB(){
-  try{
-    localStorage.setItem('boatrace_racerDB',JSON.stringify(racerDB));
-    localStorage.setItem('boatrace_stadiumDB',JSON.stringify(stadiumDB));
-  }catch(e){console.warn('DB save error:',e)}
+  // P3 L-05: QuotaExceededError は safeSet が history を間引いてリトライ
+  safeSet('boatrace_racerDB', racerDB);
+  safeSet('boatrace_stadiumDB', stadiumDB);
 }
 
 function getRacerCourseWinRate(rid,course){
@@ -815,7 +882,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
     else if(wh>=4&&course<=2) score-=2;
   }
 
-  var fc=boat.racer_flying_count||boat.racer_flying_count||0;
+  var fc=boat.racer_flying_count||0;   // P3 L-02: 自己参照typo修正
   var lc=boat.racer_late_start_count_in_current_term||boat.racer_late_count||0;
   if(fc>=2){score-=25;risks.push('F2持ち')}
   else if(fc>=1){score-=15;risks.push('F1持ち')}
@@ -889,12 +956,7 @@ function getL2Features(boat,preview,weather,etRank,stRank,sid){
   ];
 }
 
-function softmax(logits){
-  var max=Math.max.apply(null,logits);
-  var exps=logits.map(function(v){return Math.exp(v-max)});
-  var sum=exps.reduce(function(a,b){return a+b},0);
-  return exps.map(function(v){return v/sum});
-}
+// P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
 function l2Predict(features6){
   var logits=features6.map(function(feat){
@@ -914,7 +976,7 @@ function l2Update(features6,winnerIdx){
       l2weights[i]-=L2_LR*err*(features6[b][i]||0);
     }
   }
-  localStorage.setItem('boatrace_weights',JSON.stringify(l2weights));
+  safeSet('boatrace_weights', l2weights);   // P3 L-05
 }
 
 // ===============================================
@@ -1219,8 +1281,8 @@ function savePrediction(date,sid,rn,pred,result){
       }
     }
     history.push(entry);
-    if(history.length>2000) history.splice(0,history.length-2000);
-    localStorage.setItem(key,JSON.stringify(history));
+    if(history.length>2000) history.splice(0, history.length-2000);   // P3 L-15: 過剰push後の整列
+    safeSet(key, history);   // P3 L-05
   }catch(e){console.warn('savePrediction error:',e)}
 }
 
@@ -1251,8 +1313,8 @@ function updateHistoryWithResults(){
         }
       }
     });
-    if(updated) localStorage.setItem('boatrace_history',JSON.stringify(history));
-  }catch(e){}
+    if(updated) safeSet('boatrace_history', history);   // P3 L-05
+  }catch(e){console.warn('history update error:', e)}   // R2-07: silent pass を解消
 }
 
 function getAccuracy(){
@@ -1569,20 +1631,7 @@ function calcPopularity(raceOdds){
   return null;
 }
 
-function getOddsTrend(sid,rn,boat){
-  if(!oddsHistory||!oddsHistory.snapshots||oddsHistory.snapshots.length<2) return null;
-  var key=sid+'-'+rn;
-  var snaps=oddsHistory.snapshots;
-  var latest=snaps[snaps.length-1].odds;
-  var prev=snaps[snaps.length-2].odds;
-  if(!latest||!latest[key]||!latest[key].win||!prev||!prev[key]||!prev[key].win) return null;
-  var lv=latest[key].win[String(boat)];
-  var pv=prev[key].win[String(boat)];
-  if(!lv||!pv) return null;
-  var diff=lv-pv;
-  if(Math.abs(diff)<0.1) return'stable';
-  return diff>0?'up':'down';
-}
+// P3 L-17: getOddsTrend は未使用かつ oddsHistory 未初期化のため削除
 
 function calcEV(aiProb,odds){
   if(!odds||odds<=0) return null;
@@ -2665,7 +2714,7 @@ function loadSettings(){
     +'localStorage使用量: '+(lsUsed/1024/1024).toFixed(1)+'MB / 5MB';
 }
 
-function saveSetting(key,val){settings[key]=val;localStorage.setItem('boatrace_settings',JSON.stringify(settings))}
+function saveSetting(key,val){settings[key]=val; safeSet('boatrace_settings', settings)}   // P3 L-05
 function clearCache(){var keys=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.startsWith('bc_'))keys.push(k)}keys.forEach(function(k){localStorage.removeItem(k)});alert('キャッシュをクリアしました ('+keys.length+'件)')}
 function clearHistory(){if(confirm('成績履歴を全て削除しますか?')){localStorage.removeItem('boatrace_history');alert('履歴を削除しました')}}
 function rebuildDB(){if(confirm('選手/場DBを再構築しますか?')){localStorage.removeItem('boatrace_racerDB');localStorage.removeItem('boatrace_stadiumDB');location.reload()}}
@@ -2860,8 +2909,13 @@ document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
 loadAllData();
 
+// P3 L-18: 全 setInterval を一元管理し、unload 時にクリア
+var _managedTimers=[];
+function setManagedInterval(fn, ms){ var id=setInterval(fn, ms); _managedTimers.push(id); return id; }
+window.addEventListener('beforeunload', function(){ _managedTimers.forEach(clearInterval); });
+
 // 5min auto-refresh
-setInterval(async function(){
+setManagedInterval(async function(){
   try{
     var t=Date.now();
     var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
