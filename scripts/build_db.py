@@ -50,16 +50,21 @@ def download(url):
 
 
 def extract_lzh(data):
-    """LZHファイルを解凍してテキストを返す"""
+    """LZHファイルを解凍して文字列を返す（後方互換用）"""
+    raw = extract_lzh_bytes(data)
+    if raw:
+        return raw.decode('shift_jis', errors='replace')
+    return ""
+
+
+def extract_lzh_bytes(data):
+    """LZH ファイルを解凍して bytes を返す（バイト幅処理用）"""
     try:
         import lhafile
-        # 修正: lhafile.LhaFile (大文字 F) は存在しない
-        # 正しいクラス名は lhafile.Lhafile (小文字 f)
         f = lhafile.Lhafile(BytesIO(data))
         for info in f.infolist():
-            return f.read(info.filename).decode('shift_jis', errors='replace')
+            return f.read(info.filename)
     except ImportError:
-        # lhafile が無い環境では subprocess で lha コマンドを使う
         import subprocess
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.lzh', delete=False) as tmp:
@@ -70,64 +75,88 @@ def extract_lzh(data):
         os.remove(tmp_path)
         for fname in os.listdir(out_dir):
             fpath = os.path.join(out_dir, fname)
-            with open(fpath, 'r', encoding='shift_jis', errors='replace') as f:
+            with open(fpath, 'rb') as f:
                 return f.read()
     except Exception as e:
-        # 他の例外もログ出力（旧版は無音失敗だった）
-        print(f"  WARN: extract_lzh failed: {type(e).__name__}: {e}")
-    return ""
+        print(f"  WARN: extract_lzh_bytes failed: {type(e).__name__}: {e}")
+    return b""
 
 
-def parse_fan_handbook(text):
-    """ファン手帳テキストをパースしてracerDBを構築"""
+def parse_fan_handbook(text_or_bytes):
+    """ファン手帳をパースして racerDB を構築（bytes / str 両対応）
+
+    ファン手帳は Shift-JIS のバイト幅で固定長レイアウト定義されているため、
+    Python 文字列ベースの slice では漢字（2 byte）含むフィールドで
+    位置がずれてしまう。bytes 単位でスライスしてからデコードする。
+    """
     racers = {}
-    for line in text.strip().split('\n'):
-        if len(line) < 100:
+    # bytes に統一
+    if isinstance(text_or_bytes, str):
+        raw = text_or_bytes.encode('shift_jis', errors='replace')
+    else:
+        raw = text_or_bytes
+    # 改行で分割（CRLF / LF どちらも対応）
+    lines = raw.replace(b'\r\n', b'\n').split(b'\n')
+
+    cls_map = {"A1": 1, "A2": 2, "B1": 3, "B2": 4}
+
+    parse_errors = 0
+    for line in lines:
+        if len(line) < 200:   # 1 行 ~416 bytes 想定。短すぎる行はスキップ
             continue
         try:
             pos = 0
 
-            def read(n):
+            def read_bytes(n):
                 nonlocal pos
-                val = line[pos:pos + n].strip()
+                v = line[pos:pos + n]
                 pos += n
-                return val
+                return v
 
-            toban = read(4)
+            def read_str(n):
+                return read_bytes(n).decode('shift_jis', errors='replace').strip()
+
+            def read_int(n):
+                s = read_str(n)
+                if not s:
+                    return 0
+                # 数値以外が混ざる場合があるため + 異常値ガード
+                try:
+                    return int(s)
+                except ValueError:
+                    return 0
+
+            toban = read_str(4)
             if not toban.isdigit():
                 continue
-            name = read(16)
-            kana = read(15)
-            branch = read(4)
-            cls_str = read(2)
-            cls_map = {"A1": 1, "A2": 2, "B1": 3, "B2": 4}
+            name = read_str(16)
+            kana = read_str(15)
+            branch = read_str(4)
+            cls_str = read_str(2)
             cls_num = cls_map.get(cls_str, 4)
-            read(1)   # nengo
-            read(6)   # birthday
-            read(1)   # gender
-            age = int(read(2) or 0)
-            read(3)   # height
-            weight = int(read(2) or 0)
-            read(2)   # blood
-            win_rate_raw = read(4)
-            win_rate = int(win_rate_raw or 0) / 100.0
-            top2_rate_raw = read(4)
-            top2_rate = int(top2_rate_raw or 0) / 10.0
-            int(read(3) or 0)   # first_count
-            int(read(3) or 0)   # second_count
-            total_races = int(read(3) or 0)
-            read(2)   # yusyutsu
-            read(2)   # yusyo
-            avg_st_raw = read(3)
-            avg_st = int(avg_st_raw or 0) / 100.0
+            read_bytes(1)    # nengo
+            read_bytes(6)    # birthday
+            read_bytes(1)    # gender
+            age = read_int(2)
+            read_bytes(3)    # height
+            weight = read_int(2)
+            read_bytes(2)    # blood
+            win_rate = read_int(4) / 100.0
+            top2_rate = read_int(4) / 10.0
+            read_int(3)      # first_count
+            read_int(3)      # second_count
+            total_races = read_int(3)
+            read_bytes(2)    # yusyutsu
+            read_bytes(2)    # yusyo
+            avg_st = read_int(3) / 100.0
 
             # コース別基本統計（1〜6コース）
             course_stats = {}
             for c in range(1, 7):
-                entries = int(read(3) or 0)
-                c_top2 = int(read(4) or 0) / 10.0
-                c_st = int(read(3) or 0) / 100.0
-                c_st_rank = int(read(3) or 0) / 100.0
+                entries = read_int(3)
+                c_top2 = read_int(4) / 10.0
+                c_st = read_int(3) / 100.0
+                c_st_rank = read_int(3) / 100.0
                 course_stats[str(c)] = {
                     "entries": entries,
                     "top2Rate": c_top2,
@@ -136,27 +165,27 @@ def parse_fan_handbook(text):
                 }
 
             # 前期級等をスキップ
-            read(2)   # 前期級
-            read(2)   # 前々期級
-            read(2)   # 前々々期級
-            read(4)   # 前期能力指数
-            read(4)   # 今期能力指数
-            read(4)   # 年
-            read(1)   # 期
-            read(8)   # 算出期間自
-            read(8)   # 算出期間至
-            read(3)   # 養成期
+            read_bytes(2)    # 前期級
+            read_bytes(2)    # 前々期級
+            read_bytes(2)    # 前々々期級
+            read_bytes(4)    # 前期能力指数
+            read_bytes(4)    # 今期能力指数
+            read_bytes(4)    # 年
+            read_bytes(1)    # 期
+            read_bytes(8)    # 算出期間自
+            read_bytes(8)    # 算出期間至
+            read_bytes(3)    # 養成期
 
-            # コース別着順分布（1〜6コース × 1着〜6着 + F/L/K/S）
+            # コース別着順分布（1〜6コース × 1着〜6着 + F/L/K/S/各種）
             for c in range(1, 7):
                 places = []
                 for _ in range(6):
-                    places.append(int(read(3) or 0))
+                    places.append(read_int(3))
                 course_stats[str(c)]["places"] = places
                 course_stats[str(c)]["wins"] = places[0]
-                # F/L/K/S はスキップ（8フィールド × 2バイト）
+                # F/L0/L1/K0/K1/S0/S1/S2 は 8 フィールド × 2 バイト = 16 バイト
                 for _ in range(8):
-                    read(2)
+                    read_bytes(2)
 
             racers[toban] = {
                 "name": name,
@@ -173,8 +202,11 @@ def parse_fan_handbook(text):
                 "recentResults": [],
             }
         except Exception:
+            parse_errors += 1
             continue
 
+    if parse_errors > 0:
+        print(f"  parse_errors: {parse_errors}")
     return racers
 
 
@@ -256,11 +288,12 @@ def main():
     print("=== Step 1: ファン手帳ダウンロード ===")
     try:
         fan_data = download(FAN_URL)
-        fan_text = extract_lzh(fan_data)
-        racers = parse_fan_handbook(fan_text)
+        # bytes ベースで処理（Shift-JIS バイト幅固定長のため）
+        fan_bytes = extract_lzh_bytes(fan_data)
+        racers = parse_fan_handbook(fan_bytes)
         print(f"  選手数: {len(racers)}")
     except Exception as e:
-        print(f"  ファン手帳取得失敗: {e}")
+        print(f"  ファン手帳取得失敗: {type(e).__name__}: {e}")
         racers = {}
 
     print("=== Step 2: 過去30日分の競走成績 ===")
