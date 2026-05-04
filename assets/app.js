@@ -3573,10 +3573,8 @@ function renderStadiums(){
   var list=document.getElementById('stadiumList');
   sumDiv.style.display='block';
   list.style.display='grid';
-  // PG-6: prerender HTML を削除して JS render に置換
-  //   prerender の data-sid は init 時に event delegation でも使われるが、
-  //   ここで innerHTML 置換するため再度 wire 不要
-  list.innerHTML='';
+  // PH-5c: list.innerHTML='' を撤去 (CLS 抑制)
+  //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない
 
   var acc=getAccuracy();
   sumDiv.innerHTML='<div class="summary-bar">'
