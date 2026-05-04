@@ -36,8 +36,8 @@ export TZ="Asia/Tokyo"
 
 # --- 引数チェック ---
 MODE="${1:-all}"
-if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" ]]; then
-    echo "Usage: $0 {odds|previews|all|tide|racedata}" >&2
+if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" && "$MODE" != "photos" ]]; then
+    echo "Usage: $0 {odds|previews|all|tide|racedata|photos}" >&2
     exit 1
 fi
 
@@ -124,7 +124,7 @@ git_push_if_changed() {
     local label="$1"
 
     # D-07: pathspec を data の対象サブディレクトリに限定
-    git add data/odds/ data/previews/ data/racedata/ data/schedule/ 2>>"$LOG_FILE" || true
+    git add data/odds/ data/previews/ data/racedata/ data/schedule/ data/photos/ 2>>"$LOG_FILE" || true
 
     if git diff --staged --quiet; then
         log "No changes — skip push"
@@ -222,6 +222,12 @@ case "$MODE" in
             log "WARN: prerender_top failed"
         fi
         git_push_locked "racedata+prerender" || overall=$?
+        ;;
+    photos)
+        # 全選手の写真リフレッシュ（月初想定、~10-15 分）。
+        # download_photo の attempts=2 + timeout 20s に依存し、欠損のみ拾う。
+        run_scrape "refresh_all_photos.py" "photos" || overall=$?
+        git_push_locked "photos" || overall=$?
         ;;
 esac
 

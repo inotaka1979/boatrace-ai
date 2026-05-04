@@ -116,23 +116,37 @@ def scrape_beforeinfo(jcd: str, rno: int, date_str: str) -> dict[int, list[str]]
         print(f"  Error scraping beforeinfo: {e}")
         return {}
 
-def download_photo(racer_number: int | str) -> None:
-    """選手写真を data/photos/{番号}.jpg にダウンロード（既存ならスキップ）。"""
+def download_photo(racer_number: int | str, attempts: int = 2) -> bool:
+    """選手写真を data/photos/{番号}.jpg にダウンロード。
+
+    既存ファイルが >500B あればスキップ（プレースホルダ画像対策で size 検証）。
+    timeout 20s × attempts 回までリトライ。成功 True / 失敗 False。
+    """
     path = f"{PHOTO_DIR}/{racer_number}.jpg"
-    if os.path.exists(path):
-        return
-    try:
-        url = PHOTO_URL.format(racer_number)
-        req = Request(url, headers=HEADERS)
-        with urlopen(req, timeout=10) as r:
-            if r.status == 200:
-                os.makedirs(PHOTO_DIR, exist_ok=True)
-                with open(path, "wb") as f:
-                    f.write(r.read())
-        time.sleep(1)
-    except Exception as e:
-        # PC-9: 写真ダウンロード失敗は致命的ではないが観測可能に
-        print(f"[photo] download skip ({url}): {e}")
+    if os.path.exists(path) and os.path.getsize(path) > 500:
+        return True
+    url = PHOTO_URL.format(racer_number)
+    last_err = None
+    for i in range(attempts):
+        try:
+            req = Request(url, headers=HEADERS)
+            with urlopen(req, timeout=20) as r:
+                if r.status == 200:
+                    data = r.read()
+                    if len(data) > 500:
+                        os.makedirs(PHOTO_DIR, exist_ok=True)
+                        with open(path, "wb") as f:
+                            f.write(data)
+                        time.sleep(0.3)
+                        return True
+                    last_err = f"too small ({len(data)}b)"
+                else:
+                    last_err = f"status {r.status}"
+        except Exception as e:
+            last_err = str(e)[:60]
+        time.sleep(0.5)
+    print(f"[photo] download fail ({url}): {last_err}")
+    return False
 
 def main() -> None:
     """エントリーポイント: 本日の出走表 / 直前情報 / 写真を取得し OUTPUT_RACEDATA に出力。"""
