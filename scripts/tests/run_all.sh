@@ -75,9 +75,10 @@ step "Plackett-Luce probability tests" \
 step "Pure helper tests (_computeClassAttenuation / _resolveCourse)" \
      "node scripts/tests/test_pure_helpers.js"
 
-# 8e) PC-7b: build パイプライン雛形 (Step 1 = 構文検証のみ)
-step "Build scaffold (sanity check)" \
-     "(cd build && node build.mjs > /dev/null)"
+# 8e) PC-7b / PE-4: build パイプライン (Step 2 = src/utils/safe_storage を bundle 注入)
+#     --check モードで「再ビルドしても index.html が変わらない」ことを検証 (CI 再現性ガード)
+step "Build pipeline + reproducibility check" \
+     "(cd build && node build.mjs --check > /dev/null)"
 
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \

@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 // =============================================================================
-// build.mjs — BoatRace Oracle ビルドスクリプト雛形 (PC-7b)
+// build.mjs — BoatRace Oracle ビルドスクリプト (PC-7b → PE-4 Step 2)
 //
 // 段階導入計画 (build/README.md §段階導入):
-//   Step 1: 雛形のみ（このスクリプトは現行 index.html の SHA-256 と SRI を表示するだけ）
-//   Step 2: src/utils/* を esbuild で IIFE bundle → index.html の <script> 部分のみ置換
+//   Step 1: 構文検証のみ（実装済）
+//   Step 2: src/utils/safe_storage.js を IIFE bundle → marker 領域に注入  ← 現状ここ
 //   Step 3: src/predictor/* も同様に
 //   Step 4: src/ui/* も同様に
 //   Step 5: CSP nonce 自動付与 + 'unsafe-inline' 撤去
 //
-// 現状（Step 1）の動作:
-//   - index.html の検証 (SHA-256 と inline JS 構文チェック)
-//   - manifest.json / sw.js の構文検証
-//   - 配布物の整合性レポート
+// 動作:
+//   - src/utils/safe_storage.js を esbuild で IIFE bundle
+//   - index.html の <!-- BUILD:SAFE_STORAGE:START/END --> 間に注入
+//   - その後、構文検証 + ハッシュ表示
+//   - --check モード: 注入後の差分が無いことを確認（CI で再現性ガード）
 //
 // 使い方:
-//   cd build && npm install && npm run build
+//   cd build && npm install && npm run build           # 実ビルド
+//   cd build && npm run build -- --check               # CI 再現性チェック
 // =============================================================================
 
 import { readFile, writeFile, unlink, mkdtemp } from 'node:fs/promises';
@@ -24,18 +26,52 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { build as esbuild } from 'esbuild';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
+const SRC = resolve(ROOT, 'src');
+const CHECK_MODE = process.argv.includes('--check');
 
 async function sha256(path) {
   const buf = await readFile(path);
   return createHash('sha256').update(buf).digest('hex');
 }
 
-async function sriHash(path) {
-  const buf = await readFile(path);
-  return 'sha384-' + createHash('sha384').update(buf).digest('base64');
+async function bundleModule(entry) {
+  const result = await esbuild({
+    entryPoints: [entry],
+    bundle: true,
+    format: 'iife',
+    target: 'es2020',
+    legalComments: 'none',
+    minify: false,
+    minifyWhitespace: false,
+    minifyIdentifiers: false,
+    minifySyntax: false,
+    write: false,
+  });
+  if (result.outputFiles.length !== 1) {
+    throw new Error('esbuild produced ' + result.outputFiles.length + ' outputs');
+  }
+  return result.outputFiles[0].text;
+}
+
+function injectBundle(html, marker, bundle) {
+  const startTag = '/* BUILD:' + marker + ':START */';
+  const endTag = '/* BUILD:' + marker + ':END */';
+  const start = html.indexOf(startTag);
+  const end = html.indexOf(endTag);
+  if (start < 0 || end < 0) {
+    throw new Error('marker not found: ' + marker);
+  }
+  // START マーカー直後の改行から END マーカーまでを bundle に置換
+  const startLineEnd = html.indexOf('\n', start + startTag.length);
+  if (startLineEnd < 0) throw new Error('no newline after START marker: ' + marker);
+  const before = html.slice(0, startLineEnd + 1);
+  const after = html.slice(end);
+  // 注意: bundle の "use strict" は IIFE 外なのでそのまま挿入してよい
+  return before + bundle + '\n' + after;
 }
 
 async function checkJsSyntax(html) {
@@ -43,9 +79,9 @@ async function checkJsSyntax(html) {
     .map(m => m[1]).join('\n;\n');
   const tmp = await mkdtemp(join(tmpdir(), 'br-build-'));
   const path = join(tmp, 'inline.js');
-  await writeFile(path, "'use strict';" + scripts);
+  await writeFile(path, scripts);
   return new Promise((res) => {
-    const proc = spawn('node', ['--check', path], { stdio: ['ignore','pipe','pipe'] });
+    const proc = spawn('node', ['--check', path], { stdio: ['ignore', 'pipe', 'pipe'] });
     let err = '';
     proc.stderr.on('data', d => err += d);
     proc.on('exit', async (code) => {
@@ -55,30 +91,57 @@ async function checkJsSyntax(html) {
   });
 }
 
+async function checkOther(path) {
+  return new Promise((res) => {
+    const proc = spawn('node', ['--check', path], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let err = '';
+    proc.stderr.on('data', d => err += d);
+    proc.on('exit', code => res({ ok: code === 0, err }));
+  });
+}
+
 async function main() {
-  console.log('=== BoatRace Oracle Build Scaffold (PC-7b Step 1) ===\n');
+  console.log('=== BoatRace Oracle Build (PE-4 Step 2) ===\n');
 
   const indexPath = resolve(ROOT, 'index.html');
   const swPath = resolve(ROOT, 'sw.js');
   const manifestPath = resolve(ROOT, 'manifest.json');
 
-  // 1) Hash report
-  console.log('[hash] index.html  SHA-256:', (await sha256(indexPath)).slice(0,16) + '...');
-  console.log('[hash] sw.js       SHA-256:', (await sha256(swPath)).slice(0,16) + '...');
-  console.log('[hash] manifest.json SHA-256:', (await sha256(manifestPath)).slice(0,16) + '...');
-  console.log('');
+  // 1) src/utils/safe_storage.js を IIFE bundle
+  console.log('[bundle] src/utils/safe_storage.js ...');
+  const safeStorageBundle = await bundleModule(resolve(SRC, 'utils/safe_storage.js'));
+  console.log('  -> ' + safeStorageBundle.length + ' chars');
 
-  // 2) JS 構文チェック (inline script)
-  const html = await readFile(indexPath, 'utf8');
-  const syntax = await checkJsSyntax(html);
-  if (syntax.ok) {
-    console.log('[syntax] inline <script> OK');
+  // 2) index.html を読込み marker 領域に注入
+  const beforeHtml = await readFile(indexPath, 'utf8');
+  const afterHtml = injectBundle(beforeHtml, 'SAFE_STORAGE', safeStorageBundle);
+
+  if (CHECK_MODE) {
+    if (beforeHtml !== afterHtml) {
+      console.error('[check] index.html differs from build output. Run "npm run build" and commit.');
+      process.exit(1);
+    }
+    console.log('[check] index.html matches build output ✓');
+  } else if (beforeHtml !== afterHtml) {
+    await writeFile(indexPath, afterHtml);
+    console.log('[write] index.html updated');
   } else {
-    console.error('[syntax] FAILED:\n', syntax.err);
-    process.exit(1);
+    console.log('[no-op] index.html already up-to-date');
   }
 
-  // 3) manifest.json 構文
+  // 3) Hash report
+  console.log('');
+  console.log('[hash] index.html  SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');
+  console.log('[hash] sw.js       SHA-256:', (await sha256(swPath)).slice(0, 16) + '...');
+  console.log('[hash] manifest.json SHA-256:', (await sha256(manifestPath)).slice(0, 16) + '...');
+
+  // 4) Syntax 検証
+  console.log('');
+  const html = await readFile(indexPath, 'utf8');
+  const syntax = await checkJsSyntax(html);
+  if (syntax.ok) console.log('[syntax] inline <script> OK');
+  else { console.error('[syntax] inline FAILED:\n', syntax.err); process.exit(1); }
+
   try {
     JSON.parse(await readFile(manifestPath, 'utf8'));
     console.log('[syntax] manifest.json OK');
@@ -87,23 +150,12 @@ async function main() {
     process.exit(1);
   }
 
-  // 4) sw.js syntax
-  const swSyntax = await new Promise((res) => {
-    const proc = spawn('node', ['--check', swPath], { stdio: ['ignore','pipe','pipe'] });
-    let err = '';
-    proc.stderr.on('data', d => err += d);
-    proc.on('exit', code => res({ ok: code === 0, err }));
-  });
-  if (swSyntax.ok) {
-    console.log('[syntax] sw.js OK');
-  } else {
-    console.error('[syntax] sw.js FAILED:\n', swSyntax.err);
-    process.exit(1);
-  }
+  const swSyntax = await checkOther(swPath);
+  if (swSyntax.ok) console.log('[syntax] sw.js OK');
+  else { console.error('[syntax] sw.js FAILED:\n', swSyntax.err); process.exit(1); }
 
   console.log('');
-  console.log('Build scaffold complete (no transform applied at Step 1).');
-  console.log('Next: install esbuild and migrate src/utils/* (build/README.md §Step 2).');
+  console.log('Build complete.');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

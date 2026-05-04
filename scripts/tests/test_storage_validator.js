@@ -13,12 +13,13 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
 // L2_INIT_WEIGHTS と _validateLS の定義を抽出
+//   バンドル後の indent 付き同名関数を避けるため、column 0 限定
 function extract(name, src){
-  const re = new RegExp(`(var\\s+${name}\\s*=[^\\n]+;)`, 'm');
+  const re = new RegExp(`(^var\\s+${name}\\s*=[^\\n]+;)`, 'm');
   const m = src.match(re);
   if(m) return m[1];
-  // function 形式
-  const fre = new RegExp(`(function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
+  // function 形式（^ で column 0 限定、bundle 内の indent 付きを除外）
+  const fre = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
   const fm = src.match(fre);
   if(fm) return fm[1];
   throw new Error(`could not extract ${name}`);

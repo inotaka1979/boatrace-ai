@@ -6,10 +6,11 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
+    "build:check": "node build.mjs --check",
     "lint": "echo 'lint not yet configured'",
     "typecheck": "echo 'typecheck not yet configured'"
   },
   "devDependencies": {
-    "esbuild": "0.24.0"
+    "esbuild": "^0.24.2"
   }
 }

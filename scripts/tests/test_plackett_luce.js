@@ -11,7 +11,8 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
 
 function extract(name, src){
-  const re = new RegExp(`(function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
+  // column 0 限定（bundle 内の indent 付き同名関数を除外）
+  const re = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
   const m = src.match(re);
   if(!m) throw new Error('cannot extract ' + name);
   return m[1];
