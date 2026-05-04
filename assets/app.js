@@ -3207,8 +3207,11 @@ function _applyLiveDataMerge(liveData){
 async function loadAllData(){
   var prog=document.getElementById('progressFill');
   var msg=document.getElementById('progressMsg');
-  var topLoading=document.getElementById('topLoading');
-  if(topLoading) topLoading.style.display='block';
+  // PH-5f: topLoading 表示は撤去 (CLS 主原因)
+  //   prerender HTML が既に stadium grid を表示しているため、
+  //   loading spinner を出すと layout shift が発生
+  // var topLoading=document.getElementById('topLoading');
+  // if(topLoading) topLoading.style.display='block';
 
   try{
   if(msg) msg.textContent='出走表・直前情報を取得中...';
