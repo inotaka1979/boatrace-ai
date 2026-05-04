@@ -3075,6 +3075,10 @@ function _applyLiveDataMerge(liveData){
 // ===============================================
 // DATA LOADING (PRESERVED)
 // ===============================================
+// PE-8: loadAllData は Phase 1 (Critical) のみ、Phase 2 は loadDeferredData() に分離
+//   - Phase 1: programs + previews を並列 fetch、results は最低限のみ
+//   - 第 1 描画の TBT を最小化、LCP 改善
+//   - racerDB / stadiumDB / odds / racedata / tide は requestIdleCallback で deferred
 async function loadAllData(){
   var prog=document.getElementById('progressFill');
   var msg=document.getElementById('progressMsg');
@@ -3082,26 +3086,24 @@ async function loadAllData(){
   if(topLoading) topLoading.style.display='block';
 
   try{
-  if(msg) msg.textContent='出走表を取得中...';
-  if(prog) prog.style.width='20%';
+  if(msg) msg.textContent='出走表・直前情報を取得中...';
+  if(prog) prog.style.width='30%';
 
-  // キャッシュバスター付きでAPIから直接取得
+  // PE-8: Phase 1 — 起動 critical fetch を並列化（programs + previews）
   var ts='?t='+Date.now();
-  var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
-  programData=indexByStadiumRace(rawPrograms,'programs');
-  if(rawPrograms&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);   // F3
-  if(prog) prog.style.width='45%';
-  await sleep(300);
+  var phase1 = await Promise.all([
+    fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts),
+    fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts),
+  ]);
+  var rawPrograms = phase1[0];
+  var rawPreviews = phase1[1];
+  programData = indexByStadiumRace(rawPrograms, 'programs');
+  previewData = indexPreviews(rawPreviews);
+  if(rawPrograms && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);
+  if(rawPreviews && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);
+  if(prog) prog.style.width='70%';
 
-  // 直前情報: Open API（自前スマート版は新形式 races 配列なので _applyLiveDataMerge で別経路）
-  if(msg) msg.textContent='直前情報を取得中...';
-  if(prog) prog.style.width='40%';
-  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
-  previewData=indexPreviews(rawPreviews);
-  if(rawPreviews&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);   // F3
-  if(prog) prog.style.width='60%';
-
-  // ★ 結果: まず自前スクレイピング結果を試す → Open APIフォールバック
+  // PE-8: 結果 — 自前 → Open API fallback（Critical: ヘッダーバー的中表示用）
   if(msg) msg.textContent='結果を取得中...';
   var rawResults=null;
   try{
@@ -3111,16 +3113,15 @@ async function loadAllData(){
       if(resData.results&&resData.results.length>0){
         var resDate=resData.results[0].race_date;
         var todayRes=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(resDate===todayRes){rawResults=resData;console.log('Using scraped results:',resData.results.length,'races')}
+        if(resDate===todayRes){rawResults=resData;}
       }
     }
   }catch(e){}
   if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
   resultData=indexResults(rawResults);
-  if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);   // F3
+  if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);
 
   // F5: 自前スマートスケジューラ出力 (races 配列形式) を merge
-  // → Open API より新鮮な finished/result を resultData に統合
   try{
     var localPv=await fetch('data/previews/today.json?t='+Date.now());
     if(localPv.ok){
@@ -3128,117 +3129,22 @@ async function loadAllData(){
       if(localData&&Array.isArray(localData.races)){
         _applyLiveDataMerge(localData);
         if(typeof _noteUpdatedAt==='function') _noteUpdatedAt(localData.updated_at);
-        console.log('Merged local previews:', localData.races.length, 'races,',
-          localData.races.filter(function(r){return r.finished}).length, 'finished');
       }
     }
   }catch(e){console.warn('local previews merge failed:', e)}
-  if(prog) prog.style.width='80%';
-
-  // ★ 公式データDB読み込み（GitHub Actionsが構築済み）
-  if(msg) msg.textContent='選手DB読み込み中...';
-  try{
-    var dbResp=await fetch('data/db/racerDB.json?t='+Date.now());
-    if(dbResp.ok){
-      var dbData=await dbResp.json();
-      if(dbData.racers){
-        for(var rn in dbData.racers){
-          var r=dbData.racers[rn];
-          if(!racerDB[rn]) racerDB[rn]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
-          racerDB[rn].name=r.name;
-          racerDB[rn].classNum=r.classNum;
-          if(r.courseStats){
-            if(!racerDB[rn].courseStats) racerDB[rn].courseStats={};
-            for(var c in r.courseStats){
-              var cs=r.courseStats[c];
-              racerDB[rn].courseStats[c]={
-                races:cs.entries||0,
-                win:cs.wins||0,
-                top2:Math.round((cs.entries||0)*(cs.top2Rate||0)/100),
-                top3:Math.round((cs.entries||0)*(cs.top2Rate||0)/100*1.3),
-                avgST:cs.avgST||0
-              };
-            }
-          }
-          if(r.recentResults&&r.recentResults.length>0){
-            racerDB[rn].recentResults=r.recentResults;
-          }
-          racerDB[rn].lastUpdated=dbData.updated_at?dbData.updated_at.slice(0,10).replace(/-/g,''):'';
-        }
-        try{localStorage.setItem('boatrace_racerDB',JSON.stringify(racerDB))}catch(e){}
-        console.log('公式DB読み込み完了: '+Object.keys(dbData.racers).length+'選手');
-      }
-    }
-  }catch(e){console.log('公式DB読み込みスキップ:',e.message)}
-
-  // 場別統計DB読み込み
-  try{
-    var sdbResp=await fetch('data/db/stadiumDB.json?t='+Date.now());
-    if(sdbResp.ok){
-      var sdbData=await sdbResp.json();
-      if(sdbData.stadiums){
-        for(var sid in sdbData.stadiums){
-          var s=sdbData.stadiums[sid];
-          if(!stadiumDB[sid]) stadiumDB[sid]={courseWinRate:{},techniqueRate:{},courseTechnique:{}};
-          if(s.courseWinRate){
-            for(var c in s.courseWinRate){
-              stadiumDB[sid].courseWinRate[c]={races:s.totalRaces||100,win:Math.round((s.totalRaces||100)*s.courseWinRate[c])};
-            }
-          }
-        }
-        try{localStorage.setItem('boatrace_stadiumDB',JSON.stringify(stadiumDB))}catch(e){}
-      }
-    }
-  }catch(e){}
-
-  if(msg) msg.textContent='オッズ・今節成績を取得中...';
-  try{
-    var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
-    if(oddsResp.ok){
-      var od=await oddsResp.json();
-      if(od.updated_at){
-        var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
-        var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(oddsDate===todayDate){
-          oddsData=od;oddsLastFetched=Date.now();
-        } else {
-          oddsData=null;
-        }
-      }
-    }
-  }catch(e){oddsData=null}
-  try{
-    var rdResp=await fetch('data/racedata/today.json?t='+Date.now());
-    if(rdResp.ok) raceData=await rdResp.json();
-  }catch(e){raceData=null}
-  if(prog) prog.style.width='90%';
-
-  // X4: 潮汐データ取得
-  try{
-    var tideResp = await fetch('data/tide/today.json?t='+Date.now());
-    if(tideResp.ok){ tideData = await tideResp.json(); }
-  }catch(e){ tideData = null; }
-
-  if(resultData) updateDBFromResults(resultData,programData);
-  // X2: 場別統計の学習（programs / previews から）
-  if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
-  if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
-  if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
-  // X3: 進入パターン学習
-  if(resultData) learnEntryPatternFromResults(resultData);
-  // X6: 節間調整 / 対戦相性学習
-  if(resultData) learnSeriesAndPairwiseFromResults(resultData);
-  learnFromResults();
-  updateHistoryWithResults();
-  // F17: 全場の確定レースに対して予想を一括 backfill
-  // (ユーザーが開いた場以外も成績ページに反映されるように)
-  _backfillTodayPredictions();
-  // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
-  // (savePrediction 時に resultData.refund がまだ無かったケース対策)
-  updateHistoryWithResults();
 
   if(prog) prog.style.width='100%';
   if(msg) msg.textContent='完了';
+
+  // PE-8: Phase 2 — 非クリティカル DB / 学習を idle time に deferred
+  //   起動 LCP/FCP に影響しないよう requestIdleCallback (フォールバック setTimeout)
+  var schedule = (typeof requestIdleCallback === 'function')
+    ? function(fn){ requestIdleCallback(fn, {timeout: 3000}); }
+    : function(fn){ setTimeout(fn, 100); };
+  schedule(function(){ loadDeferredData(rawPrograms, rawPreviews).catch(function(e){
+    console.warn('[PE-8] deferred load failed:', e);
+  }); });
+
   }catch(e){
     console.error('loadAllData error:',e);
     if(msg) msg.textContent='一部データの取得に失敗しました';
@@ -3255,10 +3161,127 @@ async function loadAllData(){
     renderStadiums();
   }
 
-  // ★ 公式DBがない場合のみ旧方式でバックグラウンドDB構築
-  if(Object.keys(racerDB).length<50){
-    setTimeout(function(){buildInitialDB()},5000);
+  // PE-8: buildInitialDB は loadDeferredData で扱うため、ここからは削除
+}
+
+// PE-8: 非クリティカル DB / 学習を idle time に逐次ロード
+//   呼出: loadAllData() 内の Phase 2 から
+//   引数: Phase 1 で取得済の raw データ（学習関数用）
+async function loadDeferredData(rawPrograms, rawPreviews){
+  console.log('[PE-8] loading deferred data...');
+
+  // 非クリティカル fetch を並列化
+  var tasks = [];
+
+  // 選手 DB（推奨: 予測詳細時にだけ必要、最大 ~5MB）
+  tasks.push((async function(){
+    try{
+      var dbResp=await fetch('data/db/racerDB.json?t='+Date.now());
+      if(!dbResp.ok) return;
+      var dbData=await dbResp.json();
+      if(!dbData.racers) return;
+      for(var rn in dbData.racers){
+        var r=dbData.racers[rn];
+        if(!racerDB[rn]) racerDB[rn]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
+        racerDB[rn].name=r.name;
+        racerDB[rn].classNum=r.classNum;
+        if(r.courseStats){
+          if(!racerDB[rn].courseStats) racerDB[rn].courseStats={};
+          for(var c in r.courseStats){
+            var cs=r.courseStats[c];
+            racerDB[rn].courseStats[c]={
+              races:cs.entries||0,
+              win:cs.wins||0,
+              top2:Math.round((cs.entries||0)*(cs.top2Rate||0)/100),
+              top3:Math.round((cs.entries||0)*(cs.top2Rate||0)/100*1.3),
+              avgST:cs.avgST||0
+            };
+          }
+        }
+        if(r.recentResults&&r.recentResults.length>0){
+          racerDB[rn].recentResults=r.recentResults;
+        }
+        racerDB[rn].lastUpdated=dbData.updated_at?dbData.updated_at.slice(0,10).replace(/-/g,''):'';
+      }
+      try{localStorage.setItem('boatrace_racerDB',JSON.stringify(racerDB))}catch(e){}
+    }catch(e){console.warn('[PE-8] racerDB skip:', e.message);}
+  })());
+
+  // 場別統計 DB
+  tasks.push((async function(){
+    try{
+      var sdbResp=await fetch('data/db/stadiumDB.json?t='+Date.now());
+      if(!sdbResp.ok) return;
+      var sdbData=await sdbResp.json();
+      if(!sdbData.stadiums) return;
+      for(var sid in sdbData.stadiums){
+        var s=sdbData.stadiums[sid];
+        if(!stadiumDB[sid]) stadiumDB[sid]={courseWinRate:{},techniqueRate:{},courseTechnique:{}};
+        if(s.courseWinRate){
+          for(var c in s.courseWinRate){
+            stadiumDB[sid].courseWinRate[c]={races:s.totalRaces||100,win:Math.round((s.totalRaces||100)*s.courseWinRate[c])};
+          }
+        }
+      }
+      try{localStorage.setItem('boatrace_stadiumDB',JSON.stringify(stadiumDB))}catch(e){}
+    }catch(e){}
+  })());
+
+  // オッズ
+  tasks.push((async function(){
+    try{
+      var oddsResp=await fetch('data/odds/today.json?t='+Date.now());
+      if(!oddsResp.ok) return;
+      var od=await oddsResp.json();
+      if(od.updated_at){
+        var oddsDate=new Date(new Date(od.updated_at).getTime()+9*3600000).toISOString().slice(0,10);
+        var todayDate=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        if(oddsDate===todayDate){oddsData=od;oddsLastFetched=Date.now();}
+      }
+    }catch(e){}
+  })());
+
+  // racedata（今節成績、部品交換、写真）
+  tasks.push((async function(){
+    try{
+      var rdResp=await fetch('data/racedata/today.json?t='+Date.now());
+      if(rdResp.ok) raceData=await rdResp.json();
+    }catch(e){raceData=null}
+  })());
+
+  // 潮汐
+  tasks.push((async function(){
+    try{
+      var tideResp=await fetch('data/tide/today.json?t='+Date.now());
+      if(tideResp.ok) tideData=await tideResp.json();
+    }catch(e){tideData=null}
+  })());
+
+  await Promise.allSettled(tasks);
+  console.log('[PE-8] deferred fetch complete');
+
+  // PE-8: 学習・backfill は全データ揃ってから（メインスレッド負荷を idle に集約）
+  try {
+    if(resultData) updateDBFromResults(resultData, programData);
+    if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
+    if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
+    if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
+    if(resultData) learnEntryPatternFromResults(resultData);
+    if(resultData) learnSeriesAndPairwiseFromResults(resultData);
+    learnFromResults();
+    updateHistoryWithResults();
+    _backfillTodayPredictions();
+    updateHistoryWithResults();
+  } catch(e) {
+    console.warn('[PE-8] learning step failed:', e);
   }
+
+  // バックグラウンド DB 構築（公式 DB が薄い場合）
+  if(Object.keys(racerDB).length < 50){
+    setTimeout(function(){ if(typeof buildInitialDB === 'function') buildInitialDB(); }, 5000);
+  }
+
+  console.log('[PE-8] deferred all done');
 }
 
 // ===============================================
