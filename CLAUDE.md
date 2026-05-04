@@ -82,3 +82,50 @@ boatrace-ai/
 - 予想は参考情報であり、的中を保証するものではない
 - previews.boatsはオブジェクト（キーは文字列"1"〜"6"）
 - programs.boatsは配列
+
+## 修正履歴 (2026-05-04: 多視点レビュー後の統合改善)
+
+### Phase 0: 緊急セキュリティ封鎖
+- S-02: GitHub PAT を index.html / localStorage から完全撤去
+- S-03: Service Worker 登録コードを追加（PWA キャッシュ戦略を有効化）
+- S-04: 既存 escText の活用範囲を確認、未エスケープ箇所はなしと判明
+- S-05: chromium launcher を hardening
+- S-01 (PAT を .git/config から SSH 化) は user の手動作業として `docs/不具合修正設計書.md §2.2` に手順記載
+
+### Phase 1: 監視・運用基盤修復
+- M-01: heartbeat 書込を mktemp+mv で atomic 化、失敗時 ERROR ログ
+- M-03: flock に timeout 追加、cron 重複起動を防止
+- M-04: run_scrape の $? 取得タイミング修正
+- M-05: rebase 失敗時 reset --hard / checkout --theirs を撤去（データロス防止）
+- M-09: 失敗を非ゼロ終了で外に伝播
+- M-02: cron_monitor の stat 失敗握り潰しを排除
+- M-06: 24h 無更新は時間外でも CRITICAL alert
+- M-07: stat -c%s に統一（Linux 互換）
+- M-08: cron PATH 補強
+
+### Phase 2: データ整合性・並行性
+- 共通 `scripts/io_utils.py` (atomic_write_json) / `scripts/time_utils.py` (utc_iso_seconds, first_of_next_month) 新設
+- D-01〜10/D-12: 全 scraper の JSON 書込を atomic、datetime API 統一、scrape merge 健全化
+- D-09: scripts/scrape_odds.py（旧版）削除、GitHub Actions fallback も scrape_odds_fast.py に切替
+- D-13: グローバル git lock で odds/previews の git 操作衝突を排除
+
+### Phase 3: JS ロジックバグ撲滅
+- 共通ヘルパ追加: safeParse / safeSet / softmax / safeDiv / jstYmd / setManagedInterval
+- L-01/02: コピペ typo 修正
+- L-04/05: localStorage の安全 parse / Quota リトライ
+- L-06/10: softmax NaN/Infinity 耐性
+- L-11/12: JST 日付計算を 1 関数に集約、二重 new Date 廃止
+- L-17: oddsHistory / getOddsTrend 死コード削除
+- L-18: setInterval を一元管理、beforeunload で clear
+
+### Phase 4: PWA / SW / manifest
+- sw.js v3 → v4: caches.put await / data/ 503 fallback / skipWaiting message-driven / cache key 正規化
+- manifest.json: id / scope / start_url / maskable purpose
+- index.html: CSP メタタグ、validateApiPayload で API スキーマ最小検証
+
+### Phase 5: テスト / RUNBOOK / CI
+- scripts/tests/{test_io_time.py, test_predictor_helpers.js, test_cron_scrape.bats, run_all.sh}
+- 合計 39 ユニットテスト全 PASS（Python 16 / JS 15 / Shell 8）
+- .github/workflows/test.yml で CI 化
+- docs/RUNBOOK.md（運用障害対応手順）
+- docs/不具合修正設計書.md（86 件改善の設計書）
