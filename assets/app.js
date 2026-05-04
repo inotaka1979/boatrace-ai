@@ -4349,7 +4349,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
         // 左端「2着」号艇列（グループ先頭のみバッジ、罫線なし）
         var leftLabel='';
         if(isGroupStart){
-          leftLabel='<span style="display:inline-block;width:22px;height:22px;line-height:22px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:3px;font-size:12px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
+          leftLabel='<span style="display:inline-block;width:18px;height:18px;line-height:18px;background:'+BOAT_COLORS[second]+';color:'+BOAT_TEXT[second]+';text-align:center;border-radius:3px;font-size:11px;font-weight:700;border:1px solid '+(second===1?'#ccc':'transparent')+'">'+second+'</span>';
         }
         html+='<td class="left-col">'+leftLabel+'</td>';
 
@@ -4374,7 +4374,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
             else if(oddsVal>=100) oddsClass='odds-high';
           }
 
-          var badge='<span class="badge" style="display:inline-block;width:16px;height:16px;line-height:16px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:10px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
+          var badge='<span class="badge" style="display:inline-block;width:12px;height:12px;line-height:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
           var oddsStr=oddsVal?oddsVal.toFixed(1):'-';
           html+='<td class="'+cellClass+'"><div class="cell-flex">'+badge+'<span class="odds '+oddsClass+'">'+oddsStr+'</span></div></td>';
