@@ -144,7 +144,13 @@ boatrace-ai/
 - PA-7: SW fetch handler に origin allowlist、GET 以外 / 未許可 origin はバイパス
 - PA-8: CLAUDE.md.bak 削除、.gitignore に .icon_backup / *.bak / dist / .venv 追加
 - PA-9: Referrer-Policy / X-Content-Type-Options / Permissions-Policy meta 追加
-- PA-1（PAT 失効 + SSH 化 + history scrub）: docs/A_PLUS_化設計書.md §2.2 に手順記載、user 手動
+- PA-1: PAT 撤去 + SSH 化 完了（2026-05-04）
+  - GitHub に Deploy Key (write) 追加 (RPi5 BoatRace Deploy)
+  - ~/.ssh/id_ed25519_boatrace 生成 + ~/.ssh/config に github-boatrace ホスト
+  - .git/config の remote URL を `git@github-boatrace:inotaka1979/boatrace-ai.git` に切替
+  - .git/config の権限を 600 に
+  - PAT を含む URL 撤去確認済（git config に ghp_ なし）
+  - 残作業: 旧 PAT を GitHub Settings/Tokens で revoke（user 手動）
 
 ### Phase C: Code Quality A+ 化（PC-1/3/4/5/6/7/8/9/10/12 完了、PC-2 後 Phase 委譲）
 - PC-1: scripts/http_utils.py 新設、sync HTTP を集約（fetch_text/bytes/json + 共通 UA + 指数バックオフ + 404 即時 raise）。scrape_results / scrape_racedata / scrape_schedule を切替
