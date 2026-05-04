@@ -1492,22 +1492,10 @@ async function loadAllData(){
   if(prog) prog.style.width='45%';
   await sleep(300);
 
-  // ★ 直前情報: まず自前スクレイピング結果を試す → Open APIフォールバック
+  // 直前情報: Open API（自前スマート版は新形式 races 配列なので _applyLiveDataMerge で別経路）
   if(msg) msg.textContent='直前情報を取得中...';
   if(prog) prog.style.width='40%';
-  var rawPreviews=null;
-  try{
-    var pvResp=await fetch('data/previews/today.json?t='+Date.now());
-    if(pvResp.ok){
-      var pvData=await pvResp.json();
-      if(pvData.previews&&pvData.previews.length>0){
-        var pvDate=pvData.previews[0].race_date;
-        var todayPv=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(pvDate===todayPv){rawPreviews=pvData;console.log('Using scraped previews:',pvData.previews.length,'races')}
-      }
-    }
-  }catch(e){}
-  if(!rawPreviews){rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts)}
+  var rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
   previewData=indexPreviews(rawPreviews);
   if(rawPreviews&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);   // F3
   if(prog) prog.style.width='60%';
@@ -1529,6 +1517,21 @@ async function loadAllData(){
   if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
   resultData=indexResults(rawResults);
   if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);   // F3
+
+  // F5: 自前スマートスケジューラ出力 (races 配列形式) を merge
+  // → Open API より新鮮な finished/result を resultData に統合
+  try{
+    var localPv=await fetch('data/previews/today.json?t='+Date.now());
+    if(localPv.ok){
+      var localData=await localPv.json();
+      if(localData&&Array.isArray(localData.races)){
+        _applyLiveDataMerge(localData);
+        if(typeof _noteUpdatedAt==='function') _noteUpdatedAt(localData.updated_at);
+        console.log('Merged local previews:', localData.races.length, 'races,',
+          localData.races.filter(function(r){return r.finished}).length, 'finished');
+      }
+    }
+  }catch(e){console.warn('local previews merge failed:', e)}
   if(prog) prog.style.width='80%';
 
   // ★ 公式データDB読み込み（GitHub Actionsが構築済み）
@@ -2981,10 +2984,14 @@ setManagedInterval(async function(){
       var o=await fetch('data/odds/today.json?t='+t);
       if(o.ok){ var od=await o.json(); oddsData=od; _noteUpdatedAt(od.updated_at); }
     }catch(e){}
-    // 自前 previews（cron 3分更新）も取得し DB に統合（古いマージロジックは upstream に移行済）
+    // F5: 自前 previews（cron 3分更新）を merge して finished/result を反映
     try{
       var p=await fetch('data/previews/today.json?t='+t);
-      if(p.ok){ var pd=await p.json(); _noteUpdatedAt(pd.updated_at); }
+      if(p.ok){
+        var pd=await p.json();
+        if(pd&&Array.isArray(pd.races)) _applyLiveDataMerge(pd);
+        _noteUpdatedAt(pd.updated_at);
+      }
     }catch(e){}
     _renderFreshness();
   }catch(e){console.warn('Auto refresh error:',e)}
