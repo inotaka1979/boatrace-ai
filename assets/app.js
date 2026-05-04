@@ -3206,6 +3206,7 @@ async function loadAllData(){
   if(prog) prog.style.width='30%';
 
   // PE-8: Phase 1 — 起動 critical fetch を並列化（programs + previews）
+  // PH-5: 各 fetch / 重い同期処理の前後で yield、long task 化を回避
   var ts='?t='+Date.now();
   var phase1 = await Promise.all([
     fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts),
@@ -3213,8 +3214,11 @@ async function loadAllData(){
   ]);
   var rawPrograms = phase1[0];
   var rawPreviews = phase1[1];
+  await _yieldToMain();   // PH-5
   programData = indexByStadiumRace(rawPrograms, 'programs');
+  await _yieldToMain();   // PH-5
   previewData = indexPreviews(rawPreviews);
+  await _yieldToMain();   // PH-5
   if(rawPrograms && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);
   if(rawPreviews && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);
   if(prog) prog.style.width='70%';
@@ -3234,7 +3238,9 @@ async function loadAllData(){
     }
   }catch(e){}
   if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
+  await _yieldToMain();   // PH-5
   resultData=indexResults(rawResults);
+  await _yieldToMain();   // PH-5
   if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);
 
   // F5: 自前スマートスケジューラ出力 (races 配列形式) を merge
@@ -3243,6 +3249,7 @@ async function loadAllData(){
     if(localPv.ok){
       var localData=await localPv.json();
       if(localData&&Array.isArray(localData.races)){
+        await _yieldToMain();   // PH-5
         _applyLiveDataMerge(localData);
         if(typeof _noteUpdatedAt==='function') _noteUpdatedAt(localData.updated_at);
       }
@@ -3267,6 +3274,8 @@ async function loadAllData(){
   }
 
   // ★ エラーが起きても必ず画面を表示
+  // PH-5: render 直前に yield、新しい task で render を実行（long task 化回避）
+  await _yieldToMain();
   var activePage=document.querySelector('.page.active');
   var activeId=activePage?activePage.id:'';
   if(activeId==='pageDetail'&&currentStadium&&currentRace){
