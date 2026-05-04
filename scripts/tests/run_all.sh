@@ -77,8 +77,9 @@ step "Pure helper tests (_computeClassAttenuation / _resolveCourse)" \
 
 # 8e) PC-7b / PE-4: build パイプライン (Step 2 = src/utils/safe_storage を bundle 注入)
 #     --check モードで「再ビルドしても index.html が変わらない」ことを検証 (CI 再現性ガード)
+#     CI 環境では node_modules が無いため、初回のみ npm ci を実施
 step "Build pipeline + reproducibility check" \
-     "(cd build && node build.mjs --check > /dev/null)"
+     "(cd build && [ -d node_modules ] || npm ci --silent --no-audit --no-fund > /dev/null 2>&1; node build.mjs --check > /dev/null)"
 
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \
