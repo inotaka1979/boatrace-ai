@@ -7,7 +7,7 @@
 //   W-03 install 時 skipWaiting を撤去、message('SKIP_WAITING') で明示制御
 //   W-09 querystring を除いたキーで cache 参照（キャッシュキー分散を防止）
 
-const VERSION = 'br-oracle-v4';
+const VERSION = 'br-oracle-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -32,9 +32,18 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
-// クライアントから明示的に新版を有効化
+// クライアントから明示的に新版を有効化 / 緊急 purge
 self.addEventListener('message', (e) => {
   if (e.data === 'SKIP_WAITING') self.skipWaiting();
+  if (e.data === 'PURGE_ALL') {
+    e.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      // 全クライアントに purge 完了を通知
+      const clients = await self.clients.matchAll({ includeUncontrolled: true });
+      clients.forEach((c) => c.postMessage({ type: 'PURGED' }));
+    })());
+  }
 });
 
 // W-09: キャッシュキーは querystring を除いた URL に正規化

@@ -432,28 +432,63 @@ var oddsLastFetched=null;
 // ===============================================
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
-// F9: ヘッダー右「更新」ボタン用フルリロード（SW + cache + bc_* を完全クリアしてから reload）
+// F10: ヘッダー右「更新」ボタン用フルリロード
+//   旧バグ: SW がページを制御し続けていたため、unregister 直後の location.replace でも
+//          古いキャッシュが intercept されていた。
+//   解決: 1) SW に PURGE_ALL を送信し全 cache 削除を SW 側で待機
+//        2) クライアント側でも cache + bc_* localStorage を削除
+//        3) すべての SW を unregister
+//        4) cache:'reload' を使って index.html を一度 fetch し HTTP キャッシュも無効化
+//        5) location.assign で再ナビゲート（履歴に残してデバッグ容易に）
 async function hardReload(){
+  var btn = event && event.target;
+  if(btn){ btn.disabled=true; btn.textContent='⏳ 削除中...'; }
   try{
-    if('serviceWorker' in navigator){
-      var regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(function(r){ return r.unregister(); }));
+    // 1) アクティブな SW に purge を依頼（cache を SW が握っている場合の救済）
+    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+      try{
+        var purged = new Promise(function(resolve){
+          var to = setTimeout(resolve, 1500);  // タイムアウト 1.5s
+          navigator.serviceWorker.addEventListener('message', function _h(e){
+            if(e.data && e.data.type==='PURGED'){
+              clearTimeout(to);
+              navigator.serviceWorker.removeEventListener('message', _h);
+              resolve();
+            }
+          });
+          navigator.serviceWorker.controller.postMessage('PURGE_ALL');
+        });
+        await purged;
+      }catch(_){}
     }
+    // 2) クライアント側でも全 cache を削除（念のため重複実行）
     if('caches' in window){
       var keys = await caches.keys();
       await Promise.all(keys.map(function(k){ return caches.delete(k); }));
     }
+    // 3) 全 SW を unregister
+    if('serviceWorker' in navigator){
+      var regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){ return r.unregister(); }));
+    }
+    // 4) bc_* localStorage を削除
     var bcKeys=[];
     for(var i=0;i<localStorage.length;i++){
       var k = localStorage.key(i);
       if(k && k.indexOf('bc_')===0) bcKeys.push(k);
     }
     bcKeys.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
+    // 5) HTTP キャッシュも no-store で叩いて無効化（SW 解除後の素の fetch）
+    try{
+      var burst = new URL(location.href);
+      burst.searchParams.set('_warm', Date.now());
+      await fetch(burst.toString(), {cache:'reload', mode:'same-origin'});
+    }catch(_){}
   }catch(e){ console.warn('hardReload prep error:', e); }
-  // cache-busting query で CDN/HTTP cache も回避
+  // 6) cache-busting query で再ナビゲート
   var url = new URL(location.href);
   url.searchParams.set('_r', Date.now());
-  location.replace(url.toString());
+  location.assign(url.toString());
 }
 
 // F9: 強制更新を全面修正
