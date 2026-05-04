@@ -55,31 +55,98 @@ def parse_win(html):
     return odds
 
 def parse_exacta(html):
-    soup = BeautifulSoup(html, "html.parser"); odds = {}
-    points = soup.select("td.oddsPoint")
-    combos = [f"{i}-{j}" for i in range(1, 7) for j in range(1, 7) if i != j]
-    for k, el in enumerate(points):
-        if k >= len(combos): break
-        try:
-            v = float(el.get_text(strip=True))
-            if v > 0: odds[combos[k]] = v
-        except ValueError: pass
+    """2連単パーサー (30 通り)
+    boatrace.jp odds2tf の HTML 構造:
+      tbody tr × 5 行
+      各 tr に 12 td: 6 列 × (2着_td, oddsPoint_td)
+      1着 は列位置で決まる
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    odds = {}
+    target_table = None
+    for tbl in soup.find_all("table"):
+        if tbl.select("td.oddsPoint"):
+            target_table = tbl
+            break
+    if not target_table:
+        return odds
+    for row in target_table.select("tbody tr"):
+        cells = row.find_all("td", recursive=False)
+        if len(cells) != 12:
+            continue
+        for col in range(6):
+            base = col * 2
+            try:
+                ni = int(cells[base].get_text(strip=True))
+                cv = cells[base + 1]
+                if "oddsPoint" not in (cv.get("class") or []):
+                    continue
+                v = float(cv.get_text(strip=True))
+                ichi = col + 1
+                if 1 <= ichi <= 6 and 1 <= ni <= 6 and ichi != ni and v > 0:
+                    odds["{}-{}".format(ichi, ni)] = v
+            except (ValueError, TypeError):
+                pass
     return odds
 
-# F7: 3連単パーサー（120 通り）
+# F7: 3連単パーサー（120 通り）— td 構造を正確に読む
+# boatrace.jp odds3t HTML 構造:
+#   tbody tr × 20 行（5 つの 2着 × 4 行）
+#   行は 4 行 1 グループ。先頭行のみ各列 (2着, 3着, odds) の 18 td、
+#   続く 3 行は各列 (3着, odds) の 12 td（2着は先頭行から継承）
+#   1着 は列位置で決まる（col 0 → 1着=1, col 1 → 1着=2, ...）
 def parse_trifecta(html):
-    soup = BeautifulSoup(html, "html.parser"); odds = {}
-    points = soup.select("td.oddsPoint")
-    combos = [f"{i}-{j}-{k}"
-              for i in range(1, 7)
-              for j in range(1, 7) if j != i
-              for k in range(1, 7) if k != i and k != j]
-    for k, el in enumerate(points):
-        if k >= len(combos): break
-        try:
-            v = float(el.get_text(strip=True))
-            if v > 0: odds[combos[k]] = v
-        except ValueError: pass
+    soup = BeautifulSoup(html, "html.parser")
+    odds = {}
+    target_table = None
+    for tbl in soup.find_all("table"):
+        if tbl.select("td.oddsPoint"):
+            target_table = tbl
+            break
+    if not target_table:
+        return odds
+    current_seconds = [None] * 6   # 各列の現在の 2着
+    for row in target_table.select("tbody tr"):
+        cells = row.find_all("td", recursive=False)
+        n = len(cells)
+        if n == 18:
+            # グループ先頭行: 各列 (2着, 3着, odds)
+            stride = 3
+            offset_san = 1
+            offset_odds = 2
+            update_second = True
+        elif n == 12:
+            # グループ続行行: 各列 (3着, odds)
+            stride = 2
+            offset_san = 0
+            offset_odds = 1
+            update_second = False
+        else:
+            continue
+        for col in range(6):
+            base = col * stride
+            if base + offset_odds >= n:
+                break
+            if update_second:
+                try:
+                    current_seconds[col] = int(cells[base].get_text(strip=True))
+                except (ValueError, TypeError):
+                    current_seconds[col] = None
+            try:
+                san = int(cells[base + offset_san].get_text(strip=True))
+                cv = cells[base + offset_odds]
+                if "oddsPoint" not in (cv.get("class") or []):
+                    continue
+                v = float(cv.get_text(strip=True))
+                ichi = col + 1
+                ni = current_seconds[col]
+                if ni is None:
+                    continue
+                if 1 <= ichi <= 6 and 1 <= ni <= 6 and 1 <= san <= 6 \
+                        and ichi != ni and ichi != san and ni != san and v > 0:
+                    odds["{}-{}-{}".format(ichi, ni, san)] = v
+            except (ValueError, TypeError):
+                pass
     return odds
 
 async def scrape_race(session, limiter, sid, rn, date_str):
