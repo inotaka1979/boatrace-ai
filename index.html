@@ -469,6 +469,8 @@ var stadiumMotorStats=_bootParseLS('boatrace_motorStats', {});
 var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 // X4: 潮汐データ（cron で 1日1回更新）
 var tideData=null;
+// X6: 対戦相性 DB
+var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
@@ -768,6 +770,131 @@ function indexResults(apiJson){
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
+// ===============================================
+// X6: 節間調整 / モーター急変警告 / 対戦相性
+// ===============================================
+
+// 線形回帰の slope（最小二乗）
+function linearSlope(values){
+  if(!Array.isArray(values) || values.length < 2) return 0;
+  var n = values.length;
+  var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for(var i=0; i<n; i++){
+    sumX += i;
+    sumY += values[i];
+    sumXY += i * values[i];
+    sumXX += i * i;
+  }
+  var den = n * sumXX - sumX * sumX;
+  if(den === 0) return 0;
+  return (n * sumXY - sumX * sumY) / den;
+}
+
+// 節間調整スコア (R-07): 同一節中のモーター 2連率 / 着順の推移
+function seriesAdjustmentScore(rid, sid){
+  var rdb = racerDB[rid];
+  if(!rdb || !rdb.seriesProgress) return { score: 0, slope: 0, samples: 0 };
+  // 当該場の seriesProgress のみ
+  var key = String(sid);
+  var progress = rdb.seriesProgress[key];
+  if(!progress || progress.length < 2) return { score: 0, slope: 0, samples: progress ? progress.length : 0 };
+  var motorRates = progress.map(function(d){return d.motorRate || 0;}).filter(function(v){return v>0;});
+  if(motorRates.length < 2) return { score: 0, slope: 0, samples: motorRates.length };
+  var slope = linearSlope(motorRates);
+  var score = 0;
+  if(slope >= +3) score = +3;
+  else if(slope <= -3) score = -3;
+  else if(slope >= +1.5) score = +1;
+  else if(slope <= -1.5) score = -1;
+  return { score: score, slope: slope, samples: motorRates.length };
+}
+
+// R-13: モーター急変警告
+function motorTrendWarning(rid, sid){
+  var r = seriesAdjustmentScore(rid, sid);
+  if(r.samples < 3) return null;
+  if(r.slope >= +3) return { kind: 'up', text: 'モーター上昇中(+'+r.slope.toFixed(1)+'/日)' };
+  if(r.slope <= -3) return { kind: 'down', text: 'モーター下降中('+r.slope.toFixed(1)+'/日)' };
+  return null;
+}
+
+// R-09: 対戦相性スコア（他艇との pairwise 履歴）
+function pairwiseScore(rid, sid, opponentRids){
+  if(!rid || !opponentRids || opponentRids.length === 0) return { score: 0, hits: 0 };
+  if(!pairwiseDB) return { score: 0, hits: 0 };
+  var totalScore = 0, hits = 0;
+  opponentRids.forEach(function(oid){
+    if(!oid || oid === rid) return;
+    var key = (rid < oid) ? rid+'-'+oid : oid+'-'+rid;
+    var rec = pairwiseDB[key];
+    if(!rec || rec.races < 5) return;
+    var myWins = rec.head2head[String(rid)] || 0;
+    var oppWins = rec.head2head[String(oid)] || 0;
+    var diff = (myWins - oppWins) / rec.races;
+    // |diff| が大きい時のみ寄与（ノイズ回避）
+    if(Math.abs(diff) >= 0.2){
+      totalScore += diff * 1.0;   // ±1pt 程度
+      hits++;
+    }
+  });
+  return { score: Math.max(-2, Math.min(2, totalScore)), hits: hits };
+}
+
+// 節間調整 / 対戦相性データを results から学習
+function learnSeriesAndPairwiseFromResults(resultsJson){
+  if(!resultsJson) return;
+  var today = todayStr();
+  for(var sid in resultsJson){
+    var races = resultsJson[sid];
+    for(var rn in races){
+      var race = races[rn];
+      if(!race || !race.results) continue;
+      var sortedRes = race.results.slice().sort(function(a,b){return a.place-b.place});
+      var ridsInRace = sortedRes.map(function(r){return r.racer_number || 0;});
+
+      sortedRes.forEach(function(r, idx){
+        var rid = r.racer_number || 0;
+        if(!rid || !racerDB[rid]) return;
+        var rdb = racerDB[rid];
+
+        // 節間追跡（場ごとに最大 7 日分保存、当日重複排除）
+        if(!rdb.seriesProgress) rdb.seriesProgress = {};
+        if(!rdb.seriesProgress[String(sid)]) rdb.seriesProgress[String(sid)] = [];
+        var prog = rdb.seriesProgress[String(sid)];
+        // 当日エントリが既にあれば motorRate 更新、なければ追加
+        var existing = prog.find(function(p){return p.date===today;});
+        var motorRate = pf(r.racer_assigned_motor_top_2_percent);
+        if(existing){
+          if(motorRate > 0) existing.motorRate = (existing.motorRate || 0) * 0.5 + motorRate * 0.5;
+          existing.lastFinish = r.place;
+        } else {
+          prog.push({ date: today, motorRate: motorRate, finish: [r.place], lastFinish: r.place });
+        }
+        // 7 日以上前を削除
+        if(prog.length > 7) rdb.seriesProgress[String(sid)] = prog.slice(-7);
+
+        // 対戦相性（pair-wise: 場の同レース内）
+        ridsInRace.forEach(function(oid){
+          if(!oid || oid === rid) return;
+          var key = (rid < oid) ? rid+'-'+oid : oid+'-'+rid;
+          if(!pairwiseDB[key]) pairwiseDB[key] = { races: 0, head2head: {} };
+          var pr = pairwiseDB[key];
+          pr.races++;
+          // 着順比較で勝者カウント（自分の着が相手より上なら +1）
+          var myPlace = r.place;
+          var oppRes = sortedRes.find(function(x){return x.racer_number===oid;});
+          if(!oppRes) return;
+          var winner = (myPlace < oppRes.place) ? rid : oid;
+          pr.head2head[String(winner)] = (pr.head2head[String(winner)] || 0) + 1;
+        });
+      });
+    }
+  }
+  // 保存
+  safeSet('boatrace_pairwiseDB', pairwiseDB);
+  saveDB();
+}
+
 // ===============================================
 // X5: 局面別予測（シナリオ展開モデル R-12 / グレード別補正 R-15）
 // ===============================================
@@ -1620,6 +1747,26 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
         else if(tideDelta <= -4) risks.push('潮位不利('+tideDelta+')');
       }
     }catch(_){}
+  }
+
+  // X6 R-07/R-13: 節間調整スコア + モーター急変警告
+  var seriesAdj = seriesAdjustmentScore(rid, sid);
+  if(seriesAdj.score !== 0){
+    score += seriesAdj.score;
+    if(seriesAdj.score >= 3) reasons.push('節間モーター上昇中(slope+'+seriesAdj.slope.toFixed(1)+')');
+    else if(seriesAdj.score <= -3) risks.push('節間モーター下降中(slope'+seriesAdj.slope.toFixed(1)+')');
+  }
+  // X6 R-09: 対戦相性
+  if(allBoats && allBoats.length > 0){
+    var oppRids = allBoats
+      .map(function(b){ return b.racer_number; })
+      .filter(function(o){ return o && o !== rid; });
+    var pair = pairwiseScore(rid, sid, oppRids);
+    if(Math.abs(pair.score) >= 0.5){
+      score += pair.score;
+      if(pair.score >= 1) reasons.push('対戦相性◎(+'+pair.score.toFixed(1)+', '+pair.hits+'件)');
+      else if(pair.score <= -1) risks.push('対戦相性×('+pair.score.toFixed(1)+', '+pair.hits+'件)');
+    }
   }
 
   var fc=boat.racer_flying_count||0;   // P3 L-02: 自己参照typo修正
@@ -2508,6 +2655,8 @@ async function loadAllData(){
   if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
   // X3: 進入パターン学習
   if(resultData) learnEntryPatternFromResults(resultData);
+  // X6: 節間調整 / 対戦相性学習
+  if(resultData) learnSeriesAndPairwiseFromResults(resultData);
   learnFromResults();
   updateHistoryWithResults();
 

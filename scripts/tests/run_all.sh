@@ -79,6 +79,10 @@ step "X4 environment (tide / wind / storm) tests" \
 step "X5 scenario / grade tests" \
      "node scripts/tests/test_scenarios.js"
 
+# 14) X6 節間 / 対戦相性テスト
+step "X6 series / pairwise tests" \
+     "node scripts/tests/test_series_pairwise.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
