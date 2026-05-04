@@ -2190,13 +2190,29 @@ function _stackedPredict(features6, l1probs){
 
 // PB-6: Platt 係数を既存履歴から re-fit
 //   2 パラメータ (a, b) のみなので grid search で十分
-function _refitPlattCoeffs(history){
-  if(!Array.isArray(history)) return null;
+// PF-9: Web Worker への分離
+//   _refitPlattCoeffs の grid search (5000 iter × Math.log) は単独で
+//   ~500ms-1s ブロックする可能性。Worker に投げてメインスレッドを解放
+var _plattWorker = null;
+function _getPlattWorker(){
+  if(_plattWorker) return _plattWorker;
+  if(typeof Worker === 'undefined') return null;
+  try {
+    _plattWorker = new Worker('assets/worker.js');
+    return _plattWorker;
+  } catch(e) {
+    console.warn('[PF-9] Worker init failed:', e);
+    return null;
+  }
+}
+
+// pairs 抽出は同期で実行（軽量）、grid search のみ Worker
+function _extractPlattPairs(history){
+  if(!Array.isArray(history)) return [];
   var samples = history.filter(function(h){
     return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
   });
-  if(samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return null;
-  // 各 sample について winner 確率と勝敗を抽出
+  if(samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
   var pairs = [];
   samples.forEach(function(h){
     var winner = h.actual[0];
@@ -2211,8 +2227,30 @@ function _refitPlattCoeffs(history){
       if(Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({p: pb, y: 0});
     }
   });
+  return pairs;
+}
+
+// PF-9: async 化、Worker があれば使う、無ければ main thread fallback
+async function _refitPlattCoeffs(history){
+  var pairs = _extractPlattPairs(history);
   if(pairs.length < 100) return null;
-  // grid search で log loss 最小化
+  var w = _getPlattWorker();
+  if(w){
+    return new Promise(function(resolve){
+      var onMsg = function(e){
+        if(!e.data || e.data.type !== 'platt_refit_done') return;
+        w.removeEventListener('message', onMsg);
+        var r = e.data.result;
+        if(!r){ resolve(null); return; }
+        _plattCoeffs = { a: r.a, b: r.b, fittedAt: Date.now(), n: r.n };
+        safeSet('boatrace_platt', _plattCoeffs);
+        resolve(_plattCoeffs);
+      };
+      w.addEventListener('message', onMsg);
+      w.postMessage({ type: 'platt_refit', samples: pairs });
+    });
+  }
+  // フォールバック: main thread で実行
   var bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
   for(var a = 0.5; a <= 2.0; a += 0.1){
     for(var b = -1.0; b <= 1.0; b += 0.1){
@@ -4519,13 +4557,14 @@ function loadSettings(){
         ? '<span style="color:var(--success)">✓ 自動再校正条件を満たしています</span>'
         : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>');
 
-  // PE-3: 自動再校正 — サンプル充足 & 7 日以上経過なら静かに再校正
+  // PE-3 + PF-9: 自動再校正 — サンプル充足 & 7 日以上経過なら静かに Worker で再校正
   var ageMs = Date.now() - (_plattCoeffs.fittedAt || 0);
   if(withProbs.length >= TUNING.PREDICTION.PLATT_MIN_SAMPLES && ageMs > 7*86400000){
-    var fitted = _refitPlattCoeffs(history);
-    if(fitted){
-      console.log('[Platt] auto-refit a='+fitted.a.toFixed(3)+' b='+fitted.b.toFixed(3)+' n='+fitted.n);
-    }
+    _refitPlattCoeffs(history).then(function(fitted){
+      if(fitted){
+        console.log('[Platt] auto-refit a='+fitted.a.toFixed(3)+' b='+fitted.b.toFixed(3)+' n='+fitted.n);
+      }
+    });
   }
 }
 
@@ -4646,8 +4685,8 @@ function clearErrorLog(){
   }
 }
 
-// PB-6: Platt scaling 再校正をユーザ操作から呼び出し
-function refitPlattCoefficients(){
+// PB-6 + PF-9: Platt scaling 再校正を user 操作から呼び出し（Worker 経由）
+async function refitPlattCoefficients(){
   var history = safeParse('boatrace_history', []);
   var withProbs = history.filter(function(h){
     return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
@@ -4657,7 +4696,7 @@ function refitPlattCoefficients(){
         + 'もう少しレース履歴が貯まってから再校正してください');
     return;
   }
-  var result = _refitPlattCoeffs(history);
+  var result = await _refitPlattCoeffs(history);
   if(!result){
     alert('校正に失敗しました（適格サンプル不足）');
     return;

@@ -64,3 +64,9 @@ globalThis.sigmoid = sigmoid;
 globalThis.safeDiv = safeDiv;
 globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;
 globalThis._plackettLuceExactaProb = _plackettLuceExactaProb;
+
+// PF-8: tree-shake 検証用未使用関数（bundle/IIFE では globalThis.* に
+// 公開されない関数を追加。esbuild は side-effect-free と判定して削除する想定）
+function _unusedTreeShakeMarker() {
+  return 'this should be eliminated by esbuild';
+}
