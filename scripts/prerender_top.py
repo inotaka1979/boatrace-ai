@@ -77,6 +77,11 @@ def render_grid(programs: list[dict]) -> str:
         if sid:
             by_sid.setdefault(sid, []).append(p)
 
+    # PG-6: 軽量化方針:
+    #   - onclick → data-sid + JS 側で event delegation
+    #   - 'general' grade は表示なし → grade-span 省略
+    #   - status / day は JS で上書きされるため最小値のみ（or 省略）
+    #   - inactive は class + name のみ（status 不要）
     cards: list[str] = []
     for sid in range(1, 25):
         name = STADIUMS.get(sid, f"場{sid}")
@@ -85,28 +90,30 @@ def render_grid(programs: list[dict]) -> str:
             total = len(races)
             grade_num = races[0].get("race_grade_number", 5)
             grade_name, grade_cls = GRADE_CLASS.get(grade_num, GRADE_CLASS[5])
-            # 開始前の最初のレース番号（pre-render 時点では結果不明、'1R' で初期化）
-            first_rno = min((r.get("race_number", 99) for r in races), default=1)
-            cards.append(
-                f'<div class="stadium-card active-stadium" onclick="openStadium(\'{sid}\')">'
+            # grade が「一般」(grade-general、CSS で非表示) なら badge 省略
+            grade_span = (
                 f'<span class="stadium-grade {grade_cls}">{grade_name}</span>'
+                if grade_cls != "grade-general" else ""
+            )
+            cards.append(
+                f'<div class="stadium-card active-stadium" data-sid="{sid}">'
+                f'{grade_span}'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">0/{total}R</span>'
-                f'<span class="stadium-day">{first_rno}R</span>'
                 f"</div>"
             )
         else:
+            # PG-6: inactive は最小、status は CSS の :after 等で表現可能だが互換のため一旦残置
             cards.append(
                 f'<div class="stadium-card inactive-stadium">'
                 f'<span class="stadium-name">{name}</span>'
-                f'<span class="stadium-status">次節</span>'
                 f"</div>"
             )
 
     now_jst = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
     return (
         f"\n  <!-- prerendered at {now_jst} ({len(by_sid)}/24 active stadiums) -->\n"
-        + "\n  ".join(cards)
+        + "".join(cards)
         + "\n  "
     )
 

@@ -2222,7 +2222,9 @@ function _getAppWorker(){
 // PF-9 互換 alias
 function _getPlattWorker(){ return _getAppWorker(); }
 
-// PG-3: state を Worker に同期（軽量、~数百KB postMessage）
+// PG-3 + PG-7: state を Worker に同期
+//   重量 DB (racerDB ~5MB, stadiumDB ~50KB) は Worker 自前 fetch、
+//   軽量項目のみ postMessage で送信
 //   呼出契機: l2Update / 学習完了 / DB 読込完了
 function _syncWorkerState(){
   var w = _getAppWorker();
@@ -2230,8 +2232,7 @@ function _syncWorkerState(){
   w.postMessage({
     type: 'sync_state',
     state: {
-      racerDB: racerDB,
-      stadiumDB: stadiumDB,
+      // PG-7: racerDB / stadiumDB は worker が fetch するため省略
       pairwiseDB: pairwiseDB,
       stadiumMotorStats: stadiumMotorStats,
       stadiumExhibitionStats: stadiumExhibitionStats,
@@ -2245,7 +2246,13 @@ function _syncWorkerState(){
       oddsData: oddsData,
     }
   });
+  // PG-7: worker に「重量 DB を自分で fetch しろ」と指示（並列 load）
+  if(!_workerHeavyLoaded){
+    w.postMessage({ type: 'load_heavy_dbs' });
+    _workerHeavyLoaded = true;   // 1 回だけ
+  }
 }
+var _workerHeavyLoaded = false;
 
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）
@@ -3008,8 +3015,54 @@ async function _yieldToMain(){
   await new Promise(function(r){ setTimeout(r, 0); });
 }
 
+// PG-9: Worker 経由学習。Worker 失敗時は main thread fallback
+async function learnFromResultsViaWorker(){
+  var w = _getAppWorker();
+  if(!w || !resultData || !programData || !previewData) return null;
+  return new Promise(function(resolve){
+    var reqId = ++_appWorkerReqId;
+    _appWorkerCallbacks.set(reqId, function(msg){
+      if(msg.type !== 'batch_learn_done' || !msg.result){ resolve(null); return; }
+      var r = msg.result;
+      // worker からの更新を main state に反映
+      if(Array.isArray(r.l2weights)) l2weights = r.l2weights;
+      if(r.featureStats) _featureStats = r.featureStats;
+      if(typeof r.trainStep === 'number') l2trainStep = r.trainStep;
+      if(r.learnedKeys) l2learnedKeys = r.learnedKeys;
+      // 永続化
+      try{ safeSet('boatrace_weights', l2weights); }catch(_){}
+      try{ safeSet('boatrace_trainstep', l2trainStep); }catch(_){}
+      try{ safeSet('boatrace_featurestats', _featureStats); }catch(_){}
+      try{ safeSet('boatrace_learned', l2learnedKeys); }catch(_){}
+      console.log('[PG-9] worker learned '+r.learnedThisCall+' new races');
+      resolve(r);
+    });
+    w.postMessage({
+      type: 'batch_learn',
+      reqId: reqId,
+      input: {
+        resultData: resultData,
+        programData: programData,
+        previewData: previewData,
+        state: {
+          l2weights: l2weights,
+          featureStats: _featureStats,
+          trainStep: l2trainStep,
+          learnedKeys: l2learnedKeys,
+        }
+      }
+    });
+  });
+}
+
 async function learnFromResults(){
   if(!resultData||!programData||!previewData) return;
+  // PG-9: Worker 利用可能なら Worker 経由
+  if(_getAppWorker()){
+    var workerResult = await learnFromResultsViaWorker();
+    if(workerResult) return;
+    // Worker 失敗時は main thread fallback (下に続く)
+  }
   // PB-1: 当日（programData の race_date）を学習キーの一部に採用
   var dateKey = (function(){
     try{
@@ -3502,6 +3555,9 @@ function renderStadiums(){
   var list=document.getElementById('stadiumList');
   sumDiv.style.display='block';
   list.style.display='grid';
+  // PG-6: prerender HTML を削除して JS render に置換
+  //   prerender の data-sid は init 時に event delegation でも使われるが、
+  //   ここで innerHTML 置換するため再度 wire 不要
   list.innerHTML='';
 
   var acc=getAccuracy();
@@ -4977,6 +5033,20 @@ if('serviceWorker' in navigator){
 }
 document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
+
+// PG-6: prerender stadium-card に event delegation で click handler を bind
+//   onclick 属性を撤去し、24 個の inline onclick を削減
+(function(){
+  var list = document.getElementById('stadiumList');
+  if(!list) return;
+  list.addEventListener('click', function(e){
+    var card = e.target.closest('.stadium-card[data-sid]');
+    if(!card) return;
+    var sid = card.getAttribute('data-sid');
+    if(sid && typeof openStadium === 'function') openStadium(sid);
+  });
+})();
+
 loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });   // F3
 
 // P3 L-18: 全 setInterval を一元管理し、unload 時にクリア

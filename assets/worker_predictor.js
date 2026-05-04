@@ -1342,3 +1342,138 @@ function tideScore(sid, course, raceHour){
   if(!phase) return 0;
   return (TIDE_COURSE_BIAS[phase] || {})[course] || 0;
 }
+// =============================================================================
+// PG-9: 学習関数 (Worker 内で完結、main は state を post で受け取る)
+// =============================================================================
+
+// 学習用ハイパパラメータ (app.js と同期、変更時は両方更新)
+var L2_LR0 = 0.05;
+var L2_LR_TAU = 5000;
+var L2_LAMBDA = 1e-4;
+var L2_KEY_LIMIT = 10000;
+
+var l2trainStep = 0;
+var l2learnedKeys = {};
+
+function _updateFeatureStats(featRow){
+  if(!Array.isArray(featRow)) return;
+  _featureStats.n += 1;
+  var n = _featureStats.n;
+  for(var i=0;i<FEATURE_DIM;i++){
+    var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
+    var delta = x - _featureStats.mean[i];
+    _featureStats.mean[i] += delta / n;
+    var delta2 = x - _featureStats.mean[i];
+    _featureStats.m2[i]   += delta * delta2;
+  }
+}
+
+function l2Update(features6, winnerIdx){
+  var probs = l2Predict(features6);
+  var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
+  for(var b=0;b<6;b++){
+    var target = (b === winnerIdx) ? 1 : 0;
+    var err = probs[b] - target;
+    for(var i=0;i<l2weights.length;i++){
+      var grad = err * (features6[b][i]||0) + L2_LAMBDA * l2weights[i];
+      l2weights[i] -= lr * grad;
+    }
+    _updateFeatureStats(features6[b]);
+  }
+  l2trainStep += 1;
+}
+
+// PG-9: バッチ学習 — main から resultData / programData / previewData / 既存 state を受信
+//   返却: 更新後の l2weights / featureStats / trainStep / learnedKeys
+function batchLearnFromResults(input){
+  // input.state で state を上書き
+  if(input.state){
+    if(Array.isArray(input.state.l2weights)) l2weights = input.state.l2weights.slice();
+    if(input.state.featureStats) _featureStats = JSON.parse(JSON.stringify(input.state.featureStats));
+    if(typeof input.state.trainStep === 'number') l2trainStep = input.state.trainStep;
+    if(input.state.learnedKeys) l2learnedKeys = Object.assign({}, input.state.learnedKeys);
+  }
+  // 入力データ
+  var resultData = input.resultData;
+  var programData = input.programData;
+  var previewData = input.previewData;
+  if(!resultData || !programData || !previewData) return null;
+
+  // dateKey
+  var dateKey = '';
+  for(var s in programData){
+    var stadiums = programData[s];
+    for(var r in stadiums){
+      var pgm = stadiums[r];
+      if(pgm && pgm.race_date){ dateKey = String(pgm.race_date).replace(/-/g,''); break; }
+    }
+    if(dateKey) break;
+  }
+
+  var learnedThisCall = 0;
+  for(var sid in resultData){
+    var races = resultData[sid];
+    for(var rn in races){
+      var race = races[rn];
+      if(!race || !race.isFinished || !race.results || !race.results.length) continue;
+      var prog = programData[sid] && programData[sid][rn];
+      var prev = previewData[sid] && previewData[sid][rn];
+      if(!prog || !prog.boats || !Array.isArray(prog.boats)) continue;
+
+      var key = dateKey + '_' + sid + '_' + rn;
+      if(l2learnedKeys[key]) continue;
+
+      var sorted = race.results.slice().sort(function(a,b){return a.place-b.place});
+      var winnerBoat = sorted[0].racer_boat_number;
+
+      var stRanks = {};
+      if(prev && prev.boats){
+        var sts = [];
+        for(var si=1;si<=6;si++){
+          var spv = prev.boats[String(si)];
+          var stVal = (spv && spv.racer_start_timing != null) ? pf(spv.racer_start_timing) : 99;
+          sts.push({boat:si, st:stVal});
+        }
+        sts.sort(function(a,b){return a.st-b.st});
+        sts.forEach(function(s,idx){stRanks[s.boat] = idx});
+      }
+      var etRanks = {};
+      if(prev && prev.boats){
+        var ets = [];
+        for(var ei=1;ei<=6;ei++){
+          var epv = prev.boats[String(ei)];
+          var etVal = (epv && epv.racer_exhibition_time != null && epv.racer_exhibition_time > 0) ? pf(epv.racer_exhibition_time) : 99;
+          ets.push({boat:ei, time:etVal});
+        }
+        ets.sort(function(a,b){return a.time-b.time});
+        ets.forEach(function(e,idx){etRanks[e.boat] = idx});
+      }
+      var weather = prev ? prev.weather || prev : null;
+      var features6 = prog.boats.map(function(b){
+        var pv = prev && prev.boats ? prev.boats[String(b.racer_boat_number)] : null;
+        return getL2Features(b, pv, weather, etRanks[b.racer_boat_number]||5, stRanks[b.racer_boat_number]||5, sid);
+      });
+      var winnerIdx = prog.boats.findIndex(function(b){return b.racer_boat_number === winnerBoat});
+      if(winnerIdx >= 0){
+        l2Update(features6, winnerIdx);
+        l2learnedKeys[key] = 1;
+        learnedThisCall++;
+      }
+    }
+  }
+  // 上限超過は trim
+  var keys = Object.keys(l2learnedKeys);
+  if(keys.length > L2_KEY_LIMIT){
+    var keep = keys.slice(-L2_KEY_LIMIT);
+    var trimmed = {};
+    for(var i=0;i<keep.length;i++) trimmed[keep[i]] = 1;
+    l2learnedKeys = trimmed;
+  }
+  return {
+    l2weights: l2weights.slice(),
+    featureStats: { mean: _featureStats.mean.slice(), m2: _featureStats.m2.slice(), n: _featureStats.n },
+    trainStep: l2trainStep,
+    learnedKeys: l2learnedKeys,
+    learnedThisCall: learnedThisCall,
+  };
+}
