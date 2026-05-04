@@ -10,9 +10,13 @@ GitHub Actionsから1日2回実行される
 4. 出走選手の写真をダウンロード（未取得分のみ）
 """
 
-import json, os, time, datetime, re
+import json, os, sys, time, datetime, re
 from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from io_utils import atomic_write_json  # P2 D-01
+from time_utils import utc_iso_seconds  # P2 D-02
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 BASE_URL = "https://www.boatrace.jp/owpc/pc/race"
@@ -136,8 +140,7 @@ def main():
     programs = prog.get("programs", [])
     if not programs:
         print("No programs today")
-        with open(OUTPUT_RACEDATA, "w") as f:
-            json.dump({"updated_at": datetime.datetime.utcnow().isoformat() + "Z", "racedata": []}, f)
+        atomic_write_json(OUTPUT_RACEDATA, {"updated_at": utc_iso_seconds(), "racedata": []})  # D-01 / D-02
         return
 
     stadiums = {}
@@ -182,22 +185,25 @@ def main():
     for rn in sorted(racer_numbers):
         download_photo(rn)
 
+    # D-08: 写真削除に try/except、削除失敗は warn にとどめて続行
     if os.path.exists(PHOTO_DIR):
         now = time.time()
         for fname in os.listdir(PHOTO_DIR):
             fpath = os.path.join(PHOTO_DIR, fname)
             if fname == ".gitkeep":
                 continue
-            if now - os.path.getmtime(fpath) > 60 * 86400:
-                os.remove(fpath)
-                print(f"  Removed old photo: {fname}")
+            try:
+                if now - os.path.getmtime(fpath) > 60 * 86400:
+                    os.remove(fpath)
+                    print(f"  Removed old photo: {fname}")
+            except OSError as e:
+                print(f"  WARN: photo cleanup failed {fname}: {e}")
 
     result = {
-        "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
-        "racedata": all_data
+        "updated_at": utc_iso_seconds(),  # D-02
+        "racedata": all_data,
     }
-    with open(OUTPUT_RACEDATA, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False)
+    atomic_write_json(OUTPUT_RACEDATA, result)  # D-01
 
     print(f"Done! {len(all_data)} races written")
 

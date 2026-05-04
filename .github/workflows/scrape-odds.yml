@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
-      - run: python scripts/scrape_odds.py
+      - run: python scripts/scrape_odds_fast.py
       - name: Commit
         run: |
           git config user.name "Automated"

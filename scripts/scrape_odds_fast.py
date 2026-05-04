@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """scrape_odds_fast.py — asyncio版 高速オッズ取得"""
 
-import asyncio, json, os, time, logging
-from datetime import datetime, timezone
+import asyncio, json, os, sys, time, logging
 import aiohttp
 from bs4 import BeautifulSoup
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from io_utils import atomic_write_json  # P2 D-01
+from time_utils import utc_iso_seconds  # P2 D-02 / D-10
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
@@ -76,13 +79,17 @@ async def scrape_race(session, limiter, sid, rn, date_str):
     return result
 
 def get_finished():
+    """確定レース集合を取得。読み込み失敗は warn にとどめ、既存スクレイプ範囲は維持 (D-04)。"""
     finished = set()
-    if os.path.exists(PREVIEWS):
-        try:
-            with open(PREVIEWS) as f:
-                for r in json.load(f).get("races", []):
-                    if r.get("finished"): finished.add((r["stadium"], r["race"]))
-        except Exception: pass
+    if not os.path.exists(PREVIEWS):
+        return finished
+    try:
+        with open(PREVIEWS, encoding="utf-8") as f:
+            for r in json.load(f).get("races", []):
+                if r.get("finished"):
+                    finished.add((r["stadium"], r["race"]))
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("get_finished: load failed (%s) — fallback to empty set", e)
     return finished
 
 async def async_main():
@@ -103,9 +110,10 @@ async def async_main():
     existing = {}
     if os.path.exists(OUTPUT):
         try:
-            with open(OUTPUT) as f:
+            with open(OUTPUT, encoding="utf-8") as f:
                 for r in json.load(f).get("odds", []): existing[(r["stadium"], r["race"])] = r
-        except Exception: pass
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning("existing odds load failed (%s) — start from empty", e)
     sem = asyncio.Semaphore(CONCURRENCY); limiter = RateLimiter(INTERVAL); results = {}
     async with aiohttp.ClientSession() as session:
         async def task(s, r):
@@ -113,14 +121,21 @@ async def async_main():
         t0 = time.monotonic()
         await asyncio.gather(*[task(s, r) for s, r in active])
         elapsed = time.monotonic() - t0
+    # D-03: スクレイプ失敗（win も exacta も無し）の場合は既存値を保持し、
+    #        プレースホルダ {stadium,race} で上書きしない
     updated = 0
     for key, data in results.items():
-        if data.get("win") or data.get("exacta"): existing[key] = data; updated += 1
+        if data.get("win") or data.get("exacta"):
+            existing[key] = data
+            updated += 1
     for s, r in sorted(races):
-        if (s, r) not in existing: existing[(s, r)] = {"stadium": s, "race": r}
-    with open(OUTPUT, "w", encoding="utf-8") as f:
-        json.dump({"updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
-                    "odds": [existing[k] for k in sorted(existing.keys())]}, f, ensure_ascii=False)
+        if (s, r) not in existing:
+            existing[(s, r)] = {"stadium": s, "race": r}
+    # D-01: atomic write
+    atomic_write_json(OUTPUT, {
+        "updated_at": utc_iso_seconds(),
+        "odds": [existing[k] for k in sorted(existing.keys())],
+    })
     log.info("Done! %d scraped, %d updated in %.1fs", len(active), updated, elapsed)
 
 def main(): asyncio.run(async_main())

@@ -15,6 +15,10 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from io_utils import atomic_write_json  # P2 D-01
+from time_utils import utc_iso_seconds, first_of_next_month  # P2 D-02 / D-06
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -108,8 +112,8 @@ def main():
     })
     time.sleep(3)
 
-    # 翌月
-    next_month = now.replace(day=1) + timedelta(days=32)
+    # 翌月 (D-06: 月末でも正しく動作する関数を利用)
+    next_month = first_of_next_month(now)
     ym2 = next_month.strftime("%Y%m")
     print(f"翌月取得: {ym2}")
     events2 = scrape_month(ym2)
@@ -119,13 +123,11 @@ def main():
     })
 
     output = {
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at": utc_iso_seconds(),  # D-02
         "months": months_data,
     }
 
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+    atomic_write_json(OUTPUT_FILE, output, indent=2)  # D-01
 
     total_events = sum(len(m["events"]) for m in months_data)
     print(f"完了: {total_events}イベントを保存")

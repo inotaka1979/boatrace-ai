@@ -114,7 +114,9 @@ class CORSDataHandler(SimpleHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="BoatRace data HTTP server")
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--bind", default="0.0.0.0")
+    # P2 D-12: 既定で localhost に bind（外部公開を防止、必要時のみ 0.0.0.0 に明示）
+    parser.add_argument("--bind", default="127.0.0.1",
+                        help="bind address (default: 127.0.0.1; pass 0.0.0.0 to expose externally)")
     parser.add_argument("--data-dir", default="/home/pi/boatrace-ai/data")
     args = parser.parse_args()
 
