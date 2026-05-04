@@ -5398,8 +5398,8 @@ function _renderFreshness(){
   if(sec < 60) label = sec + '秒前';
   else if(sec < 3600) label = Math.floor(sec/60) + '分前';
   else label = Math.floor(sec/3600) + '時間前';
-  // 鮮度に応じて色
-  var color = sec < 180 ? 'var(--success)' : sec < 600 ? 'var(--warn)' : 'var(--danger)';
+  // PE-2: header 背景 (#1A3A5C) で AA 適合な明色で表示
+  var color = sec < 180 ? '#A5D6A7' : sec < 600 ? '#FFCC80' : '#FF8A80';
   el.innerHTML = '<span style="color:'+color+'">📡 '+label+'</span>';
 }
 setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
