@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 
 // L2_INIT_WEIGHTS と _validateLS の定義を抽出
 //   バンドル後の indent 付き同名関数を避けるため、column 0 限定

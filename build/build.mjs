@@ -101,9 +101,10 @@ async function checkOther(path) {
 }
 
 async function main() {
-  console.log('=== BoatRace Oracle Build (PE-4 Step 2) ===\n');
+  console.log('=== BoatRace Oracle Build (PE-5: assets/app.js target) ===\n');
 
   const indexPath = resolve(ROOT, 'index.html');
+  const appJsPath = resolve(ROOT, 'assets/app.js');
   const swPath = resolve(ROOT, 'sw.js');
   const manifestPath = resolve(ROOT, 'manifest.json');
 
@@ -112,34 +113,38 @@ async function main() {
   const safeStorageBundle = await bundleModule(resolve(SRC, 'utils/safe_storage.js'));
   console.log('  -> ' + safeStorageBundle.length + ' chars');
 
-  // 2) index.html を読込み marker 領域に注入
-  const beforeHtml = await readFile(indexPath, 'utf8');
-  const afterHtml = injectBundle(beforeHtml, 'SAFE_STORAGE', safeStorageBundle);
+  // 2) PE-5: assets/app.js (外部化済) の marker 領域に注入
+  const beforeApp = await readFile(appJsPath, 'utf8');
+  const afterApp = injectBundle(beforeApp, 'SAFE_STORAGE', safeStorageBundle);
 
   if (CHECK_MODE) {
-    if (beforeHtml !== afterHtml) {
-      console.error('[check] index.html differs from build output. Run "npm run build" and commit.');
+    if (beforeApp !== afterApp) {
+      console.error('[check] assets/app.js differs from build output. Run "npm run build" and commit.');
       process.exit(1);
     }
-    console.log('[check] index.html matches build output ✓');
-  } else if (beforeHtml !== afterHtml) {
-    await writeFile(indexPath, afterHtml);
-    console.log('[write] index.html updated');
+    console.log('[check] assets/app.js matches build output ✓');
+  } else if (beforeApp !== afterApp) {
+    await writeFile(appJsPath, afterApp);
+    console.log('[write] assets/app.js updated');
   } else {
-    console.log('[no-op] index.html already up-to-date');
+    console.log('[no-op] assets/app.js already up-to-date');
   }
 
   // 3) Hash report
   console.log('');
-  console.log('[hash] index.html  SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');
-  console.log('[hash] sw.js       SHA-256:', (await sha256(swPath)).slice(0, 16) + '...');
+  console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');
+  console.log('[hash] assets/app.js SHA-256:', (await sha256(appJsPath)).slice(0, 16) + '...');
+  console.log('[hash] sw.js         SHA-256:', (await sha256(swPath)).slice(0, 16) + '...');
   console.log('[hash] manifest.json SHA-256:', (await sha256(manifestPath)).slice(0, 16) + '...');
 
-  // 4) Syntax 検証
+  // 4) Syntax 検証 - assets/app.js (外部) と index.html の inline 両方
   console.log('');
+  const appSyntax = await checkOther(appJsPath);
+  if (appSyntax.ok) console.log('[syntax] assets/app.js OK');
+  else { console.error('[syntax] assets/app.js FAILED:\n', appSyntax.err); process.exit(1); }
   const html = await readFile(indexPath, 'utf8');
   const syntax = await checkJsSyntax(html);
-  if (syntax.ok) console.log('[syntax] inline <script> OK');
+  if (syntax.ok) console.log('[syntax] inline <script> OK (none expected)');
   else { console.error('[syntax] inline FAILED:\n', syntax.err); process.exit(1); }
 
   try {

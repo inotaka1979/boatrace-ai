@@ -13,9 +13,9 @@ const path = require('path');
 const vm = require('vm');
 
 // 1) index.html から <script> を抽出
-const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
-const scripts = [...HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-const code = scripts.join('\n');
+const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
+// PE-5: assets/app.js は JS 直接、wrapper 不要
+const code = HTML;
 
 // 2) ブラウザ依存 API (window/document/localStorage) を最低限スタブ
 const localStore = {};

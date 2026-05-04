@@ -10,7 +10,7 @@
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v6';
+const VERSION = 'br-oracle-v7';
 const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',
@@ -18,6 +18,7 @@ const STATIC_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './assets/app.js',   // PE-5: 外部化された JS (defer 読込)
 ];
 
 // PD-2: 別 cache 名で永続キャッシュする外部リソース origin

@@ -1,13 +1,13 @@
-// index.html の <script> ブロックを抽出して構文検証
+// PE-5: assets/app.js (外部化された JS) の構文をチェック
 const fs = require('fs');
 const path = require('path');
-const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
-const m = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+const code = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 let ok = true;
-m.forEach((blk, i) => {
-  const code = blk.replace(/^<script>/, '').replace(/<\/script>$/, '');
-  try { new Function(code); }
-  catch (e) { console.error('Block', i, 'syntax error:', e.message); ok = false; }
-});
-console.log(ok ? `index.html JS syntax OK (${m.length} blocks)` : 'JS SYNTAX ERRORS');
+try {
+  new Function(code);
+  console.log('assets/app.js syntax OK (' + code.length + ' chars)');
+} catch (e) {
+  console.error('JS SYNTAX ERROR:', e.message);
+  ok = false;
+}
 process.exit(ok ? 0 : 1);
