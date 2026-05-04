@@ -2,17 +2,36 @@
   "id": "/boatrace-ai/",
   "name": "BoatRace Oracle",
   "short_name": "BR Oracle",
-  "description": "競艇AI予想アプリ",
+  "description": "競艇AI予想アプリ - 全24場の出走表/オッズをAIが分析",
+  "lang": "ja",
+  "dir": "ltr",
   "scope": "./",
   "start_url": "./?utm_source=pwa",
   "display": "standalone",
   "background_color": "#0A1628",
   "theme_color": "#00B4D8",
   "orientation": "portrait",
+  "categories": ["sports", "utilities"],
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "成績",
+      "short_name": "成績",
+      "description": "本日の成績と過去履歴",
+      "url": "./?tab=stats",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "検証",
+      "short_name": "検証",
+      "description": "バックテスト・EV/Kelly 評価",
+      "url": "./?tab=backtest",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
   ]
 }

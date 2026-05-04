@@ -1,13 +1,17 @@
-// BoatRace Oracle - Service Worker v4 (P4: race condition / fallback / 更新通知)
-// 設計書 §6 を参照
+// BoatRace Oracle - Service Worker v6 (PA-7 + PD-2 + PD-3)
+// 設計書 §6 / docs/A_PLUS_化設計書.md PD-2/3 を参照
 //
-// 修正内容:
+// 変更履歴:
 //   W-01 caches.put を await して race を防止
 //   W-02 data/ オフライン応答を 503 に変更（空 {} で誤動作するのを防ぐ）
 //   W-03 install 時 skipWaiting を撤去、message('SKIP_WAITING') で明示制御
 //   W-09 querystring を除いたキーで cache 参照（キャッシュキー分散を防止）
+//   PA-7 fetch handler に origin allowlist、GET 以外はバイパス
+//   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
+//   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v5';
+const VERSION = 'br-oracle-v6';
+const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -16,6 +20,19 @@ const STATIC_ASSETS = [
   './icon-512.png',
 ];
 
+// PD-2: 別 cache 名で永続キャッシュする外部リソース origin
+const CDN_ORIGINS = new Set([
+  'https://cdnjs.cloudflare.com',
+  'https://fonts.gstatic.com',
+  'https://fonts.googleapis.com',
+]);
+
+// PA-7: 介入対象 origin を明示的に許可
+const ALLOWED_API_ORIGINS = new Set([
+  'https://boatraceopenapi.github.io',
+  'https://inotaka1979.github.io',
+]);
+
 // install: 静的アセットのみキャッシュ（skipWaiting しない）
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -23,23 +40,29 @@ self.addEventListener('install', (e) => {
   );
 });
 
-// activate: 旧 cache を全削除してから claim
+// activate: 旧 cache（VERSION/CDN_CACHE 以外）を全削除してから claim
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)));
+    const keep = new Set([VERSION, CDN_CACHE]);
+    await Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)));
     await self.clients.claim();
+    // PD-3: 既存クライアントに新バージョンを通知（UI でトースト表示）
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    clients.forEach((c) => c.postMessage({ type: 'NEW_VERSION', version: VERSION }));
   })());
 });
 
 // クライアントから明示的に新版を有効化 / 緊急 purge
 self.addEventListener('message', (e) => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
-  if (e.data === 'PURGE_ALL') {
+  const data = e.data;
+  if (data === 'SKIP_WAITING' || (data && data.type === 'SKIP_WAITING')) {
+    self.skipWaiting();
+  }
+  if (data === 'PURGE_ALL' || (data && data.type === 'PURGE_ALL')) {
     e.waitUntil((async () => {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
-      // 全クライアントに purge 完了を通知
       const clients = await self.clients.matchAll({ includeUncontrolled: true });
       clients.forEach((c) => c.postMessage({ type: 'PURGED' }));
     })());
@@ -60,14 +83,12 @@ async function netFirst(req) {
     const resp = await fetch(req);
     if (resp.ok) {
       const cache = await caches.open(VERSION);
-      // W-01: await して race condition を防止
       await cache.put(cacheKey, resp.clone());
     }
     return resp;
   } catch (_) {
     const cached = await caches.match(cacheKey);
     if (cached) return cached;
-    // W-02: 空 {} ではなく 503 を返す（呼出側が catch で適切にハンドル可能）
     return new Response(
       JSON.stringify({ error: 'offline' }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
@@ -75,11 +96,20 @@ async function netFirst(req) {
   }
 }
 
-// PA-7: 介入対象 origin を明示的に許可
-const ALLOWED_API_ORIGINS = new Set([
-  'https://boatraceopenapi.github.io',
-  'https://inotaka1979.github.io',
-]);
+// PD-2: CDN/Fonts 用 cache-first + Stale-While-Revalidate
+async function cacheFirstSWR(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  // バックグラウンドで再取得して更新（fire-and-forget）
+  const refresh = fetch(req).then((resp) => {
+    if (resp && resp.ok) cache.put(req, resp.clone());
+    return resp;
+  }).catch(() => null);
+  if (cached) return cached;
+  const resp = await refresh;
+  if (resp) return resp;
+  return new Response('', { status: 503 });
+}
 
 self.addEventListener('fetch', (e) => {
   // GET 以外（POST/PUT/DELETE）は SW で介入しない
@@ -88,9 +118,16 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   const isOwnOrigin = url.origin === self.location.origin;
   const isAllowedAPI = ALLOWED_API_ORIGINS.has(url.origin);
+  const isCDN = CDN_ORIGINS.has(url.origin);
 
-  // PA-7: 自オリジンと許可済 API 以外は SW で扱わない（バイパス）
-  if (!isOwnOrigin && !isAllowedAPI) return;
+  // PA-7: 自オリジン / 許可済 API / 既知 CDN 以外は SW で扱わない（バイパス）
+  if (!isOwnOrigin && !isAllowedAPI && !isCDN) return;
+
+  // PD-2: CDN は cache-first + SWR
+  if (isCDN) {
+    e.respondWith(cacheFirstSWR(e.request, CDN_CACHE));
+    return;
+  }
 
   const path = url.pathname;
 

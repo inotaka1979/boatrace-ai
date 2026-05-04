@@ -2,10 +2,11 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<!-- PD-5: a11y のためズーム禁止を撤去（user-scalable / maximum-scale 削除） -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="BoatRace AI">
 <meta name="theme-color" content="#1A3A5C">
 <title>BoatRace AI</title>
@@ -29,6 +30,9 @@
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Permissions-Policy" content="geolocation=(), camera=(), microphone=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()">
 <link rel="manifest" href="manifest.json">
+<!-- PD-4: iOS は 180x180 を期待。192 にフォールバックさせるため両方記載 -->
+<link rel="apple-touch-icon" sizes="180x180" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- PA-3: 外部リソースは preconnect + crossorigin で接続最適化 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
@@ -55,22 +59,28 @@
   --boat6:#43A047;--boat6-text:#FFF;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:56px;-webkit-tap-highlight-color:transparent}
+/* PD-6: 100dvh で iOS Safari のアドレスバー伸縮に対応、左右 safe-area 補完 */
+body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding-bottom:56px;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);-webkit-tap-highlight-color:transparent}
+/* PD-9: フォーカス可視化（キーボード/スクリーンリーダー利用時） */
+:focus-visible{outline:3px solid #00B4D8;outline-offset:2px;border-radius:4px}
 
-/* Header */
-.header{background:var(--header-bg);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,0.15)}
+/* Header — PD-6: 上端 safe-area-inset-top を確保（black-translucent 対応） */
+.header{background:var(--header-bg);padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,0.15)}
 .logo{font-weight:700;font-size:16px;color:#fff;letter-spacing:1px}
 .header-sub{font-size:10px;color:rgba(255,255,255,0.7)}
 .header-right{display:flex;align-items:center;gap:8px}
 .header-right #headerDate{font-size:10px;color:rgba(255,255,255,0.7)}
-.refresh-btn{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer}
+/* PD-9: refresh-btn のタッチ領域を 44pt 以上に */
+.refresh-btn{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;padding:8px 12px;font-size:12px;min-height:44px;min-width:44px;cursor:pointer}
 .refresh-btn:active{background:rgba(255,255,255,0.3)}
+/* PD-7: スクリーンリーダー専用テキスト */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
-/* Nav - 4 tabs */
+/* Nav - 4 tabs — PD-9: タッチターゲット 48pt 以上、文字 12px */
 .nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -1px 4px rgba(0,0,0,0.08)}
-.nav-btn{flex:1;padding:6px 0 4px;text-align:center;color:var(--text-dim);font-size:9px;cursor:pointer;border:none;background:none;transition:color .2s}
+.nav-btn{flex:1;padding:8px 0 6px;min-height:48px;text-align:center;color:var(--text-dim);font-size:11px;cursor:pointer;border:none;background:none;transition:color .2s}
 .nav-btn.active{color:var(--accent)}
-.nav-btn .nav-icon{font-size:18px;display:block;margin-bottom:1px}
+.nav-btn .nav-icon{font-size:20px;display:block;margin-bottom:2px}
 
 /* Page */
 .page{display:none;padding:8px}
@@ -254,7 +264,8 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .setting-row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border)}
 .setting-label{font-size:13px;color:var(--text)}
 .setting-val{font-size:13px;color:var(--accent);font-weight:500}
-select,button.action-btn{background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px}
+/* PD-9: タッチターゲット 44pt 以上、文字 13px 以上 */
+select,button.action-btn{background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;min-height:44px}
 button.action-btn{cursor:pointer}
 button.action-btn:active{background:#F0F0F0}
 .db-info{font-size:11px;color:var(--text-dim);padding:8px 12px}
@@ -285,17 +296,18 @@ button.action-btn:active{background:#F0F0F0}
 </head>
 <body>
 
-<div class="header">
+<!-- PD-7: ランドマーク role + aria-label でスクリーンリーダー対応 -->
+<header class="header" role="banner">
   <div>
     <span class="logo">BOATRACE AI</span>
     <div class="header-sub">AI予想エンジン v2.0</div>
   </div>
   <div class="header-right">
-    <div id="headerDate"></div>
-    <div id="dataFreshness" style="font-size:10px"></div>
-    <button class="refresh-btn" onclick="hardReload()">更新</button>
+    <div id="headerDate" aria-live="off"></div>
+    <div id="dataFreshness" style="font-size:10px" aria-live="off"></div>
+    <button class="refresh-btn" onclick="hardReload()" aria-label="ページを完全に再読み込み">更新</button>
   </div>
-</div>
+</header>
 
 <!-- Screen 1: Top -->
 <div class="page active" id="pageTop">
@@ -466,13 +478,14 @@ button.action-btn:active{background:#F0F0F0}
 </div>
 
 <!-- Navigation - 5 tabs (X7: バックテスト追加) -->
-<div class="nav">
-  <button class="nav-btn active" onclick="showPage('top')" id="navTop"><span class="nav-icon">🏠</span>TOP</button>
-  <button class="nav-btn" onclick="showPage('stats')" id="navStats"><span class="nav-icon">📊</span>成績</button>
-  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest"><span class="nav-icon">🧪</span>検証</button>
-  <button class="nav-btn" onclick="showPage('settings')" id="navSettings"><span class="nav-icon">⚙️</span>設定</button>
-  <button class="nav-btn" onclick="forceRefresh()" id="navRefresh"><span class="nav-icon">🔄</span>更新</button>
-</div>
+<!-- PD-7: nav role + aria-label、各 tab に aria-label と aria-current で a11y 対応 -->
+<nav class="nav" role="navigation" aria-label="メインメニュー">
+  <button class="nav-btn active" onclick="showPage('top')" id="navTop" aria-label="トップ" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
+  <button class="nav-btn" onclick="showPage('stats')" id="navStats" aria-label="成績"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
+  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest" aria-label="検証"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
+  <button class="nav-btn" onclick="showPage('settings')" id="navSettings" aria-label="設定"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
+  <button class="nav-btn" onclick="forceRefresh()" id="navRefresh" aria-label="データ更新"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
+</nav>
 
 <script>
 'use strict';   // PC-5: strict モードで暗黙のグローバル代入 / 8進リテラル / with 等を禁止
@@ -3448,15 +3461,24 @@ function racerBadges(boat,form,divergence){
 // ===============================================
 function showPage(page){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
-  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active')});
+  // PD-7: aria-current は nav の active 状態と同期
+  document.querySelectorAll('.nav-btn').forEach(function(b){
+    b.classList.remove('active');
+    b.removeAttribute('aria-current');
+  });
   if(page!=='detail') stopOddsAutoRefresh();
 
-  if(page==='top'){document.getElementById('pageTop').classList.add('active');document.getElementById('navTop').classList.add('active')}
-  else if(page==='races'){document.getElementById('pageRaces').classList.add('active');document.getElementById('navTop').classList.add('active')}
-  else if(page==='detail'){document.getElementById('pageDetail').classList.add('active');document.getElementById('navTop').classList.add('active');startOddsAutoRefresh()}
-  else if(page==='stats'){document.getElementById('pageStats').classList.add('active');document.getElementById('navStats').classList.add('active');renderStats()}
-  else if(page==='backtest'){document.getElementById('pageBacktest').classList.add('active');document.getElementById('navBacktest').classList.add('active')}
-  else if(page==='settings'){document.getElementById('pageSettings').classList.add('active');document.getElementById('navSettings').classList.add('active');loadSettings()}
+  function _setActive(navId){
+    var el = document.getElementById(navId);
+    if(el){ el.classList.add('active'); el.setAttribute('aria-current','page'); }
+  }
+
+  if(page==='top'){document.getElementById('pageTop').classList.add('active');_setActive('navTop')}
+  else if(page==='races'){document.getElementById('pageRaces').classList.add('active');_setActive('navTop')}
+  else if(page==='detail'){document.getElementById('pageDetail').classList.add('active');_setActive('navTop');startOddsAutoRefresh()}
+  else if(page==='stats'){document.getElementById('pageStats').classList.add('active');_setActive('navStats');renderStats()}
+  else if(page==='backtest'){document.getElementById('pageBacktest').classList.add('active');_setActive('navBacktest')}
+  else if(page==='settings'){document.getElementById('pageSettings').classList.add('active');_setActive('navSettings');loadSettings()}
   window.scrollTo(0,0);
 }
 
@@ -4553,10 +4575,32 @@ function loadSettings(){
 
 function saveSetting(key,val){settings[key]=val; safeSet('boatrace_settings', settings)}   // P3 L-05
 function clearCache(){var keys=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.startsWith('bc_'))keys.push(k)}keys.forEach(function(k){localStorage.removeItem(k)});alert('キャッシュをクリアしました ('+keys.length+'件)')}
-function clearHistory(){if(confirm('成績履歴を全て削除しますか?')){localStorage.removeItem('boatrace_history');alert('履歴を削除しました')}}
-function rebuildDB(){if(confirm('選手/場DBを再構築しますか?')){localStorage.removeItem('boatrace_racerDB');localStorage.removeItem('boatrace_stadiumDB');location.reload()}}
+// PD-10: 破壊操作は二段確認（confirm + DELETE 入力）でフールプルーフ
+function _confirmDestructive(actionLabel){
+  if(!confirm(actionLabel+'\n\nこの操作は取り消せません。本当に実行しますか?')) return false;
+  var ans = prompt('確認のため "DELETE" と入力してください\n（キャンセルすると中止）', '');
+  if(ans !== 'DELETE'){
+    alert('入力が一致しないため中止しました');
+    return false;
+  }
+  return true;
+}
+function clearHistory(){
+  if(_confirmDestructive('成績履歴を全て削除しますか?')){
+    localStorage.removeItem('boatrace_history');
+    alert('履歴を削除しました');
+  }
+}
+function rebuildDB(){
+  if(_confirmDestructive('選手/場DBを再構築しますか?')){
+    localStorage.removeItem('boatrace_racerDB');
+    localStorage.removeItem('boatrace_stadiumDB');
+    location.reload();
+  }
+}
 function resetWeights(){
-  if(confirm('学習重みをリセットしますか?\n（学習済キャッシュとカウンタも一緒にリセット）')){
+  // PD-10: 二段確認（学習データ消失は致命的のため）
+  if(_confirmDestructive('学習重みをリセットしますか?\n（学習済キャッシュとカウンタも一緒にリセット）')){
     try{
       localStorage.removeItem('boatrace_weights');
       localStorage.removeItem('boatrace_learned');   // PB-1
@@ -4724,37 +4768,96 @@ function updateOddsUI(){
 try{ localStorage.removeItem('boatrace_github_pat'); }catch(_){}
 
 // P0-S03: Service Worker 登録（PWAキャッシュ戦略を有効化）
+// PD-3: 新版検出時のトースト + 即時更新フロー
+function showUpdateToast(onUpdate){
+  // 既存トーストがあれば削除
+  var old = document.getElementById('br-update-toast');
+  if(old) old.remove();
+  var toast = document.createElement('div');
+  toast.id = 'br-update-toast';
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'polite');
+  toast.style.cssText = 'position:fixed;left:50%;bottom:80px;transform:translateX(-50%);'+
+    'background:#1A3A5C;color:#fff;padding:12px 16px;border-radius:8px;'+
+    'box-shadow:0 4px 12px rgba(0,0,0,0.25);z-index:9999;font-size:13px;'+
+    'display:flex;align-items:center;gap:12px;max-width:90%';
+  toast.innerHTML = '<span>新しいバージョンがあります</span>'+
+    '<button id="br-update-btn" style="background:#00B4D8;color:#fff;border:none;'+
+    'border-radius:4px;padding:6px 12px;font-size:12px;min-height:40px;cursor:pointer">更新</button>'+
+    '<button id="br-update-dismiss" aria-label="閉じる" style="background:transparent;'+
+    'color:#fff;border:none;font-size:18px;cursor:pointer;padding:0 4px;min-height:40px">×</button>';
+  document.body.appendChild(toast);
+  document.getElementById('br-update-btn').addEventListener('click', function(){
+    toast.remove();
+    if(typeof onUpdate === 'function') onUpdate();
+  });
+  document.getElementById('br-update-dismiss').addEventListener('click', function(){ toast.remove(); });
+}
+
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('./sw.js')
       .then(function(reg){
         console.log('[SW] registered scope=', reg.scope);
-        // 30分おきに更新チェック（SWキャッシュ修正の挙動を維持）
         reg.update();
         setInterval(function(){ reg.update(); }, 1800000);
-        // 新版が来たら静かにリロード待機
+        // PD-3: 新版検出時にトースト表示 + クリックで SKIP_WAITING
         reg.addEventListener('updatefound', function(){
           var nw = reg.installing;
           if(!nw) return;
           nw.addEventListener('statechange', function(){
             if(nw.state === 'installed' && navigator.serviceWorker.controller){
-              console.log('[SW] new version available; will activate on next reload');
+              console.log('[SW] new version available');
+              showUpdateToast(function(){
+                nw.postMessage({type:'SKIP_WAITING'});
+              });
             }
           });
         });
       })
       .catch(function(err){ console.warn('[SW] register failed', err); });
   });
-  navigator.serviceWorker.addEventListener('controllerchange',function(){console.log('New SW activated')});
+  // PD-3: 新 SW が controller になったら自動リロード
+  var _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if(_swReloaded) return; _swReloaded = true;
+    console.log('[SW] new controller, reloading');
+    location.reload();
+  });
+  // PD-3: SW からの NEW_VERSION 通知（既に有効化済の場合）
+  navigator.serviceWorker.addEventListener('message', function(e){
+    if(e.data && e.data.type === 'NEW_VERSION'){
+      console.log('[SW] activated new version:', e.data.version);
+    }
+  });
 }
 document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
 loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });   // F3
 
 // P3 L-18: 全 setInterval を一元管理し、unload 時にクリア
+// PD-12: visibilitychange で隠れたタブの polling を停止（バッテリー / ネットワーク節約）
 var _managedTimers=[];
-function setManagedInterval(fn, ms){ var id=setInterval(fn, ms); _managedTimers.push(id); return id; }
+var _managedDefs=[];   // {fn, ms, id}
+function setManagedInterval(fn, ms){
+  var id=setInterval(fn, ms);
+  _managedTimers.push(id);
+  _managedDefs.push({fn:fn, ms:ms, id:id});
+  return id;
+}
 window.addEventListener('beforeunload', function(){ _managedTimers.forEach(clearInterval); });
+// PD-12: 非表示時はタイマーを停止、復帰時に再開
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'hidden'){
+    _managedDefs.forEach(function(d){ if(d.id != null){ clearInterval(d.id); d.id = null; } });
+  } else {
+    _managedDefs.forEach(function(d){
+      if(d.id == null){ d.id = setInterval(d.fn, d.ms); _managedTimers.push(d.id); }
+    });
+    // 復帰時に即時 1 回実行（古い表示を即時更新）
+    _managedDefs.forEach(function(d){ try{ d.fn(); }catch(_){ } });
+  }
+});
 
 // F2: 90秒間隔（旧 300秒）。data/* は CDN キャッシュ + cron 3 分更新なので軽量
 // F3: 取得した updated_at から最終更新時刻を追跡し、ヘッダーに「📡 X分前」を表示

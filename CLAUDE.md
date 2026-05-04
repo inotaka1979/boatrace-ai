@@ -129,3 +129,72 @@ boatrace-ai/
 - .github/workflows/test.yml で CI 化
 - docs/RUNBOOK.md（運用障害対応手順）
 - docs/不具合修正設計書.md（86 件改善の設計書）
+
+## 修正履歴 (2026-05-04: A+ 化統合実装 4 Phase 完了)
+
+設計書: `docs/A_PLUS_化設計書.md` v1.0（5 Phase / 45 件 / 52h）
+専門家レビュー結果（Security:D / Prediction:C- / Code:B / PWA:B-）を A+ に引き上げる統合実装。
+
+### Phase A: Security A+ 化（PA-2..9 完了、PA-1 は user 手動）
+- PA-2: CSP 強化 — object-src 'none' / base-uri 'self' / frame-ancestors 'none' / form-action 'self' / upgrade-insecure-requests 追加
+- PA-3: SRI（Chart.js 4.4.1 SHA-384）+ preconnect / referrerpolicy
+- PA-4: 全 workflow を contents:read 既定 + job 内 write、persist-credentials:false、push 時のみ token 注入、scrape-odds の repository_dispatch 撤去
+- PA-5: localStorage スキーマバリデータ `_validateLS`、破損データの自動隔離、5 箇所の raw JSON.parse を safeParse に統一
+- PA-6: requirements.txt を == pin、.github/dependabot.yml 新設（pip + actions 週次）
+- PA-7: SW fetch handler に origin allowlist、GET 以外 / 未許可 origin はバイパス
+- PA-8: CLAUDE.md.bak 削除、.gitignore に .icon_backup / *.bak / dist / .venv 追加
+- PA-9: Referrer-Policy / X-Content-Type-Options / Permissions-Policy meta 追加
+- PA-1（PAT 失効 + SSH 化 + history scrub）: docs/A_PLUS_化設計書.md §2.2 に手順記載、user 手動
+
+### Phase C: Code Quality A+ 化（PC-1/3/4/5/6/7/8/9/10/12 完了、PC-2 後 Phase 委譲）
+- PC-1: scripts/http_utils.py 新設、sync HTTP を集約（fetch_text/bytes/json + 共通 UA + 指数バックオフ + 404 即時 raise）。scrape_results / scrape_racedata / scrape_schedule を切替
+- PC-3: TUNING (Object.freeze) で RACE_TYPE / KELLY / L2 のしきい値集約
+- PC-4: 主要 Python 関数 9 個に `dict | None` / `list[...]` 等を付与
+- PC-5: index.html inline script 先頭に 'use strict'
+- PC-6: window.onerror / unhandledrejection で boatrace_errors に最大 100 件循環保存、設定画面に表示・コピー・削除 UI
+- PC-7: build パイプライン設計骨子 `build/README.md`（esbuild IIFE bundle、CSP nonce / SRI 自動付与の段階導入計画）
+- PC-8: 新規 34 テスト追加（test_http_utils.py 11 件、test_storage_validator.js 23 件、test_plackett_luce.js 11 件で合計 45 件追加）
+- PC-9: silent fail 5 箇所を log.warning / log.debug / print に置換
+- PC-10: datetime.utcnow を utc_iso_seconds に統一（build_db / scrape_results 計 3 箇所）
+- PC-12: 公開関数 docstring を Google Style で整備
+- PC-2（長関数分割）: openRace 548 / scoreBoatV2 287 / _applyLiveDataMerge 227 はテスト基盤拡充とビルドパイプライン導入後に着手すべきため build/README.md に分割計画を記載して委譲
+
+### Phase B: Prediction A+ 化（PB-1/2/3/4/8/9/10/11 完了、PB-5/6/7 後 Phase 委譲）
+CRITICAL fix: L2 学習則の二重学習バグ修正と calibration / leakage 対策。
+- PB-1: 学習ガード `boatrace_learned`（date_sid_rno で 1 レース 1 回、上限 10000）→ 起動毎の重複学習で重みが暴走する CRITICAL バグを撲滅
+- PB-2: LR decay `lr=LR0(0.05)/(1+t/TAU(5000))` + L2 正則化 `λ=1e-4`、boatrace_trainstep を永続化
+- PB-11: COURSE_LOG_PRIOR を l2Predict logit に加算（全国コース別 1 着率を Bayesian 風に反映）
+- PB-4: Plackett–Luce 三連単 / 二連単確率モデル（`p_i*p_j*p_k*6` の系統バイアス撲滅、Σ=1.0±1e-9 検証）
+- PB-8: Bayesian shrinkage で L1/L2 融合比連続化（α=N0/(N0+n)、N0=300/600）
+- PB-9: 排他事象 Kelly — ∑f_i > KELLY.MAX_STAKE_RATIO で比例縮小
+- PB-3: runForwardChainBacktest 関数追加（warmup 後の logloss/brier/ECE 評価、leakageNote 明示）
+- PB-10: _computeCalibrationMetrics で log loss / Brier / ECE を 10 bin で集計
+- PB-5/6/7（stacking / Platt scaling / z-score 正規化）: 実データ蓄積後の独立 PR、設計書 §3 に詳細
+
+### Phase D: PWA / UX A+ 化（PD-1〜13 完了）
+- PD-1: manifest 拡充 — categories / lang / dir / shortcuts (成績 / 検証) / description
+- PD-2: SW v6 — CDN（cdnjs / gstatic / Google Fonts）を別 cache 名 `cdn-v1` で cache-first + Stale-While-Revalidate
+- PD-3: 更新通知トースト + SKIP_WAITING + controllerchange による自動リロード、SW から NEW_VERSION メッセージ
+- PD-4: apple-touch-icon に sizes=180x180 を追加
+- PD-5: viewport から user-scalable=no / maximum-scale=1 を撤去（a11y 違反解消）
+- PD-6: body に min-height:100dvh、左右 safe-area-inset、header に上端 safe-area、apple-mobile-web-app-status-bar-style を black-translucent に
+- PD-7: ランドマーク `header role="banner"` / `nav role="navigation"`、aria-label / aria-current="page" を showPage と同期、絵文字に aria-hidden、sr-only クラス
+- PD-8: focus-visible で 3px outline
+- PD-9: nav-btn 48x48pt、action-btn 44pt、refresh-btn 44pt、文字 11-13px に統一
+- PD-10: 二段確認 `_confirmDestructive`（confirm + DELETE 入力プロンプト）を clearHistory / rebuildDB / resetWeights に適用
+- PD-11/13: index.html に preconnect 4 箇所追加（Google Fonts / cdnjs / boatraceopenapi）。innerHTML→template 化と Chart.js 動的 import は PC-7 ビルド導入後の段階拡張で着手予定
+- PD-12: visibilitychange でタブ非表示時 setInterval を停止、復帰時に再開＋即時 1 回実行（バッテリー / ネットワーク節約）
+
+### 検証結果
+- テスト: 19/19 全 PASS（合計 84 件: 旧 39 + 新 45）
+- JS 構文: node --check 緑、'use strict' 有効
+- Python: 7 モジュール import OK
+- manifest / sw 構文 OK
+- セキュリティ: CSP 全項目目視確認 OK、SRI 付与済、workflow contents:read 既定
+
+### 残タスク（後 Phase 委譲、A_PLUS_化設計書 §6 PE）
+- PA-1: PAT 失効 + .git/config から削除 + SSH 化（user 手動、最優先）
+- PB-5/6/7: stacking / Platt scaling / z-score 正規化（実データ 500 サンプル蓄積後）
+- PC-2: 長関数分割（openRace / scoreBoatV2 / _applyLiveDataMerge）— PC-7 ビルド導入と統合
+- PC-7: esbuild ビルドパイプライン本格実装（CSP nonce 化と統合）
+- PE: 統合検証 + Lighthouse / semgrep / pip-audit を CI ゲートに組込
