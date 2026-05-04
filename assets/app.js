@@ -4835,6 +4835,7 @@ if('serviceWorker' in navigator){
             if(nw.state === 'installed' && navigator.serviceWorker.controller){
               console.log('[SW] new version available');
               showUpdateToast(function(){
+                if(typeof window._markSwUpdateRequested === 'function') window._markSwUpdateRequested();
                 nw.postMessage({type:'SKIP_WAITING'});
               });
             }
@@ -4843,11 +4844,14 @@ if('serviceWorker' in navigator){
       })
       .catch(function(err){ console.warn('[SW] register failed', err); });
   });
-  // PD-3: 新 SW が controller になったら自動リロード
-  var _swReloaded = false;
+  // PD-3 + PE-5: ユーザが「更新」ボタンを押したときのみリロード
+  //   （初回 SW 登録時の controllerchange での自動リロードは Lighthouse で
+  //   「リダイレクト」と誤検出され Performance を悪化させるため、ユーザ操作起点に限定）
+  var _userTriggeredSwUpdate = false;
+  window._markSwUpdateRequested = function(){ _userTriggeredSwUpdate = true; };
   navigator.serviceWorker.addEventListener('controllerchange', function(){
-    if(_swReloaded) return; _swReloaded = true;
-    console.log('[SW] new controller, reloading');
+    if(!_userTriggeredSwUpdate) return;   // 初回登録の自動 controllerchange は無視
+    console.log('[SW] new controller after user request, reloading');
     location.reload();
   });
   // PD-3: SW からの NEW_VERSION 通知（既に有効化済の場合）

@@ -130,6 +130,36 @@ async function main() {
     console.log('[no-op] assets/app.js already up-to-date');
   }
 
+  // 2b) PE-6: assets/app.js を minify → assets/app.min.js (本番配信用)
+  //         配信物のみ最小化、tests / debug は assets/app.js (可読版) を参照
+  const appMinPath = resolve(ROOT, 'assets/app.min.js');
+  const minifyResult = await esbuild({
+    entryPoints: [appJsPath],
+    bundle: false,        // 既に統合済 (1 ファイル)
+    minify: true,
+    target: 'es2020',
+    legalComments: 'none',
+    sourcemap: false,
+    write: false,
+  });
+  const minBefore = await readFile(appMinPath, 'utf8').catch(() => '');
+  const minAfter = minifyResult.outputFiles[0].text;
+  const minRatio = ((1 - minAfter.length / afterApp.length) * 100).toFixed(1);
+
+  if (CHECK_MODE) {
+    if (minBefore !== minAfter) {
+      console.error('[check] assets/app.min.js differs from build output');
+      process.exit(1);
+    }
+    console.log('[check] assets/app.min.js matches build output ✓');
+  } else if (minBefore !== minAfter) {
+    await writeFile(appMinPath, minAfter);
+    console.log('[write] assets/app.min.js updated (' + afterApp.length + ' → ' +
+                minAfter.length + ' chars, -' + minRatio + '%)');
+  } else {
+    console.log('[no-op] assets/app.min.js already up-to-date');
+  }
+
   // 3) Hash report
   console.log('');
   console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');
