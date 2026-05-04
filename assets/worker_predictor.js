@@ -15,6 +15,16 @@ var DEFAULT_COURSE_TECHNIQUE={
   5:{nige:0,sashi:0.10,makuri:0.45,makuriSashi:0.30,nuki:0.10,megumare:0.05},
   6:{nige:0,sashi:0.15,makuri:0.35,makuriSashi:0.30,nuki:0.10,megumare:0.10}
 };
+// 場別風向プロファイル（PG-2 抽出漏れ修正: isHeadWind / isTailWind が参照）
+var STADIUM_WIND_PROFILE = {
+  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13] },
+  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15] },
+  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3]   },
+  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1] },
+};
+var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
+var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
+
 var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5];
 var L2_BIAS=0;
 var FEATURE_DIM = 12;

@@ -113,7 +113,7 @@ REST_ANCHORS = {
     'learnMotorStatsFromPrograms', 'learnExhibitionStatsFromPreviews',
     'learnRacerStFromPreviews', 'learnEntryPatternFromResults',
     'learnSeriesAndPairwiseFromResults', 'updateDBFromResults',
-    'getRacerSeriesAdjustment', 'buildInitialDB', 'cleanOldData',
+    'getRacerSeriesAdjustment', 'buildInitialDB',
     'openRace', 'refreshThisRace', 'startOddsAutoRefresh',
     'stopOddsAutoRefresh', 'partsHtml', 'familyName', 'motorEvalGrade',
     'starsHtml', 'renderStats', 'renderStatsChart', 'calcTodayStats',
@@ -158,6 +158,7 @@ CRITICAL_SEEDS = [
     'indexByStadiumRace', 'indexPreviews', 'indexResults',
     '_applyLiveDataMerge',
     'validateApiPayload',   # PA-7: API スキーマ検証
+    'cleanOldData', 'saveDB',  # critical setup 直呼び (PI-fix)
 ]
 
 critical_funcs: set[str] = set()

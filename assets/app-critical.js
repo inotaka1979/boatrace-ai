@@ -1324,6 +1324,30 @@ function indexResults(apiJson){
   return indexed;
 }
 
+function cleanOldData(){
+  var cutoff=new Date(Date.now()-60*86400000);
+  var cutoffStr=cutoff.getFullYear()+('0'+(cutoff.getMonth()+1)).slice(-2)+('0'+cutoff.getDate()).slice(-2);
+  var delR=0,delS=0;
+  for(var rid in racerDB){
+    var lu=racerDB[rid].lastUpdated||'';
+    if(!lu||lu<cutoffStr){delete racerDB[rid];delR++;}
+  }
+  for(var sid in stadiumDB){
+    var lu=stadiumDB[sid].lastUpdated||'';
+    if(!lu||lu<cutoffStr){delete stadiumDB[sid];delS++;}
+  }
+  if(delR>0||delS>0){
+    saveDB();
+    console.log('古いDBエントリを削除: 選手'+delR+'人, 場'+delS+'場');
+  }
+}
+
+function saveDB(){
+  // P3 L-05: QuotaExceededError は safeSet が history を間引いてリトライ
+  safeSet('boatrace_racerDB', racerDB);
+  safeSet('boatrace_stadiumDB', stadiumDB);
+}
+
 function getAccuracy(){
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
