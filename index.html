@@ -467,6 +467,8 @@ var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
 // X2: 場別正規化用統計（モーター / 展示タイム）
 var stadiumMotorStats=_bootParseLS('boatrace_motorStats', {});
 var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
+// X4: 潮汐データ（cron で 1日1回更新）
+var tideData=null;
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
@@ -766,6 +768,93 @@ function indexResults(apiJson){
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
+// ===============================================
+// X4: 環境データ（潮汐 R-02 / 場別風向 R-10 / 風×波交差項 R-14）
+// ===============================================
+
+// 場別風向プロファイル（イン不利になる風向の角度番号）
+// JMA / 公式の風向番号は 1=北 → 16=北北西 と仮定
+var STADIUM_WIND_PROFILE = {
+  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
+  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
+  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
+};
+var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
+var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
+
+function isHeadWind(wd, sid){
+  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
+  var arr = p ? p.headWindDirs : GLOBAL_HEAD_DIRS;
+  return arr.indexOf(wd) >= 0;
+}
+function isTailWind(wd, sid){
+  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
+  var arr = p ? p.tailWindDirs : GLOBAL_TAIL_DIRS;
+  return arr.indexOf(wd) >= 0;
+}
+
+// 潮位×コース補正（mm の coarse 影響）
+var TIDE_COURSE_BIAS = {
+  rising:  {1:-3, 2:-2, 3:0, 4:+2, 5:+3, 6:+2},   // 上げ潮: センター/アウト有利
+  falling: {1:+4, 2:+2, 3:0, 4:-2, 5:-3, 6:-2},   // 下げ潮: イン残り
+  high:    {1:-5, 2:-3, 3:0, 4:+3, 5:+4, 6:+3},
+  low:     {1:+5, 2:+3, 3:0, 4:-3, 5:-4, 6:-3},
+};
+
+function classifyTidePhase(tideEntry, raceTimeJst){
+  if(!tideEntry || tideEntry.type !== 'saltwater' || !Array.isArray(tideEntry.today)) return null;
+  // raceTimeJst: 'HH:MM' or hour as int
+  var hour;
+  if(typeof raceTimeJst === 'string'){
+    hour = parseInt(raceTimeJst.split(':')[0], 10);
+  } else if(typeof raceTimeJst === 'number'){
+    hour = raceTimeJst;
+  } else {
+    return null;
+  }
+  if(!isFinite(hour)) return null;
+  // 当該時刻と前後 1h の潮位
+  var nowLv = (tideEntry.today.find(function(x){return x.hour===hour}) || {}).level_cm;
+  var prevLv = (tideEntry.today.find(function(x){return x.hour===hour-1}) || {}).level_cm;
+  var nextLv = (tideEntry.today.find(function(x){return x.hour===hour+1}) || {}).level_cm;
+  if(nowLv == null) return null;
+  // 単純分類: 潮位の変化方向 + 絶対位置
+  var rising = (nextLv != null && nextLv > nowLv) || (prevLv != null && nowLv > prevLv);
+  var falling = (nextLv != null && nextLv < nowLv) || (prevLv != null && nowLv < prevLv);
+  // 高潮位 / 低潮位の閾値（cm 単位、日中の最大値の上位 20% を high とみなす簡易判定）
+  var levels = tideEntry.today.map(function(x){return x.level_cm}).filter(function(v){return v!=null});
+  if(levels.length === 0) return null;
+  var sortedLv = levels.slice().sort(function(a,b){return a-b});
+  var p80 = sortedLv[Math.floor(levels.length * 0.8)];
+  var p20 = sortedLv[Math.floor(levels.length * 0.2)];
+  if(nowLv >= p80) return 'high';
+  if(nowLv <= p20) return 'low';
+  if(rising) return 'rising';
+  if(falling) return 'falling';
+  return null;
+}
+
+function tideScore(sid, course, raceHour){
+  if(!tideData || !tideData.stadiums) return 0;
+  var entry = tideData.stadiums[String(sid)];
+  if(!entry || entry.type !== 'saltwater') return 0;
+  var phase = classifyTidePhase(entry, raceHour);
+  if(!phase) return 0;
+  return (TIDE_COURSE_BIAS[phase] || {})[course] || 0;
+}
+
+// 風×波交差項（嵐スコア）
+function stormBonus(ws, wh, course){
+  var base = 0;
+  if(ws >= 5 && wh >= 5) base = -8;
+  else if(ws >= 4 && wh >= 4) base = -4;
+  else if(ws >= 3 && wh >= 3) base = -2;
+  if(course <= 2) return base;          // インほど荒れに弱い
+  if(course >= 4) return -base / 2;     // アウトはむしろ有利になる
+  return 0;
+}
+
 // ===============================================
 // X3: 進入予想エンジン (R-01)
 // ===============================================
@@ -1375,8 +1464,9 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
   if(weather){
     var ws=weather.wind_speed||weather.race_wind||0;
     var wd=weather.wind_direction||weather.race_wind_direction_number||0;
-    var isHead=(wd>=7&&wd<=11);
-    var isTail=(wd>=15||(wd>=1&&wd<=5));
+    // X4 R-10: 場別風向プロファイルを使用
+    var isHead = isHeadWind(wd, sid);
+    var isTail = isTailWind(wd, sid);
     if(isHead&&ws>=5){
       if(course===1){score-=8;risks.push('向かい風'+ws+'m(イン不利)')}
       else if(course===2) score-=3;
@@ -1392,6 +1482,25 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
     var wh=weather.wave_height||weather.race_wave||0;
     if(wh>=7&&course<=2){score-=4;risks.push('波高'+wh+'cm(荒れ模様)')}
     else if(wh>=4&&course<=2) score-=2;
+    // X4 R-14: 風×波交差項
+    var stormDelta = stormBonus(ws, wh, course);
+    if(stormDelta !== 0){
+      score += stormDelta;
+      if(stormDelta <= -4) risks.push('荒天交差項'+stormDelta);
+      else if(stormDelta >= 4) reasons.push('荒れ展開で恩恵+'+stormDelta);
+    }
+  }
+  // X4 R-02: 潮汐補正（海水場のみ、preview から race_closed_at の時刻を取得）
+  if(preview && preview.race_closed_at){
+    try{
+      var hour = parseInt(String(preview.race_closed_at).split(' ')[1].split(':')[0], 10);
+      var tideDelta = tideScore(sid, course, hour);
+      if(tideDelta !== 0){
+        score += tideDelta;
+        if(tideDelta >= 4) reasons.push('潮位がコース有利(+'+tideDelta+')');
+        else if(tideDelta <= -4) risks.push('潮位不利('+tideDelta+')');
+      }
+    }catch(_){}
   }
 
   var fc=boat.racer_flying_count||0;   // P3 L-02: 自己参照typo修正
@@ -2259,6 +2368,12 @@ async function loadAllData(){
     if(rdResp.ok) raceData=await rdResp.json();
   }catch(e){raceData=null}
   if(prog) prog.style.width='90%';
+
+  // X4: 潮汐データ取得
+  try{
+    var tideResp = await fetch('data/tide/today.json?t='+Date.now());
+    if(tideResp.ok){ tideData = await tideResp.json(); }
+  }catch(e){ tideData = null; }
 
   if(resultData) updateDBFromResults(resultData,programData);
   // X2: 場別統計の学習（programs / previews から）

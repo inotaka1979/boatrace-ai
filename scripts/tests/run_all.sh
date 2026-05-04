@@ -71,6 +71,10 @@ step "X2 normalization tests" \
 step "X3 entry prediction tests" \
      "node scripts/tests/test_entry_predict.js"
 
+# 12) X4 環境データテスト
+step "X4 environment (tide / wind / storm) tests" \
+     "node scripts/tests/test_environment.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

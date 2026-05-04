@@ -41,6 +41,9 @@ LANG=ja_JP.UTF-8
 # --- 監視: 5分間隔 (JST 9:00-21:00) ---
 */5 9-20 * * * /home/pi/boatrace-ai/scripts/cron_monitor.sh >> /dev/null 2>&1
 
+# --- 潮汐: 1日1回 (JST 8:00) X4 R-02 ---
+0 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh tide >> /dev/null 2>&1
+
 # --- 日次: レースデータ+スケジュール (JST 8:30, 12:00) ---
 # ※racedata はGitHub Actionsのままでも可（頻度が低いため）
 # 30 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape_racedata.sh >> /dev/null 2>&1
