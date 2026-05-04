@@ -507,6 +507,23 @@ var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5];
 var L2_BIAS=0;
 var L2_LR=0.01;
 
+// PB-2: 学習則ハイパーパラメータ（LR decay + L2 正則化）
+var L2_LR0       = 0.05;     // 初期 LR（旧固定値 0.01 より高めに、decay と組合せ）
+var L2_LR_TAU    = 5000;     // LR 半減のスケール: lr = LR0 / (1 + t/TAU)
+var L2_LAMBDA    = 1e-4;     // L2 正則化係数（重み暴走防止）
+var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨て）
+
+// PB-11: クラス不均衡対策 — 全国コース別 1着率を log prior としてロジットに加算
+//        softmax(log_prior + w·x) で base rate に揃える Bayesian 風の初期化
+var COURSE_LOG_PRIOR = [
+  Math.log(COURSE_WIN_RATE[1]||0.55),
+  Math.log(COURSE_WIN_RATE[2]||0.14),
+  Math.log(COURSE_WIN_RATE[3]||0.12),
+  Math.log(COURSE_WIN_RATE[4]||0.11),
+  Math.log(COURSE_WIN_RATE[5]||0.06),
+  Math.log(COURSE_WIN_RATE[6]||0.02)
+];
+
 // PC-3: 主要しきい値の集約（マジックナンバー撲滅、変更履歴の追跡性向上）
 //       根拠: CLAUDE.md 修正履歴の Review 系 / X1 EV/Kelly 改善設計を参照
 var TUNING = Object.freeze({
@@ -565,6 +582,14 @@ function _validateLS(key, value){
       if(!Array.isArray(value)) return null;
       // 異常巨大は末尾 1000 件で trim（破損ではなく自己修復）
       return (value.length > 50000) ? value.slice(-1000) : value;
+    case 'boatrace_learned':
+      // PB-1: 学習済キーセット（key→1 の sparse object）
+      if(typeof value !== 'object' || Array.isArray(value)) return null;
+      if(Object.keys(value).length > 50000) return null;
+      return value;
+    case 'boatrace_trainstep':
+      // PB-2: 学習更新カウンタ（数値）
+      return (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e10) ? value : null;
     default:
       return value;
   }
@@ -603,6 +628,11 @@ var tideData=null;
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
+// PB-1: 学習済レースキーセット（同レース二重学習を防ぐ）。Set ではなく
+//       JSON 互換の object 形式 { "20260504_22_1": 1, ... } で永続化
+var l2learnedKeys=_bootParseLS('boatrace_learned', {});
+// PB-2: 学習更新カウンタ（LR decay 用）
+var l2trainStep=(function(){ var v=_bootParseLS('boatrace_trainstep', 0); return (typeof v==='number'&&Number.isFinite(v))?v:0; })();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;
@@ -1041,6 +1071,9 @@ function runBacktestEngine(history, opt){
   var stdR = Math.sqrt(varR);
   var sharpe = stdR > 0 ? meanR / stdR : 0;
 
+  // PB-10: log loss / Brier / ECE（mark_probs を保存している履歴のみ）
+  var calibration = _computeCalibrationMetrics(ledger);
+
   return {
     samples: ledger.length,
     totalBets: totalBets,
@@ -1055,7 +1088,76 @@ function runBacktestEngine(history, opt){
     byType: byType,
     dailyROI: dailyROI,
     period: periodDays,
+    // PB-10: calibration metrics
+    logLoss: calibration.logLoss,
+    brier: calibration.brier,
+    ece: calibration.ece,
+    calibratedSamples: calibration.n,
+    // PB-3: leakage 注意
+    leakageNote: 'NOTE: 既存履歴は予想時点で既に L2 学習が反映済みのため look-ahead leakage の可能性あり。完全な forward-chain 評価には runForwardChainBacktest() を使用',
   };
+}
+
+// PB-3: Forward-chaining backtest（現状は履歴の logloss/brier/ece を時系列順で集計）
+//       完全な再予想には programData/previewData の保存が必要なため、暫定的に
+//       「保存済 mark_probs を時系列順で評価」する形で leakage を最小化
+function runForwardChainBacktest(history, opt){
+  opt = opt || {};
+  var warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
+  var sorted = (history||[]).slice().filter(function(h){
+    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
+  });
+  sorted.sort(function(a,b){
+    var d = (a.date||'').localeCompare(b.date||'');
+    if(d !== 0) return d;
+    return ((a.stadium||0)-(b.stadium||0)) || ((a.race||0)-(b.race||0));
+  });
+  var evalSet = sorted.slice(warmup);
+  var cal = _computeCalibrationMetrics(evalSet);
+  return {
+    totalSamples: sorted.length,
+    warmupSkipped: Math.min(warmup, sorted.length),
+    evaluatedSamples: evalSet.length,
+    logLoss: cal.logLoss,
+    brier: cal.brier,
+    ece: cal.ece,
+    note: '時系列順で warmup 後のレースのみ評価。完全な forward-chain 再学習にはレース時点の features 保存が必要',
+  };
+}
+
+// PB-10 ヘルパ: 各エントリの mark_probs と actual から calibration metrics を計算
+function _computeCalibrationMetrics(entries){
+  var logLossSum = 0, brierSum = 0, n = 0;
+  var bins = []; for(var i=0;i<10;i++) bins.push({sum:0,hit:0,n:0});
+  entries.forEach(function(h){
+    if(!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+    var winner = h.actual[0];
+    var probs = {};
+    h.mark_probs.forEach(function(mp){ probs[mp.boat] = mp.prob; });
+    var pWin = probs[winner];
+    if(!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+    logLossSum += -Math.log(pWin);
+    // Brier: Σ(p_i - y_i)^2 （6 艇 multi-class）
+    for(var b=1;b<=6;b++){
+      var p = probs[b]||0; var y = (b===winner)?1:0;
+      brierSum += (p-y)*(p-y);
+    }
+    // ECE: 1 着確率 vs 1 着率を 10 分位 bin で
+    var binIdx = Math.min(9, Math.floor(pWin*10));
+    bins[binIdx].sum += pWin;
+    bins[binIdx].hit += 1;
+    bins[binIdx].n   += 1;
+    n++;
+  });
+  var logLoss = n>0 ? logLossSum/n : 0;
+  var brier   = n>0 ? brierSum/n : 0;
+  var ece = 0;
+  bins.forEach(function(b){
+    if(b.n===0) return;
+    var avgP = b.sum/b.n; var actRate = b.hit/b.n;
+    ece += (b.n/Math.max(1,n)) * Math.abs(avgP-actRate);
+  });
+  return {logLoss: logLoss, brier: brier, ece: ece, n: n};
 }
 
 function runBacktest(){
@@ -2281,8 +2383,9 @@ function getL2Features(boat,preview,weather,etRank,stRank,sid){
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
 function l2Predict(features6){
-  var logits=features6.map(function(feat){
-    var z=L2_BIAS;
+  // PB-11: 各艇の logit に COURSE_LOG_PRIOR を加算（base rate を反映）
+  var logits=features6.map(function(feat,b){
+    var z = L2_BIAS + (COURSE_LOG_PRIOR[b]||0);
     for(var i=0;i<feat.length;i++) z+=feat[i]*(l2weights[i]||0);
     return z;
   });
@@ -2291,14 +2394,19 @@ function l2Predict(features6){
 
 function l2Update(features6,winnerIdx){
   var probs=l2Predict(features6);
+  // PB-2: LR を t で減衰、L2 正則化を加算
+  var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
   for(var b=0;b<6;b++){
     var target=(b===winnerIdx)?1:0;
     var err=probs[b]-target;
     for(var i=0;i<l2weights.length;i++){
-      l2weights[i]-=L2_LR*err*(features6[b][i]||0);
+      var grad = err * (features6[b][i]||0) + L2_LAMBDA * l2weights[i];
+      l2weights[i] -= lr * grad;
     }
   }
+  l2trainStep += 1;
   safeSet('boatrace_weights', l2weights);   // P3 L-05
+  safeSet('boatrace_trainstep', l2trainStep);   // PB-2
 }
 
 // ===============================================
@@ -2354,8 +2462,11 @@ function predictRace(sid,raceNum){
   });
   var l2probs=l2Predict(features6);
 
+  // PB-8: Bayesian shrinkage で L1/L2 融合比を連続化
+  //       α = N0 / (N0 + n)  ─ n が 0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）
+  //       N0=300 は「L1 を 300 サンプル相当として信用する」事前
   var dbSize=Object.keys(racerDB).length;
-  var alpha=dbSize>200?0.35:0.60;
+  var alpha=300/(300+dbSize);
   var beta=1-alpha;
 
   var finalProbs=boats.map(function(b,i){
@@ -2487,9 +2598,9 @@ function predictRaceProgram(sid,raceNum){
   });
   var l2probs=l2Predict(features6);
 
-  // 融合（番組予想ではL1比率を高めに。展示情報がないのでルールベース重視）
+  // PB-8: Bayesian shrinkage（番組予想は展示情報なしのため L1 比率高め: N0=600）
   var dbSize=Object.keys(racerDB).length;
-  var alpha=dbSize>200?0.50:0.70;
+  var alpha=600/(600+dbSize);
   var beta=1-alpha;
 
   var finalProbs=boats.map(function(b,i){
@@ -2582,6 +2693,17 @@ function selectBetsByEV(probs, odds, opt){
     if(bn <= 0){ b.stakeRatio = 0; b.stakeYen = 0; return; }
     var f = (bn * b.prob - (1 - b.prob)) / bn;
     b.stakeRatio = Math.max(0, f * kellyFrac);
+  });
+  // PB-9: 排他事象 Kelly — 同一レース内 3連単 N 点は最大 1 点しか当たらない
+  //       単純合計 ∑f_i は資金全投入を超える可能性があるため、
+  //       上限 KELLY.MAX_STAKE_RATIO（=1.0）を超えたら比例縮小
+  var sumRatio = ranked.reduce(function(s,b){return s + (b.stakeRatio||0);}, 0);
+  var maxRatio = (TUNING && TUNING.KELLY) ? TUNING.KELLY.MAX_STAKE_RATIO : 1.0;
+  if(sumRatio > maxRatio && sumRatio > 0){
+    var scale = maxRatio / sumRatio;
+    ranked.forEach(function(b){ b.stakeRatio *= scale; });
+  }
+  ranked.forEach(function(b){
     b.stakeYen = Math.max(100, Math.round(bankroll * b.stakeRatio / 100) * 100);
   });
   return ranked;
@@ -2612,9 +2734,36 @@ function calcOddsDivergence(aiProbsByBoat, oddsWin){
 }
 
 /**
- * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成
+ * PB-4: Plackett–Luce モデルで 3連単 / 2連単確率を計算
+ *   旧: p_i * p_j * p_k * 6 （簡易補正） → 順序付き選択時の系統バイアス
+ *   新: p_i * p_j/(1-p_i) * p_k/(1-p_i-p_j)
+ *       1 着が決まった後の残り 5 艇に確率を再分配する正攻法
+ *   これにより EV/Kelly が「美味しく見える組合せ」を選ぶバイアスを除去
+ */
+function _plackettLuceTrifectaProb(p, i, j, k){
+  var pi = p[i]||0, pj = p[j]||0, pk = p[k]||0;
+  if(pi <= 0 || pj <= 0 || pk <= 0) return 0;
+  var denom1 = 1 - pi;
+  if(denom1 <= 1e-9) return 0;
+  var denom2 = 1 - pi - pj;
+  if(denom2 <= 1e-9) return 0;
+  var prob = pi * (pj / denom1) * (pk / denom2);
+  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
+}
+function _plackettLuceExactaProb(p, i, j){
+  var pi = p[i]||0, pj = p[j]||0;
+  if(pi <= 0 || pj <= 0) return 0;
+  var denom = 1 - pi;
+  if(denom <= 1e-9) return 0;
+  var prob = pi * (pj / denom);
+  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
+}
+
+/**
+ * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成（PL モデル）
  */
 function buildTrifectaProbDist(marks){
+  var p = marks.map(function(m){return m.prob||0;});
   var dist = {};
   for(var i=0;i<marks.length;i++){
     for(var j=0;j<marks.length;j++){
@@ -2622,19 +2771,20 @@ function buildTrifectaProbDist(marks){
       for(var k=0;k<marks.length;k++){
         if(k===i || k===j) continue;
         var key = marks[i].boat + '-' + marks[j].boat + '-' + marks[k].boat;
-        dist[key] = marks[i].prob * marks[j].prob * marks[k].prob * 6;   // 簡易補正
+        dist[key] = _plackettLuceTrifectaProb(p, i, j, k);
       }
     }
   }
   return dist;
 }
 function buildExactaProbDist(marks){
+  var p = marks.map(function(m){return m.prob||0;});
   var dist = {};
   for(var i=0;i<marks.length;i++){
     for(var j=0;j<marks.length;j++){
       if(j===i) continue;
       var key = marks[i].boat + '-' + marks[j].boat;
-      dist[key] = marks[i].prob * marks[j].prob * 2;
+      dist[key] = _plackettLuceExactaProb(p, i, j);
     }
   }
   return dist;
@@ -2771,6 +2921,15 @@ function savePrediction(date,sid,rn,pred,result){
     var entry={
       date:date,stadium:sid,race:rn,
       predicted:pred.marks.map(function(m){return m.boat}),
+      // PB-3 / PB-10: forward-chain backtest と calibration metrics 用に
+      //   各艇の 1 着確率を [{boat, prob}, ...] で保存（boat 1..6 の順を保証）
+      mark_probs: (function(){
+        var byBoat = {};
+        (pred.marks||[]).forEach(function(m){ if(m && m.boat) byBoat[m.boat] = m.prob; });
+        var out = [];
+        for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
+        return out;
+      })(),
       trifecta_bets:pred.trifecta.map(function(t){return t.combo}),
       exacta_bets:pred.exacta.map(function(t){return t.combo}),
       raceType:pred.raceType,
@@ -2879,6 +3038,20 @@ async function buildInitialDB(){
 // ===============================================
 function learnFromResults(){
   if(!resultData||!programData||!previewData) return;
+  // PB-1: 当日（programData の race_date）を学習キーの一部に採用
+  var dateKey = (function(){
+    try{
+      for(var s in programData){
+        var stadiums=programData[s];
+        for(var r in stadiums){
+          var pgm=stadiums[r];
+          if(pgm && pgm.race_date) return String(pgm.race_date).replace(/-/g,'');
+        }
+      }
+    }catch(_){}
+    return jstYmd(0);
+  })();
+  var learnedThisCall = 0;
   for(var sid in resultData){
     var races=resultData[sid];
     for(var rn in races){
@@ -2887,6 +3060,10 @@ function learnFromResults(){
       var prog=programData[sid]&&programData[sid][rn];
       var prev=previewData[sid]&&previewData[sid][rn];
       if(!prog||!prog.boats||!Array.isArray(prog.boats)) continue;
+
+      // PB-1: 同レースの二重学習を防ぐ
+      var key = dateKey+'_'+sid+'_'+rn;
+      if(l2learnedKeys[key]) continue;
 
       var sorted=race.results.slice().sort(function(a,b){return a.place-b.place});
       var winnerBoat=sorted[0].racer_boat_number;
@@ -2922,8 +3099,24 @@ function learnFromResults(){
       });
 
       var winnerIdx=prog.boats.findIndex(function(b){return b.racer_boat_number===winnerBoat});
-      if(winnerIdx>=0) l2Update(features6,winnerIdx);
+      if(winnerIdx>=0){
+        l2Update(features6,winnerIdx);
+        l2learnedKeys[key] = 1;   // PB-1: 学習済としてマーク
+        learnedThisCall++;
+      }
     }
+  }
+  if(learnedThisCall > 0){
+    // PB-1: 上限超過時は古いキーから切り捨て（FIFO 風: 単純に keys[].slice）
+    var keys = Object.keys(l2learnedKeys);
+    if(keys.length > L2_KEY_LIMIT){
+      var keep = keys.slice(-L2_KEY_LIMIT);
+      var trimmed = {};
+      for(var i=0;i<keep.length;i++) trimmed[keep[i]] = 1;
+      l2learnedKeys = trimmed;
+    }
+    safeSet('boatrace_learned', l2learnedKeys);   // PB-1
+    console.log('[L2] learned '+learnedThisCall+' new races (total t='+l2trainStep+', tracked keys='+Object.keys(l2learnedKeys).length+')');
   }
 }
 
@@ -4362,7 +4555,19 @@ function saveSetting(key,val){settings[key]=val; safeSet('boatrace_settings', se
 function clearCache(){var keys=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.startsWith('bc_'))keys.push(k)}keys.forEach(function(k){localStorage.removeItem(k)});alert('キャッシュをクリアしました ('+keys.length+'件)')}
 function clearHistory(){if(confirm('成績履歴を全て削除しますか?')){localStorage.removeItem('boatrace_history');alert('履歴を削除しました')}}
 function rebuildDB(){if(confirm('選手/場DBを再構築しますか?')){localStorage.removeItem('boatrace_racerDB');localStorage.removeItem('boatrace_stadiumDB');location.reload()}}
-function resetWeights(){if(confirm('学習重みをリセットしますか?')){localStorage.removeItem('boatrace_weights');l2weights=L2_INIT_WEIGHTS.slice();alert('重みをリセットしました')}}
+function resetWeights(){
+  if(confirm('学習重みをリセットしますか?\n（学習済キャッシュとカウンタも一緒にリセット）')){
+    try{
+      localStorage.removeItem('boatrace_weights');
+      localStorage.removeItem('boatrace_learned');   // PB-1
+      localStorage.removeItem('boatrace_trainstep'); // PB-2
+    }catch(_){}
+    l2weights = L2_INIT_WEIGHTS.slice();
+    l2learnedKeys = {};
+    l2trainStep = 0;
+    alert('重みをリセットしました');
+  }
+}
 // PC-6: エラーログ表示・コピー・削除
 function _loadErrorLog(){
   try{ var raw=localStorage.getItem('boatrace_errors'); if(!raw) return [];

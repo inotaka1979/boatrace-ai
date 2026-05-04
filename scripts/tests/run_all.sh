@@ -67,6 +67,10 @@ step "JS helper tests (softmax / safeDiv / safeParse / safeSet / jstYmd)" \
 step "Storage validator tests (_validateLS)" \
      "node scripts/tests/test_storage_validator.js"
 
+# 8c) PB-4 / PC-8: Plackett–Luce 3連単/2連単確率モデルテスト
+step "Plackett-Luce probability tests" \
+     "node scripts/tests/test_plackett_luce.js"
+
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \
      "node scripts/tests/test_ev_kelly.js"
