@@ -108,14 +108,20 @@ async function main() {
   const swPath = resolve(ROOT, 'sw.js');
   const manifestPath = resolve(ROOT, 'manifest.json');
 
-  // 1) src/utils/safe_storage.js を IIFE bundle
-  console.log('[bundle] src/utils/safe_storage.js ...');
-  const safeStorageBundle = await bundleModule(resolve(SRC, 'utils/safe_storage.js'));
-  console.log('  -> ' + safeStorageBundle.length + ' chars');
-
-  // 2) PE-5: assets/app.js (外部化済) の marker 領域に注入
-  const beforeApp = await readFile(appJsPath, 'utf8');
-  const afterApp = injectBundle(beforeApp, 'SAFE_STORAGE', safeStorageBundle);
+  // 1) PE-4 + PE-10: 全モジュールを IIFE bundle してマーカー領域に注入
+  const modules = [
+    { marker: 'SAFE_STORAGE', src: 'utils/safe_storage.js' },
+    { marker: 'MATH',         src: 'utils/math.js' },
+  ];
+  let beforeApp = await readFile(appJsPath, 'utf8');
+  let currentApp = beforeApp;
+  for (const m of modules) {
+    console.log('[bundle] src/' + m.src + ' ...');
+    const code = await bundleModule(resolve(SRC, m.src));
+    console.log('  -> ' + code.length + ' chars (marker: ' + m.marker + ')');
+    currentApp = injectBundle(currentApp, m.marker, code);
+  }
+  const afterApp = currentApp;
 
   if (CHECK_MODE) {
     if (beforeApp !== afterApp) {

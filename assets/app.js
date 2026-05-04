@@ -619,7 +619,61 @@ function safeSet(key, value){
   }
 }
 
-// P3 L-06/L-10: softmax 安全化（NaN/Infinity 入力でも崩れない）
+// PE-10: softmax / safeDiv は src/utils/math.js から bundle 注入される
+//        ↓ MARKER 領域で MATH bundle が globalThis に export
+/* BUILD:MATH:START */
+"use strict";
+(() => {
+  // ../src/utils/math.js
+  function softmax(logits) {
+    if (!Array.isArray(logits) || logits.length === 0) return [];
+    const clean = logits.map((v) => Number.isFinite(v) ? v : 0);
+    let max = clean.reduce((a, b) => b > a ? b : a, -Infinity);
+    if (!Number.isFinite(max)) max = 0;
+    const exps = clean.map((v) => Math.exp(Math.min(v - max, 50)));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    if (sum === 0 || !Number.isFinite(sum)) return clean.map(() => 1 / clean.length);
+    return exps.map((x) => x / sum);
+  }
+  function sigmoid(z) {
+    if (z > 30) return 1;
+    if (z < -30) return 0;
+    return 1 / (1 + Math.exp(-z));
+  }
+  function safeDiv(num, den, fallback) {
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
+      return fallback == null ? 0 : fallback;
+    }
+    return num / den;
+  }
+  function _plackettLuceTrifectaProb(p, i, j, k) {
+    const pi = p[i] || 0, pj = p[j] || 0, pk = p[k] || 0;
+    if (pi <= 0 || pj <= 0 || pk <= 0) return 0;
+    const denom1 = 1 - pi;
+    if (denom1 <= 1e-9) return 0;
+    const denom2 = 1 - pi - pj;
+    if (denom2 <= 1e-9) return 0;
+    const prob = pi * (pj / denom1) * (pk / denom2);
+    return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
+  }
+  function _plackettLuceExactaProb(p, i, j) {
+    const pi = p[i] || 0, pj = p[j] || 0;
+    if (pi <= 0 || pj <= 0) return 0;
+    const denom = 1 - pi;
+    if (denom <= 1e-9) return 0;
+    const prob = pi * (pj / denom);
+    return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
+  }
+  globalThis.softmax = softmax;
+  globalThis.sigmoid = sigmoid;
+  globalThis.safeDiv = safeDiv;
+  globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;
+  globalThis._plackettLuceExactaProb = _plackettLuceExactaProb;
+})();
+
+/* BUILD:MATH:END */
+
+// 旧 inline 定義（bundle が globalThis 上書きするため dead code、互換用に残置）
 function softmax(logits){
   if(!Array.isArray(logits) || logits.length===0) return [];
   var clean=logits.map(function(v){ return Number.isFinite(v)?v:0; });
@@ -631,7 +685,6 @@ function softmax(logits){
   return exps.map(function(x){return x/sum});
 }
 
-// P3 L-08/L-09: ゼロ除算ガード
 function safeDiv(num, den, fallback){
   if(!Number.isFinite(num) || !Number.isFinite(den) || den===0) return (fallback==null?0:fallback);
   return num/den;
