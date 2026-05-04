@@ -3004,15 +3004,24 @@ async function buildInitialDB(){
 // ===============================================
 // L2 ONLINE LEARNING (PRESERVED)
 // ===============================================
-// PE-9: メインスレッドに譲る共通ヘルパ (scheduler.yield 風)
+// PE-9 + PH-5: メインスレッドに譲る共通ヘルパ
 //   long-running loop の途中で 1 tick browser に処理時間を返す → INP / TBT 改善
+//   PH-5: scheduler.postTask が yield より「明確な task 境界」を作るため優先
 async function _yieldToMain(){
+  // postTask は新しい task として実行されるため、TBT 計上の long task を確実に分割
+  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+    return scheduler.postTask(function(){}, {priority:'user-blocking'});
+  }
   if(typeof scheduler !== 'undefined' && scheduler.yield){
     await scheduler.yield();
     return;
   }
-  // フォールバック: setTimeout(0) は最小 4ms 程度の遅延だが効果あり
-  await new Promise(function(r){ setTimeout(r, 0); });
+  // フォールバック: MessageChannel は setTimeout(0) より高速で確実
+  await new Promise(function(r){
+    var mc = new MessageChannel();
+    mc.port1.onmessage = function(){ r(); };
+    mc.port2.postMessage(0);
+  });
 }
 
 // PG-9: Worker 経由学習。Worker 失敗時は main thread fallback
@@ -5069,8 +5078,11 @@ function _setupStadiumDelegation(){
 //   3) cleanOldData / event delegation / SW 登録 は idle で実行
 document.getElementById('headerDate').innerHTML=formatDate();
 
-// クリティカルでない最初の描画と data fetch を kickoff
-loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
+// PH-5: loadAllData も新しい task で kickoff (defer JS 実行 task と分離)
+//   defer JS 実行直後の同期処理 burst を避け、HTML parse 完了後に開始
+_runIdleTask(function(){
+  loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
+}, 0);
 
 // PH-1: 非クリティカル setup は first paint 後の idle に分散
 _runIdleTask(function(){
