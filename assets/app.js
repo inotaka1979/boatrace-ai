@@ -3571,7 +3571,8 @@ function renderStadiums(){
   document.getElementById('topLoading').style.display='none';
   var sumDiv=document.getElementById('topSummary');
   var list=document.getElementById('stadiumList');
-  sumDiv.style.display='block';
+  // PH-5d: sumDiv は HTML で min-height で初期スペース確保済 → display 設定不要
+  //   旧: sumDiv.style.display='block' は CLS の主要因 (60px 押下げ)
   list.style.display='grid';
   // PH-5c: list.innerHTML='' を撤去 (CLS 抑制)
   //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない

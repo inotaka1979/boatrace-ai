@@ -336,7 +336,9 @@ button.action-btn:active{background:#F0F0F0}
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
     <div id="progressMsg" style="font-size:10px;margin-top:4px"></div>
   </div>
-  <div id="topSummary" style="display:none"></div>
+  <!-- PH-5d: summaryBar の高さを最初から確保 (CLS 抑制)
+       JS で値が埋まる前から CSS heightで占有スペースを確保 -->
+  <div id="topSummary" style="min-height:60px"></div>
   <!-- PE-11: pre-rendered stadium grid (LCP 即時化、JS load 後に上書き) -->
   <div id="stadiumList" class="stadium-grid"><!-- PRERENDER:STADIUMS:START -->
   <!-- prerendered at 2026-05-04T22:24:35+09:00 (18/24 active stadiums) -->
