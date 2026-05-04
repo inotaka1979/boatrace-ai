@@ -1,20 +1,51 @@
-// PF-9: Web Worker — メインスレッドから重い計算を分離
-//
-// 現状の対象:
-//   - Platt scaling 再校正の grid search (a × b の 2 次元探索、~5000 iteration)
-//     これがメインスレッドで動くと、user 操作中にハングする恐れ
-//
-// 拡張余地:
-//   - scoreBoatV2 / l2Predict のバッチ実行（要 racerDB / stadiumDB / l2weights 同期）
-//   - learnFromResults のバッチ学習
+// PG-3: Web Worker — 予測計算をメインスレッドから分離
 //
 // プロトコル:
-//   main → worker: { type: 'platt_refit', samples: [{p, y}, ...] }
-//   worker → main: { type: 'platt_refit_done', a: number, b: number, loss: number, n: number }
+//   main → worker:
+//     { type: 'sync_state', state: {racerDB, stadiumDB, l2weights, ...} }
+//     { type: 'predict', input: {sid, raceNum, programs, previews, weather, ...}, reqId }
+//     { type: 'platt_refit', samples }   (PF-9 既存)
+//   worker → main:
+//     { type: 'predict_done', reqId, result }
+//     { type: 'platt_refit_done', result }
+//     { type: 'error', error, reqId? }
+//
+// 拡張余地:
+//   - batch predict (backfill 高速化)
+//   - learn step delegation
 
 'use strict';
 
-// Platt 係数の grid search (assets/app.js の _refitPlattCoeffs から移植)
+// 予測ロジック本体を読込（assets/worker_predictor.js）
+try {
+  importScripts('worker_predictor.js');
+} catch (e) {
+  console.error('[worker] failed to load predictor:', e);
+}
+
+// =============================================================================
+// state holders (init メッセージで main から受信)
+// =============================================================================
+function _syncState(state) {
+  if (!state || typeof state !== 'object') return;
+  if (state.racerDB) racerDB = state.racerDB;
+  if (state.stadiumDB) stadiumDB = state.stadiumDB;
+  if (state.pairwiseDB) pairwiseDB = state.pairwiseDB;
+  if (state.stadiumMotorStats) stadiumMotorStats = state.stadiumMotorStats;
+  if (state.stadiumExhibitionStats) stadiumExhibitionStats = state.stadiumExhibitionStats;
+  if (Array.isArray(state.l2weights)) l2weights = state.l2weights;
+  if (state.featureStats) _featureStats = state.featureStats;
+  if (state.plattCoeffs) _plattCoeffs = state.plattCoeffs;
+  if (typeof state.stackingGamma === 'number') _stackingGamma = state.stackingGamma;
+  if (state.tideData !== undefined) tideData = state.tideData;
+  if (state.programData) programData = state.programData;
+  if (state.previewData) previewData = state.previewData;
+  if (state.oddsData !== undefined) oddsData = state.oddsData;
+}
+
+// =============================================================================
+// Platt scaling refit (PF-9 既存、互換維持)
+// =============================================================================
 function platRefit(pairs) {
   if (!Array.isArray(pairs) || pairs.length < 100) return null;
   let bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
@@ -36,12 +67,43 @@ function platRefit(pairs) {
   return { a: bestA, b: bestB, loss: bestLoss, n: pairs.length };
 }
 
+// =============================================================================
+// message handler
+// =============================================================================
 self.addEventListener('message', (e) => {
   const msg = e.data || {};
-  if (msg.type === 'platt_refit') {
-    const result = platRefit(msg.samples);
-    self.postMessage({ type: 'platt_refit_done', result });
-  } else {
+  try {
+    if (msg.type === 'sync_state') {
+      _syncState(msg.state);
+      self.postMessage({ type: 'sync_done' });
+      return;
+    }
+    if (msg.type === 'predict') {
+      const reqId = msg.reqId;
+      // input.programData / previewData / weather などを state に注入
+      if (msg.input && msg.input.state) _syncState(msg.input.state);
+      if (typeof predictRace !== 'function') {
+        self.postMessage({ type: 'error', reqId, error: 'predictRace not loaded' });
+        return;
+      }
+      const sid = msg.input.sid;
+      const raceNum = msg.input.raceNum;
+      const result = predictRace(sid, raceNum);
+      self.postMessage({ type: 'predict_done', reqId, result });
+      return;
+    }
+    if (msg.type === 'platt_refit') {
+      const result = platRefit(msg.samples);
+      self.postMessage({ type: 'platt_refit_done', result });
+      return;
+    }
     self.postMessage({ type: 'unknown', echo: msg });
+  } catch (err) {
+    self.postMessage({
+      type: 'error',
+      reqId: msg && msg.reqId,
+      error: (err && err.message) || String(err),
+      stack: (err && err.stack) || ''
+    });
   }
 });

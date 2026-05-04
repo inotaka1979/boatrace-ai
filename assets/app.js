@@ -2190,20 +2190,95 @@ function _stackedPredict(features6, l1probs){
 
 // PB-6: Platt 係数を既存履歴から re-fit
 //   2 パラメータ (a, b) のみなので grid search で十分
-// PF-9: Web Worker への分離
-//   _refitPlattCoeffs の grid search (5000 iter × Math.log) は単独で
-//   ~500ms-1s ブロックする可能性。Worker に投げてメインスレッドを解放
-var _plattWorker = null;
-function _getPlattWorker(){
-  if(_plattWorker) return _plattWorker;
+// PF-9 + PG-3: Web Worker への分離
+//   _refitPlattCoeffs の grid search、PG では予測も Worker 経由
+//   Worker は単一インスタンス、'sync_state' で main 状態を同期、
+//   'predict' でレース予測を委譲、'platt_refit' で校正
+var _appWorker = null;
+var _appWorkerReqId = 0;
+var _appWorkerCallbacks = new Map();
+function _getAppWorker(){
+  if(_appWorker) return _appWorker;
   if(typeof Worker === 'undefined') return null;
   try {
-    _plattWorker = new Worker('assets/worker.js');
-    return _plattWorker;
+    _appWorker = new Worker('assets/worker.js');
+    _appWorker.addEventListener('message', function(e){
+      var msg = e.data || {};
+      if(msg.reqId != null && _appWorkerCallbacks.has(msg.reqId)){
+        var cb = _appWorkerCallbacks.get(msg.reqId);
+        _appWorkerCallbacks.delete(msg.reqId);
+        cb(msg);
+      }
+    });
+    _appWorker.addEventListener('error', function(e){
+      console.warn('[PG-3] worker error', e);
+    });
+    return _appWorker;
   } catch(e) {
-    console.warn('[PF-9] Worker init failed:', e);
+    console.warn('[PG-3] Worker init failed:', e);
     return null;
   }
+}
+// PF-9 互換 alias
+function _getPlattWorker(){ return _getAppWorker(); }
+
+// PG-3: state を Worker に同期（軽量、~数百KB postMessage）
+//   呼出契機: l2Update / 学習完了 / DB 読込完了
+function _syncWorkerState(){
+  var w = _getAppWorker();
+  if(!w) return;
+  w.postMessage({
+    type: 'sync_state',
+    state: {
+      racerDB: racerDB,
+      stadiumDB: stadiumDB,
+      pairwiseDB: pairwiseDB,
+      stadiumMotorStats: stadiumMotorStats,
+      stadiumExhibitionStats: stadiumExhibitionStats,
+      l2weights: l2weights,
+      featureStats: _featureStats,
+      plattCoeffs: _plattCoeffs,
+      stackingGamma: _stackingGamma,
+      tideData: tideData,
+      programData: programData,
+      previewData: previewData,
+      oddsData: oddsData,
+    }
+  });
+}
+
+// PG-4: 予測を Worker に委譲する async 版
+//   既存 predictRace は同期維持（onclick ハンドラ互換）
+//   呼出側で「await できる場面」では predictRaceAsync を使う
+function predictRaceAsync(sid, raceNum){
+  var w = _getAppWorker();
+  if(!w){
+    // Worker 不可時は main thread fallback
+    return Promise.resolve(predictRace(sid, raceNum));
+  }
+  var reqId = ++_appWorkerReqId;
+  return new Promise(function(resolve, reject){
+    _appWorkerCallbacks.set(reqId, function(msg){
+      if(msg.type === 'predict_done') resolve(msg.result);
+      else if(msg.type === 'error'){
+        console.warn('[PG-4] worker predict error:', msg.error, msg.stack);
+        // フォールバック: main thread 実行
+        try { resolve(predictRace(sid, raceNum)); }
+        catch(e){ reject(e); }
+      } else {
+        reject(new Error('unexpected worker message: ' + JSON.stringify(msg).slice(0,200)));
+      }
+    });
+    w.postMessage({
+      type: 'predict',
+      reqId: reqId,
+      input: {
+        sid: sid,
+        raceNum: raceNum,
+        // state を毎回送るのは重いので省略、init/sync_state で同期済み前提
+      }
+    });
+  });
 }
 
 // pairs 抽出は同期で実行（軽量）、grid search のみ Worker
@@ -2768,14 +2843,21 @@ async function _backfillTodayPredictions(){
   if(!programData || !resultData) return;
   var today = todayStr();
   var saved = 0;
-  var iter = 0;   // PE-9: yield カウンタ
+  var iter = 0;
+  // PG-4: Worker 利用可能なら state を同期、predictRaceAsync で並列度を上げる
+  var useWorker = !!_getAppWorker();
+  if(useWorker) _syncWorkerState();
+
   for(var sid in programData){
     var stadium = programData[sid];
     for(var rn in stadium){
       var hasResult = resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
-      if(!hasResult) continue;   // 結果未確定はスキップ（成績集計に乗らない）
+      if(!hasResult) continue;
       try {
-        var pred = predictRace(sid, parseInt(rn));
+        // PG-4: Worker 経由（並列で main thread 解放）or 同期 fallback
+        var pred = useWorker
+          ? await predictRaceAsync(sid, parseInt(rn))
+          : predictRace(sid, parseInt(rn));
         if(pred){
           savePrediction(today, sid, rn, pred, resultData[sid][rn]);
           saved++;
@@ -2783,12 +2865,12 @@ async function _backfillTodayPredictions(){
       } catch(e){
         // 予想計算エラーは黙殺（特定レースのデータ欠損で続行）
       }
-      // PE-9: 4 予想毎にメインスレッドへ譲る (predictRace は scoreBoatV2 等で重い)
+      // PE-9: yield (Worker 利用時は不要だが念のため、4 反復毎)
       iter++;
-      if(iter % 4 === 0) await _yieldToMain();
+      if(!useWorker && iter % 4 === 0) await _yieldToMain();
     }
   }
-  if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races');
+  if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races (worker=' + useWorker + ')');
 }
 
 function savePrediction(date,sid,rn,pred,result){

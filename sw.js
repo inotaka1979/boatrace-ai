@@ -10,7 +10,7 @@
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v10';
+const VERSION = 'br-oracle-v11';
 const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',
@@ -18,8 +18,9 @@ const STATIC_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './assets/app.min.js',  // PE-5/6: 外部化 + minify (218→132KB, -40%)
-  './assets/worker.js',   // PF-9: Web Worker (Platt scaling refit)
+  './assets/app.min.js',         // PE-5/6: 外部化 + minify
+  './assets/worker.js',          // PF-9 + PG-3: Web Worker entry
+  './assets/worker_predictor.js', // PG-2: 予測ロジックモジュール (~50KB)
 ];
 
 // PD-2: 別 cache 名で永続キャッシュする外部リソース origin
