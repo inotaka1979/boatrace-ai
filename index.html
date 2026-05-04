@@ -9,8 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="BoatRace AI">
 <meta name="theme-color" content="#1A3A5C">
+<!-- PE-2: Lighthouse SEO 対応 -->
+<meta name="description" content="競艇 AI 予想 PWA — 全 24 場の出走表 / オッズ / 直前情報を AI が分析し、本命 / 混戦 / 穴のレース判定と買い目を提案">
 <title>BoatRace AI</title>
-<!-- PA-2: CSP 強化。'unsafe-inline' は単一HTML内 JS/CSS のため暫定維持（PC-7 ビルド導入後に nonce 化） -->
+<!-- PE-2: favicon 404 対策 -->
+<link rel="icon" type="image/png" href="icon-192.png">
+<!-- PA-2 + PE-2: CSP 強化。frame-ancestors は meta では無視されるため除外（HTTP ヘッダで要設定） -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   connect-src 'self' https://boatraceopenapi.github.io https://inotaka1979.github.io;
@@ -22,7 +26,6 @@
   manifest-src 'self';
   object-src 'none';
   base-uri 'self';
-  frame-ancestors 'none';
   form-action 'self';
   upgrade-insecure-requests;">
 <!-- PA-9: セキュリティ meta 補完 -->
@@ -47,8 +50,8 @@
 :root{
   --bg:#F5F5F5;--card-bg:#FFFFFF;--header-bg:#1A3A5C;
   --text:#333333;--text-sub:#666666;--text-dim:#999999;
-  --border:#E0E0E0;--accent:#2196F3;--danger:#E53935;
-  --success:#43A047;--warn:#FF9800;--gold:#F9A825;
+  --border:#E0E0E0;--accent:#1976D2;--danger:#D32F2F;
+  --success:#2E7D32;--warn:#E65100;--gold:#A56A00;
   --boat1:#FFFFFF;--boat1-text:#333;--boat1-border:#CCC;
   --boat2:#222222;--boat2-text:#FFF;
   --boat3:#E53935;--boat3-text:#FFF;
@@ -65,9 +68,9 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 /* Header — PD-6: 上端 safe-area-inset-top を確保（black-translucent 対応） */
 .header{background:var(--header-bg);padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,0.15)}
 .logo{font-weight:700;font-size:16px;color:#fff;letter-spacing:1px}
-.header-sub{font-size:10px;color:rgba(255,255,255,0.7)}
+.header-sub{font-size:12px;color:rgba(255,255,255,0.85)}
 .header-right{display:flex;align-items:center;gap:8px}
-.header-right #headerDate{font-size:10px;color:rgba(255,255,255,0.7)}
+.header-right #headerDate{font-size:12px;color:rgba(255,255,255,0.85)}
 /* PD-9: refresh-btn のタッチ領域を 44pt 以上に */
 .refresh-btn{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:6px;padding:8px 12px;font-size:12px;min-height:44px;min-width:44px;cursor:pointer}
 .refresh-btn:active{background:rgba(255,255,255,0.3)}
@@ -76,7 +79,7 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 
 /* Nav - 4 tabs — PD-9: タッチターゲット 48pt 以上、文字 12px */
 .nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -1px 4px rgba(0,0,0,0.08)}
-.nav-btn{flex:1;padding:8px 0 6px;min-height:48px;text-align:center;color:var(--text-dim);font-size:11px;cursor:pointer;border:none;background:none;transition:color .2s}
+.nav-btn{flex:1;padding:8px 0 6px;min-height:48px;text-align:center;color:var(--text-dim);font-size:12px;cursor:pointer;border:none;background:none;transition:color .2s}
 .nav-btn.active{color:var(--accent)}
 .nav-btn .nav-icon{font-size:20px;display:block;margin-bottom:2px}
 
@@ -98,19 +101,19 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .stadium-card.inactive-stadium .stadium-name{color:#999}
 .stadium-card.inactive-stadium .stadium-status{color:#BBB}
 .stadium-name{font-weight:700;font-size:13px;display:block}
-.stadium-grade{font-size:8px;padding:1px 4px;border-radius:4px;display:inline-block;font-weight:700;position:absolute;top:3px;right:3px}
+.stadium-grade{font-size:12px;padding:1px 4px;border-radius:4px;display:inline-block;font-weight:700;position:absolute;top:3px;right:3px}
 .grade-sg{background:#FF2244;color:#fff}
 .grade-g1{background:#FF6644;color:#fff}
 .grade-g2{background:#2288FF;color:#fff}
 .grade-g3{background:#22CC44;color:#fff}
 .grade-general{background:transparent;color:transparent}
-.stadium-status{font-size:9px;margin-top:2px;display:block}
-.stadium-day{font-size:9px;display:block;margin-top:1px}
+.stadium-status{font-size:12px;margin-top:2px;display:block}
+.stadium-day{font-size:12px;display:block;margin-top:1px}
 
 /* Summary bar */
 .summary-bar{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;display:flex;justify-content:space-around;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
 .summary-item .s-num{font-weight:700;font-size:18px}
-.summary-item .s-label{font-size:9px;color:var(--text-dim)}
+.summary-item .s-label{font-size:12px;color:var(--text-sub)}
 
 /* Race List Table */
 .race-table{width:100%;border-collapse:collapse;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
@@ -279,7 +282,7 @@ button.action-btn:active{background:#F0F0F0}
 .progress-bar{height:4px;background:var(--border);border-radius:2px;margin:8px 0;overflow:hidden}
 .progress-fill{height:100%;background:var(--accent);transition:width .3s}
 .back-btn{background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;padding:4px 0;margin-bottom:8px;display:flex;align-items:center;gap:4px;font-weight:500}
-.footer-note{text-align:center;font-size:9px;color:var(--text-dim);padding:16px;margin-top:8px}
+.footer-note{text-align:center;font-size:12px;color:var(--text-sub);padding:16px;margin-top:8px}
 .parts-badge{font-size:10px;background:#FFF3E0;color:var(--warn);padding:2px 6px;border-radius:4px;display:inline-block}
 
 /* Race type badges */
@@ -294,7 +297,7 @@ button.action-btn:active{background:#F0F0F0}
 </head>
 <body>
 
-<!-- PD-7: ランドマーク role + aria-label でスクリーンリーダー対応 -->
+<!-- PD-7 + PE-2: aria-label は visible text と一致させる（label-content-name-mismatch 解消） -->
 <header class="header" role="banner">
   <div>
     <span class="logo">BOATRACE AI</span>
@@ -302,8 +305,8 @@ button.action-btn:active{background:#F0F0F0}
   </div>
   <div class="header-right">
     <div id="headerDate" aria-live="off"></div>
-    <div id="dataFreshness" style="font-size:10px" aria-live="off"></div>
-    <button class="refresh-btn" onclick="hardReload()" aria-label="ページを完全に再読み込み">更新</button>
+    <div id="dataFreshness" style="font-size:12px" aria-live="off"></div>
+    <button class="refresh-btn" onclick="hardReload()">更新</button>
   </div>
 </header>
 
@@ -478,13 +481,13 @@ button.action-btn:active{background:#F0F0F0}
 </div>
 
 <!-- Navigation - 5 tabs (X7: バックテスト追加) -->
-<!-- PD-7: nav role + aria-label、各 tab に aria-label と aria-current で a11y 対応 -->
+<!-- PD-7 + PE-2: aria-label は visible text と一致（label-content-name-mismatch 解消） -->
 <nav class="nav" role="navigation" aria-label="メインメニュー">
-  <button class="nav-btn active" onclick="showPage('top')" id="navTop" aria-label="トップ" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
-  <button class="nav-btn" onclick="showPage('stats')" id="navStats" aria-label="成績"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
-  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest" aria-label="検証"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
-  <button class="nav-btn" onclick="showPage('settings')" id="navSettings" aria-label="設定"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
-  <button class="nav-btn" onclick="forceRefresh()" id="navRefresh" aria-label="データ更新"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
+  <button class="nav-btn active" onclick="showPage('top')" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
+  <button class="nav-btn" onclick="showPage('stats')" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
+  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
+  <button class="nav-btn" onclick="showPage('settings')" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
+  <button class="nav-btn" onclick="forceRefresh()" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
 </nav>
 
 <script>
