@@ -97,7 +97,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 
 /* Stadium Grid - 4 columns */
 .stadium-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.stadium-card{border-radius:8px;padding:10px 6px;cursor:pointer;text-align:center;transition:transform .15s;position:relative;border:1px solid transparent}
+/* PF-final: pre-render と JS render の高さを揃え CLS 抑制 */
+.stadium-card{border-radius:8px;padding:10px 6px;cursor:pointer;text-align:center;transition:transform .15s;position:relative;border:1px solid transparent;min-height:74px;display:flex;flex-direction:column;justify-content:center;gap:2px}
 .stadium-card:active{transform:scale(0.96)}
 /* PE-2: WCAG AA 適合 (#1565C0 + #fff = 5.74:1) */
 .stadium-card.active-stadium{background:#1565C0;color:#fff;border-color:#0D47A1}
