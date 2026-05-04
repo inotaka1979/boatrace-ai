@@ -4,26 +4,21 @@ boatrace.jp公式サイトからレース結果（着順・払戻金）を取得
 Open API互換のJSON形式で出力する。
 """
 
-import json, os, re, time, datetime
-from urllib.request import urlopen, Request
+import json, os, re, sys, time, datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from time_utils import utc_iso_seconds  # PC-10 / D-02
+from http_utils import fetch_text, fetch_json  # PC-1: HTTP 共通化
 
 BASE_URL = "https://www.boatrace.jp/owpc/pc/race/raceresult"
 PROG_API = "https://boatraceopenapi.github.io/programs/v2/today.json"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 INTERVAL = 3
 OUTPUT = "data/results/today.json"
 
 
-def fetch(url):
-    req = Request(url, headers=HEADERS)
-    with urlopen(req, timeout=20) as r:
-        return r.read().decode("utf-8", errors="replace")
-
-
-def fetch_json(url):
-    req = Request(url, headers=HEADERS)
-    with urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode())
+def fetch(url: str) -> str:
+    """URL から HTML を取得（http_utils.fetch_text の thin wrapper）。"""
+    return fetch_text(url, timeout=20)
 
 
 def parse_raceresult(html, stadium, race_num):
@@ -167,7 +162,7 @@ def main():
             json.dump(
                 {
                     "results": [],
-                    "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "updated_at": utc_iso_seconds(),  # PC-10
                 },
                 f,
             )
@@ -204,7 +199,7 @@ def main():
 
     output = {
         "results": all_results,
-        "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "updated_at": utc_iso_seconds(),  # PC-10
     }
     with open(OUTPUT, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False)

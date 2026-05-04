@@ -553,8 +553,11 @@ async def async_main():
             else:
                 log.info("Date changed (%s -> %s), discarding old data", old_date, date_str)
                 scrape_state = {}
-        except Exception:
-            pass
+        except Exception as e:
+            # PC-9: silent fail を排除し、データ整合性問題を観測可能に
+            log.warning("existing previews load failed (continuing with empty state): %s", e)
+            existing = {}
+            scrape_state = {}
 
     # Phase 2: 対象レース選定
     targets = select_target_races(closing_map, existing, now)
@@ -634,7 +637,9 @@ def _load_scrape_state(date_str):
         if state.get("date") != date_str:
             return {}
         return state.get("timestamps", {})
-    except Exception:
+    except Exception as e:
+        # PC-9: scrape_state 破損を観測可能に
+        log.warning("scrape_state load failed (using empty state): %s", e)
         return {}
 
 

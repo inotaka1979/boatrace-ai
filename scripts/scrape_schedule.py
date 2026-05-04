@@ -18,12 +18,11 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds, first_of_next_month  # P2 D-02 / D-06
+from http_utils import fetch_text  # PC-1
 
-import requests
 from bs4 import BeautifulSoup
 
 JST = timezone(timedelta(hours=9))
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0)"}
 SCHEDULE_URL = "https://www.boatrace.jp/owpc/pc/race/monthlyschedule?ym={ym}"
 OUTPUT_FILE = "data/schedule/current.json"
 
@@ -47,12 +46,9 @@ def scrape_month(year_month):
     """月間スケジュールを取得"""
     url = SCHEDULE_URL.format(ym=year_month)
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            print(f"  スケジュール取得失敗: {resp.status_code}", file=sys.stderr)
-            return []
-
-        soup = BeautifulSoup(resp.text, "lxml")
+        # PC-1: http_utils.fetch_text に統一（retry / 共通 UA）
+        html = fetch_text(url)
+        soup = BeautifulSoup(html, "lxml")
         events = []
 
         # スケジュールテーブルの各セルを解析

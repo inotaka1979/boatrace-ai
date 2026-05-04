@@ -456,6 +456,8 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" onclick="clearHistory()">リセット</button></div>
     <div class="setting-row"><span class="setting-label">選手/場DB</span><button class="action-btn" onclick="rebuildDB()">再構築</button></div>
     <div class="setting-row"><span class="setting-label">学習重み</span><button class="action-btn" onclick="resetWeights()">リセット</button></div>
+    <!-- PC-6: client-side error log の表示・コピー -->
+    <div class="setting-row"><span class="setting-label">エラーログ</span><span><button class="action-btn" onclick="showErrorLog()">表示</button> <button class="action-btn" onclick="copyErrorLog()">コピー</button> <button class="action-btn" onclick="clearErrorLog()">削除</button></span></div>
   </div>
   <div class="card">
     <div class="db-info" id="dbInfo">DB情報を読込中...</div>
@@ -473,6 +475,7 @@ button.action-btn:active{background:#F0F0F0}
 </div>
 
 <script>
+'use strict';   // PC-5: strict モードで暗黙のグローバル代入 / 8進リテラル / with 等を禁止
 // ===============================================
 // CONSTANTS (PRESERVED)
 // ===============================================
@@ -579,6 +582,33 @@ var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;
+
+// PA-5 / PC-6: エラー観測用バッファ（最大 100 件、循環）
+var ERROR_BUF_MAX = 100;
+function reportError(payload){
+  try{
+    var raw = localStorage.getItem('boatrace_errors');
+    var buf = [];
+    if(raw){
+      try{ var parsed = JSON.parse(raw); if(Array.isArray(parsed)) buf = parsed; }catch(_){}
+    }
+    var entry = {ts: Date.now(), iso: new Date().toISOString()};
+    for(var k in payload){ if(payload.hasOwnProperty(k)) entry[k] = payload[k]; }
+    buf.push(entry);
+    if(buf.length > ERROR_BUF_MAX) buf = buf.slice(-ERROR_BUF_MAX);
+    try{ localStorage.setItem('boatrace_errors', JSON.stringify(buf)); }catch(_){}
+  }catch(_){ /* reporter 自身の失敗は無視（無限ループ防止） */ }
+}
+// PC-6: 未捕捉エラー / Promise reject の自動収集
+window.addEventListener('error', function(e){
+  reportError({type:'error', msg:String(e.message||''), src:String(e.filename||''), line:e.lineno|0, col:e.colno|0, stack:(e.error&&e.error.stack)?String(e.error.stack).slice(0,800):''});
+});
+window.addEventListener('unhandledrejection', function(e){
+  var reason = e.reason; var msg=''; var stack='';
+  try{ msg = (reason && reason.message) ? reason.message : String(reason); }catch(_){}
+  try{ stack = (reason && reason.stack) ? String(reason.stack).slice(0,800) : ''; }catch(_){}
+  reportError({type:'reject', msg:msg, stack:stack});
+});
 
 // ===============================================
 // UTILITIES (P3 共通ヘルパ拡張版)
@@ -4305,6 +4335,40 @@ function clearCache(){var keys=[];for(var i=0;i<localStorage.length;i++){var k=l
 function clearHistory(){if(confirm('成績履歴を全て削除しますか?')){localStorage.removeItem('boatrace_history');alert('履歴を削除しました')}}
 function rebuildDB(){if(confirm('選手/場DBを再構築しますか?')){localStorage.removeItem('boatrace_racerDB');localStorage.removeItem('boatrace_stadiumDB');location.reload()}}
 function resetWeights(){if(confirm('学習重みをリセットしますか?')){localStorage.removeItem('boatrace_weights');l2weights=L2_INIT_WEIGHTS.slice();alert('重みをリセットしました')}}
+// PC-6: エラーログ表示・コピー・削除
+function _loadErrorLog(){
+  try{ var raw=localStorage.getItem('boatrace_errors'); if(!raw) return [];
+       var v=JSON.parse(raw); return Array.isArray(v)?v:[]; }
+  catch(_){ return []; }
+}
+function showErrorLog(){
+  var buf=_loadErrorLog();
+  if(!buf.length){ alert('エラーログは空です'); return; }
+  var lines=buf.slice(-20).map(function(e){
+    return '['+(e.iso||new Date(e.ts).toISOString())+'] '+(e.type||'?')+': '+(e.msg||'')+(e.src?(' @ '+e.src+':'+(e.line||0)):'');
+  });
+  alert('直近 '+lines.length+' 件 / 全 '+buf.length+' 件:\n\n'+lines.join('\n'));
+}
+function copyErrorLog(){
+  var buf=_loadErrorLog();
+  var text=JSON.stringify(buf, null, 2);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ alert('クリップボードにコピーしました ('+buf.length+'件)'); },
+      function(e){ alert('コピー失敗: '+e); });
+  } else {
+    // フォールバック: textarea を介した execCommand
+    var ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); alert('コピーしました ('+buf.length+'件)'); }
+    catch(e){ alert('コピー失敗: '+e); }
+    finally{ document.body.removeChild(ta); }
+  }
+}
+function clearErrorLog(){
+  if(confirm('エラーログを削除しますか?')){
+    try{ localStorage.removeItem('boatrace_errors'); alert('削除しました'); }
+    catch(e){ alert('削除失敗: '+e); }
+  }
+}
 
 // ===============================================
 // F19: RPi URL Management 撤去（GitHub Pages のみで運用）

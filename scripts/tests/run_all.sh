@@ -31,9 +31,13 @@ step() {
 step "Python unit tests (io_utils / time_utils)" \
      "python3 -m unittest scripts.tests.test_io_time -v"
 
+# 1b) PC-1 / PC-8: http_utils ユニットテスト
+step "Python unit tests (http_utils)" \
+     "python3 -m unittest scripts.tests.test_http_utils -v"
+
 # 2) Python シンタックスチェック（main は実行しない）
 step "Python parse check" \
-     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
+     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py scripts/http_utils.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
 
 # 3) Bash テスト
 step "Shell tests (cron_scrape / cron_monitor)" \
@@ -58,6 +62,10 @@ step "manifest.json validity" \
 # 8) JS ヘルパテスト
 step "JS helper tests (softmax / safeDiv / safeParse / safeSet / jstYmd)" \
      "node scripts/tests/test_predictor_helpers.js"
+
+# 8b) PA-5 / PC-8: localStorage スキーマバリデータテスト
+step "Storage validator tests (_validateLS)" \
+     "node scripts/tests/test_storage_validator.js"
 
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \

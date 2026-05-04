@@ -26,10 +26,14 @@
 
 import json
 import os
+import sys
 import time
 import datetime
 from urllib.request import urlopen, Request
 from io import BytesIO
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from time_utils import utc_iso_seconds  # PC-10 / D-02
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 OUTPUT_RACER = "data/db/racerDB.json"
@@ -201,8 +205,11 @@ def parse_fan_handbook(text_or_bytes):
                 "courseStats": course_stats,
                 "recentResults": [],
             }
-        except Exception:
+        except Exception as e:
             parse_errors += 1
+            # PC-9: 最初の数件は詳細ログ（レイアウト変更の早期検知）
+            if parse_errors <= 5:
+                print(f"  [parse_error #{parse_errors}] {type(e).__name__}: {e}")
             continue
 
     if parse_errors > 0:
@@ -326,7 +333,7 @@ def main():
         stadiums[sid] = {"courseWinRate": cwr, "totalRaces": total // 6}
 
     # JSON出力
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = utc_iso_seconds()  # PC-10
     racer_out = {"updated_at": now, "racers": racers}
     stadium_out = {"updated_at": now, "stadiums": stadiums}
 

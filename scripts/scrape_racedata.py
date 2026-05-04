@@ -17,24 +17,20 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds  # P2 D-02
+from http_utils import fetch_text, fetch_json, DEFAULT_HEADERS  # PC-1
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 BASE_URL = "https://www.boatrace.jp/owpc/pc/race"
 PHOTO_URL = "https://www.boatrace.jp/racerphoto/{}.jpg"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+HEADERS = DEFAULT_HEADERS  # PC-1: 共通 UA を再エクスポート（写真 DL の urlopen 用）
 INTERVAL = 3
 OUTPUT_RACEDATA = "data/racedata/today.json"
 PHOTO_DIR = "data/photos"
 
-def fetch_json(url):
-    req = Request(url, headers=HEADERS)
-    with urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode())
 
-def fetch_html(url):
-    req = Request(url, headers=HEADERS)
-    with urlopen(req, timeout=15) as r:
-        return r.read().decode()
+def fetch_html(url: str) -> str:
+    """URL から HTML を取得（http_utils.fetch_text の alias）。"""
+    return fetch_text(url)
 
 def scrape_racelist(jcd, rno, date_str):
     """出走表ページから今節成績を取得"""
@@ -124,8 +120,9 @@ def download_photo(racer_number):
                 with open(path, "wb") as f:
                     f.write(r.read())
         time.sleep(1)
-    except Exception:
-        pass
+    except Exception as e:
+        # PC-9: 写真ダウンロード失敗は致命的ではないが観測可能に
+        print(f"[photo] download skip ({url}): {e}")
 
 def main():
     os.makedirs(os.path.dirname(OUTPUT_RACEDATA), exist_ok=True)

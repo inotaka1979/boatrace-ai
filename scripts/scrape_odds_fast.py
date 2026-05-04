@@ -51,7 +51,8 @@ def parse_win(html):
                 try:
                     v = float(val)
                     if v > 0: odds[boat] = v
-                except ValueError: pass
+                except ValueError:
+                    log.debug("win odds parse skip (boat=%s val=%r)", boat, val)  # PC-9
     return odds
 
 def parse_exacta(html):
