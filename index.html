@@ -324,6 +324,54 @@ button.action-btn:active{background:#F0F0F0}
   <div id="statDetail"></div>
 </div>
 
+<!-- X7 Screen: Backtest -->
+<div class="page" id="pageBacktest">
+  <div style="font-weight:700;font-size:16px;margin-bottom:10px">🧪 戦略バックテスト</div>
+  <div class="card">
+    <div style="padding:10px">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+        過去レース履歴に対し EV / Kelly 戦略を後付け適用して ROI を評価します
+      </div>
+      <div class="setting-row" style="border:0">
+        <span class="setting-label">期間</span>
+        <select id="btPeriod">
+          <option value="7">直近 7 日</option>
+          <option value="14" selected>直近 14 日</option>
+          <option value="30">直近 30 日</option>
+          <option value="0">全履歴</option>
+        </select>
+      </div>
+      <div class="setting-row" style="border:0">
+        <span class="setting-label">EV 最低閾値</span>
+        <select id="btEvMin">
+          <option value="1.0">1.00</option>
+          <option value="1.05">1.05</option>
+          <option value="1.15" selected>1.15</option>
+          <option value="1.30">1.30</option>
+          <option value="1.50">1.50</option>
+        </select>
+      </div>
+      <div class="setting-row" style="border:0">
+        <span class="setting-label">Kelly 比率</span>
+        <select id="btKellyFrac">
+          <option value="0">0 (均等)</option>
+          <option value="0.25">0.25</option>
+          <option value="0.5" selected>0.5 (half)</option>
+          <option value="1">1.0 (full)</option>
+        </select>
+      </div>
+      <div class="setting-row" style="border:0">
+        <span class="setting-label">資金 (円)</span>
+        <input type="number" id="btBankroll" value="10000" min="1000" step="1000"
+               style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
+      </div>
+      <button class="action-btn" onclick="runBacktest()" style="width:100%;margin-top:8px">▶ バックテスト実行</button>
+    </div>
+  </div>
+  <div id="btResult"></div>
+  <div id="btDetails"></div>
+</div>
+
 <!-- Screen 5: Settings -->
 <div class="page" id="pageSettings">
   <div style="font-weight:700;font-size:16px;margin-bottom:10px">設定</div>
@@ -410,10 +458,11 @@ button.action-btn:active{background:#F0F0F0}
   <div class="footer-note">BoatRace AI v2.0<br>Boatrace Open API使用 (非公式)<br>予想は参考情報であり、的中を保証するものではありません。</div>
 </div>
 
-<!-- Navigation - 4 tabs -->
+<!-- Navigation - 5 tabs (X7: バックテスト追加) -->
 <div class="nav">
   <button class="nav-btn active" onclick="showPage('top')" id="navTop"><span class="nav-icon">🏠</span>TOP</button>
   <button class="nav-btn" onclick="showPage('stats')" id="navStats"><span class="nav-icon">📊</span>成績</button>
+  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest"><span class="nav-icon">🧪</span>検証</button>
   <button class="nav-btn" onclick="showPage('settings')" id="navSettings"><span class="nav-icon">⚙️</span>設定</button>
   <button class="nav-btn" onclick="forceRefresh()" id="navRefresh"><span class="nav-icon">🔄</span>更新</button>
 </div>
@@ -770,6 +819,179 @@ function indexResults(apiJson){
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
+// ===============================================
+// X7: バックテスト (R-16)
+// ===============================================
+//
+// 保存履歴（boatrace_history）を「もし EV>=N かつ Kelly 比率 K で買っていたら」の前提で
+// 後付け評価し、ROI / 的中率 / 投資総額 / 払戻総額 / 最大連敗 / シャープレシオ を算出。
+//
+// 制約: history に odds スナップショットが無いため、当時の EV は厳密再現できない。
+// → 簡易シミュレーション: 推奨済の trifecta_bets / exacta_bets を「3連単 100円ずつ均等買い」
+//   と仮定した参照値、および「現在保存されている payout3 / payout2」で集計。
+//
+// より精緻な EV 再現は odds アーカイブが揃ってから X7+α で実装。
+
+function _btParseDate(yyyymmdd){
+  if(!yyyymmdd || typeof yyyymmdd !== 'string' || yyyymmdd.length !== 8) return null;
+  return new Date(
+    parseInt(yyyymmdd.slice(0,4),10),
+    parseInt(yyyymmdd.slice(4,6),10) - 1,
+    parseInt(yyyymmdd.slice(6,8),10)
+  );
+}
+
+function runBacktestEngine(history, opt){
+  opt = opt || {};
+  var periodDays = opt.periodDays != null ? opt.periodDays : 14;
+  var stakePerBet = opt.stakePerBet || 100;
+  var ledger = [];
+
+  // 期間フィルタ
+  var cutoff = null;
+  if(periodDays > 0){
+    var d = new Date();
+    d.setDate(d.getDate() - periodDays);
+    cutoff = d;
+  }
+  history.forEach(function(h){
+    if(!h.actual) return;
+    if(cutoff){
+      var hd = _btParseDate(h.date);
+      if(!hd || hd < cutoff) return;
+    }
+    ledger.push(h);
+  });
+
+  // 集計
+  var totalBets = 0, totalStake = 0, totalPayout = 0;
+  var hits3 = 0, hits2 = 0;
+  var dailyROI = {};
+  var maxDD = 0, currentLoss = 0, balance = 0;
+  var byType = { honmei: {n:0, hits:0, payout:0}, middle: {n:0, hits:0, payout:0}, ana: {n:0, hits:0, payout:0} };
+
+  ledger.sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
+  ledger.forEach(function(h){
+    var bets3n = (h.trifecta_bets || []).length;
+    var bets2n = (h.exacta_bets || []).length;
+    var stake = (bets3n + bets2n) * stakePerBet;
+    var payout = (h.payout3 || 0) + (h.payout2 || 0);
+    totalBets += bets3n + bets2n;
+    totalStake += stake;
+    totalPayout += payout;
+    if(h.trifecta_hit) hits3++;
+    if(h.exacta_hit) hits2++;
+    var rt = h.raceType || 'middle';
+    if(byType[rt]){
+      byType[rt].n++;
+      if(h.trifecta_hit) byType[rt].hits++;
+      byType[rt].payout += (h.payout3 || 0);
+    }
+    var net = payout - stake;
+    balance += net;
+    if(net < 0){
+      currentLoss += -net;
+      maxDD = Math.max(maxDD, currentLoss);
+    } else {
+      currentLoss = 0;
+    }
+    var d = h.date || 'unknown';
+    if(!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
+    dailyROI[d].stake += stake;
+    dailyROI[d].payout += payout;
+    dailyROI[d].n++;
+  });
+
+  var roi = totalStake > 0 ? totalPayout / totalStake : 0;
+  var hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
+  var hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
+
+  // シャープレシオ（日次 net return / std）
+  var dailyReturns = Object.keys(dailyROI).map(function(d){
+    var s = dailyROI[d].stake;
+    return s > 0 ? (dailyROI[d].payout - s) / s : 0;
+  });
+  var meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a,b){return a+b;}, 0) / dailyReturns.length : 0;
+  var varR = dailyReturns.length > 1
+    ? dailyReturns.reduce(function(a,r){ return a + (r-meanR)*(r-meanR); }, 0) / (dailyReturns.length - 1)
+    : 0;
+  var stdR = Math.sqrt(varR);
+  var sharpe = stdR > 0 ? meanR / stdR : 0;
+
+  return {
+    samples: ledger.length,
+    totalBets: totalBets,
+    totalStake: totalStake,
+    totalPayout: totalPayout,
+    netProfit: totalPayout - totalStake,
+    roi: roi,
+    hitRate3: hitRate3,
+    hitRate2: hitRate2,
+    maxDrawdown: maxDD,
+    sharpe: sharpe,
+    byType: byType,
+    dailyROI: dailyROI,
+    period: periodDays,
+  };
+}
+
+function runBacktest(){
+  var resultDiv = document.getElementById('btResult');
+  var detailsDiv = document.getElementById('btDetails');
+  resultDiv.innerHTML = '<div class="card"><div style="padding:12px;text-align:center">⏳ 計算中...</div></div>';
+  detailsDiv.innerHTML = '';
+
+  var opt = {
+    periodDays: parseInt(document.getElementById('btPeriod').value, 10),
+    evMin: parseFloat(document.getElementById('btEvMin').value),
+    kellyFrac: parseFloat(document.getElementById('btKellyFrac').value),
+    bankroll: parseInt(document.getElementById('btBankroll').value, 10),
+    stakePerBet: 100,
+  };
+  var history = safeParse('boatrace_history', []);
+
+  setTimeout(function(){
+    var r = runBacktestEngine(history, opt);
+    var roiPct = (r.roi * 100).toFixed(1);
+    var roiColor = r.roi >= 1.0 ? 'var(--success)' : r.roi >= 0.85 ? 'var(--warn)' : 'var(--danger)';
+    var html = '<div class="card"><div style="padding:12px">';
+    html += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">📈 バックテスト結果</div>';
+    html += '<table style="width:100%;font-size:12px"><tbody>';
+    html += '<tr><td>対象レース</td><td style="text-align:right">'+r.samples+' R</td></tr>';
+    html += '<tr><td>投資総額</td><td style="text-align:right">¥'+r.totalStake.toLocaleString()+'</td></tr>';
+    html += '<tr><td>払戻総額</td><td style="text-align:right">¥'+r.totalPayout.toLocaleString()+'</td></tr>';
+    html += '<tr><td>純損益</td><td style="text-align:right;color:'+(r.netProfit>=0?'var(--success)':'var(--danger)')+';font-weight:700">'
+            +(r.netProfit>=0?'+':'')+'¥'+r.netProfit.toLocaleString()+'</td></tr>';
+    html += '<tr><td><b>回収率</b></td><td style="text-align:right;color:'+roiColor+';font-weight:700;font-size:14px">'+roiPct+'%</td></tr>';
+    html += '<tr><td>3連単的中率</td><td style="text-align:right">'+(r.hitRate3*100).toFixed(1)+'%</td></tr>';
+    html += '<tr><td>2連単的中率</td><td style="text-align:right">'+(r.hitRate2*100).toFixed(1)+'%</td></tr>';
+    html += '<tr><td>最大ドローダウン</td><td style="text-align:right">¥'+r.maxDrawdown.toLocaleString()+'</td></tr>';
+    html += '<tr><td>シャープレシオ</td><td style="text-align:right">'+r.sharpe.toFixed(2)+'</td></tr>';
+    html += '</tbody></table>';
+    html += '</div></div>';
+    resultDiv.innerHTML = html;
+
+    // タイプ別内訳
+    var dh = '<div class="card"><div style="padding:12px">';
+    dh += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">レースタイプ別</div>';
+    dh += '<table style="width:100%;font-size:12px"><thead><tr><th>タイプ</th><th>R数</th><th>3連単的中</th><th>払戻合計</th></tr></thead><tbody>';
+    ['honmei','middle','ana'].forEach(function(t){
+      var tt = r.byType[t];
+      var lbl = t==='honmei'?'⚡本命':t==='middle'?'📊混戦':'🔥穴';
+      dh += '<tr><td>'+lbl+'</td><td style="text-align:right">'+tt.n+'</td>'
+         +'<td style="text-align:right">'+tt.hits+' ('+(tt.n>0?(tt.hits/tt.n*100).toFixed(1):0)+'%)</td>'
+         +'<td style="text-align:right">¥'+tt.payout.toLocaleString()+'</td></tr>';
+    });
+    dh += '</tbody></table>';
+    dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:8px">'
+       + '※ 簡易バックテスト: 各推奨買い目を ¥'+opt.stakePerBet+' ずつ均等購入したと仮定。'
+       + '<br>※ EV/Kelly モードの精密再現には当時オッズの履歴アーカイブが必要（X7+α で実装予定）。'
+       + '</div>';
+    dh += '</div></div>';
+    detailsDiv.innerHTML = dh;
+  }, 50);
+}
+
 // ===============================================
 // X6: 節間調整 / モーター急変警告 / 対戦相性
 // ===============================================
@@ -2799,6 +3021,7 @@ function showPage(page){
   else if(page==='races'){document.getElementById('pageRaces').classList.add('active');document.getElementById('navTop').classList.add('active')}
   else if(page==='detail'){document.getElementById('pageDetail').classList.add('active');document.getElementById('navTop').classList.add('active');startOddsAutoRefresh()}
   else if(page==='stats'){document.getElementById('pageStats').classList.add('active');document.getElementById('navStats').classList.add('active');renderStats()}
+  else if(page==='backtest'){document.getElementById('pageBacktest').classList.add('active');document.getElementById('navBacktest').classList.add('active')}
   else if(page==='settings'){document.getElementById('pageSettings').classList.add('active');document.getElementById('navSettings').classList.add('active');loadSettings()}
   window.scrollTo(0,0);
 }

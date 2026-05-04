@@ -83,6 +83,10 @@ step "X5 scenario / grade tests" \
 step "X6 series / pairwise tests" \
      "node scripts/tests/test_series_pairwise.js"
 
+# 15) X7 バックテストテスト
+step "X7 backtest engine tests" \
+     "node scripts/tests/test_backtest.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
