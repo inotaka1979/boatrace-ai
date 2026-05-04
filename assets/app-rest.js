@@ -2576,7 +2576,9 @@ function openRace(sid,rn){
       if(bn===5) nameColor='#B8860B';
       var m=pred?pred.marks.find(function(x){return x.boat===bn}):null;
       var markStr=m?' <span style="font-size:10px;color:var(--accent)">'+m.mark+'</span>':'';
-      boatsHtml+='<td><span style="font-weight:700;font-size:13px;color:'+nameColor+'">'+escText(bt.racer_name||'')+'</span>'+markStr+'</td>';
+      var rid=bt.racer_number||0;
+      var photoHtml=rid?'<img class="racer-photo" src="data/photos/'+rid+'.jpg" loading="lazy" alt="" onerror="this.dataset.broken=\'1\'">':'';
+      boatsHtml+='<td>'+photoHtml+'<span style="font-weight:700;font-size:13px;color:'+nameColor+'">'+escText(bt.racer_name||'')+'</span>'+markStr+'</td>';
     }
     boatsHtml+='<th>選手</th></tr>';
 
