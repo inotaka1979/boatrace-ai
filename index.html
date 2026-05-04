@@ -40,11 +40,9 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="preconnect" href="https://boatraceopenapi.github.io" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" referrerpolicy="no-referrer">
-<!-- PA-3: SRI でリソース完全性を保証（cdnjs Chart.js 4.4.1 SHA-384） -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
-        integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer"></script>
+<!-- PD-13b: Chart.js は成績タブ初表示時のみ動的 load。LCP / 初回 INP 改善（200KB 削減） -->
+<!-- PA-3: SRI ハッシュは _loadChartLib() で integrity 属性を付与して読み込む -->
+<!-- 旧: <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="..." crossorigin="anonymous" referrerpolicy="no-referrer"></script> -->
 <style>
 :root{
   --bg:#F5F5F5;--card-bg:#FFFFFF;--header-bg:#1A3A5C;
@@ -470,6 +468,8 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row"><span class="setting-label">学習重み</span><button class="action-btn" onclick="resetWeights()">リセット</button></div>
     <!-- PC-6: client-side error log の表示・コピー -->
     <div class="setting-row"><span class="setting-label">エラーログ</span><span><button class="action-btn" onclick="showErrorLog()">表示</button> <button class="action-btn" onclick="copyErrorLog()">コピー</button> <button class="action-btn" onclick="clearErrorLog()">削除</button></span></div>
+    <!-- PB-6: Platt scaling auto-fit -->
+    <div class="setting-row"><span class="setting-label">確率校正 (Platt)</span><button class="action-btn" onclick="refitPlattCoefficients()">再校正</button></div>
   </div>
   <div class="card">
     <div class="db-info" id="dbInfo">DB情報を読込中...</div>
@@ -537,6 +537,38 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
 
+// PB-7: 特徴量 z-score 正規化用 rolling 統計（Welford's online algorithm）
+//   既定: mean=0, var=1 → z(x) ≈ x（identity）。学習が進むと真の z-score へ収束。
+//   ENABLE_ZSCORE が true で初めて適用される（既存重みとの整合性のため既定 OFF）
+var FEATURE_DIM = 12;
+function _initFeatureStats(){
+  return {
+    mean: new Array(FEATURE_DIM).fill(0),
+    m2:   new Array(FEATURE_DIM).fill(0),   // Welford's M2 (sum of squared diffs)
+    n:    0
+  };
+}
+var _featureStats = (function(){
+  var raw = _bootParseLS('boatrace_featurestats', null);
+  if(raw && Array.isArray(raw.mean) && raw.mean.length===FEATURE_DIM
+        && Array.isArray(raw.m2) && typeof raw.n==='number'){ return raw; }
+  return _initFeatureStats();
+})();
+
+// PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
+//   将来 _refitPlattCoeffs(history) で auto-tune
+var _plattCoeffs = (function(){
+  var raw = _bootParseLS('boatrace_platt', null);
+  if(raw && Number.isFinite(raw.a) && Number.isFinite(raw.b)
+        && Number.isFinite(raw.fittedAt)){ return raw; }
+  return { a: 1.0, b: 0.0, fittedAt: 0, n: 0 };
+})();
+
+// PB-5: Stacking 重み — L2 が L1 logit を補正する係数
+//   既定 γ=0 で stacking 無効（線形融合のみ）
+//   STACKING_MODE='residual' のとき active
+var _stackingGamma = 0.0;
+
 // PC-3: 主要しきい値の集約（マジックナンバー撲滅、変更履歴の追跡性向上）
 //       根拠: CLAUDE.md 修正履歴の Review 系 / X1 EV/Kelly 改善設計を参照
 var TUNING = Object.freeze({
@@ -558,6 +590,14 @@ var TUNING = Object.freeze({
   L2: Object.freeze({
     LR: 0.01,
     BIAS_INIT: 0,
+  }),
+  // PB-5/6/7: 予測パイプライン拡張（既定値で互換性維持）
+  PREDICTION: Object.freeze({
+    ENABLE_ZSCORE: false,        // PB-7: z-score 正規化（既存重みと整合しないため既定 OFF）
+    ENABLE_PLATT: true,          // PB-6: Platt scaling（identity 初期値で常時 ON 安全）
+    STACKING_MODE: 'shrinkage',  // PB-5: 'shrinkage' | 'residual'（既定は線形融合）
+    PLATT_MIN_SAMPLES: 200,      // Platt fit に必要な履歴最低件数
+    ZSCORE_WARMUP_N: 100,        // z-score 適用開始までの観測数
   }),
 });
 
@@ -603,6 +643,23 @@ function _validateLS(key, value){
     case 'boatrace_trainstep':
       // PB-2: 学習更新カウンタ（数値）
       return (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e10) ? value : null;
+    case 'boatrace_featurestats':
+      // PB-7: rolling 統計 {mean[12], m2[12], n}
+      if(!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      if(!Array.isArray(value.mean) || value.mean.length !== 12) return null;
+      if(!Array.isArray(value.m2)   || value.m2.length   !== 12) return null;
+      if(typeof value.n !== 'number' || !Number.isFinite(value.n) || value.n < 0) return null;
+      // 各要素 finite チェック
+      for(var i=0;i<12;i++){
+        if(!Number.isFinite(value.mean[i]) || !Number.isFinite(value.m2[i])) return null;
+      }
+      return value;
+    case 'boatrace_platt':
+      // PB-6: Platt 係数 {a, b, fittedAt, n}
+      if(!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      if(!Number.isFinite(value.a) || !Number.isFinite(value.b)) return null;
+      if(Math.abs(value.a) > 10 || Math.abs(value.b) > 10) return null;   // 異常値ガード
+      return value;
     default:
       return value;
   }
@@ -2058,37 +2115,59 @@ function getStadiumCourseWinRate(sid,course){
 // ===============================================
 // PREDICTION ENGINE V2: Layer 1 (PRESERVED)
 // ===============================================
+// PC-2b: scoreBoatV2 から抽出した純粋計算ヘルパ
+//   経緯: scoreBoatV2 は 287 行で UI 状態と密結合のため全分割は高リスク。
+//   純粋関数 (no DOM / no global mutation) のみ段階的に切り出してテスト可能化。
+
+// 平均クラスから階級減衰係数を計算
+//   B2 多 → 0.55, B1 多 → 0.70, A2 多 → 0.85, A1 多 → 1.00
+function _computeClassAttenuation(allBoats){
+  if(!Array.isArray(allBoats) || !allBoats.length) return 1.0;
+  var avgClass = 0;
+  allBoats.forEach(function(b){ avgClass += (b && b.racer_class_number) || 3; });
+  avgClass /= allBoats.length;
+  if(avgClass >= 3.5) return 0.55;
+  if(avgClass >= 3.0) return 0.70;
+  if(avgClass >= 2.5) return 0.85;
+  return 1.0;
+}
+
+// X3 進入予想 → 採用コースと信頼度を決定
+//   preview.racer_course_number > predictedEntries > 枠番 の優先順
+function _resolveCourse(boat, preview, predictedEntries){
+  var bn = boat.racer_boat_number;
+  if(preview && preview.racer_course_number != null){
+    return { course: preview.racer_course_number, entryConf: 1.0, source: 'preview' };
+  }
+  if(predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]){
+    return {
+      course: predictedEntries.byBoat[bn],
+      entryConf: predictedEntries.conf[bn] || 0.5,
+      source: 'predicted'
+    };
+  }
+  return { course: preview ? preview.racer_boat_number : bn, entryConf: 1.0, source: 'frame' };
+}
+
 function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries){
   var score=0;
   var reasons=[];
   var risks=[];
   var bn=boat.racer_boat_number;
-  // X3: preview.racer_course_number > predictedEntries > 枠 の優先順
-  var course;
-  var entryConf = 1.0;   // 進入信頼度
-  if(preview && preview.racer_course_number != null){
-    course = preview.racer_course_number;
-  } else if(predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]){
-    course = predictedEntries.byBoat[bn];
-    entryConf = predictedEntries.conf[bn] || 0.5;
-    if(course !== bn && entryConf >= 0.6){
-      reasons.push('進入予想: '+bn+'枠→'+course+'コース('+(entryConf*100).toFixed(0)+'%)');
-    }
-  } else {
-    course = preview ? preview.racer_boat_number : bn;
+  // PC-2b: 進入コース解決を _resolveCourse に委譲
+  var resolved = _resolveCourse(boat, preview, predictedEntries);
+  var course = resolved.course;
+  var entryConf = resolved.entryConf;
+  if(resolved.source === 'predicted' && course !== bn && entryConf >= 0.6){
+    reasons.push('進入予想: '+bn+'枠→'+course+'コース('+(entryConf*100).toFixed(0)+'%)');
   }
   var rid=boat.racer_number||0;
 
   var scwr=getStadiumCourseWinRate(String(sid),course);
   var baseCoursePt=scwr*COURSE_MULTIPLIER;
 
-  var avgClass=0;
-  allBoats.forEach(function(b){avgClass+=b.racer_class_number||3});
-  avgClass/=allBoats.length;
-  var attn=1.0;
-  if(avgClass>=3.5) attn=0.55;
-  else if(avgClass>=3.0) attn=0.70;
-  else if(avgClass>=2.5) attn=0.85;
+  // PC-2b: 階級減衰係数を _computeClassAttenuation に委譲
+  var attn = _computeClassAttenuation(allBoats);
   var coursePt=baseCoursePt*attn;
   score+=coursePt;
 
@@ -2395,9 +2474,40 @@ function getL2Features(boat,preview,weather,etRank,stRank,sid){
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
+// PB-7: Welford's online algorithm で 特徴量 mean/variance を更新
+function _updateFeatureStats(featRow){
+  if(!Array.isArray(featRow)) return;
+  _featureStats.n += 1;
+  var n = _featureStats.n;
+  for(var i=0;i<FEATURE_DIM;i++){
+    var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
+    var delta = x - _featureStats.mean[i];
+    _featureStats.mean[i] += delta / n;
+    var delta2 = x - _featureStats.mean[i];
+    _featureStats.m2[i]   += delta * delta2;
+  }
+}
+
+// PB-7: 特徴量を z-score 正規化（warmup 前は identity）
+function _normalizeFeatures(featRow){
+  if(!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
+  if(_featureStats.n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
+  var n = _featureStats.n;
+  var out = new Array(FEATURE_DIM);
+  for(var i=0;i<FEATURE_DIM;i++){
+    var variance = _featureStats.m2[i] / Math.max(1, n - 1);
+    var std = Math.sqrt(variance + 1e-6);
+    var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
+    out[i] = (x - _featureStats.mean[i]) / std;
+  }
+  return out;
+}
+
 function l2Predict(features6){
+  // PB-7: z-score 正規化（識別性能の改善、既定 OFF で互換維持）
+  var feats = features6.map(_normalizeFeatures);
   // PB-11: 各艇の logit に COURSE_LOG_PRIOR を加算（base rate を反映）
-  var logits=features6.map(function(feat,b){
+  var logits=feats.map(function(feat,b){
     var z = L2_BIAS + (COURSE_LOG_PRIOR[b]||0);
     for(var i=0;i<feat.length;i++) z+=feat[i]*(l2weights[i]||0);
     return z;
@@ -2416,10 +2526,98 @@ function l2Update(features6,winnerIdx){
       var grad = err * (features6[b][i]||0) + L2_LAMBDA * l2weights[i];
       l2weights[i] -= lr * grad;
     }
+    // PB-7: 各艇の特徴量を rolling 統計に追加
+    _updateFeatureStats(features6[b]);
   }
   l2trainStep += 1;
   safeSet('boatrace_weights', l2weights);   // P3 L-05
   safeSet('boatrace_trainstep', l2trainStep);   // PB-2
+  // PB-7: rolling stats を永続化（毎回 save は重いので 50 step に 1 回）
+  if((l2trainStep % 50) === 0) safeSet('boatrace_featurestats', _featureStats);
+}
+
+// PB-6: Platt scaling — 確率の post-hoc 校正
+//   p' = sigmoid(a * logit(p) + b)
+//   既定 a=1, b=0 で identity（変化なし）。データ蓄積後 _refitPlattCoeffs で auto-tune
+function _applyPlattCalibration(p){
+  if(!TUNING.PREDICTION.ENABLE_PLATT) return p;
+  var a = _plattCoeffs.a, b = _plattCoeffs.b;
+  if(a === 1 && b === 0) return p;   // 高速 path: identity
+  // ロジット変換 (clip で 0/1 を回避)
+  var clipped = Math.min(0.9999, Math.max(0.0001, p));
+  var logit = Math.log(clipped / (1 - clipped));
+  var z = a * logit + b;
+  // sigmoid (overflow 安全)
+  if(z > 30) return 1.0;
+  if(z < -30) return 0.0;
+  return 1.0 / (1.0 + Math.exp(-z));
+}
+
+// PB-5: Stacking 予測 — L2 が L1 確率を補正する形式
+//   p_stacked[b] = softmax( logit(L1[b]) + γ * residual_b ) where residual_b は L2 の輸出 logit
+//   既定 γ=0 で stacking 無効（純粋に L1 を返す）。STACKING_MODE='residual' で active
+function _stackedPredict(features6, l1probs){
+  if(TUNING.PREDICTION.STACKING_MODE !== 'residual') return l1probs;
+  // L2 logit を別ルートで計算（softmax 適用前）
+  var feats = features6.map(_normalizeFeatures);
+  var l2Logits = feats.map(function(feat,b){
+    var z = L2_BIAS + (COURSE_LOG_PRIOR[b]||0);
+    for(var i=0;i<feat.length;i++) z+=feat[i]*(l2weights[i]||0);
+    return z;
+  });
+  // L1 logit + γ * L2 logit
+  var combinedLogits = l1probs.map(function(p,b){
+    var clipped = Math.min(0.9999, Math.max(0.0001, p));
+    var l1Logit = Math.log(clipped/(1-clipped));
+    return l1Logit + _stackingGamma * l2Logits[b];
+  });
+  return softmax(combinedLogits);
+}
+
+// PB-6: Platt 係数を既存履歴から re-fit
+//   2 パラメータ (a, b) のみなので grid search で十分
+function _refitPlattCoeffs(history){
+  if(!Array.isArray(history)) return null;
+  var samples = history.filter(function(h){
+    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
+  });
+  if(samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return null;
+  // 各 sample について winner 確率と勝敗を抽出
+  var pairs = [];
+  samples.forEach(function(h){
+    var winner = h.actual[0];
+    var probs = {};
+    h.mark_probs.forEach(function(mp){ probs[mp.boat] = mp.prob; });
+    var pWin = probs[winner];
+    if(!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+    pairs.push({p: pWin, y: 1});
+    for(var b=1;b<=6;b++){
+      if(b===winner) continue;
+      var pb = probs[b];
+      if(Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({p: pb, y: 0});
+    }
+  });
+  if(pairs.length < 100) return null;
+  // grid search で log loss 最小化
+  var bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
+  for(var a = 0.5; a <= 2.0; a += 0.1){
+    for(var b = -1.0; b <= 1.0; b += 0.1){
+      var loss = 0;
+      for(var i=0;i<pairs.length;i++){
+        var pi = pairs[i];
+        var clipped = Math.min(0.9999, Math.max(0.0001, pi.p));
+        var logit = Math.log(clipped/(1-clipped));
+        var z = a*logit + b;
+        var pp = (z > 30) ? 1.0 : (z < -30) ? 0.0 : 1.0/(1.0+Math.exp(-z));
+        pp = Math.min(0.9999, Math.max(0.0001, pp));
+        loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+      }
+      if(loss < bestLoss){ bestLoss = loss; bestA = a; bestB = b; }
+    }
+  }
+  _plattCoeffs = { a: bestA, b: bestB, fittedAt: Date.now(), n: pairs.length };
+  safeSet('boatrace_platt', _plattCoeffs);
+  return _plattCoeffs;
 }
 
 // ===============================================
@@ -2503,6 +2701,13 @@ function predictRace(sid,raceNum){
       classNum:l1s.classNum
     };
   });
+  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
+  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
+  finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
+  var _sumCalib = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
+  if(_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6){
+    finalProbs.forEach(function(p){ p.prob = p.prob / _sumCalib; });
+  }
   finalProbs.sort(function(a,b){return b.prob-a.prob});
 
   var marks=finalProbs.map(function(p,i){
@@ -2626,6 +2831,12 @@ function predictRaceProgram(sid,raceNum){
       motorLabel:l1s.motorLabel,motorEmoji:l1s.motorEmoji,motorRate:l1s.motorRate,classNum:l1s.classNum
     };
   });
+  // PB-6: Platt scaling（番組予想にも同じく適用）
+  finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
+  var _sum2 = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
+  if(_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6){
+    finalProbs.forEach(function(p){ p.prob = p.prob / _sum2; });
+  }
   finalProbs.sort(function(a,b){return b.prob-a.prob});
   finalProbs.forEach(function(p,i){
     p.mark=i===0?'◎':i===1?'○':i===2?'▲':i===3?'△':'×';
@@ -4510,8 +4721,42 @@ function renderStats(){
   var sc=document.getElementById('statsChart'); if(sc && sc.parentNode){ sc.parentNode.style.display='none'; }
 }
 
+// PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）
+//   インターネット切断時はキャッシュ（PD-2 SW cdn-v1）から提供
+//   SRI ハッシュは _validateLS の値と同じく PA-3 で計算済の SHA-384
+var _chartLoadingPromise = null;
+function _loadChartLib(){
+  if(typeof Chart !== 'undefined') return Promise.resolve();
+  if(_chartLoadingPromise) return _chartLoadingPromise;
+  _chartLoadingPromise = new Promise(function(resolve, reject){
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+    s.integrity = 'sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD';
+    s.crossOrigin = 'anonymous';
+    s.referrerPolicy = 'no-referrer';
+    s.async = true;
+    s.onload = function(){ console.log('[Chart] loaded'); resolve(); };
+    s.onerror = function(e){
+      console.warn('[Chart] load failed', e);
+      _chartLoadingPromise = null;   // リトライ可能化
+      reject(new Error('Chart.js load failed'));
+    };
+    document.head.appendChild(s);
+  });
+  return _chartLoadingPromise;
+}
+
 function renderStatsChart(){
   var ctx=document.getElementById('chartAccuracy');
+  if(!ctx) return;
+  // PD-13b: Chart.js が未ロードならまず読み込んで再帰呼出
+  if(typeof Chart === 'undefined'){
+    _loadChartLib().then(renderStatsChart, function(err){
+      var parent = ctx.parentNode;
+      if(parent) parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
+    });
+    return;
+  }
   if(statsChart) statsChart.destroy();
   var history=safeParse('boatrace_history', []);   // PA-5
   var byDate={};
@@ -4524,7 +4769,6 @@ function renderStatsChart(){
   var dates=Object.keys(byDate).sort().slice(-14);
   var rates=dates.map(function(d){return byDate[d].total>0?(byDate[d].hit/byDate[d].total*100):0});
 
-  if(typeof Chart==='undefined') return;
   statsChart=new Chart(ctx,{
     type:'bar',
     data:{
@@ -4645,6 +4889,26 @@ function clearErrorLog(){
     try{ localStorage.removeItem('boatrace_errors'); alert('削除しました'); }
     catch(e){ alert('削除失敗: '+e); }
   }
+}
+
+// PB-6: Platt scaling 再校正をユーザ操作から呼び出し
+function refitPlattCoefficients(){
+  var history = safeParse('boatrace_history', []);
+  var withProbs = history.filter(function(h){
+    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
+  });
+  if(withProbs.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES){
+    alert('履歴サンプルが不足しています ('+withProbs.length+' / 必要 '+TUNING.PREDICTION.PLATT_MIN_SAMPLES+' 件)\n'
+        + 'もう少しレース履歴が貯まってから再校正してください');
+    return;
+  }
+  var result = _refitPlattCoeffs(history);
+  if(!result){
+    alert('校正に失敗しました（適格サンプル不足）');
+    return;
+  }
+  alert('校正完了:\n  a = '+result.a.toFixed(3)+'\n  b = '+result.b.toFixed(3)+'\n  サンプル: '+result.n+'\n\n'
+      + '次回予想から calibrated 確率が反映されます');
 }
 
 // ===============================================

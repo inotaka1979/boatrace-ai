@@ -1,0 +1,15 @@
+{
+  "name": "boatrace-ai-build",
+  "version": "0.1.0",
+  "description": "Build pipeline scaffold for BoatRace Oracle PWA (PC-7b)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "lint": "echo 'lint not yet configured'",
+    "typecheck": "echo 'typecheck not yet configured'"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  }
+}

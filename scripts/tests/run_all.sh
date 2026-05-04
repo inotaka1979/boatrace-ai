@@ -71,6 +71,14 @@ step "Storage validator tests (_validateLS)" \
 step "Plackett-Luce probability tests" \
      "node scripts/tests/test_plackett_luce.js"
 
+# 8d) PC-2b / PC-8: 抽出済 純粋ヘルパテスト
+step "Pure helper tests (_computeClassAttenuation / _resolveCourse)" \
+     "node scripts/tests/test_pure_helpers.js"
+
+# 8e) PC-7b: build パイプライン雛形 (Step 1 = 構文検証のみ)
+step "Build scaffold (sanity check)" \
+     "(cd build && node build.mjs > /dev/null)"
+
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \
      "node scripts/tests/test_ev_kelly.js"
