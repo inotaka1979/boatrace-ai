@@ -6,12 +6,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# PA-4: テストは読み取り専用
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

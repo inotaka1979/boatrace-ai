@@ -3,12 +3,16 @@ name: Scrape Results
 # 結果も取得して data/previews/today.json に統合するため (X4 catch-up)
 # このワークフローはフォールバックとして workflow_dispatch のみ残す
 on:
-  # schedule:
-  #   - cron: '*/10 1-12 * * *'  # JST 10:00-21:00に10分間隔 (disabled)
   workflow_dispatch:
+
+# PA-4: 既定権限を最小化
+permissions:
+  contents: read
+
 concurrency:
   group: scrape-results
   cancel-in-progress: true
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -17,16 +21,22 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
       - run: python scripts/scrape_results.py
-      - name: Commit
+      - name: Commit & Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
           git pull --rebase origin main || true
           git add data/
-          git diff --staged --quiet || git commit -m "results: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push || (git pull --rebase origin main && git push)
+          git diff --staged --quiet && exit 0
+          git commit -m "results: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)

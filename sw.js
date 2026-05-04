@@ -75,18 +75,39 @@ async function netFirst(req) {
   }
 }
 
+// PA-7: 介入対象 origin を明示的に許可
+const ALLOWED_API_ORIGINS = new Set([
+  'https://boatraceopenapi.github.io',
+  'https://inotaka1979.github.io',
+]);
+
 self.addEventListener('fetch', (e) => {
+  // GET 以外（POST/PUT/DELETE）は SW で介入しない
+  if (e.request.method !== 'GET') return;
+
   const url = new URL(e.request.url);
+  const isOwnOrigin = url.origin === self.location.origin;
+  const isAllowedAPI = ALLOWED_API_ORIGINS.has(url.origin);
+
+  // PA-7: 自オリジンと許可済 API 以外は SW で扱わない（バイパス）
+  if (!isOwnOrigin && !isAllowedAPI) return;
+
   const path = url.pathname;
 
   // index.html はネットワーク優先
-  if (path.endsWith('/') || path.endsWith('/index.html')) {
+  if (isOwnOrigin && (path.endsWith('/') || path.endsWith('/index.html'))) {
     e.respondWith(netFirst(e.request));
     return;
   }
 
-  // data/ 配下（自前スクレイピング JSON）と外部 Open API はネットワーク優先
-  if (path.includes('/data/') || url.hostname === 'boatraceopenapi.github.io') {
+  // data/ 配下（自前スクレイピング JSON、自オリジンのみ）はネットワーク優先
+  if (isOwnOrigin && path.includes('/data/')) {
+    e.respondWith(netFirst(e.request));
+    return;
+  }
+
+  // 許可済 API（外部 Open API）はネットワーク優先
+  if (isAllowedAPI) {
     e.respondWith(netFirst(e.request));
     return;
   }

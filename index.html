@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="BoatRace AI">
 <meta name="theme-color" content="#1A3A5C">
 <title>BoatRace AI</title>
-<!-- P4 W-07: CSP メタタグ。'unsafe-inline' は単一HTML内 JS/CSS を許可するため必要 -->
+<!-- PA-2: CSP 強化。'unsafe-inline' は単一HTML内 JS/CSS のため暫定維持（PC-7 ビルド導入後に nonce 化） -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   connect-src 'self' https://boatraceopenapi.github.io https://inotaka1979.github.io;
@@ -18,11 +18,29 @@
   font-src 'self' https://fonts.gstatic.com;
   img-src 'self' data: https:;
   worker-src 'self';
-  manifest-src 'self';">
+  manifest-src 'self';
+  object-src 'none';
+  base-uri 'self';
+  frame-ancestors 'none';
+  form-action 'self';
+  upgrade-insecure-requests;">
+<!-- PA-9: セキュリティ meta 補完 -->
+<meta http-equiv="Referrer-Policy" content="no-referrer">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Permissions-Policy" content="geolocation=(), camera=(), microphone=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- PA-3: 外部リソースは preconnect + crossorigin で接続最適化 -->
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://boatraceopenapi.github.io" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" referrerpolicy="no-referrer">
+<!-- PA-3: SRI でリソース完全性を保証（cdnjs Chart.js 4.4.1 SHA-384） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+        integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
 <style>
 :root{
   --bg:#F5F5F5;--card-bg:#FFFFFF;--header-bg:#1A3A5C;
@@ -492,11 +510,60 @@ var L2_LR=0.01;
 var programData=null,previewData=null,resultData=null;
 var oddsData=null,raceData=null;   // P3 L-17: oddsHistory 死コード削除
 var currentStadium=null,currentRace=null;
-// P3 L-04: 安全 parse（破損データで起動失敗するのを防ぐ）。safeParse は次セクションで定義。
+// PA-5: localStorage スキーマバリデータ（破損 / 改ざんで起動失敗を防ぐ）
+//   - 期待型でない / 異常サイズの場合は破損データを `__corrupt_<ts>` に隔離して fallback 復帰
+//   - DoS 対策で配列・オブジェクトに上限ガード
+function _validateLS(key, value){
+  if(value === null || value === undefined) return null;
+  switch(key){
+    case 'boatrace_settings':
+      return (typeof value === 'object' && !Array.isArray(value)) ? value : null;
+    case 'boatrace_racerDB':
+    case 'boatrace_stadiumDB':
+    case 'boatrace_motorStats':
+    case 'boatrace_exhibitionStats':
+    case 'boatrace_pairwiseDB':
+      if(typeof value !== 'object' || Array.isArray(value)) return null;
+      // 上限ガード（改ざんによる巨大 JSON で OOM を防ぐ）
+      if(Object.keys(value).length > 10000) return null;
+      return value;
+    case 'boatrace_weights':
+      if(!Array.isArray(value)) return null;
+      if(value.length !== L2_INIT_WEIGHTS.length) return null;
+      for(var i=0;i<value.length;i++){
+        if(!Number.isFinite(value[i]) || Math.abs(value[i]) > 1000) return null;
+      }
+      return value;
+    case 'boatrace_history':
+      if(!Array.isArray(value)) return null;
+      // 異常巨大は末尾 1000 件で trim（破損ではなく自己修復）
+      return (value.length > 50000) ? value.slice(-1000) : value;
+    default:
+      return value;
+  }
+}
+
+// P3 L-04 + PA-5: 安全 parse（破損 → 隔離 → fallback）。safeParse は次セクションで定義
 function _bootParseLS(key, fallback){
-  try{ var raw=localStorage.getItem(key); if(raw==null) return fallback;
-       var v=JSON.parse(raw); return (v!==null&&v!==undefined)?v:fallback; }
-  catch(e){ console.warn('[boot] parse failed', key, e); return fallback; }
+  var raw;
+  try{
+    raw = localStorage.getItem(key);
+    if(raw == null) return fallback;
+    var v = JSON.parse(raw);
+    var validated = _validateLS(key, v);
+    if(validated === null && v !== null){
+      // PA-5: スキーマ違反 → 破損データを隔離 → fallback
+      try{ localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
+      try{ localStorage.removeItem(key); }catch(_){}
+      console.warn('[boot] schema invalid, restored fallback:', key);
+      return fallback;
+    }
+    return (validated !== null) ? validated : fallback;
+  }catch(e){
+    console.warn('[boot] parse failed', key, e);
+    try{ if(raw) localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
+    return fallback;
+  }
 }
 var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
 var racerDB=_bootParseLS('boatrace_racerDB', {});
@@ -664,16 +731,26 @@ function jstYmd(offsetDays){
 function todayStr(){return jstYmd(0)}
 function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' ('+['日','月','火','水','木','金','土'][d.getUTCDay()]+')';}
 
-// P3 L-04: localStorage 安全 parse（破損時は default を返し、破損データは隔離保存）
+// P3 L-04 + PA-5: localStorage 安全 parse（破損 / スキーマ違反時は fallback、破損データは隔離保存）
 function safeParse(key, fallback){
+  var raw;
   try{
-    var raw=localStorage.getItem(key);
+    raw=localStorage.getItem(key);
     if(raw==null) return fallback;
     var v=JSON.parse(raw);
-    return (v!==null && v!==undefined) ? v : fallback;
+    if(v===null || v===undefined) return fallback;
+    var validated=_validateLS(key, v);
+    if(validated===null){
+      // PA-5: スキーマ違反 → 破損データを隔離 → fallback
+      try{ localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
+      try{ localStorage.removeItem(key); }catch(_){}
+      console.warn('[storage] schema invalid, restored fallback:', key);
+      return fallback;
+    }
+    return validated;
   }catch(e){
     console.warn('[storage] parse failed', key, e);
-    try{ localStorage.setItem(key+'__corrupt_'+Date.now(), localStorage.getItem(key)||''); }catch(_){}
+    try{ if(raw) localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
     return fallback;
   }
 }
@@ -2630,7 +2707,7 @@ function _backfillTodayPredictions(){
 function savePrediction(date,sid,rn,pred,result){
   try{
     var key='boatrace_history';
-    var history=JSON.parse(localStorage.getItem(key)||'[]');
+    var history=safeParse(key, []);   // PA-5: 検証付き parse
     var exists=history.some(function(h){return h.date===date&&h.stadium===sid&&h.race===rn});
     if(exists) return;
     var entry={
@@ -2669,7 +2746,7 @@ function checkHit(entry){
 
 function updateHistoryWithResults(){
   try{
-    var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
+    var history=safeParse('boatrace_history', []);   // PA-5
     var updated=false;
     history.forEach(function(h){
       if(!resultData||!resultData[String(h.stadium)]||!resultData[String(h.stadium)][String(h.race)]) return;
@@ -2701,7 +2778,7 @@ function updateHistoryWithResults(){
 
 function getAccuracy(){
   var today=todayStr();
-  var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
+  var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today&&h.actual&&h.actual.length>0});
   if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0};
   var th=0,eh=0,tp3=0,tp2=0;
@@ -4004,7 +4081,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 //   ・場別 (全場): 場ごとに R数 / 3連単的中 / 投資 / 払戻 / 回収率
 function calcTodayStats(){
   var today=todayStr();
-  var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
+  var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});
 
   var betCount3=parseInt(settings.betCount3)||10;
@@ -4163,7 +4240,7 @@ function renderStats(){
 function renderStatsChart(){
   var ctx=document.getElementById('chartAccuracy');
   if(statsChart) statsChart.destroy();
-  var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
+  var history=safeParse('boatrace_history', []);   // PA-5
   var byDate={};
   history.forEach(function(h){
     if(!h.actual) return;
@@ -4215,7 +4292,7 @@ function loadSettings(){
   var dbInfo=document.getElementById('dbInfo');
   var racerCount=Object.keys(racerDB).length;
   var stadiumCount=Object.keys(stadiumDB).length;
-  var historyCount=(JSON.parse(localStorage.getItem('boatrace_history')||'[]')).length;
+  var historyCount=safeParse('boatrace_history', []).length;   // PA-5
   var lsUsed=0;
   try{for(var k in localStorage) lsUsed+=((localStorage.getItem(k)||'').length*2)}catch(e){}
   dbInfo.innerHTML='選手DB: '+racerCount+'人 / 場DB: '+stadiumCount+'場<br>'
