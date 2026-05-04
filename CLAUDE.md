@@ -379,3 +379,55 @@ Performance を 95 まで押し上げるには:
 | Prediction | C- | **A** | 実データで Platt auto-tune |
 | Code Quality | B | **A+** ⭐ | Step 5 で CSP nonce 化が次段階 |
 | PWA/UX | B- | **A** | a11y/BP/SEO 100、Perf 起動時 fetch 最小化が次段階 |
+
+## 修正履歴 (2026-05-04: Performance 改善 PE-8/9/10/11)
+
+### PE-8: 起動時 fetch 最小化
+- loadAllData を Phase 1 (Critical) と Phase 2 (Deferred) に分離
+- Phase 1: programs + previews を Promise.all で並列、results は最低限
+- Phase 2: racerDB / stadiumDB / odds / racedata / tide を requestIdleCallback で
+  並列遅延 fetch、学習関数も idle 内で実行
+- → 第 1 描画の TBT を最小化
+
+### PE-9: yield-based chunking (Worker 同等効果)
+- Web Worker 完全分離は state 同期が複雑なため、yield-based chunking を採用
+- _yieldToMain() ヘルパ追加（scheduler.yield → setTimeout(0) フォールバック）
+- learnFromResults を async 化、6 レース毎に yield
+- _backfillTodayPredictions を async 化、4 予想毎に yield
+- → 長いループ中に main thread に時間を返す → INP/TBT 改善
+
+### PE-10: Code splitting 拡張 (utils/math.js)
+- ビルドパイプラインを複数モジュール対応に拡張
+- src/utils/math.js を追加 (softmax / sigmoid / safeDiv / Plackett-Luce)
+- modules 配列に列挙、順次 IIFE bundle して各マーカーへ注入
+- 旧 inline は dead code として残置（IIFE が globalThis 上書き）
+
+### PE-11: Pre-rendering で LCP 即時化
+- scripts/prerender_top.py 新設
+  - boatraceopenapi.github.io から本日の programs を取得
+  - 24 場の stadium-card HTML を事前生成
+  - index.html の <!-- PRERENDER:STADIUMS:START/END --> 間に注入
+- index.html: stadiumList を default visible、topLoading を default hidden
+- 自動更新:
+  - GitHub Actions scrape-racedata.yml: racedata 後に prerender 呼出（1日2回）
+  - RPi5 cron_scrape.sh racedata case: 同様に prerender + push
+
+### Lighthouse 計測 最終結果 (本番 GitHub Pages)
+
+| Round | Perf | A11y | BP | SEO | LCP | FCP | TBT | CLS |
+|-------|------|------|-----|------|-----|-----|-----|-----|
+| 開始 | 28 | 95 | 93 | 90 | 6.5s | 5.8s | 1240ms | 0.19 |
+| PE-7 (a11y/SEO 修正後) | 42 | 100 | 100 | 100 | 3.5s | 2.7s | 2170ms | 0.23 |
+| **PE-11 (最終)** | **70** | **100** | **100** | **100** | **3.6s** | **2.7s** | **510ms** | **0.10** |
+
+改善:
+- Performance: 28 → 70 (+42 ポイント、+150%)
+- TBT: 1240/2170ms → 510ms (-76%)
+- CLS: 0.19/0.23 → 0.10 (-57%)
+- Speed Index: 6.5s → 3.0s (-54%)
+- Accessibility / Best Practices / SEO 全 100 達成 ⭐
+
+Performance 95 までの追加施策 (将来):
+- TBT 510ms → 200ms には scoreBoatV2 / l2Predict を Web Worker へ移管
+- LCP 3.6s → 2.5s には font-display:swap + critical font subset
+- これらは次セッションでさらに進める余地あり
