@@ -3970,134 +3970,137 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 }
 
 // ===============================================
-// SCREEN 4: STATS - 券種別回収率 (REWRITTEN)
+// SCREEN 4: STATS - 本日詳細 + 場別全表示 (F16 全面書き直し)
 // ===============================================
-function calcRecoveryRate(){
+// 過去全期間の累計表示は削除し、本日のみの詳細に統一
+//   ・サマリ: 本日のレース数 / 3連単的中 / 3連単率
+//   ・券種別: 3連単 / 2連単 の的中数 / 投資 / 払戻 / 回収率
+//   ・レースタイプ別: 本命 / 混戦 / 穴 ごとの的中率 / 回収率
+//   ・場別 (全場): 場ごとに R数 / 3連単的中 / 投資 / 払戻 / 回収率
+function calcTodayStats(){
+  var today=todayStr();
   var history=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
-  var verified=history.filter(function(h){return h.actual&&h.actual.length>0});
+  var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});
 
   var betCount3=parseInt(settings.betCount3)||10;
   var betCount2=parseInt(settings.betCount2)||5;
-  var unitBet=100; // 100 yen per ticket
+  var unitBet=100;
 
-  var tri={hits:0,invest:0,payout:0};
-  var exa={hits:0,invest:0,payout:0};
-
-  var typeStats={honmei:{total:0,hit3:0,payout3:0},middle:{total:0,hit3:0,payout3:0},ana:{total:0,hit3:0,payout3:0}};
+  var tri={hits:0, invest:0, payout:0};
+  var exa={hits:0, invest:0, payout:0};
+  var typeStats={honmei:{total:0,hit3:0,payout3:0,invest:0}, middle:{total:0,hit3:0,payout3:0,invest:0}, ana:{total:0,hit3:0,payout3:0,invest:0}};
   var stadiumStats={};
 
   verified.forEach(function(h){
     var triInvest=betCount3*unitBet;
     var exaInvest=betCount2*unitBet;
-
     tri.invest+=triInvest;
     exa.invest+=exaInvest;
-
-    if(h.trifecta_hit){
-      tri.hits++;
-      tri.payout+=(h.payout3||0);
-    }
-    if(h.exacta_hit){
-      exa.hits++;
-      exa.payout+=(h.payout2||0);
-    }
+    if(h.trifecta_hit){ tri.hits++; tri.payout+=(h.payout3||0); }
+    if(h.exacta_hit){ exa.hits++; exa.payout+=(h.payout2||0); }
 
     var t=h.raceType||'middle';
-    if(!typeStats[t]) typeStats[t]={total:0,hit3:0,payout3:0};
+    if(!typeStats[t]) typeStats[t]={total:0,hit3:0,payout3:0,invest:0};
     typeStats[t].total++;
-    if(h.trifecta_hit){
-      typeStats[t].hit3++;
-      typeStats[t].payout3+=(h.payout3||0);
-    }
+    typeStats[t].invest+=triInvest;
+    if(h.trifecta_hit){ typeStats[t].hit3++; typeStats[t].payout3+=(h.payout3||0); }
 
-    var sName=STADIUMS[parseInt(h.stadium)]||('場'+h.stadium);
-    if(!stadiumStats[sName]) stadiumStats[sName]={total:0,hit3:0,invest:0,payout3:0};
-    var ss=stadiumStats[sName];
+    var sid=parseInt(h.stadium);
+    var sName=STADIUMS[sid]||('場'+sid);
+    if(!stadiumStats[sid]) stadiumStats[sid]={sid:sid, name:sName, total:0, hit3:0, hit2:0, invest3:0, invest2:0, payout3:0, payout2:0};
+    var ss=stadiumStats[sid];
     ss.total++;
-    ss.invest+=triInvest;
-    if(h.trifecta_hit){
-      ss.hit3++;
-      ss.payout3+=(h.payout3||0);
-    }
+    ss.invest3+=triInvest;
+    ss.invest2+=exaInvest;
+    if(h.trifecta_hit){ ss.hit3++; ss.payout3+=(h.payout3||0); }
+    if(h.exacta_hit){  ss.hit2++; ss.payout2+=(h.payout2||0); }
   });
 
-  return{tri:tri,exa:exa,typeStats:typeStats,stadiumStats:stadiumStats,total:verified.length,unitBet:unitBet,betCount3:betCount3,betCount2:betCount2};
+  return {
+    today:today, total:verified.length, tri:tri, exa:exa,
+    typeStats:typeStats, stadiumStats:stadiumStats,
+    unitBet:unitBet, betCount3:betCount3, betCount2:betCount2,
+  };
+}
+
+function _rateColor(rate){
+  if(rate>=100) return 'recovery-positive';
+  if(rate>=80)  return '';
+  return 'recovery-negative';
 }
 
 function renderStats(){
-  var acc=getAccuracy();
-  var rec=calcRecoveryRate();
+  var s=calcTodayStats();
 
+  // ヘッダ: 本日サマリ
+  var triRate3=s.tri.invest>0?Math.round(s.tri.payout/s.tri.invest*100):0;
+  var trifectaRate=s.total>0?(s.tri.hits/s.total*100).toFixed(1):'0.0';
   document.getElementById('statSummary').innerHTML=
-    '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">'+acc.total+'</div><div class="stat-label">判定済</div></div>'
-    +'<div class="stat-card"><div class="stat-num" style="color:var(--gold)">'+acc.trifectaHit+'</div><div class="stat-label">3連単的中</div></div>'
-    +'<div class="stat-card"><div class="stat-num" style="color:var(--success)">'+acc.trifectaRate+'%</div><div class="stat-label">3連単率</div></div>';
+    '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">'+s.total+'</div><div class="stat-label">本日 判定済</div></div>'
+    +'<div class="stat-card"><div class="stat-num" style="color:var(--gold)">'+s.tri.hits+'</div><div class="stat-label">3連単的中</div></div>'
+    +'<div class="stat-card"><div class="stat-num" style="color:'+(triRate3>=100?'var(--success)':'var(--danger)')+'">'+triRate3+'%</div><div class="stat-label">3連単回収率</div></div>';
 
-  // Recovery rate table
-  var recHtml='<div class="card" style="padding:0;overflow:hidden">';
-  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">券種別回収率</div>';
+  var recHtml='';
+
+  // 券種別 (本日)
+  recHtml+='<div class="card" style="padding:0;overflow:hidden">';
+  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 券種別</div>';
   recHtml+='<table class="recovery-table">';
-  recHtml+='<thead><tr><th>券種</th><th>的中数</th><th>投資額</th><th>回収額</th><th>回収率</th></tr></thead><tbody>';
-
-  var triRate=rec.tri.invest>0?Math.round(rec.tri.payout/rec.tri.invest*100):0;
-  var exaRate=rec.exa.invest>0?Math.round(rec.exa.payout/rec.exa.invest*100):0;
-  var triCls=triRate>=100?'recovery-positive':'recovery-negative';
-  var exaCls=exaRate>=100?'recovery-positive':'recovery-negative';
-
-  recHtml+='<tr><td><b>3連単</b></td><td>'+rec.tri.hits+'</td><td>\\'+rec.tri.invest.toLocaleString()+'</td><td>\\'+rec.tri.payout.toLocaleString()+'</td><td class="'+triCls+'">'+triRate+'%</td></tr>';
-  recHtml+='<tr><td><b>2連単</b></td><td>'+rec.exa.hits+'</td><td>\\'+rec.exa.invest.toLocaleString()+'</td><td>\\'+rec.exa.payout.toLocaleString()+'</td><td class="'+exaCls+'">'+exaRate+'%</td></tr>';
+  recHtml+='<thead><tr><th>券種</th><th>的中</th><th>投資</th><th>回収</th><th>回収率</th></tr></thead><tbody>';
+  var triR=s.tri.invest>0?Math.round(s.tri.payout/s.tri.invest*100):0;
+  var exaR=s.exa.invest>0?Math.round(s.exa.payout/s.exa.invest*100):0;
+  var triHitRate=s.total>0?(s.tri.hits/s.total*100).toFixed(0):'-';
+  var exaHitRate=s.total>0?(s.exa.hits/s.total*100).toFixed(0):'-';
+  recHtml+='<tr><td><b>3連単</b></td><td>'+s.tri.hits+' ('+triHitRate+'%)</td><td>¥'+s.tri.invest.toLocaleString()+'</td><td>¥'+s.tri.payout.toLocaleString()+'</td><td class="'+_rateColor(triR)+'">'+triR+'%</td></tr>';
+  recHtml+='<tr><td><b>2連単</b></td><td>'+s.exa.hits+' ('+exaHitRate+'%)</td><td>¥'+s.exa.invest.toLocaleString()+'</td><td>¥'+s.exa.payout.toLocaleString()+'</td><td class="'+_rateColor(exaR)+'">'+exaR+'%</td></tr>';
+  // 合計行
+  var totInv=s.tri.invest+s.exa.invest;
+  var totPay=s.tri.payout+s.exa.payout;
+  var totRate=totInv>0?Math.round(totPay/totInv*100):0;
+  var net=totPay-totInv;
+  recHtml+='<tr style="background:#F8F8F8;font-weight:700"><td>合計</td><td>'+(s.tri.hits+s.exa.hits)+'</td><td>¥'+totInv.toLocaleString()+'</td><td>¥'+totPay.toLocaleString()+'<br><span style="font-size:9px;color:'+(net>=0?'var(--success)':'var(--danger)')+'">('+(net>=0?'+':'')+'¥'+net.toLocaleString()+')</span></td><td class="'+_rateColor(totRate)+'">'+totRate+'%</td></tr>';
   recHtml+='</tbody></table></div>';
 
-  // Race type stats
+  // レースタイプ別 (本日)
   recHtml+='<div class="card" style="padding:0;overflow:hidden">';
-  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">レースタイプ別</div>';
+  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 レースタイプ別 (3連単)</div>';
   recHtml+='<table class="recovery-table">';
   recHtml+='<thead><tr><th>タイプ</th><th>R数</th><th>的中</th><th>的中率</th><th>回収率</th></tr></thead><tbody>';
-
-  var typeLabels={honmei:{label:'⚡本命',icon:'⚡'},middle:{label:'📊混戦',icon:'📊'},ana:{label:'🔥穴',icon:'🔥'}};
+  var typeLabels={honmei:'⚡本命',middle:'📊混戦',ana:'🔥穴'};
   ['honmei','middle','ana'].forEach(function(t){
-    var ts=rec.typeStats[t]||{total:0,hit3:0,payout3:0};
-    var hitRate=ts.total>0?(ts.hit3/ts.total*100).toFixed(1):'--';
-    var invest=ts.total*rec.betCount3*rec.unitBet;
-    var recRate=invest>0?Math.round(ts.payout3/invest*100):0;
-    var rcCls=recRate>=100?'recovery-positive':'recovery-negative';
-    recHtml+='<tr><td>'+typeLabels[t].label+'</td><td>'+ts.total+'</td><td>'+ts.hit3+'</td><td>'+hitRate+'%</td><td class="'+rcCls+'">'+recRate+'%</td></tr>';
+    var ts=s.typeStats[t];
+    var hr=ts.total>0?(ts.hit3/ts.total*100).toFixed(0):'-';
+    var rr=ts.invest>0?Math.round(ts.payout3/ts.invest*100):0;
+    recHtml+='<tr><td>'+typeLabels[t]+'</td><td>'+ts.total+'</td><td>'+ts.hit3+'</td><td>'+hr+'%</td><td class="'+_rateColor(rr)+'">'+rr+'%</td></tr>';
   });
   recHtml+='</tbody></table></div>';
 
-  // Stadium TOP3
+  // 場別 全場 (本日)
   var stadArr=[];
-  for(var sn in rec.stadiumStats){
-    var ss=rec.stadiumStats[sn];
-    ss.name=sn;
-    ss.rate=ss.invest>0?Math.round(ss.payout3/ss.invest*100):0;
-    stadArr.push(ss);
-  }
-  stadArr.sort(function(a,b){return b.rate-a.rate});
+  for(var sid in s.stadiumStats) stadArr.push(s.stadiumStats[sid]);
+  // 回収率の高い順
+  stadArr.forEach(function(ss){
+    ss.rate3=ss.invest3>0?Math.round(ss.payout3/ss.invest3*100):0;
+    ss.rate2=ss.invest2>0?Math.round(ss.payout2/ss.invest2*100):0;
+  });
+  stadArr.sort(function(a,b){return b.rate3-a.rate3});
 
   if(stadArr.length>0){
     recHtml+='<div class="card" style="padding:0;overflow:hidden">';
-    recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">場別回収率 TOP3</div>';
+    recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 場別 (回収率順)</div>';
     recHtml+='<table class="recovery-table">';
-    recHtml+='<thead><tr><th>場</th><th>R数</th><th>的中</th><th>回収率</th></tr></thead><tbody>';
-    stadArr.slice(0,3).forEach(function(ss){
-      var rcCls=ss.rate>=100?'recovery-positive':'recovery-negative';
-      recHtml+='<tr><td><b>'+escText(ss.name)+'</b></td><td>'+ss.total+'</td><td>'+ss.hit3+'</td><td class="'+rcCls+'">'+ss.rate+'%</td></tr>';
+    recHtml+='<thead><tr><th>場</th><th>R数</th><th>3連的中</th><th>3連投資</th><th>3連回収</th><th>3連率</th></tr></thead><tbody>';
+    stadArr.forEach(function(ss){
+      var hr=ss.total>0?(ss.hit3/ss.total*100).toFixed(0):'-';
+      recHtml+='<tr><td><b>'+escText(ss.name)+'</b></td><td>'+ss.total+'</td><td>'+ss.hit3+' ('+hr+'%)</td><td>¥'+ss.invest3.toLocaleString()+'</td><td>¥'+ss.payout3.toLocaleString()+'</td><td class="'+_rateColor(ss.rate3)+'">'+ss.rate3+'%</td></tr>';
     });
     recHtml+='</tbody></table></div>';
   }
 
   document.getElementById('statRecovery').innerHTML=recHtml;
-
-  // Existing type detail
-  var detailHtml='<div class="card">'
-    +'<div class="setting-row"><span class="setting-label">2連単的中</span><span class="setting-val">'+acc.exactaHit+' ('+acc.exactaRate+'%)</span></div>'
-    +'<div class="setting-row"><span class="setting-label">3連単払戻合計</span><span class="setting-val">\\'+acc.totalPayout3.toLocaleString()+'</span></div>'
-    +'<div class="setting-row"><span class="setting-label">2連単払戻合計</span><span class="setting-val">\\'+acc.totalPayout2.toLocaleString()+'</span></div>'
-    +'</div>';
-  document.getElementById('statDetail').innerHTML=detailHtml;
-
-  renderStatsChart();
+  // 旧 statDetail（重複情報）と statChart は空に
+  var sd=document.getElementById('statDetail'); if(sd) sd.innerHTML='';
+  var sc=document.getElementById('statsChart'); if(sc && sc.parentNode){ sc.parentNode.style.display='none'; }
 }
 
 function renderStatsChart(){
