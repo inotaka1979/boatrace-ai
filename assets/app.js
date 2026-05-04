@@ -522,7 +522,7 @@ async function forceRefresh(){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
       if(programData) updateDBFromResults(resultData, programData);
-      learnFromResults();
+      await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
     try{
@@ -540,7 +540,7 @@ async function forceRefresh(){
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
     // F17: 全場の確定レースに対して予想 backfill
-    if(typeof _backfillTodayPredictions === 'function') _backfillTodayPredictions();
+    if(typeof _backfillTodayPredictions === 'function') await _backfillTodayPredictions();   // PE-9
     // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
     updateHistoryWithResults();
 
@@ -2801,10 +2801,11 @@ function generateBetsV2(marks,method,count3,count2){
 // ===============================================
 // F17: 全場の確定レースに対して predictRace + savePrediction を一括実行
 // ユーザーが開いていない場の成績も「本日の場別」に反映されるようにする
-function _backfillTodayPredictions(){
+async function _backfillTodayPredictions(){
   if(!programData || !resultData) return;
   var today = todayStr();
   var saved = 0;
+  var iter = 0;   // PE-9: yield カウンタ
   for(var sid in programData){
     var stadium = programData[sid];
     for(var rn in stadium){
@@ -2813,13 +2814,15 @@ function _backfillTodayPredictions(){
       try {
         var pred = predictRace(sid, parseInt(rn));
         if(pred){
-          // savePrediction 内で重複チェックされるので毎回呼んで OK
           savePrediction(today, sid, rn, pred, resultData[sid][rn]);
           saved++;
         }
       } catch(e){
         // 予想計算エラーは黙殺（特定レースのデータ欠損で続行）
       }
+      // PE-9: 4 予想毎にメインスレッドへ譲る (predictRace は scoreBoatV2 等で重い)
+      iter++;
+      if(iter % 4 === 0) await _yieldToMain();
     }
   }
   if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races');
@@ -2949,7 +2952,18 @@ async function buildInitialDB(){
 // ===============================================
 // L2 ONLINE LEARNING (PRESERVED)
 // ===============================================
-function learnFromResults(){
+// PE-9: メインスレッドに譲る共通ヘルパ (scheduler.yield 風)
+//   long-running loop の途中で 1 tick browser に処理時間を返す → INP / TBT 改善
+async function _yieldToMain(){
+  if(typeof scheduler !== 'undefined' && scheduler.yield){
+    await scheduler.yield();
+    return;
+  }
+  // フォールバック: setTimeout(0) は最小 4ms 程度の遅延だが効果あり
+  await new Promise(function(r){ setTimeout(r, 0); });
+}
+
+async function learnFromResults(){
   if(!resultData||!programData||!previewData) return;
   // PB-1: 当日（programData の race_date）を学習キーの一部に採用
   var dateKey = (function(){
@@ -2965,6 +2979,7 @@ function learnFromResults(){
     return jstYmd(0);
   })();
   var learnedThisCall = 0;
+  var iterCount = 0;   // PE-9: yield カウンタ
   for(var sid in resultData){
     var races=resultData[sid];
     for(var rn in races){
@@ -3017,6 +3032,9 @@ function learnFromResults(){
         l2learnedKeys[key] = 1;   // PB-1: 学習済としてマーク
         learnedThisCall++;
       }
+      // PE-9: 6 レース毎にメインスレッドへ譲る (TBT/INP 改善)
+      iterCount++;
+      if(iterCount % 6 === 0) await _yieldToMain();
     }
   }
   if(learnedThisCall > 0){
@@ -3260,7 +3278,7 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   await Promise.allSettled(tasks);
   console.log('[PE-8] deferred fetch complete');
 
-  // PE-8: 学習・backfill は全データ揃ってから（メインスレッド負荷を idle に集約）
+  // PE-8 + PE-9: 学習・backfill を逐次 await（async 関数は内部で yield する）
   try {
     if(resultData) updateDBFromResults(resultData, programData);
     if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
@@ -3268,9 +3286,9 @@ async function loadDeferredData(rawPrograms, rawPreviews){
     if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
     if(resultData) learnEntryPatternFromResults(resultData);
     if(resultData) learnSeriesAndPairwiseFromResults(resultData);
-    learnFromResults();
+    await learnFromResults();              // PE-9: async + yield
     updateHistoryWithResults();
-    _backfillTodayPredictions();
+    await _backfillTodayPredictions();     // PE-9: async + yield
     updateHistoryWithResults();
   } catch(e) {
     console.warn('[PE-8] learning step failed:', e);
@@ -4947,7 +4965,7 @@ setManagedInterval(async function(){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
       if(programData)updateDBFromResults(resultData,programData);
-      learnFromResults();
+      await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
     try{
