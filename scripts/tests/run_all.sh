@@ -87,6 +87,10 @@ step "X6 series / pairwise tests" \
 step "X7 backtest engine tests" \
      "node scripts/tests/test_backtest.js"
 
+# 16) F13 自己決まり手スコアテスト
+step "F13 self-style score tests" \
+     "node scripts/tests/test_self_style.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

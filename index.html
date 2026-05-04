@@ -1723,6 +1723,67 @@ function getRacerCourseStyle(rid,course){
   return rdb.courseStyle[course];
 }
 
+// F13: 自分のコース別決まり手プロファイルからスコア補正を返す
+//   1着確率に直接効く（決まり手 = 1着取った時の手のため、count はそのコースでの 1着回数）
+//   サンプル数 < 8 はスコアゼロ（信頼度不足）
+//   返り値: {score, reason?, risk?}
+function selfStyleScore(rid, course, courseStats){
+  var style = getRacerCourseStyle(rid, course);
+  if(!style) return { score: 0 };
+  var total = (style.nige||0) + (style.sashi||0) + (style.makuri||0)
+            + (style.makuriSashi||0) + (style.nuki||0) + (style.megumare||0);
+  if(total < 8) return { score: 0 };
+
+  // 1着の母数（コース別出走数）が多いほど信頼度高い → 重み線形補間
+  // total / cs.races が「1着率」と一致するため、ここでは比率だけ見る
+  var nige = (style.nige||0) / total;
+  var sashi = (style.sashi||0) / total;
+  var makuri = (style.makuri||0) / total;
+  var makuriSashi = (style.makuriSashi||0) / total;
+  var aggressive = makuri + makuriSashi;   // 攻撃的決まり手の合計
+
+  // サンプル数の信頼度（8〜30 で線形補間、30 以上で 100%）
+  var conf = Math.min(1.0, total / 30);
+
+  if(course === 1){
+    // 1コース: 逃げ率がすべて
+    if(nige >= 0.85) return { score: +5*conf, reason: '自己逃げ率 '+(nige*100).toFixed(0)+'%(超鉄板)' };
+    if(nige >= 0.70) return { score: +3*conf, reason: '自己逃げ率 '+(nige*100).toFixed(0)+'%(強)' };
+    if(nige <= 0.40) return { score: -5*conf, risk:  '自己逃げ率 '+(nige*100).toFixed(0)+'%(イン弱い)' };
+    if(nige <= 0.55) return { score: -2*conf, risk:  '自己逃げ率 '+(nige*100).toFixed(0)+'%(やや弱)' };
+    return { score: 0 };
+  }
+  if(course === 2){
+    // 2コース: 差し主体は 2-3着、まくりは 1着
+    if(sashi >= 0.50) return { score: +3*conf, reason: '自己差し率 '+(sashi*100).toFixed(0)+'%(差し巧者)' };
+    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(2コース捲り)' };
+    if(sashi + makuri <= 0.25) return { score: -2*conf, risk: '2コースでの決め手乏しい' };
+    return { score: 0 };
+  }
+  if(course === 3){
+    // 3コース: 攻撃多彩
+    if(aggressive >= 0.45) return { score: +4*conf, reason: '自己攻撃率 '+(aggressive*100).toFixed(0)+'%(センター強)' };
+    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(3コース捲り)' };
+    if(sashi >= 0.30) return { score: +1*conf, reason: '自己差し率 '+(sashi*100).toFixed(0)+'%(3コース差し)' };
+    if(aggressive <= 0.15) return { score: -2*conf, risk: '3コースで攻めの決め手乏しい' };
+    return { score: 0 };
+  }
+  if(course === 4){
+    // 4コース: カド受けの典型、まくり/まくり差しが命
+    if(aggressive >= 0.40) return { score: +4*conf, reason: '自己攻撃率 '+(aggressive*100).toFixed(0)+'%(カド強)' };
+    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(カド捲り)' };
+    if(aggressive <= 0.15) return { score: -3*conf, risk: 'カドで攻めれない' };
+    return { score: 0 };
+  }
+  if(course === 5 || course === 6){
+    // 5-6コース: 穴を空けるのは攻撃的決まり手のみ
+    if(aggressive >= 0.30) return { score: +3*conf, reason: 'アウトで攻撃率 '+(aggressive*100).toFixed(0)+'%(穴開け)' };
+    if(aggressive <= 0.10) return { score: -1*conf };   // 期待度低めで risks には載せない
+    return { score: 0 };
+  }
+  return { score: 0 };
+}
+
 function getRacerForm(rid){
   var rdb=racerDB[rid];
   if(!rdb||!rdb.recentResults||rdb.recentResults.length<5) return null;
@@ -1813,6 +1874,13 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
     score+=wr*2.5;
     var lr=pf(boat.racer_local_top_2_percent);
     score+=lr*0.15;
+  }
+  // F13: 自分のコース別決まり手プロファイル
+  var selfStyle = selfStyleScore(rid, course);
+  if(selfStyle.score !== 0){
+    score += selfStyle.score;
+    if(selfStyle.reason) reasons.push(selfStyle.reason);
+    if(selfStyle.risk) risks.push(selfStyle.risk);
   }
   var classBonus={1:6,2:3,3:0,4:-3};
   score+=classBonus[boat.racer_class_number]||0;
