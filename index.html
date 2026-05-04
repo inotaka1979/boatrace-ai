@@ -272,7 +272,7 @@ button.action-btn:active{background:#F0F0F0}
   <div class="header-right">
     <div id="headerDate"></div>
     <div id="dataFreshness" style="font-size:10px"></div>
-    <button class="refresh-btn" onclick="if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})});caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k)})})}setTimeout(function(){location.reload(true)},300)">更新</button>
+    <button class="refresh-btn" onclick="hardReload()">更新</button>
   </div>
 </div>
 
@@ -432,7 +432,99 @@ var oddsLastFetched=null;
 // ===============================================
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
-async function forceRefresh(){if('caches' in window){var keys=await caches.keys();for(var i=0;i<keys.length;i++){if(keys[i].indexOf('api')!==-1){await caches.delete(keys[i])}}}try{var t=Date.now();var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);if(rawP)programData=indexByStadiumRace(rawP,'programs');var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);if(rawPv)previewData=indexPreviews(rawPv);var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}try{var o=await fetch('data/odds/today.json?t='+t);if(o.ok)oddsData=await o.json()}catch(e){}}catch(e){console.warn('Refresh error:',e)}var currentPage=document.querySelector('.page.active');if(currentPage){var pid=currentPage.id;if(pid==='pageTop')renderStadiums();else if(pid==='pageRaces'&&currentStadium)openStadium(currentStadium);else if(pid==='pageDetail'&&currentStadium&&currentRace)openRace(currentStadium,currentRace)}}
+// F9: ヘッダー右「更新」ボタン用フルリロード（SW + cache + bc_* を完全クリアしてから reload）
+async function hardReload(){
+  try{
+    if('serviceWorker' in navigator){
+      var regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){ return r.unregister(); }));
+    }
+    if('caches' in window){
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+    }
+    var bcKeys=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf('bc_')===0) bcKeys.push(k);
+    }
+    bcKeys.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
+  }catch(e){ console.warn('hardReload prep error:', e); }
+  // cache-busting query で CDN/HTTP cache も回避
+  var url = new URL(location.href);
+  url.searchParams.set('_r', Date.now());
+  location.replace(url.toString());
+}
+
+// F9: 強制更新を全面修正
+//   - 全 SW cache を削除（旧 'api' 名チェックは新 v4 cache に当たらない）
+//   - bc_* localStorage キャッシュも削除（最大 10分 stale 防止）
+//   - 自前 data/previews/today.json を fetch & merge（finished/result の最新化）
+//   - 鮮度バッジを再描画
+//   - 視覚フィードバック（ボタン → ⏳更新中…）
+async function forceRefresh(){
+  var navBtn = document.getElementById('navRefresh');
+  var origText = navBtn ? navBtn.innerHTML : '';
+  if(navBtn){ navBtn.disabled=true; navBtn.innerHTML='<span class="nav-icon">⏳</span>更新中'; }
+  try {
+    // 1) Service Worker cache を全削除
+    if('caches' in window){
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+    }
+    // 2) bc_* localStorage キャッシュを削除
+    var bcKeys=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf('bc_')===0) bcKeys.push(k);
+    }
+    bcKeys.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
+
+    // 3) Open API + 自前 data/* を再取得
+    var t = Date.now();
+    var rawP  = await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
+    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
+    var rawPv = await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);
+    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
+    var rawR  = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
+    if(rawR){
+      resultData=indexResults(rawR);
+      _noteUpdatedAt(rawR.updated_at);
+      if(programData) updateDBFromResults(resultData, programData);
+      learnFromResults();
+      updateHistoryWithResults();
+    }
+    try{
+      var o = await fetch('data/odds/today.json?t='+t, {cache:'no-store'});
+      if(o.ok){ var od=await o.json(); oddsData=od; oddsLastFetched=Date.now(); _noteUpdatedAt(od.updated_at); }
+    }catch(e){}
+    // 自前 previews を merge（finished/result の最新化）
+    try{
+      var p = await fetch('data/previews/today.json?t='+t, {cache:'no-store'});
+      if(p.ok){
+        var pd = await p.json();
+        if(pd && Array.isArray(pd.races)) _applyLiveDataMerge(pd);
+        _noteUpdatedAt(pd.updated_at);
+      }
+    }catch(e){}
+    updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
+
+    // 4) 鮮度表示と現在ページを再描画
+    if(typeof _renderFreshness==='function') _renderFreshness();
+    var currentPage = document.querySelector('.page.active');
+    if(currentPage){
+      var pid = currentPage.id;
+      if(pid==='pageTop') renderStadiums();
+      else if(pid==='pageRaces' && currentStadium) openStadium(currentStadium);
+      else if(pid==='pageDetail' && currentStadium && currentRace) openRace(currentStadium, currentRace);
+      else if(pid==='pageStats' && typeof renderStats==='function') renderStats();
+    }
+  } catch(e){
+    console.warn('Refresh error:', e);
+  } finally {
+    if(navBtn){ navBtn.disabled=false; navBtn.innerHTML=origText; }
+  }
+}
 function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
