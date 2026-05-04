@@ -23,10 +23,12 @@ CRON_CONTENT=$(cat <<'CRONTAB'
 # レース開催時間: JST 9:00-21:00
 # =============================================================================
 
-# 環境変数
+# 環境変数 (P1 M-08: PATH を補強、TZ/LANG を明示)
 SHELL=/bin/bash
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 HOME=/home/pi
+TZ=Asia/Tokyo
+LANG=ja_JP.UTF-8
 
 # --- オッズ: 3分間隔 (JST 10:00-21:00) ---
 # ※オッズは開催中に頻繁に変動するため高頻度
