@@ -315,12 +315,40 @@ button.action-btn:active{background:#F0F0F0}
 
 <!-- Screen 1: Top -->
 <div class="page active" id="pageTop">
-  <div id="topLoading" class="loading"><div class="spinner"></div><div style="margin-top:8px">データ取得中...</div>
+  <!-- PE-11: pre-render 採用後は loading を default-hidden（LCP 即時化） -->
+  <div id="topLoading" class="loading" style="display:none"><div class="spinner"></div><div style="margin-top:8px">データ取得中...</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
     <div id="progressMsg" style="font-size:10px;margin-top:4px"></div>
   </div>
   <div id="topSummary" style="display:none"></div>
-  <div id="stadiumList" class="stadium-grid" style="display:none"></div>
+  <!-- PE-11: pre-rendered stadium grid (LCP 即時化、JS load 後に上書き) -->
+  <div id="stadiumList" class="stadium-grid"><!-- PRERENDER:STADIUMS:START -->
+  <!-- prerendered at 2026-05-04T21:14:05+09:00 (18/24 active stadiums) -->
+<div class="stadium-card active-stadium" onclick="openStadium('1')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">桐生</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('2')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">戸田</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">江戸川</span><span class="stadium-status">次節</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('4')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">平和島</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">多摩川</span><span class="stadium-status">次節</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('6')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">浜名湖</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('7')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">蒲郡</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('8')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">常滑</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('9')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">津</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('10')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">三国</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('11')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">びわこ</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('12')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">住之江</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('13')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">尼崎</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('14')"><span class="stadium-grade grade-g3">G3</span><span class="stadium-name">鳴門</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">丸亀</span><span class="stadium-status">次節</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('16')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">児島</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('17')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">宮島</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">徳山</span><span class="stadium-status">次節</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('19')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">下関</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('20')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">若松</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">芦屋</span><span class="stadium-status">次節</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('22')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">福岡</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card active-stadium" onclick="openStadium('23')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">唐津</span><span class="stadium-status">0/12R</span><span class="stadium-day">1R</span></div>
+  <div class="stadium-card inactive-stadium"><span class="stadium-name">大村</span><span class="stadium-status">次節</span></div>
+  <!-- PRERENDER:STADIUMS:END --></div>
   <div class="footer-note">予想は統計モデルによる参考情報です。的中を保証するものではありません。</div>
 </div>
 

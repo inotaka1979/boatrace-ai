@@ -32,6 +32,8 @@ jobs:
       - name: Scrape schedule (monthly)
         if: github.event.schedule == '0 0 1 * *' || github.event_name == 'workflow_dispatch'
         run: python scripts/scrape_schedule.py
+      - name: PE-11 Pre-render top page (LCP 即時化)
+        run: python scripts/prerender_top.py
       - name: Commit & Push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,8 +41,8 @@ jobs:
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
           git pull --rebase origin main || true
-          git add data/
+          git add data/ index.html
           git diff --staged --quiet && exit 0
-          git commit -m "racedata: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "racedata + prerender: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)

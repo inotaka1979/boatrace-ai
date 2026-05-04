@@ -215,7 +215,13 @@ case "$MODE" in
         ;;
     racedata)
         run_scrape "scrape_racedata.py" "racedata" || overall=$?
-        git_push_locked "racedata" || overall=$?
+        # PE-11: racedata 取得後に top page を pre-render（LCP 即時化）
+        if cd "$REPO_DIR" && python3 scripts/prerender_top.py >> "$LOG_FILE" 2>&1; then
+            log "prerender_top: ok"
+        else
+            log "WARN: prerender_top failed"
+        fi
+        git_push_locked "racedata+prerender" || overall=$?
         ;;
 esac
 
