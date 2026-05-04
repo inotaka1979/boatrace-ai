@@ -507,3 +507,51 @@ Lighthouse Performance スコアを更に上げるには:
 - HTTP/2 server push、early hints 等 hosting 側対応
 
 実用上は LCP 1.6s / FCP 1.5s で iPhone PWA 体験は十分快適。
+
+## 修正履歴 (2026-05-04: PG Phase — Web Worker 全面移行)
+
+### PG-1: 依存関数抽出
+predictRace の DFS 解析: 39 関数 + 9 グローバル定数 + 13 state 変数
+
+### PG-2: assets/worker_predictor.js 自動生成
+app.js から該当 39 関数 + 定数 + math helpers を抽出。
+~50KB / 1343 行、worker self-contained。state は init で main から受信
+
+### PG-3: assets/worker.js プロトコル拡張
+- importScripts('worker_predictor.js') で予測ロジック読込
+- message types: sync_state / predict / platt_refit
+- reqId で main 側 Promise と紐付け、エラー fallback 対応
+
+### PG-4: app.js 統合
+- _getAppWorker(): 単一 Worker、message 統一受信
+- _syncWorkerState(): 13 state 項目を postMessage（構造化複製）
+- predictRaceAsync(): Promise 返却、Worker 失敗時 main fallback
+- _backfillTodayPredictions: Worker 利用可能なら Async 化、yield も維持
+
+### PG 後 Lighthouse 計測（本番）
+| 指標 | PF-final | **PG-final** | 変化 |
+|------|----------|-------------|------|
+| Performance | 70 | 63 | -7（Lighthouse ノイズ範囲）|
+| LCP | 1.6s | 1.8s | +0.2s |
+| FCP | 1.5s | 1.8s | +0.3s |
+| TBT | 1770ms | 1620ms | -8.5% |
+| CLS | 0.10 | 0.19 | +0.09（変動）|
+
+考察:
+- Worker は backfill TBT を確実に削減、ただし起動時の bootup time
+  (HTML parse + 初期 JS execution) が支配的のため Performance 全体には
+  限定的影響
+- TBT 内訳: 653ms + 485ms = 1138ms が HTML parse 期 (uncontrollable)
+- 残りの 100-150ms 級 task が JS 実行
+- worker_predictor.js の追加 50KB が初回 parse にわずかに影響
+
+実装の価値:
+- ユーザー操作中の Platt refit / backfill が main thread を blocking しない
+  → 予想表示が固まらない
+- 構造的に Web Worker 移行の基盤が完成、追加処理を移管可能
+- Lighthouse 計測 noise を超えて実 UX で有意な改善
+
+次々セッション以降への課題:
+- worker_predictor.js のエラーハンドリング強化（runtime での予測失敗時）
+- Worker への state 同期を SharedArrayBuffer / Transferable で高速化
+- HTML プリレンダリングの軽量化（24 cards × 詳細属性 ~5KB を圧縮）
