@@ -296,86 +296,9 @@ var TUNING = Object.freeze({
 var programData=null,previewData=null,resultData=null;
 var oddsData=null,raceData=null;   // P3 L-17: oddsHistory 死コード削除
 var currentStadium=null,currentRace=null;
-// PA-5: localStorage スキーマバリデータ（破損 / 改ざんで起動失敗を防ぐ）
-//   - 期待型でない / 異常サイズの場合は破損データを `__corrupt_<ts>` に隔離して fallback 復帰
-//   - DoS 対策で配列・オブジェクトに上限ガード
-function _validateLS(key, value){
-  if(value === null || value === undefined) return null;
-  switch(key){
-    case 'boatrace_settings':
-      return (typeof value === 'object' && !Array.isArray(value)) ? value : null;
-    case 'boatrace_racerDB':
-    case 'boatrace_stadiumDB':
-    case 'boatrace_motorStats':
-    case 'boatrace_exhibitionStats':
-    case 'boatrace_pairwiseDB':
-      if(typeof value !== 'object' || Array.isArray(value)) return null;
-      // 上限ガード（改ざんによる巨大 JSON で OOM を防ぐ）
-      if(Object.keys(value).length > 10000) return null;
-      return value;
-    case 'boatrace_weights':
-      if(!Array.isArray(value)) return null;
-      if(value.length !== L2_INIT_WEIGHTS.length) return null;
-      for(var i=0;i<value.length;i++){
-        if(!Number.isFinite(value[i]) || Math.abs(value[i]) > 1000) return null;
-      }
-      return value;
-    case 'boatrace_history':
-      if(!Array.isArray(value)) return null;
-      // 異常巨大は末尾 1000 件で trim（破損ではなく自己修復）
-      return (value.length > 50000) ? value.slice(-1000) : value;
-    case 'boatrace_learned':
-      // PB-1: 学習済キーセット（key→1 の sparse object）
-      if(typeof value !== 'object' || Array.isArray(value)) return null;
-      if(Object.keys(value).length > 50000) return null;
-      return value;
-    case 'boatrace_trainstep':
-      // PB-2: 学習更新カウンタ（数値）
-      return (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e10) ? value : null;
-    case 'boatrace_featurestats':
-      // PB-7: rolling 統計 {mean[12], m2[12], n}
-      if(!value || typeof value !== 'object' || Array.isArray(value)) return null;
-      if(!Array.isArray(value.mean) || value.mean.length !== 12) return null;
-      if(!Array.isArray(value.m2)   || value.m2.length   !== 12) return null;
-      if(typeof value.n !== 'number' || !Number.isFinite(value.n) || value.n < 0) return null;
-      // 各要素 finite チェック
-      for(var i=0;i<12;i++){
-        if(!Number.isFinite(value.mean[i]) || !Number.isFinite(value.m2[i])) return null;
-      }
-      return value;
-    case 'boatrace_platt':
-      // PB-6: Platt 係数 {a, b, fittedAt, n}
-      if(!value || typeof value !== 'object' || Array.isArray(value)) return null;
-      if(!Number.isFinite(value.a) || !Number.isFinite(value.b)) return null;
-      if(Math.abs(value.a) > 10 || Math.abs(value.b) > 10) return null;   // 異常値ガード
-      return value;
-    default:
-      return value;
-  }
-}
+// PF-2: _validateLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
-// P3 L-04 + PA-5: 安全 parse（破損 → 隔離 → fallback）。safeParse は次セクションで定義
-function _bootParseLS(key, fallback){
-  var raw;
-  try{
-    raw = localStorage.getItem(key);
-    if(raw == null) return fallback;
-    var v = JSON.parse(raw);
-    var validated = _validateLS(key, v);
-    if(validated === null && v !== null){
-      // PA-5: スキーマ違反 → 破損データを隔離 → fallback
-      try{ localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
-      try{ localStorage.removeItem(key); }catch(_){}
-      console.warn('[boot] schema invalid, restored fallback:', key);
-      return fallback;
-    }
-    return (validated !== null) ? validated : fallback;
-  }catch(e){
-    console.warn('[boot] parse failed', key, e);
-    try{ if(raw) localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
-    return fallback;
-  }
-}
+// PF-2: _bootParseLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
 var racerDB=_bootParseLS('boatrace_racerDB', {});
 var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
@@ -398,20 +321,7 @@ var oddsLastFetched=null;
 
 // PA-5 / PC-6: エラー観測用バッファ（最大 100 件、循環）
 var ERROR_BUF_MAX = 100;
-function reportError(payload){
-  try{
-    var raw = localStorage.getItem('boatrace_errors');
-    var buf = [];
-    if(raw){
-      try{ var parsed = JSON.parse(raw); if(Array.isArray(parsed)) buf = parsed; }catch(_){}
-    }
-    var entry = {ts: Date.now(), iso: new Date().toISOString()};
-    for(var k in payload){ if(payload.hasOwnProperty(k)) entry[k] = payload[k]; }
-    buf.push(entry);
-    if(buf.length > ERROR_BUF_MAX) buf = buf.slice(-ERROR_BUF_MAX);
-    try{ localStorage.setItem('boatrace_errors', JSON.stringify(buf)); }catch(_){}
-  }catch(_){ /* reporter 自身の失敗は無視（無限ループ防止） */ }
-}
+// PF-2: reportError は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 // PC-6: 未捕捉エラー / Promise reject の自動収集
 window.addEventListener('error', function(e){
   reportError({type:'error', msg:String(e.message||''), src:String(e.filename||''), line:e.lineno|0, col:e.colno|0, stack:(e.error&&e.error.stack)?String(e.error.stack).slice(0,800):''});
@@ -574,50 +484,9 @@ function jstYmd(offsetDays){
 function todayStr(){return jstYmd(0)}
 function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' ('+['日','月','火','水','木','金','土'][d.getUTCDay()]+')';}
 
-// P3 L-04 + PA-5: localStorage 安全 parse（破損 / スキーマ違反時は fallback、破損データは隔離保存）
-function safeParse(key, fallback){
-  var raw;
-  try{
-    raw=localStorage.getItem(key);
-    if(raw==null) return fallback;
-    var v=JSON.parse(raw);
-    if(v===null || v===undefined) return fallback;
-    var validated=_validateLS(key, v);
-    if(validated===null){
-      // PA-5: スキーマ違反 → 破損データを隔離 → fallback
-      try{ localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
-      try{ localStorage.removeItem(key); }catch(_){}
-      console.warn('[storage] schema invalid, restored fallback:', key);
-      return fallback;
-    }
-    return validated;
-  }catch(e){
-    console.warn('[storage] parse failed', key, e);
-    try{ if(raw) localStorage.setItem(key+'__corrupt_'+Date.now(), raw); }catch(_){}
-    return fallback;
-  }
-}
+// PF-2: safeParse は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
-// P3 L-05: localStorage 安全 set（QuotaExceededError で履歴を間引いてリトライ）
-function safeSet(key, value){
-  var s = (typeof value==='string') ? value : JSON.stringify(value);
-  try{ localStorage.setItem(key, s); return true; }
-  catch(e){
-    if(e && (e.name==='QuotaExceededError' || e.code===22)){
-      try{
-        var hist=JSON.parse(localStorage.getItem('boatrace_history')||'[]');
-        if(hist.length>1000){ hist=hist.slice(-1000); localStorage.setItem('boatrace_history', JSON.stringify(hist)); }
-        // bc_ キャッシュも掃除
-        var keys=[]; for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i); if(k&&k.indexOf('bc_')===0) keys.push(k)}
-        keys.forEach(function(k){ try{localStorage.removeItem(k)}catch(_){} });
-        localStorage.setItem(key, s);
-        return true;
-      }catch(_){}
-    }
-    console.warn('[storage] set failed', key, e);
-    return false;
-  }
-}
+// PF-2: safeSet は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
 // PE-10: softmax / safeDiv は src/utils/math.js から bundle 注入される
 //        ↓ MARKER 領域で MATH bundle が globalThis に export
@@ -673,22 +542,9 @@ function safeSet(key, value){
 
 /* BUILD:MATH:END */
 
-// 旧 inline 定義（bundle が globalThis 上書きするため dead code、互換用に残置）
-function softmax(logits){
-  if(!Array.isArray(logits) || logits.length===0) return [];
-  var clean=logits.map(function(v){ return Number.isFinite(v)?v:0; });
-  var max=clean.reduce(function(a,b){return b>a?b:a}, -Infinity);
-  if(!Number.isFinite(max)) max=0;
-  var exps=clean.map(function(v){ return Math.exp(Math.min(v-max, 50)); });
-  var sum=exps.reduce(function(a,b){return a+b},0);
-  if(sum===0 || !Number.isFinite(sum)) return clean.map(function(){return 1/clean.length});
-  return exps.map(function(x){return x/sum});
-}
+// PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
-function safeDiv(num, den, fallback){
-  if(!Number.isFinite(num) || !Number.isFinite(den) || den===0) return (fallback==null?0:fallback);
-  return num/den;
-}
+// PF-2: safeDiv は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
 function boatBadgeLg(num){return'<span class="boat-badge boat-badge-lg" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
@@ -3331,7 +3187,8 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   await Promise.allSettled(tasks);
   console.log('[PE-8] deferred fetch complete');
 
-  // PE-8 + PE-9: 学習・backfill を逐次 await（async 関数は内部で yield する）
+  // PE-8 + PE-9: 軽量な学習を deferred で実行
+  //   PF-3: _backfillTodayPredictions は重いので「成績タブ open 時 / 60秒 idle」まで遅延
   try {
     if(resultData) updateDBFromResults(resultData, programData);
     if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
@@ -3341,18 +3198,45 @@ async function loadDeferredData(rawPrograms, rawPreviews){
     if(resultData) learnSeriesAndPairwiseFromResults(resultData);
     await learnFromResults();              // PE-9: async + yield
     updateHistoryWithResults();
-    await _backfillTodayPredictions();     // PE-9: async + yield
-    updateHistoryWithResults();
   } catch(e) {
     console.warn('[PE-8] learning step failed:', e);
   }
+
+  // PF-3: backfill は 60 秒後（または成績タブ open 時）に lazy 実行
+  //   _backfillTodayPredictions は predictRace × 全レース で重い (~1.5s TBT)
+  //   起動 critical path から外し、ユーザーが成績タブを開く / 60秒経過まで待つ
+  _scheduleLazyBackfill();
 
   // バックグラウンド DB 構築（公式 DB が薄い場合）
   if(Object.keys(racerDB).length < 50){
     setTimeout(function(){ if(typeof buildInitialDB === 'function') buildInitialDB(); }, 5000);
   }
 
-  console.log('[PE-8] deferred all done');
+  console.log('[PE-8] deferred all done (backfill scheduled for lazy run)');
+}
+
+// PF-3: backfill を lazy 起動（成績タブ open or 60 秒 idle）
+var _backfillDone = false;
+var _backfillTimer = null;
+async function _runLazyBackfillOnce(reason){
+  if(_backfillDone) return;
+  _backfillDone = true;
+  if(_backfillTimer){ clearTimeout(_backfillTimer); _backfillTimer = null; }
+  console.log('[PF-3] lazy backfill triggered:', reason);
+  try {
+    await _backfillTodayPredictions();
+    updateHistoryWithResults();
+  } catch(e) {
+    console.warn('[PF-3] lazy backfill failed:', e);
+    _backfillDone = false;   // 失敗時はリトライ可能化
+  }
+}
+function _scheduleLazyBackfill(){
+  if(_backfillDone || _backfillTimer) return;
+  // 60 秒後に自動実行（ユーザーがその間に成績タブを開けば早期実行）
+  _backfillTimer = setTimeout(function(){
+    _runLazyBackfillOnce('60s timeout');
+  }, 60000);
 }
 
 // ===============================================
@@ -4414,6 +4298,8 @@ function _rateColor(rate){
 }
 
 function renderStats(){
+  // PF-3: 成績タブ open 時に backfill を即時実行（lazy 起動）
+  if(typeof _runLazyBackfillOnce === 'function') _runLazyBackfillOnce('stats tab opened');
   var s=calcTodayStats();
 
   // ヘッダ: 本日サマリ

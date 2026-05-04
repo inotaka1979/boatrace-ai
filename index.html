@@ -61,7 +61,8 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 /* PD-6: 100dvh で iOS Safari のアドレスバー伸縮に対応、左右 safe-area 補完 */
-body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding-bottom:56px;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);-webkit-tap-highlight-color:transparent}
+/* PF-4: システムフォントを優先、Noto は load 後に置換（FOUT 受容で LCP 改善） */
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic",Meiryo,'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding-bottom:56px;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);-webkit-tap-highlight-color:transparent}
 /* PD-9: フォーカス可視化（キーボード/スクリーンリーダー利用時） */
 :focus-visible{outline:3px solid #00B4D8;outline-offset:2px;border-radius:4px}
 

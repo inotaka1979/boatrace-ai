@@ -11,11 +11,13 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 
 function extract(name, src){
-  // column 0 限定（bundle 内の indent 付き同名関数を除外）
   const re = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
   const m = src.match(re);
-  if(!m) throw new Error('cannot extract ' + name);
-  return m[1];
+  if(m) return m[1];
+  const ire = new RegExp(`(  function\\s+${name}\\s*\\([\\s\\S]*?\\n  \\})`, 'm');
+  const im = src.match(ire);
+  if(im) return im[1];
+  throw new Error('cannot extract ' + name);
 }
 
 const code = [

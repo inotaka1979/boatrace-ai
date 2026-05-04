@@ -13,15 +13,21 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 
 // L2_INIT_WEIGHTS と _validateLS の定義を抽出
-//   バンドル後の indent 付き同名関数を避けるため、column 0 限定
+//   PF-2 後: 旧 inline (column 0) 削除、bundle 内 (indent 付き) のみ存在
+//   両方の形式に対応
 function extract(name, src){
+  // var 形式
   const re = new RegExp(`(^var\\s+${name}\\s*=[^\\n]+;)`, 'm');
   const m = src.match(re);
   if(m) return m[1];
-  // function 形式（^ で column 0 限定、bundle 内の indent 付きを除外）
+  // column 0 function 形式 (旧 inline)
   const fre = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
   const fm = src.match(fre);
   if(fm) return fm[1];
+  // bundle 内 indent function 形式 (esbuild output: 2 space indent)
+  const ire = new RegExp(`(  function\\s+${name}\\s*\\([\\s\\S]*?\\n  \\})`, 'm');
+  const im = src.match(ire);
+  if(im) return im[1];
   throw new Error(`could not extract ${name}`);
 }
 
