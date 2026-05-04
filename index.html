@@ -271,6 +271,7 @@ button.action-btn:active{background:#F0F0F0}
   </div>
   <div class="header-right">
     <div id="headerDate"></div>
+    <div id="dataFreshness" style="font-size:10px"></div>
     <button class="refresh-btn" onclick="if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})});caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k)})})}setTimeout(function(){location.reload(true)},300)">更新</button>
   </div>
 </div>
@@ -1487,6 +1488,7 @@ async function loadAllData(){
   var ts='?t='+Date.now();
   var rawPrograms=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
   programData=indexByStadiumRace(rawPrograms,'programs');
+  if(rawPrograms&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);   // F3
   if(prog) prog.style.width='45%';
   await sleep(300);
 
@@ -1507,6 +1509,7 @@ async function loadAllData(){
   }catch(e){}
   if(!rawPreviews){rawPreviews=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts)}
   previewData=indexPreviews(rawPreviews);
+  if(rawPreviews&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);   // F3
   if(prog) prog.style.width='60%';
 
   // ★ 結果: まず自前スクレイピング結果を試す → Open APIフォールバック
@@ -1525,6 +1528,7 @@ async function loadAllData(){
   }catch(e){}
   if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
   resultData=indexResults(rawResults);
+  if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);   // F3
   if(prog) prog.style.width='80%';
 
   // ★ 公式データDB読み込み（GitHub Actionsが構築済み）
@@ -2928,26 +2932,63 @@ if('serviceWorker' in navigator){
 }
 document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
-loadAllData();
+loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });   // F3
 
 // P3 L-18: 全 setInterval を一元管理し、unload 時にクリア
 var _managedTimers=[];
 function setManagedInterval(fn, ms){ var id=setInterval(fn, ms); _managedTimers.push(id); return id; }
 window.addEventListener('beforeunload', function(){ _managedTimers.forEach(clearInterval); });
 
-// 5min auto-refresh
+// F2: 90秒間隔（旧 300秒）。data/* は CDN キャッシュ + cron 3 分更新なので軽量
+// F3: 取得した updated_at から最終更新時刻を追跡し、ヘッダーに「📡 X分前」を表示
+var _dataLatestUpdatedAt = 0;   // epoch ms
+function _noteUpdatedAt(iso){
+  if(!iso) return;
+  var t = Date.parse(iso);
+  if(Number.isFinite(t) && t > _dataLatestUpdatedAt) _dataLatestUpdatedAt = t;
+}
+function _renderFreshness(){
+  var el = document.getElementById('dataFreshness');
+  if(!el) return;
+  if(!_dataLatestUpdatedAt){ el.textContent=''; return; }
+  var sec = Math.max(0, Math.floor((Date.now() - _dataLatestUpdatedAt)/1000));
+  var label;
+  if(sec < 60) label = sec + '秒前';
+  else if(sec < 3600) label = Math.floor(sec/60) + '分前';
+  else label = Math.floor(sec/3600) + '時間前';
+  // 鮮度に応じて色
+  var color = sec < 180 ? 'var(--success)' : sec < 600 ? 'var(--warn)' : 'var(--danger)';
+  el.innerHTML = '<span style="color:'+color+'">📡 '+label+'</span>';
+}
+setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
+
 setManagedInterval(async function(){
   try{
     var t=Date.now();
     var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
-    if(rawP) programData=indexByStadiumRace(rawP,'programs');
+    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
     var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);
-    if(rawPv) previewData=indexPreviews(rawPv);
+    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
-    if(rawR){resultData=indexResults(rawR);if(programData)updateDBFromResults(resultData,programData);learnFromResults();updateHistoryWithResults()}
-    try{var o=await fetch('data/odds/today.json?t='+t);if(o.ok)oddsData=await o.json()}catch(e){}
+    if(rawR){
+      resultData=indexResults(rawR);
+      _noteUpdatedAt(rawR.updated_at);
+      if(programData)updateDBFromResults(resultData,programData);
+      learnFromResults();
+      updateHistoryWithResults();
+    }
+    try{
+      var o=await fetch('data/odds/today.json?t='+t);
+      if(o.ok){ var od=await o.json(); oddsData=od; _noteUpdatedAt(od.updated_at); }
+    }catch(e){}
+    // 自前 previews（cron 3分更新）も取得し DB に統合（古いマージロジックは upstream に移行済）
+    try{
+      var p=await fetch('data/previews/today.json?t='+t);
+      if(p.ok){ var pd=await p.json(); _noteUpdatedAt(pd.updated_at); }
+    }catch(e){}
+    _renderFreshness();
   }catch(e){console.warn('Auto refresh error:',e)}
-},300000);
+}, 90000);   // F2: 90 秒
 </script>
 </body>
 </html>
