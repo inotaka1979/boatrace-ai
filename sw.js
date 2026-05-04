@@ -1,93 +1,89 @@
-// BoatRace Oracle - Service Worker v4
-const CACHE_NAME = 'br-oracle-v4';
-const API_CACHE = 'br-api-v4';
+// BoatRace Oracle - Service Worker v4 (P4: race condition / fallback / 更新通知)
+// 設計書 §6 を参照
+//
+// 修正内容:
+//   W-01 caches.put を await して race を防止
+//   W-02 data/ オフライン応答を 503 に変更（空 {} で誤動作するのを防ぐ）
+//   W-03 install 時 skipWaiting を撤去、message('SKIP_WAITING') で明示制御
+//   W-09 querystring を除いたキーで cache 参照（キャッシュキー分散を防止）
 
+const VERSION = 'br-oracle-v4';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
 ];
 
-// インストール: 静的アセットをキャッシュ + 即座にアクティブ化
-self.addEventListener('install', function(e) {
+// install: 静的アセットのみキャッシュ（skipWaiting しない）
+self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(function(cache) { return cache.addAll(STATIC_ASSETS); })
-      .then(function() { return self.skipWaiting(); })
+    caches.open(VERSION).then((c) => c.addAll(STATIC_ASSETS))
   );
 });
 
-// アクティベート: 古いキャッシュを全削除 + 即座にクライアント制御
-self.addEventListener('activate', function(e) {
-  e.waitUntil(
-    caches.keys().then(function(keys) {
-      return Promise.all(
-        keys.filter(function(k) {
-          return k !== CACHE_NAME && k !== API_CACHE;
-        }).map(function(k) {
-          console.log('Deleting old cache:', k);
-          return caches.delete(k);
-        })
-      );
-    }).then(function() { return self.clients.claim(); })
-  );
+// activate: 旧 cache を全削除してから claim
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
-self.addEventListener('fetch', function(e) {
-  var url = e.request.url;
+// クライアントから明示的に新版を有効化
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
+});
 
-  // data/ ディレクトリ: キャッシュしない（常にネットワーク）
-  if (url.indexOf('/data/') !== -1) {
-    e.respondWith(
-      fetch(e.request).catch(function() {
-        return new Response('{}', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
+// W-09: キャッシュキーは querystring を除いた URL に正規化
+function normalizeRequest(req) {
+  const url = new URL(req.url);
+  url.search = '';
+  return new Request(url.toString(), { method: req.method, headers: req.headers });
+}
+
+// network-first 共通関数
+async function netFirst(req) {
+  const cacheKey = normalizeRequest(req);
+  try {
+    const resp = await fetch(req);
+    if (resp.ok) {
+      const cache = await caches.open(VERSION);
+      // W-01: await して race condition を防止
+      await cache.put(cacheKey, resp.clone());
+    }
+    return resp;
+  } catch (_) {
+    const cached = await caches.match(cacheKey);
+    if (cached) return cached;
+    // W-02: 空 {} ではなく 503 を返す（呼出側が catch で適切にハンドル可能）
+    return new Response(
+      JSON.stringify({ error: 'offline' }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
     );
+  }
+}
+
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
+  const path = url.pathname;
+
+  // index.html はネットワーク優先
+  if (path.endsWith('/') || path.endsWith('/index.html')) {
+    e.respondWith(netFirst(e.request));
     return;
   }
 
-  // Open API: Network First（常にネットワークを先に試す）
-  if (url.indexOf('boatraceopenapi.github.io') !== -1) {
-    e.respondWith(
-      fetch(e.request).then(function(resp) {
-        if (resp.ok) {
-          var clone = resp.clone();
-          caches.open(API_CACHE).then(function(cache) {
-            cache.put(e.request, clone);
-          });
-        }
-        return resp;
-      }).catch(function() {
-        return caches.match(e.request).then(function(cached) {
-          return cached || new Response('{"error":"offline"}', {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        });
-      })
-    );
+  // data/ 配下（自前スクレイピング JSON）と外部 Open API はネットワーク優先
+  if (path.includes('/data/') || url.hostname === 'boatraceopenapi.github.io') {
+    e.respondWith(netFirst(e.request));
     return;
   }
 
-  // 静的アセット: Network First（コード更新を即反映するため）
+  // 静的アセット: キャッシュ優先
   e.respondWith(
-    fetch(e.request).then(function(resp) {
-      if (resp.ok) {
-        var clone = resp.clone();
-        caches.open(CACHE_NAME).then(function(cache) {
-          cache.put(e.request, clone);
-        });
-      }
-      return resp;
-    }).catch(function() {
-      return caches.match(e.request).then(function(cached) {
-        return cached || new Response('Not found', { status: 404 });
-      });
-    })
+    caches.match(e.request).then((cached) => cached || fetch(e.request))
   );
 });
