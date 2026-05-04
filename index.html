@@ -131,8 +131,6 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 
 /* Badge rows */
 .racer-badge{display:inline-block;font-size:8px;padding:1px 4px;border-radius:3px;margin:1px;font-weight:700;white-space:nowrap}
-.badge-a1fight{background:#FFD600;color:#333}
-.badge-a2fight{background:#FF9800;color:#fff}
 .badge-hot{background:#E53935;color:#fff}
 .badge-cold{background:#90CAF9;color:#333}
 .badge-f1{background:#C62828;color:#fff}
@@ -3073,16 +3071,8 @@ function familyName(n){return (n||'').split(/[\s\u3000]/)[0].slice(0,3)}
 // ===============================================
 function racerBadges(boat,form,divergence){
   var badges=[];
-  var cn=boat.racer_class_number;
   var fc=boat.racer_flying_count||0;
-  if(cn===1){
-    var wr=pf(boat.racer_national_top_1_percent);
-    if(wr>=7.0) badges.push('<span class="racer-badge badge-a1fight">A1勝負</span>');
-  }
-  if(cn===2){
-    var wr2=pf(boat.racer_national_top_1_percent);
-    if(wr2>=6.0) badges.push('<span class="racer-badge badge-a2fight">A2勝負</span>');
-  }
+  // F14: A1勝負 / A2勝負 バッジは撤去（ユーザー要望: 意味が分かりにくい）
   if(form){
     if(form.label==='好調'||form.label==='絶好調') badges.push('<span class="racer-badge badge-hot">好調</span>');
     if(form.label==='不調'||form.label==='絶不調') badges.push('<span class="racer-badge badge-cold">不調</span>');
