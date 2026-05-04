@@ -547,7 +547,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
 // PF-2: safeDiv は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
-function boatBadgeLg(num){return'<span class="boat-badge boat-badge-lg" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
+// PF-6: boatBadgeLg は未使用（grep で 0 callsite）→ 削除
 function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
 function pf(v){return parseFloat(v)||0}
 
@@ -924,7 +924,7 @@ function seriesAdjustmentScore(rid, sid){
   return { score: score, slope: slope, samples: motorRates.length };
 }
 
-// R-13: モーター急変警告
+// R-13: モーター急変警告 — 現在 UI 未使用だがテスト (test_series_pairwise.js) でカバー済
 function motorTrendWarning(rid, sid){
   var r = seriesAdjustmentScore(rid, sid);
   if(r.samples < 3) return null;
@@ -2086,30 +2086,46 @@ function _updateFeatureStats(featRow){
   }
 }
 
-// PB-7: 特徴量を z-score 正規化（warmup 前は identity）
+// PB-7 + PF-5: 特徴量を z-score 正規化（warmup 前は identity）
+//   PF-5: divisor を pre-compute、Number.isFinite 呼出を || 0 に置換
 function _normalizeFeatures(featRow){
   if(!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
-  if(_featureStats.n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
   var n = _featureStats.n;
+  if(n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
+  var means = _featureStats.mean;
+  var m2s = _featureStats.m2;
+  var divisor = n > 1 ? n - 1 : 1;
   var out = new Array(FEATURE_DIM);
   for(var i=0;i<FEATURE_DIM;i++){
-    var variance = _featureStats.m2[i] / Math.max(1, n - 1);
+    var variance = m2s[i] / divisor;
     var std = Math.sqrt(variance + 1e-6);
-    var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
-    out[i] = (x - _featureStats.mean[i]) / std;
+    var x = featRow[i] || 0;   // PF-5: Number.isFinite を省略（NaN→0 を || で代用）
+    out[i] = (x - means[i]) / std;
   }
   return out;
 }
 
 function l2Predict(features6){
-  // PB-7: z-score 正規化（識別性能の改善、既定 OFF で互換維持）
-  var feats = features6.map(_normalizeFeatures);
-  // PB-11: 各艇の logit に COURSE_LOG_PRIOR を加算（base rate を反映）
-  var logits=feats.map(function(feat,b){
-    var z = L2_BIAS + (COURSE_LOG_PRIOR[b]||0);
-    for(var i=0;i<feat.length;i++) z+=feat[i]*(l2weights[i]||0);
-    return z;
-  });
+  // PF-5: ホットパス最適化 — for ループ + 一時配列削減
+  //   従来: map で new array x2 + closure 6 回 = ~12 オブジェクト生成
+  //   新版: for で in-place 計算、logits 配列のみ生成 = ~1 オブジェクト
+  var enableZ = TUNING.PREDICTION.ENABLE_ZSCORE;
+  var warmupOk = enableZ && (_featureStats.n >= TUNING.PREDICTION.ZSCORE_WARMUP_N);
+  var w = l2weights;
+  var wlen = w.length;
+  var prior = COURSE_LOG_PRIOR;
+  var bias = L2_BIAS;
+  var logits = new Array(6);
+  for(var b=0; b<6; b++){
+    var feat = features6[b];
+    if(warmupOk) feat = _normalizeFeatures(feat);
+    var z = bias + (prior[b] || 0);
+    for(var i=0; i<wlen; i++){
+      var fi = feat[i];
+      if(fi) z += fi * (w[i] || 0);   // PF-5: 0 値は早期 skip（ホットループ短縮）
+    }
+    logits[b] = z;
+  }
   return softmax(logits);
 }
 
@@ -3289,10 +3305,7 @@ function renderSeriesNums(results){
   }).join('');
 }
 
-function partsHtml(parts){
-  if(!parts||!parts.length) return'';
-  return'<div class="parts-badge">部品交換: '+escText(parts.join(', '))+'</div>';
-}
+// PF-6: partsHtml は未使用（旧 race detail の名残）→ 削除
 
 // ===============================================
 // HELPER: Motor evaluation A-E

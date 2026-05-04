@@ -42,7 +42,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="preconnect" href="https://boatraceopenapi.github.io" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" referrerpolicy="no-referrer">
+<!-- PF-7: Google Fonts を非同期 load (render-blocking 解消)
+     PF-4 の system font fallback が即時表示、Noto load 完了後に置換 (FOUT) -->
+<link rel="preload" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" as="style" referrerpolicy="no-referrer">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" media="print" referrerpolicy="no-referrer" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" referrerpolicy="no-referrer"></noscript>
 <!-- PD-13b: Chart.js は成績タブ初表示時のみ動的 load。LCP / 初回 INP 改善（200KB 削減） -->
 <!-- PA-3: SRI ハッシュは _loadChartLib() で integrity 属性を付与して読み込む -->
 <!-- 旧: <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="..." crossorigin="anonymous" referrerpolicy="no-referrer"></script> -->
