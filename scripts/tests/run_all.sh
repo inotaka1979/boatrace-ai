@@ -67,6 +67,10 @@ step "X1 EV/Kelly/divergence tests" \
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"
 
+# 11) X3 進入予想テスト
+step "X3 entry prediction tests" \
+     "node scripts/tests/test_entry_predict.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

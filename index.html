@@ -767,6 +767,148 @@ function indexResults(apiJson){
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
 // ===============================================
+// X3: 進入予想エンジン (R-01)
+// ===============================================
+//
+// 選手別「枠 → 進入コース」の確率分布を学習し、出走表段階で進入を予測する。
+// データソース: 結果ファイルの racer_boat_number (枠) と racer_course_number (進入)
+// 個人データ不足時は場別デフォルト分布を使用
+//
+// 場別デフォルト進入分布: 過去データから推定（前付け頻度の高い場で枠と進入のズレが多い）
+// 値は P(course=C | boat=B) で行方向に sum=1
+var DEFAULT_ENTRY_BY_STADIUM = {
+  // 桐生 / 平和島 / 江戸川 / 戸田: 前付け少なめ
+  '01': {1:{1:0.99,2:0.01},2:{2:0.97,1:0.02,3:0.01},3:{3:0.95,2:0.03,4:0.02},4:{4:0.94,3:0.04,5:0.02},5:{5:0.92,4:0.05,6:0.03},6:{6:0.95,5:0.04,4:0.01}},
+  // 平和島 / 多摩川 / 浜名湖 / 蒲郡: 中程度
+  '02': {1:{1:0.85,2:0.10,3:0.05},2:{2:0.80,1:0.10,3:0.10},3:{3:0.75,2:0.15,4:0.10},4:{4:0.70,3:0.15,2:0.10,5:0.05},5:{5:0.70,4:0.20,6:0.10},6:{6:0.75,5:0.20,4:0.05}},
+  // 住之江 / 尼崎 / 鳴門 / 丸亀: 前付け多い
+  '12': {1:{1:0.75,2:0.15,3:0.10},2:{2:0.70,1:0.15,3:0.15},3:{3:0.65,2:0.20,4:0.15},4:{4:0.60,3:0.20,2:0.15,5:0.05},5:{5:0.60,4:0.25,6:0.10,3:0.05},6:{6:0.65,5:0.25,4:0.10}},
+};
+// それ以外の場のデフォルト
+var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:{3:0.85,2:0.08,4:0.05,1:0.02},4:{4:0.82,3:0.10,5:0.05,2:0.03},5:{5:0.78,4:0.13,6:0.07,3:0.02},6:{6:0.85,5:0.10,4:0.05}};
+
+function getEntryDist(rid, boat, sid){
+  // 1. 選手個人データ
+  if(rid && racerDB[rid] && racerDB[rid].entryPattern && racerDB[rid].entryPattern.byBoat){
+    var personal = racerDB[rid].entryPattern.byBoat[String(boat)];
+    if(personal && Object.keys(personal).length > 0){
+      var personalSamples = racerDB[rid].entryPattern.samples || 0;
+      // 個人サンプル >= 8 で個人データのみ使用、それ未満は混合
+      if(personalSamples >= 8) return personal;
+      // 混合: w_personal = samples/8
+      var defaultD = (DEFAULT_ENTRY_BY_STADIUM[String(sid).padStart(2,'0')] || GLOBAL_DEFAULT_ENTRY)[boat] || {};
+      var w = Math.min(1, personalSamples / 8);
+      var mixed = {};
+      var allKeys = new Set(Object.keys(personal).concat(Object.keys(defaultD)));
+      allKeys.forEach(function(k){
+        mixed[k] = w * (personal[k]||0) + (1-w) * (defaultD[k]||0);
+      });
+      return mixed;
+    }
+  }
+  // 2. 場別デフォルト
+  var sidPad = String(sid).padStart(2,'0');
+  if(DEFAULT_ENTRY_BY_STADIUM[sidPad] && DEFAULT_ENTRY_BY_STADIUM[sidPad][boat]){
+    return DEFAULT_ENTRY_BY_STADIUM[sidPad][boat];
+  }
+  // 3. グローバルデフォルト
+  return GLOBAL_DEFAULT_ENTRY[boat] || {};
+}
+
+/**
+ * 6艇の進入コースを予測（ハンガリアン式割当）
+ * @param boats Array of {boat:1-6, racer_number, racer_class_number}
+ * @param sid stadium id
+ * @returns {byBoat: {1:course,2:course,...}, conf: {1:p,2:p,...}}
+ */
+function predictEntryCourses(boats, sid){
+  // 各艇の枠→コース確率を取得
+  var dists = boats.map(function(b){
+    return {
+      boat: b.racer_boat_number,
+      rid: b.racer_number,
+      dist: getEntryDist(b.racer_number, b.racer_boat_number, sid),
+    };
+  });
+
+  // ハンガリアン: 全艇 × 全コース の割当を確率最大化
+  // 6 艇 6 コースなら 6! = 720 通り全列挙で十分
+  var permutations = [];
+  function perm(arr, current){
+    if(arr.length === 0){ permutations.push(current); return; }
+    for(var i=0; i<arr.length; i++){
+      var rest = arr.slice(0,i).concat(arr.slice(i+1));
+      perm(rest, current.concat([arr[i]]));
+    }
+  }
+  perm([1,2,3,4,5,6], []);
+
+  var best = null, bestScore = -Infinity;
+  permutations.forEach(function(p){
+    var s = 0;
+    var valid = true;
+    for(var i=0; i<dists.length; i++){
+      var pr = (dists[i].dist[String(p[i])] || 0);
+      if(pr <= 0){ valid = false; break; }
+      s += Math.log(pr);
+    }
+    if(valid && s > bestScore){
+      bestScore = s;
+      best = p;
+    }
+  });
+
+  if(!best){
+    // フォールバック: 枠通り
+    var by = {}; var c = {};
+    boats.forEach(function(b){ by[b.racer_boat_number] = b.racer_boat_number; c[b.racer_boat_number] = 0.5; });
+    return {byBoat: by, conf: c};
+  }
+  var byBoat = {}, conf = {};
+  for(var i=0; i<dists.length; i++){
+    byBoat[dists[i].boat] = best[i];
+    conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
+  }
+  return {byBoat: byBoat, conf: conf};
+}
+
+// 進入パターンを results から学習
+function learnEntryPatternFromResults(resultsJson){
+  if(!resultsJson) return;
+  for(var sid in resultsJson){
+    var races = resultsJson[sid];
+    for(var rn in races){
+      var race = races[rn];
+      if(!race || !race.results) continue;
+      race.results.forEach(function(r){
+        var rid = r.racer_number || 0;
+        var boat = r.racer_boat_number || 0;
+        var course = r.racer_course_number || boat;
+        if(!rid || !boat || !course) return;
+        if(!racerDB[rid]) return;
+        if(!racerDB[rid].entryPattern) racerDB[rid].entryPattern = { byBoat: {}, samples: 0 };
+        var ep = racerDB[rid].entryPattern;
+        if(!ep.byBoat[String(boat)]) ep.byBoat[String(boat)] = {};
+        var d = ep.byBoat[String(boat)];
+        d[String(course)] = (d[String(course)] || 0) + 1;
+        ep.samples = (ep.samples || 0) + 1;
+      });
+    }
+  }
+  // 確率に正規化（保存時のみ）
+  for(var rid in racerDB){
+    var ep = racerDB[rid].entryPattern;
+    if(!ep || !ep.byBoat) continue;
+    for(var b in ep.byBoat){
+      var d = ep.byBoat[b];
+      var sum = 0;
+      for(var c in d) sum += d[c];
+      if(sum > 0) for(var c2 in d) d[c2] = d[c2] / sum;
+    }
+  }
+}
+
+// ===============================================
 // X2: 場別正規化用の統計学習
 // ===============================================
 
@@ -1060,12 +1202,25 @@ function getStadiumCourseWinRate(sid,course){
 // ===============================================
 // PREDICTION ENGINE V2: Layer 1 (PRESERVED)
 // ===============================================
-function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid){
+function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries){
   var score=0;
   var reasons=[];
   var risks=[];
   var bn=boat.racer_boat_number;
-  var course=(preview&&preview.racer_course_number!=null)?preview.racer_course_number:(preview?preview.racer_boat_number:bn);
+  // X3: preview.racer_course_number > predictedEntries > 枠 の優先順
+  var course;
+  var entryConf = 1.0;   // 進入信頼度
+  if(preview && preview.racer_course_number != null){
+    course = preview.racer_course_number;
+  } else if(predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]){
+    course = predictedEntries.byBoat[bn];
+    entryConf = predictedEntries.conf[bn] || 0.5;
+    if(course !== bn && entryConf >= 0.6){
+      reasons.push('進入予想: '+bn+'枠→'+course+'コース('+(entryConf*100).toFixed(0)+'%)');
+    }
+  } else {
+    course = preview ? preview.racer_boat_number : bn;
+  }
   var rid=boat.racer_number||0;
 
   var scwr=getStadiumCourseWinRate(String(sid),course);
@@ -1355,10 +1510,15 @@ function predictRace(sid,raceNum){
   var boats=race.boats;
   if(!Array.isArray(boats)) return null;
 
+  // X3: preview の進入が無ければ予測を使う
+  var predictedEntries = null;
+  if(!preview || !preview.boats || Object.keys(preview.boats).every(function(k){return preview.boats[k].racer_course_number == null})){
+    predictedEntries = predictEntryCourses(boats, sid);
+  }
   var l1scores=[];
   boats.forEach(function(b){
     var pv=preview&&preview.boats?preview.boats[String(b.racer_boat_number)]:null;
-    var s=scoreBoatV2(b,pv,weather,boats,preview,sid);
+    var s=scoreBoatV2(b,pv,weather,boats,preview,sid,predictedEntries);
     l1scores.push(s);
   });
 
@@ -1490,9 +1650,11 @@ function predictRaceProgram(sid,raceNum){
   if(!Array.isArray(boats)) return null;
 
   // preview=null, weather=null で scoreBoatV2 を呼ぶ → E(展示)とF(風)がスキップ
+  // X3: 出走表段階でも進入予測を効かせる
+  var predictedEntries = predictEntryCourses(boats, sid);
   var l1scores=[];
   boats.forEach(function(b){
-    var s=scoreBoatV2(b,null,null,boats,null,sid);
+    var s=scoreBoatV2(b,null,null,boats,null,sid,predictedEntries);
     l1scores.push(s);
   });
 
@@ -2103,6 +2265,8 @@ async function loadAllData(){
   if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
   if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
   if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
+  // X3: 進入パターン学習
+  if(resultData) learnEntryPatternFromResults(resultData);
   learnFromResults();
   updateHistoryWithResults();
 
