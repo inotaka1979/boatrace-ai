@@ -5166,6 +5166,13 @@ function _renderFreshness(){
   var el = document.getElementById('dataFreshness');
   if(!el) return;
   if(!_dataLatestUpdatedAt){ el.textContent=''; return; }
+  // データが今日 (JST) のものでなければ「待機中」表示（cron が本日まだ走っていない等）
+  var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  var dataDate = new Date(_dataLatestUpdatedAt+9*3600000).toISOString().slice(0,10);
+  if(dataDate !== todayJst){
+    el.innerHTML = '<span style="color:#BDBDBD">💤 本日データ取得待ち</span>';
+    return;
+  }
   var sec = Math.max(0, Math.floor((Date.now() - _dataLatestUpdatedAt)/1000));
   var label;
   if(sec < 60) label = sec + '秒前';
