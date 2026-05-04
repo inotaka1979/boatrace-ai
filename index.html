@@ -1917,6 +1917,28 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
       else if(course>=4&&tilt>=0.5) score+=2;
       else if(course<=2&&tilt>=0.5) score-=1;
       else if(course>=4&&tilt<=-0.5) score-=1;
+
+      // F12: 調整重量（規定体重未達の重り）
+      // > 0 で重い荷物 → ボート加速悪化、特にアウトコースで影響大
+      var adjW = pf(myPv.racer_adjust_weight);
+      if(adjW >= 1.0){
+        if(course >= 4) { score -= 3; risks.push('調整重量+'+adjW.toFixed(1)+'kg(アウト不利)'); }
+        else { score -= 1; risks.push('調整重量+'+adjW.toFixed(1)+'kg'); }
+      } else if(adjW >= 0.5){
+        if(course >= 4) score -= 1;
+      }
+
+      // F12: 部品交換（ペラ調整等）
+      // 当たれば +、外せば - で読みにくい → 既存スコアには加減せず情報のみ表示
+      // ただし「ペラ」交換はモーター不調シグナルとしてマイルドな - を付与
+      var partsTxt = String(myPv.racer_parts_replaced || '');
+      if(partsTxt.indexOf('ペラ') >= 0){
+        score -= 1;
+        risks.push('レース直前ペラ交換('+escText(partsTxt)+')');
+      } else if(partsTxt){
+        // ペラ以外の部品交換 → 整備内容を reasons に表示のみ
+        reasons.push('整備実施: '+escText(partsTxt));
+      }
     }
 
     if(boat.racer_class_number===1&&etRank>=4){score-=4;risks.push('A1だが展示下位(モーター不安)')}
@@ -3477,13 +3499,17 @@ function openRace(sid,rn){
   if(preview&&preview.boats){
     exhHtml='<div class="section-title">展示情報</div>';
     exhHtml+='<div class="detail-table-wrap"><table class="exhibition-table">';
-    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示タイム</th><th>チルト</th></tr></thead><tbody>';
+    // F12: 展示テーブルに「持ペラ / 部品交換 / 調整重量」を追加
+    exhHtml+='<thead><tr><th>枠</th><th>ST</th><th>展示</th><th>チルト</th><th>整備</th><th>調整</th></tr></thead><tbody>';
 
     for(var bn=1;bn<=6;bn++){
       var pv=pvMap[bn];
       var stVal=(pv&&pv.racer_start_timing!=null)?pv.racer_start_timing:null;
       var etVal=(pv&&pv.racer_exhibition_time!=null&&pv.racer_exhibition_time>0)?pv.racer_exhibition_time:null;
       var tiltVal=(pv&&pv.racer_tilt_adjustment!=null)?pv.racer_tilt_adjustment:null;
+      var propVal=(pv&&pv.racer_propeller)?pv.racer_propeller:'';
+      var partsVal=(pv&&pv.racer_parts_replaced)?pv.racer_parts_replaced:'';
+      var adjVal=(pv&&pv.racer_adjust_weight!=null)?pv.racer_adjust_weight:0;
 
       // Rank coloring for ET
       var etRk=etRankMap[bn];
@@ -3495,14 +3521,29 @@ function openRace(sid,rn){
       var stDisp=stVal!==null?('.'+String(Math.abs(pf(stVal)*100).toFixed(0)).padStart(2,'0')):'---';
       if(stVal!==null&&pf(stVal)<0) stDisp='F'+stDisp;
 
+      // 整備表示: プロペラと部品交換の合成
+      var maintDisp = '';
+      if(propVal) maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P'+escText(propVal)+'</span> ';
+      if(partsVal) maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">⚙'+escText(partsVal)+'</span>';
+      if(!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
+
+      // 調整重量: > 0 なら警告色
+      var adjDisp = adjVal > 0
+        ? '<span style="color:var(--warn);font-weight:700">+'+adjVal.toFixed(1)+'</span>'
+        : '<span style="color:#CCC">-</span>';
+
       exhHtml+='<tr>';
       exhHtml+='<td style="background:'+BOAT_COLORS[bn]+';color:'+BOAT_TEXT[bn]+';font-weight:700;border:1px solid '+(bn===1?'#ccc':'transparent')+'">'+bn+'</td>';
       exhHtml+='<td class="'+stCls+'">'+stDisp+'</td>';
       exhHtml+='<td class="'+etCls+'">'+(etVal!==null?etVal:'---')+'</td>';
       exhHtml+='<td>'+(tiltVal!==null?tiltVal:'---')+'</td>';
+      exhHtml+='<td style="font-size:9px">'+maintDisp+'</td>';
+      exhHtml+='<td>'+adjDisp+'</td>';
       exhHtml+='</tr>';
     }
     exhHtml+='</tbody></table></div>';
+    // 注記: 公式に存在しない情報（まわり足/直線/1周/ピット）は専門紙でのみ取得可能
+    exhHtml+='<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※ まわり足・1周・直線・ピット離れは boatrace.jp 公式に非公開（マクール等専門紙のみ）</div>';
 
     // Course entry grid
     if(preview.boats){

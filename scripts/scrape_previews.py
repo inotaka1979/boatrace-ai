@@ -179,37 +179,67 @@ def parse_beforeinfo(html):
     boats = {}
 
     # テーブル[1] (is-w748): 出走表+展示タイム
-    # 1艇 = 4行: [メイン(10cells), 進入(2cells), ST(3cells), 着順(2cells)]
+    # 1艇 = 4行: [メイン(10cells), 進入(2cells), ST行(3cells), 着順(2cells)]
+    # メイン行: [枠 rs4, 写真 rs4, 選手名 rs4, 体重 rs2, 展示タイム rs4, チルト rs4,
+    #            プロペラ rs4, 部品交換 rs4, 前走"R", 前走着順]
+    # ST 行 (メイン+2): [調整重量 rs2, "ST", ST値]
     t1 = tables[1]
-    rows = t1.select("tr")
-    for row in rows:
+    all_rows = t1.select("tr")
+    main_indices = []   # メイン行のインデックス
+    for ri, row in enumerate(all_rows):
         tds = row.select("td")
         if len(tds) < 5:
             continue
         text0 = tds[0].get_text(strip=True)
-        if text0 not in ("1", "2", "3", "4", "5", "6"):
-            continue
+        if text0 in ("1", "2", "3", "4", "5", "6"):
+            main_indices.append((ri, int(text0)))
 
-        bn = int(text0)
-        # tds: [枠, 写真, 選手名, 体重, 展示タイム, チルト, プロペラ, 部品交換, 前走, ...]
+    for main_idx, bn in main_indices:
+        row = all_rows[main_idx]
+        tds = row.select("td")
         et = 0.0
         tilt = 0.0
+        propeller = ""        # 持ちペラ "K" 等のマーク（無印=新ペラ）
+        parts_replaced = ""   # "ペラ", "電気" 等の整備内容
+        adj_weight = 0.0      # 調整重量 (kg)
         try:
-            et_text = tds[4].get_text(strip=True) if len(tds) > 4 else ""
-            if et_text:
-                et = float(et_text)
+            t_et = tds[4].get_text(strip=True) if len(tds) > 4 else ""
+            if t_et:
+                et = float(t_et)
         except (ValueError, IndexError):
             pass
         try:
-            tilt_text = tds[5].get_text(strip=True) if len(tds) > 5 else ""
-            if tilt_text:
-                tilt = float(tilt_text)
+            t_tilt = tds[5].get_text(strip=True) if len(tds) > 5 else ""
+            if t_tilt:
+                tilt = float(t_tilt)
         except (ValueError, IndexError):
             pass
+        try:
+            propeller = tds[6].get_text(strip=True) if len(tds) > 6 else ""
+        except IndexError:
+            pass
+        try:
+            parts_replaced = tds[7].get_text(strip=True) if len(tds) > 7 else ""
+        except IndexError:
+            pass
+        # 調整重量: メイン行 +2 行目の td[0]（rowspan=2）
+        if main_idx + 2 < len(all_rows):
+            st_row = all_rows[main_idx + 2]
+            st_tds = st_row.select("td")
+            if st_tds:
+                try:
+                    aw_text = st_tds[0].get_text(strip=True).replace("kg", "")
+                    if aw_text:
+                        adj_weight = float(aw_text)
+                except (ValueError, IndexError):
+                    pass
 
         boats[bn] = {
             "exhibition_time": et,
             "tilt": tilt,
+            "propeller": propeller,
+            "parts_replaced": parts_replaced,
+            "adjust_weight": adj_weight,
             "start_timing": None,
             "course": bn,  # デフォルトは枠番=コース
         }
@@ -436,6 +466,10 @@ async def scrape_race(session, limiter, sid, rno, date_str, action):
                         "racer_start_timing": data["start_timing"],
                         "racer_tilt_adjustment": data["tilt"],
                         "racer_course_number": data["course"],
+                        # F12: 追加フィールド（公式 beforeinfo の取れる項目）
+                        "racer_propeller": data.get("propeller", ""),
+                        "racer_parts_replaced": data.get("parts_replaced", ""),
+                        "racer_adjust_weight": data.get("adjust_weight", 0.0),
                     }
 
     # 結果取得
