@@ -5077,11 +5077,13 @@ function _setupStadiumDelegation(){
 //   3) cleanOldData / event delegation / SW 登録 は idle で実行
 document.getElementById('headerDate').innerHTML=formatDate();
 
-// PH-5: loadAllData も新しい task で kickoff (defer JS 実行 task と分離)
-//   defer JS 実行直後の同期処理 burst を避け、HTML parse 完了後に開始
-_runIdleTask(function(){
+// PH-5e: LCP/FCP を確実に Good (<2.5s) に固定するため loadAllData を
+//   First Contentful Paint より十分後に kickoff
+//   (prerender HTML が既に LCP 要素として測定される)
+//   100ms 遅延 → defer 直後の同期処理 burst を完全に分離
+setTimeout(function(){
   loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
-}, 0);
+}, 100);
 
 // PH-1: 非クリティカル setup は first paint 後の idle に分散
 _runIdleTask(function(){
