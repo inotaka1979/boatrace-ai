@@ -3573,12 +3573,14 @@ function renderStadiums(){
     for(var sid in programData) activeIds[sid]=true;
   }
 
+  // PH-2: DocumentFragment + 単一 innerHTML join で reflow 1 回に削減
+  //   従来: 24 createElement + 24 appendChild = 24 reflow
+  //   新版: HTML 文字列 join + 1 回 innerHTML = 1 reflow
+  //   PG-6 の event delegation が data-sid を受けるため onclick 不要
+  var html = '';
   for(var id=1;id<=24;id++){
     var sid=String(id);
     var name=STADIUMS[id];
-    var div=document.createElement('div');
-    div.className='stadium-card';
-
     if(activeIds[sid]&&programData[sid]){
       var stadium=programData[sid];
       var raceNums=Object.keys(stadium).sort(function(a,b){return parseInt(a)-parseInt(b)});
@@ -3591,7 +3593,6 @@ function renderStadiums(){
       var gradeNum=firstRace?firstRace.race_grade_number||5:5;
       var grade=GRADE_CLASS[gradeNum]||GRADE_CLASS[5];
 
-      // Determine day number from raceData if available
       var dayInfo='';
       if(raceData&&raceData.racedata){
         var rd=raceData.racedata.find(function(r){return r.stadium===parseInt(sid)});
@@ -3608,20 +3609,21 @@ function renderStadiums(){
       if(nextRn) nextRaceInfo=nextRn+'R';
       else nextRaceInfo='終了';
 
-      div.classList.add('active-stadium');
-      div.innerHTML='<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
+      html += '<div class="stadium-card active-stadium" data-sid="'+sid+'">'
+        +'<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
         +'<span class="stadium-name">'+name+'</span>'
         +'<span class="stadium-status">'+doneCount+'/'+totalRaces+'R</span>'
         +(dayInfo?'<span class="stadium-day">'+dayInfo+'</span>':'')
-        +'<span class="stadium-day">'+nextRaceInfo+'</span>';
-      (function(s){div.onclick=function(){openStadium(s)}})(sid);
+        +'<span class="stadium-day">'+nextRaceInfo+'</span>'
+        +'</div>';
     } else {
-      div.classList.add('inactive-stadium');
-      div.innerHTML='<span class="stadium-name">'+name+'</span>'
-        +'<span class="stadium-status">次節</span>';
+      html += '<div class="stadium-card inactive-stadium">'
+        +'<span class="stadium-name">'+name+'</span>'
+        +'<span class="stadium-status">次節</span>'
+        +'</div>';
     }
-    list.appendChild(div);
   }
+  list.innerHTML = html;   // PH-2: 単一 reflow
 }
 
 // ===============================================
@@ -4990,53 +4992,57 @@ function showUpdateToast(onUpdate){
   document.getElementById('br-update-dismiss').addEventListener('click', function(){ toast.remove(); });
 }
 
-if('serviceWorker' in navigator){
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('./sw.js')
-      .then(function(reg){
-        console.log('[SW] registered scope=', reg.scope);
-        reg.update();
-        setInterval(function(){ reg.update(); }, 1800000);
-        // PD-3: 新版検出時にトースト表示 + クリックで SKIP_WAITING
-        reg.addEventListener('updatefound', function(){
-          var nw = reg.installing;
-          if(!nw) return;
-          nw.addEventListener('statechange', function(){
-            if(nw.state === 'installed' && navigator.serviceWorker.controller){
-              console.log('[SW] new version available');
-              showUpdateToast(function(){
-                if(typeof window._markSwUpdateRequested === 'function') window._markSwUpdateRequested();
-                nw.postMessage({type:'SKIP_WAITING'});
-              });
-            }
-          });
+// PH-3 + PH-4: SW 登録 / 一部 setup を first paint 後に遅延 (TBT 削減)
+//   scheduler.postTask があれば 'background' priority で投入
+//   フォールバックは setTimeout
+function _runIdleTask(fn, delay){
+  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+    return scheduler.postTask(fn, {priority:'background'});
+  }
+  return setTimeout(fn, delay || 0);
+}
+
+// PH-3: SW 登録は load 後 + 余裕をもった setTimeout でさらに遅延
+//   これにより HTML parse + first paint 期に SW 登録が混入しない
+function _setupServiceWorker(){
+  if(!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('./sw.js')
+    .then(function(reg){
+      console.log('[SW] registered scope=', reg.scope);
+      _runIdleTask(function(){ reg.update(); }, 100);
+      setInterval(function(){ reg.update(); }, 1800000);
+      reg.addEventListener('updatefound', function(){
+        var nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener('statechange', function(){
+          if(nw.state === 'installed' && navigator.serviceWorker.controller){
+            console.log('[SW] new version available');
+            showUpdateToast(function(){
+              if(typeof window._markSwUpdateRequested === 'function') window._markSwUpdateRequested();
+              nw.postMessage({type:'SKIP_WAITING'});
+            });
+          }
         });
-      })
-      .catch(function(err){ console.warn('[SW] register failed', err); });
-  });
-  // PD-3 + PE-5: ユーザが「更新」ボタンを押したときのみリロード
-  //   （初回 SW 登録時の controllerchange での自動リロードは Lighthouse で
-  //   「リダイレクト」と誤検出され Performance を悪化させるため、ユーザ操作起点に限定）
+      });
+    })
+    .catch(function(err){ console.warn('[SW] register failed', err); });
+
   var _userTriggeredSwUpdate = false;
   window._markSwUpdateRequested = function(){ _userTriggeredSwUpdate = true; };
   navigator.serviceWorker.addEventListener('controllerchange', function(){
-    if(!_userTriggeredSwUpdate) return;   // 初回登録の自動 controllerchange は無視
+    if(!_userTriggeredSwUpdate) return;
     console.log('[SW] new controller after user request, reloading');
     location.reload();
   });
-  // PD-3: SW からの NEW_VERSION 通知（既に有効化済の場合）
   navigator.serviceWorker.addEventListener('message', function(e){
     if(e.data && e.data.type === 'NEW_VERSION'){
       console.log('[SW] activated new version:', e.data.version);
     }
   });
 }
-document.getElementById('headerDate').innerHTML=formatDate();
-cleanOldData();
 
-// PG-6: prerender stadium-card に event delegation で click handler を bind
-//   onclick 属性を撤去し、24 個の inline onclick を削減
-(function(){
+// PG-6: stadium-card event delegation
+function _setupStadiumDelegation(){
   var list = document.getElementById('stadiumList');
   if(!list) return;
   list.addEventListener('click', function(e){
@@ -5045,9 +5051,31 @@ cleanOldData();
     var sid = card.getAttribute('data-sid');
     if(sid && typeof openStadium === 'function') openStadium(sid);
   });
-})();
+}
 
-loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });   // F3
+// PH-1 + PH-4: 起動 setup を分散
+//   1) HTML 解析直後に必須描画のみ (headerDate)
+//   2) loadAllData は即時 kickoff (network が CPU 並列なので OK)
+//   3) cleanOldData / event delegation / SW 登録 は idle で実行
+document.getElementById('headerDate').innerHTML=formatDate();
+
+// クリティカルでない最初の描画と data fetch を kickoff
+loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
+
+// PH-1: 非クリティカル setup は first paint 後の idle に分散
+_runIdleTask(function(){
+  cleanOldData();
+}, 100);
+_runIdleTask(function(){
+  _setupStadiumDelegation();
+}, 50);
+_runIdleTask(function(){
+  // SW 登録は更に load イベント後で遅延
+  if(document.readyState === 'complete') _setupServiceWorker();
+  else window.addEventListener('load', function(){
+    _runIdleTask(_setupServiceWorker, 200);
+  }, {once:true});
+}, 1500);   // first paint + LCP の後（~1500ms）に SW 登録
 
 // P3 L-18: 全 setInterval を一元管理し、unload 時にクリア
 // PD-12: visibilitychange で隠れたタブの polling を停止（バッテリー / ネットワーク節約）
