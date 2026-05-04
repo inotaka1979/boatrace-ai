@@ -53,10 +53,13 @@ def extract_lzh(data):
     """LZHファイルを解凍してテキストを返す"""
     try:
         import lhafile
-        f = lhafile.LhaFile(BytesIO(data))
+        # 修正: lhafile.LhaFile (大文字 F) は存在しない
+        # 正しいクラス名は lhafile.Lhafile (小文字 f)
+        f = lhafile.Lhafile(BytesIO(data))
         for info in f.infolist():
             return f.read(info.filename).decode('shift_jis', errors='replace')
     except ImportError:
+        # lhafile が無い環境では subprocess で lha コマンドを使う
         import subprocess
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.lzh', delete=False) as tmp:
@@ -69,6 +72,9 @@ def extract_lzh(data):
             fpath = os.path.join(out_dir, fname)
             with open(fpath, 'r', encoding='shift_jis', errors='replace') as f:
                 return f.read()
+    except Exception as e:
+        # 他の例外もログ出力（旧版は無音失敗だった）
+        print(f"  WARN: extract_lzh failed: {type(e).__name__}: {e}")
     return ""
 
 
