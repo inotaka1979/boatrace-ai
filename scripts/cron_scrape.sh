@@ -160,49 +160,62 @@ git_push_if_changed() {
     return 1
 }
 
-# --- D-13: グローバル git lock 取得（odds と previews が並行 git する事を防止） ---
-acquire_global_git_lock() {
-    GLOBAL_LOCK_FILE="${LOCK_DIR}/cron_scrape_global.lock"
-    exec 201>"$GLOBAL_LOCK_FILE"
-    if ! flock -w "$GLOBAL_LOCK_WAIT_SEC" 201; then
-        log "SKIP: global git lock busy >${GLOBAL_LOCK_WAIT_SEC}s"
-        return 1
-    fi
-    return 0
+# --- D-13 修正版: 短時間ロック → git 操作の前後でだけ取得して即解放 ---
+# 旧実装は scrape 本体実行中も lock を握っていたため、racedata (14分超) が
+# odds/previews を完全ブロック。これが「更新が遅くなった」真因。
+GLOBAL_LOCK_FILE="${LOCK_DIR}/cron_scrape_global.lock"
+
+# git_pull を short lock 内（数秒）で実行
+git_pull_locked() {
+    (
+        flock -w "$GLOBAL_LOCK_WAIT_SEC" 201 || { log "SKIP: git pull lock busy >${GLOBAL_LOCK_WAIT_SEC}s"; exit 1; }
+        log "git fetch + rebase..."
+        git fetch origin main >> "$LOG_FILE" 2>&1 || { log "WARN: git fetch failed"; exit 1; }
+        if ! git rebase origin/main >> "$LOG_FILE" 2>&1; then
+            log "WARN: rebase conflict — aborting"
+            git rebase --abort 2>/dev/null
+            exit 1
+        fi
+    ) 201>"$GLOBAL_LOCK_FILE"
+}
+
+# git_push_if_changed を short lock 内で実行
+git_push_locked() {
+    local label="$1"
+    (
+        flock -w "$GLOBAL_LOCK_WAIT_SEC" 201 || { log "SKIP: git push lock busy >${GLOBAL_LOCK_WAIT_SEC}s"; exit 1; }
+        git_push_if_changed "$label"
+    ) 201>"$GLOBAL_LOCK_FILE"
 }
 
 # --- メイン処理 ---
 overall=0
 
-if ! acquire_global_git_lock; then
-    exit 0
-fi
-
-if ! git_pull; then
+if ! git_pull_locked; then
     overall=1
 fi
 
 case "$MODE" in
     odds)
         run_scrape "scrape_odds_fast.py" "odds" || overall=$?
-        git_push_if_changed "odds" || overall=$?
+        git_push_locked "odds" || overall=$?
         ;;
     previews)
         run_scrape "scrape_previews.py" "previews" || overall=$?
-        git_push_if_changed "previews" || overall=$?
+        git_push_locked "previews" || overall=$?
         ;;
     all)
         run_scrape "scrape_previews.py" "previews" || overall=$?
         run_scrape "scrape_odds_fast.py" "odds" || overall=$?
-        git_push_if_changed "odds+previews" || overall=$?
+        git_push_locked "odds+previews" || overall=$?
         ;;
     tide)
         run_scrape "scrape_tide.py" "tide" || overall=$?
-        git_push_if_changed "tide" || overall=$?
+        git_push_locked "tide" || overall=$?
         ;;
     racedata)
         run_scrape "scrape_racedata.py" "racedata" || overall=$?
-        git_push_if_changed "racedata" || overall=$?
+        git_push_locked "racedata" || overall=$?
         ;;
 esac
 
