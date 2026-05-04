@@ -75,6 +75,10 @@ step "X3 entry prediction tests" \
 step "X4 environment (tide / wind / storm) tests" \
      "node scripts/tests/test_environment.js"
 
+# 13) X5 シナリオ展開テスト
+step "X5 scenario / grade tests" \
+     "node scripts/tests/test_scenarios.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
