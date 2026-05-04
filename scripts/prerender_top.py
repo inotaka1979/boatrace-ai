@@ -88,11 +88,14 @@ def render_grid(programs: list[dict]) -> str:
             grade_num = races[0].get("race_grade_number", 5)
             grade_name, grade_cls = GRADE_CLASS.get(grade_num, GRADE_CLASS[5])
             first_rno = min((r.get("race_number", 99) for r in races), default=1)
+            # JS render は dayInfo (日目) + nextRn (R) の 2 つの stadium-day を持つ
+            #   prerender でも 2 つ用意して CLS 抑制（dayInfo は空、JS 後で埋まる）
             cards.append(
                 f'<div class="stadium-card active-stadium" data-sid="{sid}">'
                 f'<span class="stadium-grade {grade_cls}">{grade_name}</span>'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">0/{total}R</span>'
+                f'<span class="stadium-day">&nbsp;</span>'   # JS で dayInfo を埋める placeholder
                 f'<span class="stadium-day">{first_rno}R</span>'
                 f"</div>"
             )

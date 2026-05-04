@@ -3609,11 +3609,12 @@ function renderStadiums(){
       if(nextRn) nextRaceInfo=nextRn+'R';
       else nextRaceInfo='終了';
 
+      // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
       html += '<div class="stadium-card active-stadium" data-sid="'+sid+'">'
         +'<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
         +'<span class="stadium-name">'+name+'</span>'
         +'<span class="stadium-status">'+doneCount+'/'+totalRaces+'R</span>'
-        +(dayInfo?'<span class="stadium-day">'+dayInfo+'</span>':'')
+        +'<span class="stadium-day">'+(dayInfo||'&nbsp;')+'</span>'
         +'<span class="stadium-day">'+nextRaceInfo+'</span>'
         +'</div>';
     } else {
