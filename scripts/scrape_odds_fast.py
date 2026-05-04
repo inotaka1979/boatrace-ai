@@ -66,6 +66,22 @@ def parse_exacta(html):
         except ValueError: pass
     return odds
 
+# F7: 3連単パーサー（120 通り）
+def parse_trifecta(html):
+    soup = BeautifulSoup(html, "html.parser"); odds = {}
+    points = soup.select("td.oddsPoint")
+    combos = [f"{i}-{j}-{k}"
+              for i in range(1, 7)
+              for j in range(1, 7) if j != i
+              for k in range(1, 7) if k != i and k != j]
+    for k, el in enumerate(points):
+        if k >= len(combos): break
+        try:
+            v = float(el.get_text(strip=True))
+            if v > 0: odds[combos[k]] = v
+        except ValueError: pass
+    return odds
+
 async def scrape_race(session, limiter, sid, rn, date_str):
     jcd = f"{sid:02d}"; result = {"stadium": sid, "race": rn}
     html = await fetch(session, limiter, f"{ODDS_BASE}/oddstf?rno={rn}&jcd={jcd}&hd={date_str}")
@@ -76,6 +92,11 @@ async def scrape_race(session, limiter, sid, rn, date_str):
     if html:
         e = parse_exacta(html)
         if e: result["exacta"] = e
+    # F7: 3連単
+    html = await fetch(session, limiter, f"{ODDS_BASE}/odds3t?rno={rn}&jcd={jcd}&hd={date_str}")
+    if html:
+        t = parse_trifecta(html)
+        if t: result["trifecta"] = t
     return result
 
 def get_finished():
@@ -125,7 +146,8 @@ async def async_main():
     #        プレースホルダ {stadium,race} で上書きしない
     updated = 0
     for key, data in results.items():
-        if data.get("win") or data.get("exacta"):
+        # F7: trifecta も判定対象に追加
+        if data.get("win") or data.get("exacta") or data.get("trifecta"):
             existing[key] = data
             updated += 1
     for s, r in sorted(races):
