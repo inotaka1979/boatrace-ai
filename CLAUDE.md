@@ -329,3 +329,53 @@ Performance 42 の改善余地:
 - Lighthouse 4 領域中 3 領域で **100/100**（A11y / BP / SEO）
 - Performance 42 は単一 HTML 配信モデル維持下での実測値
 - ビルド再現性 CI ガード稼働中
+
+## 修正履歴 (2026-05-04: Performance 改善 PE-5/6)
+
+### PE-5: JS 200KB を assets/app.js に外部化 + defer
+- index.html: 200KB → 30KB (5442 行 → 501 行)
+  - inline `<script>...5000 lines...</script>` を `<script src="assets/app.js" defer>` に
+  - HTML 解析がブロックされず、FCP/LCP が大幅改善
+- assets/app.js (4941 行 / 218KB): 旧 inline の完全コピー
+- SW v6 → v7: STATIC_ASSETS に assets/app.js 追加
+- build/build.mjs: SAFE_STORAGE bundle 注入対象を assets/app.js に変更
+- scripts/tests/: 全 12 テストの readFileSync を assets/app.js 参照に
+- PD-3 controllerchange 自動リロードを user 操作起点に限定
+  （Lighthouse が初回 SW 登録の自動リロードを「redirect」と誤検知して
+   Performance を悪化させていた）
+
+### PE-6: JS minify (esbuild) + Critical CSS は inline 維持
+- 設計判断: CSS 分離は Python http.server (gzip 無し) で性能悪化
+  → CSS は inline 維持
+- esbuild minify ステップ追加
+  - assets/app.js (218KB, source) → assets/app.min.js (132KB, -40%)
+  - source は tests/debug 用、配信は .min 版
+- index.html を assets/app.min.js 参照に
+- SW v8 → v9: app.min.js キャッシュ
+
+### Lighthouse 計測まとめ
+
+| 計測 | 環境 | Perf | A11y | BP | SEO | LCP | FCP | TBT |
+|------|------|------|------|-----|------|-----|-----|-----|
+| Round 1 (生) | 本番 | 28 | 95 | 93 | 90 | 6.5s | 5.8s | 1240ms |
+| Round 2 (a11y/SEO 修正後) | 本番 | 46 | 95 | 100 | 100 | 8.3s | 7.8s | 0ms |
+| Round 3 (contrast 一掃) | ローカル | 42 | **100** | **100** | **100** | 6.7s | 6.3s | 340ms |
+| Round 4 (PE-5 defer) | ローカル | 50 | 100 | 100 | 100 | 7.4s | 5.7s | 0ms |
+| Round 5 (PE-6 minify) | ローカル | 52 | 100 | 100 | 100 | 6.3s | 5.5s | 0ms |
+| **Round 6 (本番最終)** | **本番** | **42** | **100** | **100** | **100** | **3.5s** | **2.7s** | 2170ms |
+
+本番 LCP 3.5s / FCP 2.7s は許容範囲（Good <2.5s, Needs Improvement <4s）。
+TBT 2170ms は本番データ取得（30+ JSON fetch）と DOM 再描画による。
+Performance を 95 まで押し上げるには:
+- 起動時 fetch を最小化（racerDB / stadiumDB は遅延 lazy-load）
+- 重い演算を Web Worker に分離
+- SSR or pre-render（GitHub Pages 静的配信では困難）
+
+### 最終 A+ 達成度
+
+| 領域 | 開始 | 最終 | 残課題 |
+|------|------|------|--------|
+| Security | D | **A+** ⭐ | PAT revoke で完成 |
+| Prediction | C- | **A** | 実データで Platt auto-tune |
+| Code Quality | B | **A+** ⭐ | Step 5 で CSP nonce 化が次段階 |
+| PWA/UX | B- | **A** | a11y/BP/SEO 100、Perf 起動時 fetch 最小化が次段階 |
