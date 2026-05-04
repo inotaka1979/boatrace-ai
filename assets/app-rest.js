@@ -3552,7 +3552,7 @@ async function refreshThisRace(){
     // Open APIから3つとも最新取得
     var ts='?t='+Date.now();
     var rawPg=await fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts);
-    var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts);
+    var rawPv=_filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts));
     var rawRs=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
     if(rawPg) programData=indexByStadiumRace(rawPg,'programs');
     if(rawPv) previewData=indexPreviews(rawPv);

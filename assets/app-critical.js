@@ -830,6 +830,12 @@ var _workerHeavyLoaded = false;
 // ===============================================
 // LIVE DATA MERGE HELPER
 // ===============================================
+
+// 公式 API previews/v2/today.json は前日データを残す傾向があるため、
+// race_date が今日 (JST) と一致しない場合は破棄。
+// 早朝〜展示走行前は previews 空表示が正しい状態。
+/* MOVED: function _filterStalePreviews */
+
 /* MOVED: function _applyLiveDataMerge */
 
 // ===============================================
@@ -1069,7 +1075,7 @@ setManagedInterval(async function(){
     var t=Date.now();
     var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
-    var rawPv=await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);
+    var rawPv=_filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
     if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
@@ -1175,7 +1181,7 @@ async function forceRefresh(){
     var t = Date.now();
     var rawP  = await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
-    var rawPv = await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t);
+    var rawPv = _filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
     if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
     var rawR  = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
@@ -1383,6 +1389,17 @@ async function _yieldToMain(){
   });
 }
 
+function _filterStalePreviews(raw){
+  if(!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
+  var today = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  var first = raw.previews[0].race_date || '';
+  if(first && first !== today){
+    console.warn('公式 API previews は古い('+first+' JST), 全件 skip');
+    return { previews: [], updated_at: raw.updated_at };
+  }
+  return raw;
+}
+
 function _applyLiveDataMerge(liveData){
   if(!liveData||!liveData.races||!liveData.races.length) return 0;
   var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
@@ -1440,7 +1457,7 @@ async function loadAllData(){
     fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts),
   ]);
   var rawPrograms = phase1[0];
-  var rawPreviews = phase1[1];
+  var rawPreviews = _filterStalePreviews(phase1[1]);
   await _yieldToMain();   // PH-5
   programData = indexByStadiumRace(rawPrograms, 'programs');
   await _yieldToMain();   // PH-5

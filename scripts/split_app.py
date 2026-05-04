@@ -159,6 +159,7 @@ CRITICAL_SEEDS = [
     '_applyLiveDataMerge',
     'validateApiPayload',   # PA-7: API スキーマ検証
     'cleanOldData', 'saveDB',  # critical setup 直呼び (PI-fix)
+    '_filterStalePreviews',  # loadAllData で呼ぶ critical helper
 ]
 
 critical_funcs: set[str] = set()
