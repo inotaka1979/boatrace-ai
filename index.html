@@ -346,18 +346,6 @@ button.action-btn:active{background:#F0F0F0}
       <div style="font-size:10px;color:var(--text-dim);margin-top:6px">RPiで serve_data.py を起動中の場合、レース更新を高速化できます</div>
     </div>
   </div>
-  <div class="card">
-    <div style="padding:12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">GitHub PAT (オッズ更新用)</div>
-    <div style="padding:12px">
-      <input type="password" class="pat-input" id="patInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="action-btn" onclick="savePAT()">保存</button>
-        <button class="action-btn" onclick="checkPAT()">テスト</button>
-      </div>
-      <div class="pat-status" id="patStatus"></div>
-    </div>
-  </div>
-  <div class="card">
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" onclick="clearCache()">クリア</button></div>
     <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" onclick="clearHistory()">リセット</button></div>
     <div class="setting-row"><span class="setting-label">選手/場DB</span><button class="action-btn" onclick="rebuildDB()">再構築</button></div>
@@ -2665,11 +2653,6 @@ function loadSettings(){
   document.getElementById('rpiUrlInput').value=rpiUrl;
   document.getElementById('rpiUrlStatus').innerHTML=rpiUrl?'<span class="pat-ok">URL設定済み</span>':'<span class="pat-ng">未設定</span>';
 
-  var pat=localStorage.getItem('boatrace_github_pat');
-  var patInput=document.getElementById('patInput');
-  if(pat) patInput.value=pat;
-  var patStatus=document.getElementById('patStatus');
-  patStatus.innerHTML=pat?'<span class="pat-ok">PAT設定済み</span>':'<span class="pat-ng">未設定</span>';
 
   var dbInfo=document.getElementById('dbInfo');
   var racerCount=Object.keys(racerDB).length;
@@ -2703,7 +2686,6 @@ function saveRpiUrl(){
   localStorage.setItem('boatrace_rpi_url',val);
   document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ok">URL保存済み</span>';
 }
-
 function testRpiUrl(){
   var url=document.getElementById('rpiUrlInput').value.trim().replace(/\/$/,'');
   if(!url){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ng">URLを入力してください</span>';return;}
@@ -2713,39 +2695,10 @@ function testRpiUrl(){
     .then(function(){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ok">接続OK</span>';})
     .catch(function(e){document.getElementById('rpiUrlStatus').innerHTML='<span class="pat-ng">エラー: '+escText(String(e))+'</span>';});
 }
-
 // ===============================================
-// GitHub PAT Management (PRESERVED)
+// (PAT機能撤去 P0-S02: localStorage平文保存はXSSで漏洩可能)
+// オッズ更新は cron 側で自動実行されるため PAT 経由 dispatch は不要
 // ===============================================
-function savePAT(){
-  var val=document.getElementById('patInput').value.trim();
-  if(!val){
-    localStorage.removeItem('boatrace_github_pat');
-    document.getElementById('patStatus').innerHTML='<span class="pat-ng">PAT削除済み</span>';
-    return;
-  }
-  localStorage.setItem('boatrace_github_pat',val);
-  document.getElementById('patStatus').innerHTML='<span class="pat-ok">PAT保存済み</span>';
-}
-
-function checkPAT(){
-  var pat=localStorage.getItem('boatrace_github_pat');
-  if(!pat){
-    document.getElementById('patStatus').innerHTML='<span class="pat-ng">PATが未設定です</span>';
-    return;
-  }
-  document.getElementById('patStatus').innerHTML='テスト中...';
-  fetch('https://api.github.com/user',{
-    headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json'}
-  }).then(function(r){
-    if(r.ok) return r.json();
-    throw new Error('HTTP '+r.status);
-  }).then(function(data){
-    document.getElementById('patStatus').innerHTML='<span class="pat-ok">OK: '+escText(data.login)+'</span>';
-  }).catch(function(e){
-    document.getElementById('patStatus').innerHTML='<span class="pat-ng">エラー: '+escText(e.message)+'</span>';
-  });
-}
 
 // ===============================================
 // レース単位の即時更新（Open API再取得+公式データマージ）
@@ -2815,52 +2768,25 @@ async function refreshThisRace(){
 }
 
 // ===============================================
-// Odds Refresh via GitHub Actions
+// Odds Refresh (P0-S02: PAT撤去 — クライアントから dispatch しない)
+// オッズは Raspberry Pi 上の cron が約3分間隔で自動更新する
 // ===============================================
 function refreshOdds(){
   var btn=document.getElementById('oddsRefreshBtn');
   if(btn){btn.disabled=true;btn.textContent='取得中...';}
 
-  // PAT設定済みならGitHub Actionsもトリガー（オプション）
-  var pat=localStorage.getItem('boatrace_github_pat');
-  var dispatchPromise=Promise.resolve();
-  if(pat){
-    dispatchPromise=fetch('https://api.github.com/repos/'+getRepoOwnerName()+'/dispatches',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
-      body:JSON.stringify({event_type:'refresh-odds'})
-    }).catch(function(){});
-  }
-
-  // PATの有無に関わらず、最新JSONを取得
-  var waitTime=pat?30000:500;
-  dispatchPromise.then(function(){
-    setTimeout(function(){
-      fetch('data/odds/today.json?t='+Date.now())
-        .then(function(r){if(r.ok) return r.json();throw new Error('fetch error')})
-        .then(function(d){
-          oddsData=d;
-          oddsLastFetched=Date.now();
-          if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
-          updateOddsUI();
-          if(currentStadium&&currentRace) openRace(currentStadium,currentRace);
-          setTimeout(function(){if(btn) btn.textContent='🔄 オッズ更新'},2000);
-        }).catch(function(){
-          if(btn){btn.textContent='🔄 オッズ更新';btn.disabled=false;}
-        });
-    },waitTime);
-  });
-}
-
-function getRepoOwnerName(){
-  try{
-    var loc=window.location.hostname;
-    if(loc.endsWith('.github.io')){
-      var owner=loc.replace('.github.io','');
-      return owner+'/boatrace-ai';
-    }
-  }catch(e){}
-  return'boatrace-ai/boatrace-ai';
+  fetch('data/odds/today.json?t='+Date.now())
+    .then(function(r){if(r.ok) return r.json();throw new Error('fetch error')})
+    .then(function(d){
+      oddsData=d;
+      oddsLastFetched=Date.now();
+      if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
+      updateOddsUI();
+      if(currentStadium&&currentRace) openRace(currentStadium,currentRace);
+      setTimeout(function(){if(btn) btn.textContent='🔄 オッズ更新'},2000);
+    }).catch(function(){
+      if(btn){btn.textContent='🔄 オッズ更新';btn.disabled=false;}
+    });
 }
 
 function startOddsAutoRefresh(){
@@ -2903,7 +2829,33 @@ function updateOddsUI(){
 // ===============================================
 // INITIALIZATION
 // ===============================================
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').then(function(reg){console.log('SW registered');reg.update();setInterval(function(){reg.update()},1800000)}).catch(function(e){console.warn('SW registration failed:',e)});navigator.serviceWorker.addEventListener('controllerchange',function(){console.log('New SW activated')})}
+// P0-S02: 旧バージョンで保存された PAT を強制削除（XSS対策）
+try{ localStorage.removeItem('boatrace_github_pat'); }catch(_){}
+
+// P0-S03: Service Worker 登録（PWAキャッシュ戦略を有効化）
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js')
+      .then(function(reg){
+        console.log('[SW] registered scope=', reg.scope);
+        // 30分おきに更新チェック（SWキャッシュ修正の挙動を維持）
+        reg.update();
+        setInterval(function(){ reg.update(); }, 1800000);
+        // 新版が来たら静かにリロード待機
+        reg.addEventListener('updatefound', function(){
+          var nw = reg.installing;
+          if(!nw) return;
+          nw.addEventListener('statechange', function(){
+            if(nw.state === 'installed' && navigator.serviceWorker.controller){
+              console.log('[SW] new version available; will activate on next reload');
+            }
+          });
+        });
+      })
+      .catch(function(err){ console.warn('[SW] register failed', err); });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange',function(){console.log('New SW activated')});
+}
 document.getElementById('headerDate').innerHTML=formatDate();
 cleanOldData();
 loadAllData();
