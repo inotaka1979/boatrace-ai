@@ -1,11 +1,18 @@
 name: Scrape Results
+# NOTE: cron schedule disabled — RPi5ローカル cron の smart-scheduler が
+# 結果も取得して data/previews/today.json に統合するため (X4 catch-up)
+# このワークフローはフォールバックとして workflow_dispatch のみ残す
 on:
-  schedule:
-    - cron: '*/10 1-12 * * *'  # JST 10:00-21:00に10分間隔
+  # schedule:
+  #   - cron: '*/10 1-12 * * *'  # JST 10:00-21:00に10分間隔 (disabled)
   workflow_dispatch:
+concurrency:
+  group: scrape-results
+  cancel-in-progress: true
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -13,11 +20,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install beautifulsoup4 lxml
+      - run: pip install -r scripts/requirements.txt
       - run: python scripts/scrape_results.py
-      - run: |
+      - name: Commit
+        run: |
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
+          git pull --rebase origin main || true
           git add data/
           git diff --staged --quiet || git commit -m "results: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push
+          git push || (git pull --rebase origin main && git push)
