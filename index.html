@@ -49,7 +49,7 @@
 <style>
 :root{
   --bg:#F5F5F5;--card-bg:#FFFFFF;--header-bg:#1A3A5C;
-  --text:#333333;--text-sub:#666666;--text-dim:#999999;
+  --text:#333333;--text-sub:#595959;--text-dim:#6B6B6B;
   --border:#E0E0E0;--accent:#1976D2;--danger:#D32F2F;
   --success:#2E7D32;--warn:#E65100;--gold:#A56A00;
   --boat1:#FFFFFF;--boat1-text:#333;--boat1-border:#CCC;
@@ -94,18 +94,20 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .stadium-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .stadium-card{border-radius:8px;padding:10px 6px;cursor:pointer;text-align:center;transition:transform .15s;position:relative;border:1px solid transparent}
 .stadium-card:active{transform:scale(0.96)}
-.stadium-card.active-stadium{background:#1E88E5;color:#fff;border-color:#1565C0}
+/* PE-2: WCAG AA 適合 (#1565C0 + #fff = 5.74:1) */
+.stadium-card.active-stadium{background:#1565C0;color:#fff;border-color:#0D47A1}
 .stadium-card.active-stadium .stadium-name{color:#fff}
-.stadium-card.active-stadium .stadium-status{color:rgba(255,255,255,0.85)}
-.stadium-card.inactive-stadium{background:#E0E0E0;color:#999;border-color:#D0D0D0}
-.stadium-card.inactive-stadium .stadium-name{color:#999}
-.stadium-card.inactive-stadium .stadium-status{color:#BBB}
+.stadium-card.active-stadium .stadium-status{color:#fff}
+.stadium-card.active-stadium .stadium-day{color:#fff}
+.stadium-card.inactive-stadium{background:#E0E0E0;color:#595959;border-color:#BDBDBD}
+.stadium-card.inactive-stadium .stadium-name{color:#595959}
+.stadium-card.inactive-stadium .stadium-status{color:#595959}
 .stadium-name{font-weight:700;font-size:13px;display:block}
 .stadium-grade{font-size:12px;padding:1px 4px;border-radius:4px;display:inline-block;font-weight:700;position:absolute;top:3px;right:3px}
 .grade-sg{background:#FF2244;color:#fff}
 .grade-g1{background:#FF6644;color:#fff}
 .grade-g2{background:#2288FF;color:#fff}
-.grade-g3{background:#22CC44;color:#fff}
+.grade-g3{background:#1B5E20;color:#fff}
 .grade-general{background:transparent;color:transparent}
 .stadium-status{font-size:12px;margin-top:2px;display:block}
 .stadium-day{font-size:12px;display:block;margin-top:1px}
