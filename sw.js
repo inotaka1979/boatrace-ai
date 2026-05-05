@@ -10,7 +10,7 @@
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v26';
+const VERSION = 'br-oracle-v27';
 const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',

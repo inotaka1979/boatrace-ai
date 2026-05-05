@@ -283,6 +283,38 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     var dm = matchMedia('(display-mode: standalone)').matches;
     var sw = navigator.serviceWorker;
     var ctrl = sw && sw.controller;
+    // 静的診断: ロゴ要素のサイズ / カード中央の elementFromPoint
+    function rectOf(sel){
+      var el = document.querySelector(sel);
+      if(!el) return '<no '+sel+'>';
+      var r = el.getBoundingClientRect();
+      var cs = getComputedStyle(el);
+      return sel+' rect='+(r.left|0)+','+(r.top|0)+' '+(r.width|0)+'x'+(r.height|0)
+        +' pos='+cs.position+' z='+cs.zIndex+' pe='+cs.pointerEvents;
+    }
+    function elAt(x,y){
+      try {
+        var el = document.elementFromPoint(x,y);
+        if(!el) return '@'+x+','+y+'=null';
+        var s = el.tagName.toLowerCase();
+        if(el.id) s += '#'+el.id;
+        if(el.className && typeof el.className==='string') s += '.'+el.className.split(/\s+/).slice(0,2).join('.');
+        var card = el.closest && el.closest('.stadium-card');
+        if(card) s += ' [card sid='+(card.getAttribute('data-sid')||'none')+']';
+        return '@'+x+','+y+'='+s;
+      } catch(e){ return '@'+x+','+y+'=ERR:'+e.message; }
+    }
+    var W = window.innerWidth, H = window.innerHeight;
+    var staticProbes = [
+      rectOf('.logo'),
+      rectOf('.header'),
+      rectOf('#stadiumList'),
+      'window:'+W+'x'+H,
+      'topAt(card area): ' + elAt((W/2)|0, 400),
+      'topAt(card area2):' + elAt(80, 400),
+      'topAt(card area3):' + elAt((W-80)|0, 600),
+      'topAt(logo area): ' + elAt(80, 80)
+    ].join('\n');
     var summary = [
       'standalone:'+dm,
       'sw.controller:'+(ctrl?ctrl.scriptURL.split('/').slice(-1)[0]+' state='+ctrl.state:'NONE'),
@@ -305,6 +337,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     ov.id = 'diagOverlay';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);color:#0f0;font:11px monospace;padding:12px;overflow:auto;z-index:2147483647;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
     ov.textContent = '=== DIAG ===\n'+summary
+      +'\n\n=== STATIC PROBES ===\n'+staticProbes
       +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
       +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
     var close = document.createElement('button');
