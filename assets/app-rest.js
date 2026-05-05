@@ -1678,15 +1678,22 @@ function _getAppWorker(){
       }
     });
     _appWorker.addEventListener('error', function(e){
-      // Epic 28d: ErrorEvent から詳細を取り出して reportError に流す
+      // Epic 28e: ErrorEvent の詳細を可能な限り抽出
+      //   Cross-Origin Worker error は browser がセキュリティ上詳細を hide するが、
+      //   Worker の URL や event.target の情報は取得可能なことがある
       var detail = {
         type: 'worker_error',
-        msg: (e && e.message) || 'unknown',
+        msg: (e && e.message) || 'unknown (cross-origin or load fail)',
         filename: (e && e.filename) || '',
         line: (e && e.lineno) || 0,
         col: (e && e.colno) || 0,
+        eventType: (e && e.type) || '',
+        target: (e && e.target && (e.target.scriptURL || e.target.url)) || '',
+        // ErrorEvent の boolean フラグ
+        defaultPrevented: !!(e && e.defaultPrevented),
+        timeStamp: (e && e.timeStamp) || 0,
       };
-      console.warn('[PG-3] worker error', detail.msg, '@', detail.filename + ':' + detail.line + ':' + detail.col);
+      console.warn('[PG-3] worker error', JSON.stringify(detail));
       try { reportError(detail); } catch(_){}
     });
     _appWorker.addEventListener('messageerror', function(e){

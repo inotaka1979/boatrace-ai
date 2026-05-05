@@ -352,6 +352,16 @@ try {
   var _lsBytes = 0;
   for(var _k in localStorage) _lsBytes += ((localStorage.getItem(_k)||'').length * 2);
   if(_lsBytes > 2 * 1024 * 1024){   // 2MB 超 (Epic 28b: 閾値を下げ早期介入)
+    // Epic 28e: 容量超過時にキー別バイト数 TOP10 を出力 (原因究明用)
+    var _topKeys = [];
+    for(var _kx=0;_kx<localStorage.length;_kx++){
+      var _kn = localStorage.key(_kx);
+      if(!_kn) continue;
+      _topKeys.push({ k:_kn, b:(localStorage.getItem(_kn)||'').length*2 });
+    }
+    _topKeys.sort(function(a,b){return b.b-a.b}).slice(0,10).forEach(function(it){
+      console.warn('[storage]   ' + (it.b/1024).toFixed(0) + ' KB - ' + it.k);
+    });
     console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing all bc_*');
     var _bcRm = 0;
     var _bcK = [];
@@ -378,26 +388,33 @@ try {
 //   起動時の同期 _bootParseLS は LS から読むため、IDB に既に移ってる場合は
 //   再代入が必要。完了後にイベント発火。
 (function _bootIdbMigrate(){
-  if(typeof idbMigrateFromLS !== 'function') return;
-  idbMigrateFromLS().then(function(res){
-    if(res && (res.migrated.length || res.errors && res.errors.length)){
-      console.log('[idb] migrate:', res);
+  // Epic 28e: rest 側関数のため typeof guard 必須 + polling で必ず実行
+  function tryRun(retry){
+    if(typeof idbMigrateFromLS !== 'function'){
+      if(retry > 50){ console.warn('[idb] idbMigrateFromLS not loaded after 5s — IDB unavailable'); return; }
+      setTimeout(function(){ tryRun(retry+1); }, 100);
+      return;
     }
-    // IDB から再 load — LS が空でも IDB にあればそこから取る
-    return Promise.all([
-      idbGet('boatrace_racerDB'),
-      idbGet('boatrace_stadiumDB'),
-    ]);
-  }).then(function(arr){
-    if(arr[0] && typeof arr[0] === 'object' && Object.keys(arr[0]).length > 0){
-      try { racerDB = arr[0]; } catch(_){}
-    }
-    if(arr[1] && typeof arr[1] === 'object' && Object.keys(arr[1]).length > 0){
-      try { stadiumDB = arr[1]; } catch(_){}
-    }
-  }).catch(function(e){
-    console.warn('[idb] boot migrate/load failed:', e);
-  });
+    console.log('[idb] migrate start (IDB available='+(typeof indexedDB !== 'undefined')+')');
+    idbMigrateFromLS().then(function(res){
+      console.log('[idb] migrate done: migrated=' + ((res && res.migrated)||[]).length
+                  + ' errors=' + ((res && res.errors)||[]).length);
+      if(res && res.migrated && res.migrated.length){
+        console.log('[idb]   migrated keys:', res.migrated.join(', '));
+      }
+      return Promise.all([ idbGet('boatrace_racerDB'), idbGet('boatrace_stadiumDB') ]);
+    }).then(function(arr){
+      if(arr[0] && typeof arr[0] === 'object' && Object.keys(arr[0]).length > 0){
+        try { racerDB = arr[0]; console.log('[idb] reloaded racerDB ('+Object.keys(arr[0]).length+' racers)'); } catch(_){}
+      }
+      if(arr[1] && typeof arr[1] === 'object' && Object.keys(arr[1]).length > 0){
+        try { stadiumDB = arr[1]; console.log('[idb] reloaded stadiumDB ('+Object.keys(arr[1]).length+' stadiums)'); } catch(_){}
+      }
+    }).catch(function(e){
+      console.warn('[idb] boot migrate/load failed:', e && e.message);
+    });
+  }
+  tryRun(0);
 })();
 
 // =====================================================================
@@ -3962,15 +3979,22 @@ function _getAppWorker(){
       }
     });
     _appWorker.addEventListener('error', function(e){
-      // Epic 28d: ErrorEvent から詳細を取り出して reportError に流す
+      // Epic 28e: ErrorEvent の詳細を可能な限り抽出
+      //   Cross-Origin Worker error は browser がセキュリティ上詳細を hide するが、
+      //   Worker の URL や event.target の情報は取得可能なことがある
       var detail = {
         type: 'worker_error',
-        msg: (e && e.message) || 'unknown',
+        msg: (e && e.message) || 'unknown (cross-origin or load fail)',
         filename: (e && e.filename) || '',
         line: (e && e.lineno) || 0,
         col: (e && e.colno) || 0,
+        eventType: (e && e.type) || '',
+        target: (e && e.target && (e.target.scriptURL || e.target.url)) || '',
+        // ErrorEvent の boolean フラグ
+        defaultPrevented: !!(e && e.defaultPrevented),
+        timeStamp: (e && e.timeStamp) || 0,
       };
-      console.warn('[PG-3] worker error', detail.msg, '@', detail.filename + ':' + detail.line + ':' + detail.col);
+      console.warn('[PG-3] worker error', JSON.stringify(detail));
       try { reportError(detail); } catch(_){}
     });
     _appWorker.addEventListener('messageerror', function(e){
