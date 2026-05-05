@@ -641,6 +641,8 @@ button.action-btn:active{background:#F0F0F0}
     </div>
   </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" data-action="clearCache">クリア</button></div>
+    <!-- Epic 28: 容量超過時の緊急クリア (bc_* + 破損 + diag を全削除) -->
+    <div class="setting-row"><span class="setting-label">容量緊急解放</span><button class="action-btn" data-action="emergencyStorageCleanup">実行</button></div>
     <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" data-action="clearHistory">リセット</button></div>
     <div class="setting-row"><span class="setting-label">選手/場DB</span><button class="action-btn" data-action="rebuildDB">再構築</button></div>
     <div class="setting-row"><span class="setting-label">学習重み</span><button class="action-btn" data-action="resetWeights">リセット</button></div>

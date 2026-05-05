@@ -343,6 +343,42 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 // P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
 try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
 
+// Epic 28: localStorage 緊急クリーンアップ — 起動時に容量が 80% 超ならクリーンアップ
+//   ユーザ報告 5.34MB/5MB (107%) 対策。bc_* cache の自動 expire を起動最早期にも走らせる
+//   (cleanOldData は idle で遅延、間に合わないケースの保険)
+try {
+  var _lsBytes = 0;
+  for(var _k in localStorage) _lsBytes += ((localStorage.getItem(_k)||'').length * 2);
+  if(_lsBytes > 4 * 1024 * 1024){   // 4MB 超
+    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — emergency cleanup');
+    var _bcRm = 0, _bcCutoff = Date.now() - 10*60*1000;
+    var _bcK = [];
+    for(var _i=0;_i<localStorage.length;_i++){
+      var _kk = localStorage.key(_i);
+      if(_kk && _kk.indexOf('bc_')===0) _bcK.push(_kk);
+    }
+    _bcK.forEach(function(_kk){
+      try {
+        var _raw = localStorage.getItem(_kk);
+        if(!_raw){ localStorage.removeItem(_kk); _bcRm++; return; }
+        var _obj = JSON.parse(_raw);
+        if(!_obj || typeof _obj.time !== 'number' || _obj.time < _bcCutoff){
+          localStorage.removeItem(_kk); _bcRm++;
+        }
+      } catch(_) { try { localStorage.removeItem(_kk); _bcRm++; }catch(__){} }
+    });
+    // diag / 破損キー も一掃
+    try { localStorage.removeItem('boatrace_diag'); }catch(_){}
+    var _corrK = [];
+    for(var _j=0;_j<localStorage.length;_j++){
+      var _ck = localStorage.key(_j);
+      if(_ck && _ck.indexOf('__corrupt_') > 0) _corrK.push(_ck);
+    }
+    _corrK.forEach(function(_kk){ try{ localStorage.removeItem(_kk); }catch(__){} });
+    console.warn('[storage] emergency cleanup done: bc_*='+_bcRm+' corrupt='+_corrK.length);
+  }
+} catch(_){ /* localStorage 全体不可なら諦め */ }
+
 // Epic 13 (P1-B2): IndexedDB migration — LS の大型キーを IDB に移し、
 //   in-memory racerDB / stadiumDB を IDB から読み直す（async、fire-and-forget）
 //   起動時の同期 _bootParseLS は LS から読むため、IDB に既に移ってる場合は
@@ -693,6 +729,40 @@ var ACTION_HANDLERS = {
     else if(typeof setLocale === 'function'){ setLocale(el.value); try { location.reload(); }catch(_){} }
   },
   shareLearnedWeights:     function(){ if(typeof _shareLearnedWeights==='function') _shareLearnedWeights(); },
+  emergencyStorageCleanup: function(){
+    // Epic 28: 容量緊急解放 — bc_* / __corrupt_* / diag を全削除し、history も上限超なら trim
+    if(!confirm('localStorage の bc_* (API キャッシュ) / 破損キー / 診断ログを全て削除します。\n履歴 / 学習データ / 設定は保持されます。よろしいですか？')) return;
+    var bcN=0, coN=0;
+    var ks=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k && (k.indexOf('bc_')===0 || k.indexOf('__corrupt_')>0)) ks.push(k);
+    }
+    ks.forEach(function(k){
+      try{
+        if(k.indexOf('bc_')===0) bcN++; else coN++;
+        localStorage.removeItem(k);
+      }catch(_){}
+    });
+    try { localStorage.removeItem('boatrace_diag'); }catch(_){}
+    // history を 1000 件に強制 trim
+    var hN=0;
+    try {
+      var raw = localStorage.getItem('boatrace_history');
+      if(raw){
+        var hist = JSON.parse(raw);
+        if(Array.isArray(hist) && hist.length > 1000){
+          var newHist = hist.slice(-1000);
+          localStorage.setItem('boatrace_history', JSON.stringify(newHist));
+          hN = hist.length - 1000;
+        }
+      }
+    } catch(_){}
+    var lsBytes=0; for(var kk in localStorage) lsBytes += ((localStorage.getItem(kk)||'').length*2);
+    alert('解放完了: bc_*=' + bcN + ' / 破損=' + coN + ' / history trim=' + hN
+          + '\n現在使用率: ' + (lsBytes/1024/1024).toFixed(2) + ' / 5 MB');
+    if(typeof loadSettings==='function') loadSettings();
+  },
 };
 
 // Epic 24: 真の FL endpoint via GitHub Issues opt-in upload
@@ -3113,6 +3183,34 @@ function cleanOldData(){
     saveDB();
     console.log('古いDBエントリを削除: 選手'+delR+'人, 場'+delS+'場');
   }
+  // Epic 28: bc_* (fetch cache) の自動 expire — 10分以上経過したものを起動時に削除
+  //   localStorage 5MB 超過 (ユーザ報告 5.34MB / 107%) の主因が bc_* 累積だったため
+  //   既存の clearCache() は手動全削除のみ、自動 expire が無く累積していた
+  var bcExpired = 0;
+  var bcKept = 0;
+  var bcCutoffMs = Date.now() - 10*60*1000; // 10 分
+  var bcKeys = [];
+  for(var i=0;i<localStorage.length;i++){
+    var k = localStorage.key(i);
+    if(k && k.indexOf('bc_')===0) bcKeys.push(k);
+  }
+  bcKeys.forEach(function(k){
+    try {
+      var raw = localStorage.getItem(k);
+      if(!raw){ localStorage.removeItem(k); bcExpired++; return; }
+      var obj = JSON.parse(raw);
+      if(!obj || typeof obj.time !== 'number' || obj.time < bcCutoffMs){
+        localStorage.removeItem(k);
+        bcExpired++;
+      } else {
+        bcKept++;
+      }
+    } catch(_){
+      // 破損 cache は削除
+      try { localStorage.removeItem(k); bcExpired++; } catch(__){}
+    }
+  });
+  if(bcExpired > 0) console.log('bc_* cache expire 削除: '+bcExpired+'件 (有効残'+bcKept+'件)');
 }
 
 // Epic 13: saveDB は IDB 優先、fallback で LS（既存呼出は同期 API のまま fire-and-forget）
