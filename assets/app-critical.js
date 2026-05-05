@@ -799,6 +799,11 @@ var _workerHeavyLoaded = false;
 // ===============================================
 // F17: 全場の確定レースに対して predictRace + savePrediction を一括実行
 // ユーザーが開いていない場の成績も「本日の場別」に反映されるようにする
+// 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
+// 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
+// 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
+/* MOVED: function _cleanStaleHistoryToday */
+
 /* MOVED: function _backfillTodayPredictions */
 
 /* MOVED: function savePrediction */

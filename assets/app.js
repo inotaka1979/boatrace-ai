@@ -2846,8 +2846,31 @@ function generateBetsV2(marks,method,count3,count2){
 // ===============================================
 // F17: 全場の確定レースに対して predictRace + savePrediction を一括実行
 // ユーザーが開いていない場の成績も「本日の場別」に反映されるようにする
+// 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
+// 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
+// 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
+function _cleanStaleHistoryToday(){
+  if(!resultData || Object.keys(resultData).length===0) return;
+  var today = todayStr();
+  var hist = safeParse('boatrace_history', []);
+  var before = hist.length;
+  hist = hist.filter(function(h){
+    if(h.date !== today) return true;            // 今日扱い以外はそのまま
+    if(!h.actual || h.actual.length === 0) return true; // 予想のみで結果未出は touch しない
+    var res = resultData[h.stadium] && resultData[h.stadium][h.race];
+    if(!res) return false;                       // 今日の resultData に存在しない = 古い
+    var rdate = (res.race_date||'').replace(/-/g,'');
+    return !rdate || rdate === today;
+  });
+  if(hist.length !== before){
+    safeSet('boatrace_history', hist);
+    console.warn('[history] cleaned '+(before-hist.length)+' stale "today" entries');
+  }
+}
+
 async function _backfillTodayPredictions(){
   if(!programData || !resultData) return;
+  _cleanStaleHistoryToday();   // 古いゴミを掃除してから backfill
   var today = todayStr();
   var saved = 0;
   var iter = 0;
@@ -2858,15 +2881,20 @@ async function _backfillTodayPredictions(){
   for(var sid in programData){
     var stadium = programData[sid];
     for(var rn in stadium){
-      var hasResult = resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
+      var res = resultData[sid] && resultData[sid][rn];
+      var hasResult = res && res.isFinished;
       if(!hasResult) continue;
+      // race_date が今日 (JST) と一致しないレースは skip
+      // （API が前日結果を返すケースで「entry.date=今日 / 中身=昨日」を防ぐ）
+      var rdate = (res.race_date || '').replace(/-/g,'');
+      if(rdate && rdate !== today) continue;
       try {
         // PG-4: Worker 経由（並列で main thread 解放）or 同期 fallback
         var pred = useWorker
           ? await predictRaceAsync(sid, parseInt(rn))
           : predictRace(sid, parseInt(rn));
         if(pred){
-          savePrediction(today, sid, rn, pred, resultData[sid][rn]);
+          savePrediction(today, sid, rn, pred, res);
           saved++;
         }
       } catch(e){
