@@ -1910,6 +1910,8 @@ function renderStadiums(){
 }
 
 function openStadium(sid){
+  var trace = (typeof globalThis._diagTrace === 'function') ? globalThis._diagTrace : function(){};
+  trace('openStadium ENTER sid='+sid+' predictRaceDef='+(typeof predictRace)+' savePredictionDef='+(typeof savePrediction));
   // PI-fix: 真因確定 — predictRace 等は app-rest.js にあり async load。
   //   rest が未 load の状態で openStadium 内部で参照すると ReferenceError で
   //   サイレント失敗 → 画面遷移しない。rest load を待ってから再実行する。
@@ -2112,33 +2114,42 @@ function _setupServiceWorker(){
 }
 
 function _setupStadiumDelegation(){
+  // PI-fix: in-memory trace を最優先（reportError が動かない場合の保険）
+  var trace = (typeof globalThis._diagTrace === 'function') ? globalThis._diagTrace : function(){};
+  trace('setupDelegation: ENTER');
   var list = document.getElementById('stadiumList');
   if(!list){
+    trace('setupDelegation: #stadiumList NOT FOUND');
     try { reportError({type:'diag', msg:'_setupStadiumDelegation: #stadiumList not found'}); }catch(_){}
     return;
   }
+  trace('setupDelegation: list found, attaching listeners');
   function handleCardClick(phase, e){
     var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
-    if(e._delegationHandled) {
-      try { reportError({type:'diag', msg:'delegation['+phase+'] skipped (already handled)'}); }catch(_){}
+    trace('cardClick['+phase+'] target='+(e.target && e.target.tagName ? e.target.tagName.toLowerCase()+'.'+(e.target.className||'').split(/\s+/)[0] : '?')+' sid='+card.getAttribute('data-sid'));
+    if(e._delegationHandled){
+      trace('cardClick['+phase+'] SKIPPED (already handled)');
       return;
     }
     e._delegationHandled = true;
     var sid = card.getAttribute('data-sid');
     var hasOpenStadium = typeof openStadium === 'function';
+    trace('cardClick['+phase+'] FIRE sid='+sid+' osDef='+hasOpenStadium);
     try { reportError({type:'diag', msg:'delegation['+phase+'] FIRE sid='+sid+' osDef='+hasOpenStadium}); }catch(_){}
     if(sid && hasOpenStadium){
       try {
         openStadium(sid);
-        try { reportError({type:'diag', msg:'delegation['+phase+'] openStadium('+sid+') returned ok'}); }catch(_){}
+        trace('cardClick['+phase+'] openStadium returned');
       } catch(err) {
+        trace('cardClick['+phase+'] openStadium THREW: '+(err && err.message));
         try { reportError({type:'diag', msg:'delegation['+phase+'] openStadium THREW: '+(err && err.message)}); }catch(_){}
       }
     }
   }
   list.addEventListener('click', function(e){ handleCardClick('bubble', e); });
   document.addEventListener('click', function(e){ handleCardClick('capture', e); }, true);
+  trace('setupDelegation: listeners attached');
   try { reportError({type:'diag', msg:'_setupStadiumDelegation: listeners attached'}); }catch(_){}
 }
 
