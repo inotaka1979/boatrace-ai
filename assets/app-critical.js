@@ -1872,6 +1872,7 @@ function _setupStadiumDelegation(){
   list.addEventListener('click', function(e){
     var card = e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
+    if(card.hasAttribute('onclick')) return;   // inline onclick が処理済（prerender）
     var sid = card.getAttribute('data-sid');
     if(sid && typeof openStadium === 'function') openStadium(sid);
   });

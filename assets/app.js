@@ -5146,12 +5146,15 @@ function _setupServiceWorker(){
 }
 
 // PG-6: stadium-card event delegation
+// PI-fix: prerendered card は inline onclick も持つ（iOS standalone 防御）。
+//   その場合 onclick が先に発火しているので、ここは無視（card.dataset._fired guard）。
 function _setupStadiumDelegation(){
   var list = document.getElementById('stadiumList');
   if(!list) return;
   list.addEventListener('click', function(e){
     var card = e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
+    if(card.hasAttribute('onclick')) return;   // inline onclick が処理済
     var sid = card.getAttribute('data-sid');
     if(sid && typeof openStadium === 'function') openStadium(sid);
   });

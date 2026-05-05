@@ -77,8 +77,10 @@ def render_grid(programs: list[dict]) -> str:
         if sid:
             by_sid.setdefault(sid, []).append(p)
 
-    # PG-6 + CLS 対策: onclick → data-sid (event delegation) のみ最適化
-    #   要素構成は JS render と一致させて CLS 抑制
+    # PI-fix: inline onclick を復活（iOS standalone PWA で event delegation の click
+    #   bubbling が効かない事例があるため）。data-sid も併存させて JS 側 delegation
+    #   とも互換。renderStadiums() で再描画されるカードは data-sid のみ → 委譲経由。
+    #   role="button" + tabindex は iOS が tappable element と認識しやすくする保険。
     cards: list[str] = []
     for sid in range(1, 25):
         name = STADIUMS.get(sid, f"場{sid}")
@@ -88,14 +90,13 @@ def render_grid(programs: list[dict]) -> str:
             grade_num = races[0].get("race_grade_number", 5)
             grade_name, grade_cls = GRADE_CLASS.get(grade_num, GRADE_CLASS[5])
             first_rno = min((r.get("race_number", 99) for r in races), default=1)
-            # JS render は dayInfo (日目) + nextRn (R) の 2 つの stadium-day を持つ
-            #   prerender でも 2 つ用意して CLS 抑制（dayInfo は空、JS 後で埋まる）
             cards.append(
-                f'<div class="stadium-card active-stadium" data-sid="{sid}">'
+                f'<div class="stadium-card active-stadium" data-sid="{sid}" '
+                f'role="button" tabindex="0" onclick="openStadium(\'{sid}\')">'
                 f'<span class="stadium-grade {grade_cls}">{grade_name}</span>'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">0/{total}R</span>'
-                f'<span class="stadium-day">&nbsp;</span>'   # JS で dayInfo を埋める placeholder
+                f'<span class="stadium-day">&nbsp;</span>'
                 f'<span class="stadium-day">{first_rno}R</span>'
                 f"</div>"
             )
