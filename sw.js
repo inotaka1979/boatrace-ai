@@ -10,7 +10,7 @@
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v24';
+const VERSION = 'br-oracle-v25';
 const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',
@@ -37,14 +37,24 @@ const ALLOWED_API_ORIGINS = new Set([
   'https://inotaka1979.github.io',
 ]);
 
-// install: 静的アセットをキャッシュし、即座に skipWaiting で activate へ進む
-//   PI-fix: iOS standalone PWA で waiting のまま old SW が居座り、ユーザが
-//   toast を押せず古い JS を引きずる事故を防ぐため W-03 を一部緩和。
-//   page 側 controllerchange で自動 reload するので体感は数秒の自動更新のみ。
+// install: 静的アセットをキャッシュ。skipWaiting は addAll の成否に関わらず実行
+//   （fail-soft）— iOS で 1 アセットの 404/network glitch で activate が
+//   永久に止まる事故を防ぐ。page 側 controllerchange で自動 reload。
 self.addEventListener('install', (e) => {
+  // skipWaiting は fail-soft で先に呼ぶ
+  self.skipWaiting();
   e.waitUntil(
-    caches.open(VERSION).then((c) => c.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(VERSION)
+      .then((c) => c.addAll(STATIC_ASSETS))
+      .catch((err) => {
+        // 1 ファイル失敗でも他のキャッシュは個別 put で救済
+        console.warn('[SW] addAll failed, fallback to individual put:', err);
+        return caches.open(VERSION).then(async (c) => {
+          for (const url of STATIC_ASSETS) {
+            try { await c.add(url); } catch (e2) { /* 個別失敗は無視 */ }
+          }
+        });
+      })
   );
 });
 

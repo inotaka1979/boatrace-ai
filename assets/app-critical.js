@@ -220,6 +220,96 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 
 /* BUILD:SAFE_STORAGE:END */
 
+// =====================================================================
+// PI-fix: 診断オーバーレイ（iOS standalone PWA タップ不能問題の調査用）
+//   - capture-phase で touchstart/touchend/click を全て記録
+//   - タイトル「BOATRACE AI」を 5 回タップで debug overlay 表示
+//   - 表示内容: SW state / typeof openStadium / 直近 5 タップの target chain
+//     / pointer-events / display-mode standalone 判定
+//   - リング 30 件を localStorage 'boatrace_diag' に保存（コピーして共有可能）
+// =====================================================================
+(function(){
+  var DIAG_MAX = 30;
+  var ring = [];
+  function pushDiag(o){
+    o.t = Date.now();
+    ring.push(o);
+    if(ring.length > DIAG_MAX) ring.shift();
+    try { localStorage.setItem('boatrace_diag', JSON.stringify(ring)); }catch(_){}
+  }
+  function targetInfo(t){
+    if(!t || !t.tagName) return '<none>';
+    var s = t.tagName.toLowerCase();
+    if(t.id) s += '#'+t.id;
+    if(t.className && typeof t.className==='string') s += '.'+t.className.split(/\s+/).slice(0,2).join('.');
+    var card = t.closest && t.closest('.stadium-card');
+    if(card){
+      s += ' [card sid='+(card.getAttribute('data-sid')||'none')
+        + ' onclick='+(card.hasAttribute('onclick')?'YES':'NO')
+        + ' pe='+getComputedStyle(card).pointerEvents+']';
+    }
+    return s;
+  }
+  ['touchstart','touchend','click','pointerdown'].forEach(function(ev){
+    document.addEventListener(ev, function(e){
+      var t = e.target;
+      var x = (e.touches && e.touches[0] ? e.touches[0].clientX :
+               (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : e.clientX)) || 0;
+      var y = (e.touches && e.touches[0] ? e.touches[0].clientY :
+               (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : e.clientY)) || 0;
+      var top = '';
+      try{
+        var el = document.elementFromPoint(x,y);
+        if(el) top = el.tagName.toLowerCase()+(el.className?'.'+String(el.className).split(/\s+/)[0]:'');
+      }catch(_){}
+      pushDiag({ev:ev, tg:targetInfo(t), x:x|0, y:y|0, top:top,
+        ostype:typeof openStadium, hasCtrl:!!(navigator.serviceWorker && navigator.serviceWorker.controller)});
+    }, true);   // capture phase
+  });
+  // タイトル「BOATRACE AI」(.logo) を 5 連打で overlay 表示
+  var headerTaps = [];
+  document.addEventListener('click', function(e){
+    var hd = e.target.closest && e.target.closest('.logo');
+    if(!hd) return;
+    var now = Date.now();
+    headerTaps = headerTaps.filter(function(t){ return now-t < 2000; });
+    headerTaps.push(now);
+    if(headerTaps.length >= 5){
+      headerTaps = [];
+      showDiagOverlay();
+    }
+  }, true);
+  function showDiagOverlay(){
+    if(document.getElementById('diagOverlay')) return;
+    var dm = matchMedia('(display-mode: standalone)').matches;
+    var sw = navigator.serviceWorker;
+    var ctrl = sw && sw.controller;
+    var summary = [
+      'standalone:'+dm,
+      'sw.controller:'+(ctrl?ctrl.scriptURL.split('/').slice(-1)[0]+' state='+ctrl.state:'NONE'),
+      'openStadium:'+typeof openStadium,
+      'cards:'+document.querySelectorAll('.stadium-card[data-sid]').length,
+      'cards.onclick:'+document.querySelectorAll('.stadium-card[onclick]').length,
+      'delegation:'+(typeof _setupStadiumDelegation),
+      'UA:'+navigator.userAgent.slice(0,80)
+    ].join('\n');
+    var lines = ring.slice(-15).map(function(d){
+      return new Date(d.t).toISOString().slice(11,19)+' '+d.ev+' '+d.tg+' @'+d.x+','+d.y+' top='+d.top+' os='+d.ostype;
+    }).join('\n');
+    var ov = document.createElement('div');
+    ov.id = 'diagOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);color:#0f0;font:11px monospace;padding:12px;overflow:auto;z-index:2147483647;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
+    ov.textContent = '=== DIAG ===\n'+summary+'\n\n=== EVENTS (last 15) ===\n'+lines;
+    var close = document.createElement('button');
+    close.textContent = '× 閉じる';
+    close.style.cssText = 'position:fixed;top:10px;right:10px;background:#f00;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
+    close.onclick = function(){ ov.remove(); close.remove(); };
+    document.body.appendChild(ov);
+    document.body.appendChild(close);
+  }
+  globalThis.showDiagOverlay = showDiagOverlay;
+})();
+
 // PB-11: クラス不均衡対策 — 全国コース別 1着率を log prior としてロジットに加算
 //        softmax(log_prior + w·x) で base rate に揃える Bayesian 風の初期化
 var COURSE_LOG_PRIOR = [
@@ -1834,7 +1924,9 @@ function _runIdleTask(fn, delay){
 
 function _setupServiceWorker(){
   if(!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('./sw.js')
+  // updateViaCache:'none' で sw.js 自体を HTTP cache から外し、
+  //   iOS が古い VERSION を見続ける事故を防ぐ
+  navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'})
     .then(function(reg){
       console.log('[SW] registered scope=', reg.scope);
       _runIdleTask(function(){ reg.update(); }, 100);
