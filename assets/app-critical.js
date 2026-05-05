@@ -685,6 +685,11 @@ var ACTION_HANDLERS = {
     else if(key === 'bankroll') v = parseInt(v, 10) || 10000;
     saveSetting(key, v);
   },
+  changeLocale:            function(el){
+    // Epic 22: 言語切替 — applyLocale で再翻訳、setLocale fallback で reload
+    if(typeof applyLocale === 'function'){ applyLocale(el.value); }
+    else if(typeof setLocale === 'function'){ setLocale(el.value); try { location.reload(); }catch(_){} }
+  },
 };
 /* MOVED: function _setupActionDelegation */
 // 起動時に登録（_setupStadiumDelegation の隣で）
@@ -1329,9 +1334,56 @@ window.addEventListener('unhandledrejection', function(e){
 /* BUILD:I18N:END */
 
 /* BUILD:DP_GRADIENT:START */
-// Epic 21: src/utils/dp_gradient.js — 差分プライバシー gradient ヘルパ
-// L2 norm clipping + Gaussian noise mechanism。
-// globalThis.clipGradient / addGaussianNoise / buildDPGradient / estimateDPParams を export。
+"use strict";
+(() => {
+  // ../src/utils/dp_gradient.js
+  function _sampleStdNormal() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _l2Norm(arr) {
+    let s = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (Number.isFinite(arr[i])) s += arr[i] * arr[i];
+    }
+    return Math.sqrt(s);
+  }
+  function clipGradient(grad, maxNorm) {
+    if (!Array.isArray(grad)) return grad;
+    const m = Math.max(1e-3, maxNorm || 1);
+    const n = _l2Norm(grad);
+    if (n <= m || n === 0) return grad.map((g) => Number.isFinite(g) ? g : 0);
+    const scale = m / n;
+    return grad.map((g) => Number.isFinite(g) ? g * scale : 0);
+  }
+  function addGaussianNoise(grad, sigma) {
+    if (!Array.isArray(grad)) return grad;
+    const s = Math.max(0, sigma || 0);
+    if (s === 0) return grad.slice();
+    return grad.map((g) => Number.isFinite(g) ? g + _sampleStdNormal() * s : 0);
+  }
+  function buildDPGradient(grad, opts) {
+    const o = opts || {};
+    const clipped = clipGradient(grad, o.maxNorm != null ? o.maxNorm : 1);
+    return addGaussianNoise(clipped, o.sigma != null ? o.sigma : 0.1);
+  }
+  function estimateDPParams(epsilon, delta, T) {
+    const eps = Math.max(0.01, epsilon || 1);
+    const dlt = Math.max(1e-9, delta || 1e-5);
+    const t = Math.max(1, T || 100);
+    const sensitivity = 1;
+    const epsPerStep = eps / Math.sqrt(t);
+    const sigma = Math.sqrt(2 * Math.log(1.25 / dlt)) * sensitivity / epsPerStep;
+    return { sigma, epsPerStep, T: t, epsilon: eps, delta: dlt };
+  }
+  globalThis.clipGradient = clipGradient;
+  globalThis.addGaussianNoise = addGaussianNoise;
+  globalThis.buildDPGradient = buildDPGradient;
+  globalThis.estimateDPParams = estimateDPParams;
+})();
+
 /* BUILD:DP_GRADIENT:END */
 
 // PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）

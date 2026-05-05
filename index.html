@@ -378,7 +378,7 @@ button.action-btn:active{background:#F0F0F0}
   <div class="header-right">
     <div id="headerDate" aria-live="off"></div>
     <div id="dataFreshness" style="font-size:12px" aria-live="off"></div>
-    <button class="refresh-btn" data-action="hardReload">更新</button>
+    <button class="refresh-btn" data-action="hardReload" data-i18n="common.refresh">更新</button>
   </div>
 </header>
 <!-- P0-7: API障害バナー — fetch失敗 / schema不正時のみ表示、再試行/閉じるボタン付き -->
@@ -410,7 +410,7 @@ button.action-btn:active{background:#F0F0F0}
 
 <!-- Screen 2: Race List -->
 <div class="page" id="pageRaces">
-  <button class="back-btn" data-action="showPage" data-arg-page="top">← 場選択に戻る</button>
+  <button class="back-btn" data-action="showPage" data-arg-page="top" data-i18n="race.back_to_top">← 場選択に戻る</button>
   <div style="font-weight:700;font-size:16px;margin-bottom:8px" id="racesTitle"></div>
   <div id="raceSummary"></div>
   <div id="racesList"></div>
@@ -421,7 +421,7 @@ button.action-btn:active{background:#F0F0F0}
   <button class="back-btn" id="detailBack">← レース一覧に戻る</button>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
     <div style="font-weight:700;font-size:16px" id="detailTitle"></div>
-    <button class="odds-refresh-btn" id="oddsRefreshBtn" data-action="refreshThisRace">🔄 このレースを更新</button>
+    <button class="odds-refresh-btn" id="oddsRefreshBtn" data-action="refreshThisRace" data-i18n="race.refresh_this">🔄 このレースを更新</button>
     <span class="odds-stale" id="oddsStaleMsg"></span>
   </div>
   <!-- P0-4: 詳細画面の Tabs 化 — 縦スクロール 10画面超 → 3タブで認知負荷を低減 -->
@@ -581,9 +581,17 @@ button.action-btn:active{background:#F0F0F0}
     </div>
     <!-- Epic 18 (P2-7): SharedArrayBuffer 実験オプション -->
     <div class="setting-row">
-      <span class="setting-label">SAB高速化(実験)</span>
+      <span class="setting-label" data-i18n="settings.coi">SAB高速化(実験)</span>
       <span><button class="action-btn" data-action="toggleCOI">切替</button>
             <span id="coiStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未確認</span></span>
+    </div>
+    <!-- Epic 22 (P2-5 完全化): 表示言語切替 -->
+    <div class="setting-row">
+      <span class="setting-label" data-i18n="settings.language">表示言語</span>
+      <select id="setLocale" aria-label="Display language" data-action="changeLocale">
+        <option value="ja" selected>日本語</option>
+        <option value="en">English</option>
+      </select>
     </div>
   </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" data-action="clearCache">クリア</button></div>
@@ -607,11 +615,11 @@ button.action-btn:active{background:#F0F0F0}
 <!-- Navigation - 5 tabs (X7: バックテスト追加) -->
 <!-- PD-7 + PE-2: aria-label は visible text と一致（label-content-name-mismatch 解消） -->
 <nav class="nav" role="navigation" aria-label="メインメニュー">
-  <button class="nav-btn active" data-action="showPage" data-arg-page="top" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
-  <button class="nav-btn" data-action="showPage" data-arg-page="stats" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
-  <button class="nav-btn" data-action="showPage" data-arg-page="backtest" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
-  <button class="nav-btn" data-action="showPage" data-arg-page="settings" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
-  <button class="nav-btn" data-action="forceRefresh" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
+  <button class="nav-btn active" data-action="showPage" data-arg-page="top" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span><span data-i18n="page.top">TOP</span></button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="stats" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span><span data-i18n="page.stats">成績</span></button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="backtest" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span><span data-i18n="page.backtest">検証</span></button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="settings" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span><span data-i18n="page.settings">設定</span></button>
+  <button class="nav-btn" data-action="forceRefresh" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span><span data-i18n="common.refresh">更新</span></button>
 </nav>
 
 <!-- PI-3: code splitting — critical (33KB, top page render) を defer で即時実行

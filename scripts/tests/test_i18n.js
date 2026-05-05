@@ -44,8 +44,16 @@ console.log('');
 console.log('[setLocale]');
 t('en に切替成功', ctx.setLocale('en') === true);
 t('en で common.refresh = Refresh', ctx.t('common.refresh') === 'Refresh');
-t('en で 未翻訳キーは ja fallback',
-  ctx.t('settings.kpi_mode') === 'KPI モード');
+t('en で en 専用キーが en 翻訳',
+  ctx.t('settings.kpi_mode') === 'KPI mode');
+t('en に存在せず ja に存在するキーは ja fallback', (function(){
+  // 一時的に en テーブルから1件削除して fallback 動作を確認
+  var saved = ctx.I18N_TABLES.en['common.loading'];
+  delete ctx.I18N_TABLES.en['common.loading'];
+  var result = ctx.t('common.loading');
+  ctx.I18N_TABLES.en['common.loading'] = saved;
+  return result === 'データ取得中...';
+})());
 t('未対応 locale は false', ctx.setLocale('zz') === false);
 
 console.log('');
@@ -54,6 +62,30 @@ ctx.I18N_TABLES.ja['greet'] = 'こんにちは {{name}} さん';
 ctx.setLocale('ja');
 t('{{name}} 置換', ctx.t('greet', {name: '太郎'}) === 'こんにちは 太郎 さん');
 t('params 欠如時は placeholder 残し', ctx.t('greet', {}) === 'こんにちは {{name}} さん');
+
+console.log('');
+console.log('[Epic 22: 翻訳テーブル充実]');
+const jaKeys = Object.keys(ctx.I18N_TABLES.ja);
+const enKeys = Object.keys(ctx.I18N_TABLES.en);
+t('ja に 30+ キー (UI 主要文字列をカバー)', jaKeys.length >= 30);
+t('en に 30+ キー (ja と同等)', enKeys.length >= 30);
+t('en で UI 必須キーが完全翻訳',
+  (function(){
+    ctx.setLocale('en');
+    return ctx.t('settings.language') === 'Display language' && ctx.t('race.lineup') === 'Lineup';
+  })());
+t('ja に戻して確認', (function(){ ctx.setLocale('ja'); return ctx.t('settings.language') === '表示言語'; })());
+
+console.log('');
+console.log('[translatePage / applyLocale]');
+t('translatePage は document 不在環境で 0', (function(){
+  // ctx に document 無し → 0 を返す
+  return ctx.translatePage(null) === 0;
+})());
+t('applyLocale で setLocale が走る',
+  ctx.applyLocale('en') === true && ctx.getLocale() === 'en');
+t('applyLocale 未対応 locale は false',
+  ctx.applyLocale('zz') === false);
 
 console.log('');
 console.log(`=== Result: ${pass} passed, ${fail} failed ===`);

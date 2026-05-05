@@ -3895,6 +3895,9 @@ function loadSettings(){
   if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
   // Epic 18 (P2-7): COI 状態をボタン横に表示
   if(typeof _refreshCOIStatus === 'function') _refreshCOIStatus();
+  // Epic 22: 言語 dropdown を現 locale に同期
+  var localeSel = document.getElementById('setLocale');
+  if(localeSel && typeof getLocale === 'function') localeSel.value = getLocale();
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}
