@@ -690,7 +690,17 @@ var ACTION_HANDLERS = {
     if(typeof applyLocale === 'function'){ applyLocale(el.value); }
     else if(typeof setLocale === 'function'){ setLocale(el.value); try { location.reload(); }catch(_){} }
   },
+  shareLearnedWeights:     function(){ if(typeof _shareLearnedWeights==='function') _shareLearnedWeights(); },
 };
+
+// Epic 24: 真の FL endpoint via GitHub Issues opt-in upload
+//   1. クライアント自身の L2 重みに DP noise を加算
+//   2. payload を encode して新規 Issue 作成 URL を生成
+//   3. ユーザが github.com で内容確認 → submit (opt-in)
+//   4. .github/workflows/aggregate-fl-uploads.yml が parse → data/db/fl_uploads/ に保存
+//   5. 週次 compute_community_weights.py が aggregate に取り込む
+/* MOVED: function _shareLearnedWeights */
+
 /* MOVED: function _setupActionDelegation */
 // 起動時に登録（_setupStadiumDelegation の隣で）
 try { _setupActionDelegation(); } catch(_){}

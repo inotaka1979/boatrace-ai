@@ -83,5 +83,43 @@ class TestTrainL2(unittest.TestCase):
             self.assertTrue(math.isfinite(w))
 
 
+class TestEpic24FedAverage(unittest.TestCase):
+    """Epic 24: FL upload の fed-averaging テスト"""
+
+    def test_fed_average_single(self):
+        from compute_community_weights import fed_average, FEATURE_DIM
+        # 12 次元配列を渡す → 同じ配列が返る
+        w = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        avg = fed_average([w], [10])
+        self.assertEqual(len(avg), FEATURE_DIM)
+        for i in range(FEATURE_DIM):
+            self.assertAlmostEqual(avg[i], w[i], places=6)
+
+    def test_fed_average_weighted(self):
+        from compute_community_weights import fed_average
+        # 重み 1: [10,...] n=90, 重み 2: [0,...] n=10 → 平均 9, ...
+        ws = [[10.0] * 12, [0.0] * 12]
+        ns = [90, 10]
+        avg = fed_average(ws, ns)
+        self.assertEqual(len(avg), 12)
+        # 加重平均: 10*0.9 + 0*0.1 = 9
+        for v in avg:
+            self.assertAlmostEqual(v, 9.0, places=6)
+
+    def test_fed_average_empty_returns_init(self):
+        from compute_community_weights import fed_average, INIT_WEIGHTS
+        avg = fed_average([], [])
+        self.assertEqual(avg, INIT_WEIGHTS)
+
+    def test_fed_average_skips_invalid(self):
+        from compute_community_weights import fed_average
+        # NaN が混じっても 0 として扱われる
+        ws = [[float('nan')] * 12, [1.0] * 12]
+        ns = [50, 50]
+        avg = fed_average(ws, ns)
+        for v in avg:
+            self.assertAlmostEqual(v, 0.5, places=6)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

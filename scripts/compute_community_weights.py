@@ -37,6 +37,7 @@ PROGRAMS_DIR = ROOT / "data" / "programs"
 PREVIEWS_DIR = ROOT / "data" / "previews"
 RACER_DB_PATH = ROOT / "data" / "db" / "racerDB.json"
 STADIUM_DB_PATH = ROOT / "data" / "db" / "stadiumDB.json"
+FL_UPLOADS_DIR = ROOT / "data" / "db" / "fl_uploads"   # Epic 24
 OUTPUT = ROOT / "data" / "db" / "community_weights.json"
 
 FEATURE_DIM = 12
@@ -203,6 +204,34 @@ def collect_training_pairs_by_stadium() -> dict[str, list]:
     return by_sid
 
 
+def collect_fl_uploads() -> list[dict]:
+    """Epic 24: クライアント由来の DP gradient upload を収集。"""
+    if not FL_UPLOADS_DIR.exists():
+        return []
+    uploads = []
+    for fp in sorted(FL_UPLOADS_DIR.glob("*.json")):
+        try:
+            data = safe_load_json(str(fp), None)
+            if data and isinstance(data.get("weights"), list) and len(data["weights"]) == FEATURE_DIM:
+                uploads.append(data)
+        except Exception as e:
+            print(f"[community] fl_upload load failed {fp.name}: {e}")
+    return uploads
+
+
+def fed_average(weights_list: list[list[float]], n_list: list[int]) -> list[float]:
+    """federated averaging — n (学習ステップ数) で重み付け平均。"""
+    if not weights_list:
+        return INIT_WEIGHTS[:]
+    total_n = sum(n_list) or 1
+    avg = [0.0] * FEATURE_DIM
+    for w, n in zip(weights_list, n_list):
+        for i in range(FEATURE_DIM):
+            v = w[i] if i < len(w) and isinstance(w[i], (int, float)) and math.isfinite(w[i]) else 0.0
+            avg[i] += v * (n / total_n)
+    return avg
+
+
 def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     print(f"[community] collecting training pairs from {RESULTS_DIR}/*.json")
@@ -214,6 +243,16 @@ def main() -> None:
         print("[community] no training data, skipping")
         return
     weights, n_steps = train_l2(pairs)
+
+    # Epic 24: クライアントからの FL upload を fed-averaging で blend
+    fl_uploads = collect_fl_uploads()
+    if fl_uploads:
+        print(f"[community] blending {len(fl_uploads)} FL uploads via fed-averaging")
+        # サーバ学習結果 + 全クライアント upload で fed-average
+        all_weights = [weights] + [u["weights"] for u in fl_uploads]
+        all_n = [n_steps] + [int(u.get("n_steps") or 100) for u in fl_uploads]
+        weights = fed_average(all_weights, all_n)
+        n_steps = sum(all_n)
 
     # per-stadium の独立学習（場別の流れ・水面特性を吸収）
     by_sid = collect_training_pairs_by_stadium()
@@ -236,7 +275,8 @@ def main() -> None:
         # Epic 21: 階層的 FL 構造 — クライアントは self / stadium / global を blend
         "stadium_weights": stadium_weights,
         "stadium_n": stadium_n,
-        "fl_architecture": "centralized_hierarchical",
+        "fl_architecture": "centralized_hierarchical_with_uploads",  # Epic 24
+        "fl_upload_count": len(fl_uploads),  # Epic 24: 取り込んだクライアント数
         "_meta": quality_header(
             schema_version=2,  # bump (stadium_weights 追加)
             source_freshness_sec=0.0,

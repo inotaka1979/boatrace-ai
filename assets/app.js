@@ -691,7 +691,53 @@ var ACTION_HANDLERS = {
     if(typeof applyLocale === 'function'){ applyLocale(el.value); }
     else if(typeof setLocale === 'function'){ setLocale(el.value); try { location.reload(); }catch(_){} }
   },
+  shareLearnedWeights:     function(){ if(typeof _shareLearnedWeights==='function') _shareLearnedWeights(); },
 };
+
+// Epic 24: 真の FL endpoint via GitHub Issues opt-in upload
+//   1. クライアント自身の L2 重みに DP noise を加算
+//   2. payload を encode して新規 Issue 作成 URL を生成
+//   3. ユーザが github.com で内容確認 → submit (opt-in)
+//   4. .github/workflows/aggregate-fl-uploads.yml が parse → data/db/fl_uploads/ に保存
+//   5. 週次 compute_community_weights.py が aggregate に取り込む
+function _shareLearnedWeights(){
+  if(!Array.isArray(l2weights) || l2weights.length === 0){
+    alert('学習データが不足しています（まず予想を続けて学習を蓄積してください）');
+    return;
+  }
+  if(typeof buildDPGradient !== 'function'){
+    alert('DP gradient ヘルパが未ロードです（rest bundle 待ち）');
+    return;
+  }
+  var T = Math.max(1, l2trainStep || 100);
+  var dp = (typeof estimateDPParams === 'function') ? estimateDPParams(1.0, 1e-5, T) : { sigma: 0.1 };
+  var dpWeights = buildDPGradient(l2weights, { maxNorm: 5.0, sigma: dp.sigma });
+  var payload = {
+    schema: 'br_fl_upload_v1',
+    feature_dim: 12,
+    feature_version: 1,
+    weights: dpWeights.map(function(w){ return Math.round(w * 1000) / 1000; }),
+    n_steps: T,
+    dp: { epsilon: 1.0, delta: 1e-5, sigma: Math.round(dp.sigma * 1000) / 1000 },
+    submitted_at: new Date().toISOString()
+  };
+  var body = '## FL Gradient Upload (DP-noised)\n\n'
+    + '<!-- Do not edit. This issue is auto-parsed by .github/workflows/aggregate-fl-uploads.yml -->\n\n'
+    + '```json\n' + JSON.stringify(payload, null, 2) + '\n```\n\n'
+    + '_Submitted from BoatRace Oracle PWA. DP epsilon=' + payload.dp.epsilon + '._';
+  var title = 'fl-gradient-upload: ' + payload.submitted_at.slice(0, 10);
+  var url = 'https://github.com/inotaka1979/boatrace-ai/issues/new'
+    + '?title=' + encodeURIComponent(title)
+    + '&body=' + encodeURIComponent(body)
+    + '&labels=' + encodeURIComponent('fl-gradient-upload');
+  var preview = JSON.stringify(payload.weights.slice(0, 3)) + '... (12次元)';
+  if(confirm('学習結果を匿名で共有しますか？\n\nDP noise 適用済 (sigma=' + payload.dp.sigma + ')、'
+           + '個人特定不可な集約用途のみ使用されます。\n\n重み prefix: ' + preview)){
+    try { window.open(url, '_blank'); }
+    catch(e){ alert('Issue 作成 URL を開けませんでした: ' + e.message); }
+  }
+}
+
 function _setupActionDelegation(){
   if(window._actionDelegationInstalled) return;
   window._actionDelegationInstalled = true;

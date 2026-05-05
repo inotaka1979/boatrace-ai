@@ -1,0 +1,55 @@
+name: Aggregate FL Uploads
+
+# Epic 24: クライアントが Issue で submit した DP gradient を集約。
+#   トリガ: fl-gradient-upload ラベル付き Issue 作成・更新時 + 週次 cron
+#   処理: 直近の Issue を gh CLI で list → JSON parse → data/db/fl_uploads/ に append
+#   commit: bot 経由で main に push、compute_community_weights.py が次回利用
+
+on:
+  issues:
+    types: [opened, labeled]
+  schedule:
+    - cron: '0 3 * * 1'   # JST 月曜 12:00 (= UTC 月曜 3:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'issues' || contains(github.event.issue.labels.*.name, 'fl-gradient-upload')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Aggregate FL uploads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/aggregate_fl_uploads.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/db/fl_uploads/ || true
+          if git diff --staged --quiet; then
+            echo "No FL upload changes."
+            exit 0
+          fi
+          git commit -m "fl_uploads: aggregate $(date '+%Y-%m-%dT%H:%M:%S+0000')"
+          git push
+      - name: Close processed issues
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ github.event.issue.number }} \
+            --comment "✅ Payload extracted to data/db/fl_uploads/. Thanks for contributing!" \
+            || echo "Could not close issue (may already be closed)"
