@@ -81,3 +81,82 @@ test('api health banner: 障害時表示 (P0-7)', async ({ page }) => {
   await expect(banner).toBeVisible();
   await expect(banner).toHaveScreenshot('api-health-banner.png');
 });
+
+// Epic 26: VRT 5→10 画面拡張
+
+test('races page: レース一覧 page wrapper layout', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const r = document.getElementById('pageRaces');
+    if (r) {
+      r.classList.add('active');
+      // 静的レイアウトのみテストするため内容を空に
+      const t = document.getElementById('racesTitle');
+      if (t) t.textContent = '桐生 1R';
+      const list = document.getElementById('racesList');
+      if (list) list.innerHTML = '<div class="card">レース一覧 (placeholder)</div>';
+    }
+  });
+  const races = page.locator('#pageRaces.active');
+  await expect(races).toBeVisible();
+  await expect(races).toHaveScreenshot('races-page-wrapper.png', {
+    mask: [page.locator('#headerDate'), page.locator('#dataFreshness')],
+  });
+});
+
+test('detail page: 詳細画面 wrapper + tabs visible', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const d = document.getElementById('pageDetail');
+    if (d) {
+      d.classList.add('active');
+      const t = document.getElementById('detailTitle');
+      if (t) t.textContent = '桐生 1R 締切 12:00';
+    }
+  });
+  const detail = page.locator('#pageDetail.active');
+  await expect(detail).toBeVisible();
+  await expect(detail).toHaveScreenshot('detail-page-wrapper.png', {
+    mask: [page.locator('#headerDate'), page.locator('#dataFreshness')],
+  });
+});
+
+test('backtest page: 設定パネル', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const b = document.getElementById('pageBacktest');
+    if (b) b.classList.add('active');
+  });
+  const bt = page.locator('#pageBacktest.active');
+  await expect(bt).toBeVisible();
+  await expect(bt).toHaveScreenshot('backtest-page.png', {
+    mask: [page.locator('#headerDate'), page.locator('#dataFreshness')],
+  });
+});
+
+test('language dropdown: 3言語選択 (Epic 22+25)', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const s = document.getElementById('pageSettings');
+    if (s) s.classList.add('active');
+  });
+  const sel = page.locator('#setLocale');
+  await expect(sel).toBeAttached();
+  // 3つのオプションが含まれているか
+  const options = await sel.locator('option').count();
+  expect(options).toBe(3);
+  await expect(sel).toHaveScreenshot('locale-dropdown.png');
+});
+
+test('header: API banner 非表示時のヘッダレイアウト', async ({ page }) => {
+  // banner が非表示の通常状態
+  await page.evaluate(() => {
+    const b = document.getElementById('apiHealthBanner');
+    if (b) b.style.display = 'none';
+  });
+  const header = page.locator('header.header');
+  await expect(header).toBeVisible();
+  await expect(header).toHaveScreenshot('header-normal.png', {
+    mask: [page.locator('#headerDate'), page.locator('#dataFreshness')],
+  });
+});
