@@ -2669,6 +2669,70 @@ function racerBadges(boat,form,divergence){
   return badges.join('');
 }
 
+function _enableNotifyPermission(){
+  if(typeof Notification === 'undefined'){
+    alert('このブラウザは通知に対応していません');
+    return;
+  }
+  Notification.requestPermission().then(function(p){
+    var el = document.getElementById('notifyStatus');
+    if(el){
+      el.textContent = (p === 'granted') ? '✓ 許可済'
+                     : (p === 'denied')  ? '× 拒否（ブラウザ設定で変更可）'
+                     : '保留';
+      el.style.color = (p === 'granted') ? 'var(--success)' : 'var(--text-sub)';
+    }
+  });
+}
+
+function _refreshNotifyStatus(){
+  var el = document.getElementById('notifyStatus');
+  if(!el || typeof Notification === 'undefined') return;
+  var p = Notification.permission;
+  el.textContent = (p === 'granted') ? '✓ 許可済'
+                 : (p === 'denied')  ? '× 拒否'
+                 : '未設定';
+  el.style.color = (p === 'granted') ? 'var(--success)' : 'var(--text-sub)';
+}
+
+function _maybeNotifyNewResults(){
+  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if(!resultData || typeof resultData !== 'object') return;
+  var watched = (typeof _loadWatched === 'function') ? _loadWatched() : [];
+  if(watched.length === 0) return;
+  var now = Date.now();
+  var newlyFinished = [];
+  watched.forEach(function(w){
+    var sd = resultData[w.sid];
+    if(!sd) return;
+    var rd = sd[w.race];
+    if(rd && rd.isFinished) newlyFinished.push({sid:w.sid, race:w.race});
+  });
+  if(newlyFinished.length === 0) return;
+  var sample = newlyFinished.slice(0, 3).map(function(it){
+    var name = (typeof STADIUMS !== 'undefined' && STADIUMS[parseInt(it.sid)]) || ('場'+it.sid);
+    return name + ' ' + it.race + 'R';
+  }).join(' / ');
+  var more = newlyFinished.length > 3 ? ' 他' + (newlyFinished.length - 3) + '件' : '';
+  try {
+    var notif = new Notification('お気に入りレースの結果が確定', {
+      body: sample + more,
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      tag: 'boatrace-watched-results',
+      renotify: false,
+    });
+    notif.onclick = function(){
+      try { window.focus(); }catch(_){}
+      try { showPage('stats'); }catch(_){}
+      notif.close();
+    };
+  } catch(e){
+    console.warn('[notify] failed:', e);
+  }
+  try { localStorage.setItem('boatrace_notify_last_seen', String(now)); } catch(_){}
+}
+
 function _loadWatched(){
   try { return safeParse(_WATCHED_KEY, []); } catch(_) { return []; }
 }
@@ -3705,6 +3769,8 @@ function loadSettings(){
   // P0-3: KPI モード（保存値があれば反映、なければ balanced）
   var km = document.getElementById('setKpiMode');
   if(km) km.value = settings.kpiMode || 'balanced';
+  // P2-1 (Epic 14): 通知許可状態をボタン横に表示
+  if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}

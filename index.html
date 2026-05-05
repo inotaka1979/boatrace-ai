@@ -569,6 +569,12 @@ button.action-btn:active{background:#F0F0F0}
         <option value="hit">hit（低EV多点・的中率優先）</option>
       </select>
     </div>
+    <!-- P2-1 (Epic 14): ローカル通知 — 前回訪問後に確定した的中レースを通知 -->
+    <div class="setting-row">
+      <span class="setting-label">的中通知</span>
+      <span><button class="action-btn" onclick="_enableNotifyPermission()">許可リクエスト</button>
+            <span id="notifyStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未設定</span></span>
+    </div>
   </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" onclick="clearCache()">クリア</button></div>
     <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" onclick="clearHistory()">リセット</button></div>

@@ -83,6 +83,22 @@ step "Numerical stability tests (P1-Q11)" \
 step "Fan handbook parser tests (P2-8)" \
      "python3 scripts/tests/test_fan_handbook_parse.py"
 
+# Epic 12 (P1-B1): 特徴量パイプラインの新旧同一性
+step "Features pipeline regression tests (P1-B1)" \
+     "node scripts/tests/test_features_pipeline.js"
+
+# Epic 13 (P1-B2): IndexedDB store API
+step "IndexedDB store tests (P1-B2)" \
+     "node scripts/tests/test_idb_store.js"
+
+# Epic 15 (P2-4): mini-bandit Thompson sampling
+step "Bandit (Thompson sampling) tests (P2-4)" \
+     "node scripts/tests/test_bandit.js"
+
+# Epic 16 (P2-5): i18n scaffold
+step "i18n scaffold tests (P2-5)" \
+     "node scripts/tests/test_i18n.js"
+
 # 8e) PC-7b / PE-4: build パイプライン (Step 2 = src/utils/safe_storage を bundle 注入)
 #     --check モードで「再ビルドしても index.html が変わらない」ことを検証 (CI 再現性ガード)
 #     CI 環境では node_modules が無いため、初回のみ npm ci を実施

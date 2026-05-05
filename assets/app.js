@@ -343,6 +343,33 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 // P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
 try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
 
+// Epic 13 (P1-B2): IndexedDB migration — LS の大型キーを IDB に移し、
+//   in-memory racerDB / stadiumDB を IDB から読み直す（async、fire-and-forget）
+//   起動時の同期 _bootParseLS は LS から読むため、IDB に既に移ってる場合は
+//   再代入が必要。完了後にイベント発火。
+(function _bootIdbMigrate(){
+  if(typeof idbMigrateFromLS !== 'function') return;
+  idbMigrateFromLS().then(function(res){
+    if(res && (res.migrated.length || res.errors && res.errors.length)){
+      console.log('[idb] migrate:', res);
+    }
+    // IDB から再 load — LS が空でも IDB にあればそこから取る
+    return Promise.all([
+      idbGet('boatrace_racerDB'),
+      idbGet('boatrace_stadiumDB'),
+    ]);
+  }).then(function(arr){
+    if(arr[0] && typeof arr[0] === 'object' && Object.keys(arr[0]).length > 0){
+      try { racerDB = arr[0]; } catch(_){}
+    }
+    if(arr[1] && typeof arr[1] === 'object' && Object.keys(arr[1]).length > 0){
+      try { stadiumDB = arr[1]; } catch(_){}
+    }
+  }).catch(function(e){
+    console.warn('[idb] boot migrate/load failed:', e);
+  });
+})();
+
 // =====================================================================
 // PI-fix: 診断オーバーレイ（iOS standalone PWA タップ不能問題の調査用）
 //   - capture-phase で touchstart/touchend/click/pointerdown を全て記録
@@ -860,6 +887,485 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
 })();
 
 /* BUILD:MATH:END */
+
+/* BUILD:FEATURES:START */
+"use strict";
+(() => {
+  // ../src/utils/features.js
+  var FEATURE_VERSION = 1;
+  var FEATURE_DIM_FEATURES = 12;
+  function _windCourse(ctx) {
+    if (!ctx.weather) return 0;
+    const ws = ctx.weather.wind_speed || ctx.weather.race_wind || 0;
+    const wd = ctx.weather.wind_direction || ctx.weather.race_wind_direction_number || 0;
+    const isHead = wd >= 7 && wd <= 11;
+    if (isHead && ctx.course === 1) return -ws / 10;
+    if (isHead && ctx.course >= 4) return ws / 20;
+    return 0;
+  }
+  function _etComp(ctx) {
+    if (ctx.etRank <= 1 && ctx.st > 0 && ctx.st <= 0.1) return 1;
+    if (ctx.etRank >= 4 && ctx.st >= 0.15) return -1;
+    return 0;
+  }
+  function _formScore(ctx) {
+    return ctx.form ? ctx.form.score / 10 : 0;
+  }
+  function _tiltAlign(ctx) {
+    const c = ctx.course, t = ctx.tilt;
+    if (c <= 2 && t <= -0.5) return 1;
+    if (c >= 4 && t >= 0.5) return 1;
+    if (c <= 2 && t >= 0.5 || c >= 4 && t <= -0.5) return -1;
+    return 0;
+  }
+  var FEATURE_PIPELINE = Object.freeze([
+    { name: "natWinPct", fn: (ctx) => ctx.pf(ctx.boat.racer_national_top_1_percent) / 10 },
+    { name: "motorRate", fn: (ctx) => ctx.pf(ctx.boat.racer_assigned_motor_top_2_percent) / 100 },
+    { name: "etRankNorm", fn: (ctx) => (ctx.etRank + 1) / 6 },
+    { name: "courseNorm", fn: (ctx) => ctx.course / 6 },
+    { name: "classNorm", fn: (ctx) => (ctx.boat.racer_class_number || 3) / 4 },
+    { name: "windCourse", fn: _windCourse },
+    { name: "racerCWR", fn: (ctx) => ctx.racerCWR || ctx.pf(ctx.boat.racer_national_top_1_percent) / 100 },
+    { name: "stRankNorm", fn: (ctx) => (ctx.stRank + 1) / 6 },
+    { name: "etComp", fn: _etComp },
+    { name: "formScore", fn: _formScore },
+    { name: "tiltAlign", fn: _tiltAlign },
+    { name: "stadCWR", fn: (ctx) => ctx.stadCWR }
+  ]);
+  function buildL2Features(boat, preview, weather, etRank, stRank, sid, helpers) {
+    const h = helpers || {};
+    const pf = h.pf || ((v) => parseFloat(v) || 0);
+    const course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
+    const rid = boat.racer_number || 0;
+    const racerCWR = h.getRacerCourseWinRate ? h.getRacerCourseWinRate(rid, course) : null;
+    const stadCWR = h.getStadiumCourseWinRate ? h.getStadiumCourseWinRate(String(sid), course) : 0;
+    const myPv = preview || {};
+    const st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
+    const tilt = pf(myPv.racer_tilt_adjustment);
+    const form = h.getRacerForm ? h.getRacerForm(rid) : null;
+    const ctx = {
+      boat,
+      preview,
+      weather,
+      etRank,
+      stRank,
+      sid,
+      course,
+      rid,
+      racerCWR,
+      stadCWR,
+      myPv,
+      st,
+      tilt,
+      form,
+      pf
+    };
+    const out = new Array(FEATURE_PIPELINE.length);
+    for (let i = 0; i < FEATURE_PIPELINE.length; i++) {
+      const v = FEATURE_PIPELINE[i].fn(ctx);
+      out[i] = Number.isFinite(v) ? v : 0;
+    }
+    return out;
+  }
+  globalThis.FEATURE_VERSION = FEATURE_VERSION;
+  globalThis.FEATURE_DIM_FEATURES = FEATURE_DIM_FEATURES;
+  globalThis.FEATURE_PIPELINE = FEATURE_PIPELINE;
+  globalThis.buildL2Features = buildL2Features;
+  globalThis.getL2Features = function(boat, preview, weather, etRank, stRank, sid) {
+    return buildL2Features(boat, preview, weather, etRank, stRank, sid, {
+      pf: typeof globalThis.pf === "function" ? globalThis.pf : null,
+      getRacerCourseWinRate: globalThis.getRacerCourseWinRate,
+      getStadiumCourseWinRate: globalThis.getStadiumCourseWinRate,
+      getRacerForm: globalThis.getRacerForm
+    });
+  };
+})();
+
+/* BUILD:FEATURES:END */
+
+/* BUILD:IDB:START */
+"use strict";
+(() => {
+  // ../src/utils/idb_store.js
+  var IDB_NAME = "boatrace_idb";
+  var IDB_STORE = "kv";
+  var IDB_VERSION = 1;
+  var IDB_KEYS_LARGE = [
+    "boatrace_racerDB",
+    "boatrace_stadiumDB",
+    "boatrace_pairwiseDB",
+    "boatrace_motorStats",
+    "boatrace_exhibitionStats"
+  ];
+  var _idbInstance = null;
+  var _idbAvailable = typeof indexedDB !== "undefined";
+  function _openIDB() {
+    if (_idbInstance) return Promise.resolve(_idbInstance);
+    if (!_idbAvailable) return Promise.reject(new Error("IDB unavailable"));
+    return new Promise(function(resolve, reject) {
+      let req;
+      try {
+        req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      } catch (e) {
+        _idbAvailable = false;
+        reject(e);
+        return;
+      }
+      req.onupgradeneeded = function() {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = function() {
+        _idbInstance = req.result;
+        _idbInstance.onversionchange = function() {
+          try {
+            _idbInstance.close();
+          } catch (_) {
+          }
+          _idbInstance = null;
+        };
+        resolve(_idbInstance);
+      };
+      req.onerror = function() {
+        reject(req.error);
+      };
+      req.onblocked = function() {
+        reject(new Error("IDB blocked"));
+      };
+    });
+  }
+  function idbGet(key) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function() {
+          resolve(req.result === void 0 ? null : req.result);
+        };
+        req.onerror = function() {
+          reject(req.error);
+        };
+      });
+    }).catch(function() {
+      return null;
+    });
+  }
+  function idbPut(key, value) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        const req = tx.objectStore(IDB_STORE).put(value, key);
+        req.onsuccess = function() {
+          resolve(true);
+        };
+        req.onerror = function() {
+          reject(req.error);
+        };
+      });
+    }).catch(function(e) {
+      try {
+        if (typeof reportError === "function") reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
+      } catch (_) {
+      }
+      return false;
+    });
+  }
+  function idbDelete(key) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve) {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        const req = tx.objectStore(IDB_STORE).delete(key);
+        req.onsuccess = function() {
+          resolve(true);
+        };
+        req.onerror = function() {
+          resolve(false);
+        };
+      });
+    }).catch(function() {
+      return false;
+    });
+  }
+  function idbKeys() {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve) {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).getAllKeys();
+        req.onsuccess = function() {
+          resolve(req.result || []);
+        };
+        req.onerror = function() {
+          resolve([]);
+        };
+      });
+    }).catch(function() {
+      return [];
+    });
+  }
+  function idbBytes() {
+    if (navigator && navigator.storage && navigator.storage.estimate) {
+      return navigator.storage.estimate().then(function(e) {
+        return { usage: e.usage || 0, quota: e.quota || 0 };
+      }).catch(function() {
+        return { usage: 0, quota: 0 };
+      });
+    }
+    return Promise.resolve({ usage: 0, quota: 0 });
+  }
+  function idbMigrateFromLS() {
+    if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ["idb_unavailable"] });
+    const migrated = [];
+    const errors = [];
+    const tasks = IDB_KEYS_LARGE.map(function(key) {
+      return idbGet(key).then(function(existing) {
+        if (existing != null) return;
+        let lsRaw = null;
+        try {
+          lsRaw = localStorage.getItem(key);
+        } catch (_) {
+        }
+        if (lsRaw == null) return;
+        let parsed;
+        try {
+          parsed = JSON.parse(lsRaw);
+        } catch (_) {
+          return;
+        }
+        if (parsed == null) return;
+        return idbPut(key, parsed).then(function(ok) {
+          if (ok) {
+            try {
+              localStorage.removeItem(key);
+            } catch (_) {
+            }
+            migrated.push(key);
+          } else {
+            errors.push(key);
+          }
+        });
+      });
+    });
+    return Promise.all(tasks).then(function() {
+      return { migrated, errors };
+    });
+  }
+  globalThis.idbGet = idbGet;
+  globalThis.idbPut = idbPut;
+  globalThis.idbDelete = idbDelete;
+  globalThis.idbKeys = idbKeys;
+  globalThis.idbBytes = idbBytes;
+  globalThis.idbMigrateFromLS = idbMigrateFromLS;
+  globalThis.IDB_KEYS_LARGE = IDB_KEYS_LARGE;
+  globalThis._idbAvailable = _idbAvailable;
+})();
+
+/* BUILD:IDB:END */
+
+/* BUILD:BANDIT:START */
+"use strict";
+(() => {
+  // ../src/utils/bandit.js
+  var BANDIT_KEY = "boatrace_bandit";
+  function _sampleGamma(shape) {
+    if (shape < 1) {
+      return _sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
+    }
+    const d = shape - 1 / 3;
+    const c = 1 / Math.sqrt(9 * d);
+    while (true) {
+      let x, v;
+      do {
+        x = _sampleNormal();
+        v = 1 + c * x;
+      } while (v <= 0);
+      v = v * v * v;
+      const u = Math.random();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+  function _sampleNormal() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _sampleBeta(alpha, beta) {
+    const x = _sampleGamma(alpha);
+    const y = _sampleGamma(beta);
+    return x / (x + y);
+  }
+  function banditSelect(variants) {
+    if (!Array.isArray(variants) || variants.length === 0) return null;
+    let best = variants[0];
+    let bestSample = -Infinity;
+    for (const v of variants) {
+      const a = Math.max(1e-3, v.alpha || 1);
+      const b = Math.max(1e-3, v.beta || 1);
+      const s = _sampleBeta(a, b);
+      if (s > bestSample) {
+        bestSample = s;
+        best = v;
+      }
+    }
+    return best;
+  }
+  function banditUpdate(variants, variantId, reward) {
+    const v = variants.find((x) => x.id === variantId);
+    if (!v) return false;
+    const r = Math.max(0, Math.min(1, +reward || 0));
+    v.alpha = (v.alpha || 1) + r;
+    v.beta = (v.beta || 1) + (1 - r);
+    v.n = (v.n || 0) + 1;
+    v.lastReward = r;
+    v.lastUpdated = Date.now();
+    return true;
+  }
+  function banditMeans(variants) {
+    return variants.map((v) => ({
+      id: v.id,
+      mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
+      n: v.n || 0
+    })).sort((a, b) => b.mean - a.mean);
+  }
+  function banditLoad(defaults) {
+    let parsed = null;
+    try {
+      const raw = localStorage.getItem(BANDIT_KEY);
+      if (raw) parsed = JSON.parse(raw);
+    } catch (_) {
+    }
+    if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length === 0) {
+      return Array.isArray(defaults) ? defaults.slice() : [];
+    }
+    return parsed.variants;
+  }
+  function banditSave(variants) {
+    try {
+      localStorage.setItem(BANDIT_KEY, JSON.stringify({ variants, updated_at: Date.now() }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  globalThis.banditSelect = banditSelect;
+  globalThis.banditUpdate = banditUpdate;
+  globalThis.banditMeans = banditMeans;
+  globalThis.banditLoad = banditLoad;
+  globalThis.banditSave = banditSave;
+  globalThis.BANDIT_KEY = BANDIT_KEY;
+})();
+
+/* BUILD:BANDIT:END */
+
+/* BUILD:I18N:START */
+"use strict";
+(() => {
+  // ../src/utils/i18n.js
+  var I18N_KEY = "boatrace_locale";
+  var DEFAULT_LOCALE = "ja";
+  var I18N_TABLES = {
+    ja: {
+      "common.loading": "\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D...",
+      "common.refresh": "\u66F4\u65B0",
+      "common.close": "\u9589\u3058\u308B",
+      "common.copy": "\u30B3\u30D4\u30FC",
+      "common.share": "\u5171\u6709",
+      "race.honmei": "\u672C\u547D",
+      "race.middle": "\u6DF7\u6226",
+      "race.ana": "\u7A74",
+      "race.confidence": "\u4FE1\u983C\u5EA6",
+      "page.top": "\u30C8\u30C3\u30D7",
+      "page.stats": "\u6210\u7E3E",
+      "page.backtest": "\u691C\u8A3C",
+      "page.settings": "\u8A2D\u5B9A",
+      "settings.bet_count_3": "3\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
+      "settings.bet_count_2": "2\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
+      "settings.bet_method": "\u8CB7\u3044\u76EE\u65B9\u5F0F",
+      "settings.kpi_mode": "KPI \u30E2\u30FC\u30C9",
+      "settings.notify": "\u7684\u4E2D\u901A\u77E5",
+      "notify.permission_request": "\u8A31\u53EF\u30EA\u30AF\u30A8\u30B9\u30C8",
+      "notify.permission_granted": "\u2713 \u8A31\u53EF\u6E08",
+      "notify.permission_denied": "\xD7 \u62D2\u5426\uFF08\u30D6\u30E9\u30A6\u30B6\u8A2D\u5B9A\u3067\u5909\u66F4\u53EF\uFF09",
+      "notify.permission_default": "\u672A\u8A2D\u5B9A",
+      "api.health.fail": "API \u53D6\u5F97\u5931\u6557",
+      "api.health.cached": "\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D",
+      "api.health.warning": "\u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059"
+    },
+    en: {
+      // scaffold のみ。実翻訳は別 PR。
+      "common.loading": "Loading...",
+      "common.refresh": "Refresh",
+      "common.close": "Close",
+      "common.copy": "Copy",
+      "common.share": "Share",
+      "race.honmei": "Favorite",
+      "race.middle": "Mixed",
+      "race.ana": "Long shot",
+      "race.confidence": "Confidence",
+      "page.top": "Top",
+      "page.stats": "Stats",
+      "page.backtest": "Backtest",
+      "page.settings": "Settings"
+    }
+  };
+  var _currentLocale = DEFAULT_LOCALE;
+  function _detectLocale() {
+    try {
+      const qs = new URLSearchParams(location.search || "");
+      const q = qs.get("lang");
+      if (q && I18N_TABLES[q]) return q;
+    } catch (_) {
+    }
+    try {
+      const stored = localStorage.getItem(I18N_KEY);
+      if (stored && I18N_TABLES[stored]) return stored;
+    } catch (_) {
+    }
+    try {
+      const nav = (navigator.language || "").slice(0, 2);
+      if (nav && I18N_TABLES[nav]) return nav;
+    } catch (_) {
+    }
+    return DEFAULT_LOCALE;
+  }
+  function setLocale(locale) {
+    if (!I18N_TABLES[locale]) return false;
+    _currentLocale = locale;
+    try {
+      localStorage.setItem(I18N_KEY, locale);
+    } catch (_) {
+    }
+    return true;
+  }
+  function getLocale() {
+    return _currentLocale;
+  }
+  function t(key, params) {
+    const table = I18N_TABLES[_currentLocale] || I18N_TABLES[DEFAULT_LOCALE];
+    let text = table[key];
+    if (text == null) {
+      text = I18N_TABLES[DEFAULT_LOCALE] && I18N_TABLES[DEFAULT_LOCALE][key] || key;
+    }
+    if (params && typeof params === "object") {
+      text = text.replace(/\{\{(\w+)\}\}/g, (_, k) => params[k] != null ? String(params[k]) : "{{" + k + "}}");
+    }
+    return text;
+  }
+  function availableLocales() {
+    return Object.keys(I18N_TABLES);
+  }
+  _currentLocale = _detectLocale();
+  globalThis.t = t;
+  globalThis.setLocale = setLocale;
+  globalThis.getLocale = getLocale;
+  globalThis.availableLocales = availableLocales;
+  globalThis.I18N_TABLES = I18N_TABLES;
+})();
+
+/* BUILD:I18N:END */
 
 // PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
@@ -2019,8 +2525,15 @@ function cleanOldData(){
   }
 }
 
+// Epic 13: saveDB は IDB 優先、fallback で LS（既存呼出は同期 API のまま fire-and-forget）
 function saveDB(){
-  // P3 L-05: QuotaExceededError は safeSet が history を間引いてリトライ
+  if(typeof idbPut === 'function'){
+    // IDB 書込（失敗時は idbPut 内で reportError）
+    idbPut('boatrace_racerDB', racerDB);
+    idbPut('boatrace_stadiumDB', stadiumDB);
+    return;
+  }
+  // IDB 不可環境（古い iOS Safari 等）は LS fallback
   safeSet('boatrace_racerDB', racerDB);
   safeSet('boatrace_stadiumDB', stadiumDB);
 }
@@ -2556,6 +3069,9 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
 // ===============================================
 // PREDICTION ENGINE V2: Layer 2 (PRESERVED)
 // ===============================================
+// Epic 12 (P1-B1): 旧 inline 実装は src/utils/features.js (BUILD:FEATURES bundle) に移管。
+//   bundle 注入が globalThis.getL2Features を上書きするため通常はそちらが使われる。
+//   bundle 失敗時の fallback として旧本体を残置（数値出力は厳密に同一）。
 function getL2Features(boat,preview,weather,etRank,stRank,sid){
   var course=(preview&&preview.racer_course_number!=null)?preview.racer_course_number:(preview?preview.racer_boat_number:boat.racer_boat_number);
   var rid=boat.racer_number||0;
@@ -4268,6 +4784,71 @@ function showPage(page){
   try { _persistNavState(page, currentStadium, currentRace); } catch(_){}
 }
 
+// P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
+//   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約
+//   許可: ユーザが明示的に「許可リクエスト」ボタンを押した時のみ requestPermission
+function _enableNotifyPermission(){
+  if(typeof Notification === 'undefined'){
+    alert('このブラウザは通知に対応していません');
+    return;
+  }
+  Notification.requestPermission().then(function(p){
+    var el = document.getElementById('notifyStatus');
+    if(el){
+      el.textContent = (p === 'granted') ? '✓ 許可済'
+                     : (p === 'denied')  ? '× 拒否（ブラウザ設定で変更可）'
+                     : '保留';
+      el.style.color = (p === 'granted') ? 'var(--success)' : 'var(--text-sub)';
+    }
+  });
+}
+function _refreshNotifyStatus(){
+  var el = document.getElementById('notifyStatus');
+  if(!el || typeof Notification === 'undefined') return;
+  var p = Notification.permission;
+  el.textContent = (p === 'granted') ? '✓ 許可済'
+                 : (p === 'denied')  ? '× 拒否'
+                 : '未設定';
+  el.style.color = (p === 'granted') ? 'var(--success)' : 'var(--text-sub)';
+}
+function _maybeNotifyNewResults(){
+  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if(!resultData || typeof resultData !== 'object') return;
+  var watched = (typeof _loadWatched === 'function') ? _loadWatched() : [];
+  if(watched.length === 0) return;
+  var now = Date.now();
+  var newlyFinished = [];
+  watched.forEach(function(w){
+    var sd = resultData[w.sid];
+    if(!sd) return;
+    var rd = sd[w.race];
+    if(rd && rd.isFinished) newlyFinished.push({sid:w.sid, race:w.race});
+  });
+  if(newlyFinished.length === 0) return;
+  var sample = newlyFinished.slice(0, 3).map(function(it){
+    var name = (typeof STADIUMS !== 'undefined' && STADIUMS[parseInt(it.sid)]) || ('場'+it.sid);
+    return name + ' ' + it.race + 'R';
+  }).join(' / ');
+  var more = newlyFinished.length > 3 ? ' 他' + (newlyFinished.length - 3) + '件' : '';
+  try {
+    var notif = new Notification('お気に入りレースの結果が確定', {
+      body: sample + more,
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      tag: 'boatrace-watched-results',
+      renotify: false,
+    });
+    notif.onclick = function(){
+      try { window.focus(); }catch(_){}
+      try { showPage('stats'); }catch(_){}
+      notif.close();
+    };
+  } catch(e){
+    console.warn('[notify] failed:', e);
+  }
+  try { localStorage.setItem('boatrace_notify_last_seen', String(now)); } catch(_){}
+}
+
 // P2-2: お気に入りレース管理（注目したいレースを localStorage に記録）
 //   key: boatrace_watched = [{sid, race, ts}]、上限 100 件のリングバッファ
 var _WATCHED_KEY = 'boatrace_watched';
@@ -5569,6 +6150,8 @@ function loadSettings(){
   // P0-3: KPI モード（保存値があれば反映、なければ balanced）
   var km = document.getElementById('setKpiMode');
   if(km) km.value = settings.kpiMode || 'balanced';
+  // P2-1 (Epic 14): 通知許可状態をボタン横に表示
+  if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}
@@ -6000,8 +6583,7 @@ document.getElementById('headerDate').innerHTML=formatDate();
 setTimeout(function(){
   loadAllData().then(function(){
     if(typeof _renderFreshness==='function') _renderFreshness();
-    // 設計者A P1: PWA shortcut URL routing — manifest.json の ?tab=stats 等に対応
-    //   優先順: URL ?tab=xxx > sessionStorage 復元 > top
+    // 設計者A P1: PWA shortcut URL routing
     var routed = false;
     try {
       var qs = new URLSearchParams(location.search || '');
@@ -6013,6 +6595,8 @@ setTimeout(function(){
     } catch(_){}
     // P0-5: PWA 再起動時のページ復元（shortcut ルーティングが優先）
     if(!routed && typeof _restoreNavState === 'function') _restoreNavState();
+    // P2-1 (Epic 14): お気に入りレースの結果確定を 1 通知に集約
+    try { if(typeof _maybeNotifyNewResults === 'function') _maybeNotifyNewResults(); } catch(_){}
   });
 }, 100);
 
