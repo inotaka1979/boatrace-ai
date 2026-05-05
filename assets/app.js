@@ -5333,7 +5333,10 @@ async function loadDeferredData(rawPrograms, rawPreviews){
         }
         racerDB[rn].lastUpdated=dbData.updated_at?dbData.updated_at.slice(0,10).replace(/-/g,''):'';
       }
-      try{localStorage.setItem('boatrace_racerDB',JSON.stringify(racerDB))}catch(e){}
+      // Epic 28h: 直接 localStorage.setItem は IDB 移行を bypass し racerDB の LS 重複が
+      //   膨張し続ける真因 (ユーザログで 2281→2406KB に 10 分で +125KB 確認)。
+      //   saveDB() 経由に統一 → IDB 優先 / IDB 不可なら safeSet で LS fallback。
+      try { saveDB(); } catch(e){ console.warn('[PE-8] saveDB failed:', e.message); }
     }catch(e){console.warn('[PE-8] racerDB skip:', e.message);}
   })());
 
@@ -5353,7 +5356,8 @@ async function loadDeferredData(rawPrograms, rawPreviews){
           }
         }
       }
-      try{localStorage.setItem('boatrace_stadiumDB',JSON.stringify(stadiumDB))}catch(e){}
+      // Epic 28h: 直接 setItem を saveDB() 経由に統一 (IDB 優先で LS 重複を防止)
+      try { saveDB(); } catch(e){ console.warn('[PE-8] stadiumDB saveDB failed:', e.message); }
     }catch(e){}
   })());
 

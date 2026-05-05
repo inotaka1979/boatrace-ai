@@ -1234,12 +1234,27 @@ window.addEventListener('unhandledrejection', function(e){
     return Promise.resolve({ usage: 0, quota: 0 });
   }
   function idbMigrateFromLS() {
-    if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ["idb_unavailable"] });
+    if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ["idb_unavailable"], deduped: [] });
     const migrated = [];
     const errors = [];
+    const deduped = [];
     const tasks = IDB_KEYS_LARGE.map(function(key) {
       return idbGet(key).then(function(existing) {
-        if (existing != null) return;
+        if (existing != null) {
+          let lsHas = false;
+          try {
+            lsHas = localStorage.getItem(key) != null;
+          } catch (_) {
+          }
+          if (lsHas) {
+            try {
+              localStorage.removeItem(key);
+              deduped.push(key);
+            } catch (_) {
+            }
+          }
+          return;
+        }
         let lsRaw = null;
         try {
           lsRaw = localStorage.getItem(key);
@@ -1267,7 +1282,7 @@ window.addEventListener('unhandledrejection', function(e){
       });
     });
     return Promise.all(tasks).then(function() {
-      return { migrated, errors };
+      return { migrated, errors, deduped };
     });
   }
   globalThis.idbGet = idbGet;
