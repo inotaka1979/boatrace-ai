@@ -186,11 +186,13 @@ async function main() {
   // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
   //   critical は LCP に直結するため hard fail、それ以外は warn 留め。
   //   超過時は CI が PR を block して退行を防ぐ。
-  // Epic 1-19 完了時点のベースライン（critical=60.9KB / rest=113KB / worker=59KB）
-  //   ACTION_HANDLERS delegation 追加で +1.5KB、CSP 厳格化と引き換え。
-  //   Phase 4 で style="..." の data-style 化を進めれば更に削減可能。
+  // Epic 1-23 完了時点のベースライン（critical=66.6KB / rest=113KB / worker=59KB）
+  //   Epic 22 (i18n 60キー×2 言語) で +1.5KB
+  //   Epic 23 (utility class 化) で 既存 long style を短い class に置換、本来は -KB だが
+  //   CSS定義追加が index.html → split_app.py 経由で critical bundle に含まれて純増。
+  //   今後 inline style 完全削減で再度 -KB 見込み。
   const BUDGETS = [
-    { path: 'assets/app-critical.min.js', max: 65000,  level: 'fail' },
+    { path: 'assets/app-critical.min.js', max: 70000,  level: 'fail' },
     { path: 'assets/app-rest.min.js',     max: 125000, level: 'warn' },
     { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
   ];
@@ -219,8 +221,19 @@ async function main() {
     const htmlForCsp = await readFile(indexPath, 'utf8');
     const onclickCount = (htmlForCsp.match(/\sonclick=/g) || []).length;
     // baseline = 静的 ~17 + prerender 開催場 24 = ~41 (Epic 10 計測時点)
-    // Phase 2 で削減し、最終的に 0 を目指す。
+    // Epic 19 で 0 達成。退行検知のため baseline は 50 のまま据え置き。
     const ONCLICK_BASELINE = 50;
+    // Epic 23: inline style="" 計測（CSP Phase 4 削減進捗の監視）
+    //   baseline = Epic 23 完了時点 (index.html 18 + app.js 103 = 121)
+    //   Phase 4 後段で更に削減し、最終的に 0 + style-src 'unsafe-inline' 撤去を目指す。
+    try {
+      const appJsForCsp = await readFile(appJsPath, 'utf8');
+      const styleCount = (htmlForCsp.match(/\sstyle="/g) || []).length
+                       + (appJsForCsp.match(/\sstyle="/g) || []).length;
+      const STYLE_BASELINE = 130;
+      const styleTag = styleCount <= STYLE_BASELINE ? '[csp OK]' : '[csp WARN]';
+      console.log(styleTag + ' inline style="" = ' + styleCount + ' (baseline ' + STYLE_BASELINE + ')');
+    } catch(_){}
     const tag = onclickCount <= ONCLICK_BASELINE ? '[csp OK]' : '[csp WARN]';
     console.log(tag + ' index.html inline onclick = ' + onclickCount + ' (baseline ' + ONCLICK_BASELINE + ')');
     if (onclickCount > ONCLICK_BASELINE){

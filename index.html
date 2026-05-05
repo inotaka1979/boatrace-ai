@@ -354,6 +354,45 @@ button.action-btn:active{background:#F0F0F0}
 /* 設計者A P1: skeleton loader animation（renderStats 等で利用） */
 @keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
+/* Epic 23 (CSP Phase 4): 頻出 inline style を utility class 化
+   全撤去は dynamic 値 (style="color:#XXX") があるため style-src 'unsafe-inline' は残置中。
+   段階削減で inline style 数を計測ベースで監視 (build.mjs 参照)。 */
+.ta-r{text-align:right}
+.ta-c{text-align:center}
+.ta-l{text-align:left}
+.fs-9{font-size:9px}
+.fs-10{font-size:10px}
+.fs-11{font-size:11px}
+.fs-12{font-size:12px}
+.fs-13{font-size:13px}
+.fs-14{font-size:14px}
+.fs-16{font-size:16px}
+.fw-700{font-weight:700}
+.c-dim{color:var(--text-dim)}
+.c-sub{color:var(--text-sub)}
+.c-success{color:var(--success)}
+.c-warn{color:var(--warn)}
+.c-danger{color:var(--danger)}
+.c-accent{color:var(--accent)}
+.bg-light{background:#f5f5f5}
+.b-0{border:0}
+.mt-4{margin-top:4px}
+.mt-6{margin-top:6px}
+.mt-8{margin-top:8px}
+.mb-8{margin-bottom:8px}
+.mb-10{margin-bottom:10px}
+.ml-8{margin-left:8px}
+.p-12{padding:12px}
+.p-overflow-hidden{padding:0;overflow:hidden}
+.row-flex{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px}
+.card-title{font-weight:700;font-size:13px;margin-bottom:8px}
+.card-header-row{padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)}
+.title-md{font-weight:700;font-size:16px;margin-bottom:10px}
+.note-orange{font-size:11px;color:#666;margin-top:6px}
+.text-w-full-12{width:100%;font-size:12px}
+.input-num{width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right}
+.status-inline{font-size:11px;margin-left:8px;color:var(--text-sub)}
+
 /* Section header */
 .section-title{font-size:13px;font-weight:700;color:var(--text);padding:8px 0 4px;border-bottom:2px solid var(--accent);margin-bottom:8px}
 /* P0-4: Detail Tabs */
@@ -446,7 +485,7 @@ button.action-btn:active{background:#F0F0F0}
 
 <!-- Screen 4: Stats -->
 <div class="page" id="pageStats">
-  <div style="font-weight:700;font-size:16px;margin-bottom:10px">成績トラッカー</div>
+  <div class="title-md">成績トラッカー</div>
   <div class="stat-grid" id="statSummary"></div>
   <div id="statRecovery"></div>
   <div class="chart-box"><canvas id="chartAccuracy"></canvas></div>
@@ -455,13 +494,13 @@ button.action-btn:active{background:#F0F0F0}
 
 <!-- X7 Screen: Backtest -->
 <div class="page" id="pageBacktest">
-  <div style="font-weight:700;font-size:16px;margin-bottom:10px">🧪 戦略バックテスト</div>
+  <div class="title-md">🧪 戦略バックテスト</div>
   <div class="card">
     <div style="padding:10px">
       <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
         過去レース履歴に対し EV / Kelly 戦略を後付け適用して ROI を評価します
       </div>
-      <div class="setting-row" style="border:0">
+      <div class="setting-row" class="b-0">
         <span class="setting-label">期間</span>
         <select id="btPeriod" aria-label="バックテスト期間">
           <option value="7">直近 7 日</option>
@@ -470,7 +509,7 @@ button.action-btn:active{background:#F0F0F0}
           <option value="0">全履歴</option>
         </select>
       </div>
-      <div class="setting-row" style="border:0">
+      <div class="setting-row" class="b-0">
         <span class="setting-label">EV 最低閾値</span>
         <select id="btEvMin" aria-label="バックテスト EV 最低閾値">
           <option value="1.0">1.00</option>
@@ -480,7 +519,7 @@ button.action-btn:active{background:#F0F0F0}
           <option value="1.50">1.50</option>
         </select>
       </div>
-      <div class="setting-row" style="border:0">
+      <div class="setting-row" class="b-0">
         <span class="setting-label">Kelly 比率</span>
         <select id="btKellyFrac" aria-label="バックテスト Kelly 比率">
           <option value="0">0 (均等)</option>
@@ -489,10 +528,10 @@ button.action-btn:active{background:#F0F0F0}
           <option value="1">1.0 (full)</option>
         </select>
       </div>
-      <div class="setting-row" style="border:0">
+      <div class="setting-row" class="b-0">
         <span class="setting-label">資金 (円)</span>
         <input type="number" id="btBankroll" value="10000" min="1000" step="1000"
-               style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
+               class="input-num">
       </div>
       <button class="action-btn" data-action="runBacktest" style="width:100%;margin-top:8px">▶ バックテスト実行</button>
     </div>
@@ -503,7 +542,7 @@ button.action-btn:active{background:#F0F0F0}
 
 <!-- Screen 5: Settings -->
 <div class="page" id="pageSettings">
-  <div style="font-weight:700;font-size:16px;margin-bottom:10px">設定</div>
+  <div class="title-md">設定</div>
   <div class="card">
     <div class="setting-row">
       <span class="setting-label">3連単 買い目点数</span>
@@ -561,7 +600,7 @@ button.action-btn:active{background:#F0F0F0}
       <span class="setting-label">資金 (円)</span>
       <input type="number" id="setBankroll" min="1000" step="1000" value="10000"
              data-action="saveSetting" data-arg-key="bankroll"
-             style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
+             class="input-num">
     </div>
     <!-- P0-3: KPI モード — race_type 別の evMin/maxBets 自動調整プリセット -->
     <div class="setting-row">
@@ -577,13 +616,13 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row">
       <span class="setting-label">的中通知</span>
       <span><button class="action-btn" data-action="enableNotifyPermission">許可リクエスト</button>
-            <span id="notifyStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未設定</span></span>
+            <span id="notifyStatus" class="status-inline">未設定</span></span>
     </div>
     <!-- Epic 18 (P2-7): SharedArrayBuffer 実験オプション -->
     <div class="setting-row">
       <span class="setting-label" data-i18n="settings.coi">SAB高速化(実験)</span>
       <span><button class="action-btn" data-action="toggleCOI">切替</button>
-            <span id="coiStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未確認</span></span>
+            <span id="coiStatus" class="status-inline">未確認</span></span>
     </div>
     <!-- Epic 22 (P2-5 完全化): 表示言語切替 -->
     <div class="setting-row">

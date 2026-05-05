@@ -45,10 +45,14 @@ script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
 - [ ] sw.js キャッシュ戦略変更（nonce 毎回変わるため）
 - [ ] iOS 16.4 / 17 / 18 各バージョンで動作確認
 
-### Phase 4（将来）— `style-src 'unsafe-inline'` も撤去
+### Phase 4（進行中・Epic 23）— `style-src 'unsafe-inline'` 段階削減
 
-- [ ] CSS-in-JS / 動的 style 利用箇所を整理
-- [ ] hash ベースまたは nonce ベースに移行
+- [x] 頻出 inline style パターンを utility class 化 (.ta-r/.fs-9/.bg-light/.c-dim 等 30+ classes)
+- [x] 167件 → 121件 (-28%) を実現
+- [x] build.mjs に inline style 計測 baseline 追加 (退行検知)
+- [ ] **次段階**: 動的色値 (background:#XXX) を CSS variable + class に集約
+- [ ] **次々段階**: hash ベース CSP (`'sha256-XXX'`) または nonce-style に移行
+- [ ] 完全撤去後 `style-src 'self' https://fonts.googleapis.com` に厳格化
 
 ## 計測方針
 

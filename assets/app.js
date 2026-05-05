@@ -2134,33 +2134,33 @@ function runBacktest(){
     var r = runBacktestEngine(history, opt);
     var roiPct = (r.roi * 100).toFixed(1);
     var roiColor = r.roi >= 1.0 ? 'var(--success)' : r.roi >= 0.85 ? 'var(--warn)' : 'var(--danger)';
-    var html = '<div class="card"><div style="padding:12px">';
-    html += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">📈 バックテスト結果</div>';
-    html += '<table style="width:100%;font-size:12px"><tbody>';
-    html += '<tr><td>対象レース</td><td style="text-align:right">'+r.samples+' R</td></tr>';
-    html += '<tr><td>投資総額</td><td style="text-align:right">¥'+r.totalStake.toLocaleString()+'</td></tr>';
-    html += '<tr><td>払戻総額</td><td style="text-align:right">¥'+r.totalPayout.toLocaleString()+'</td></tr>';
+    var html = '<div class="card"><div class="p-12">';
+    html += '<div class="card-title">📈 バックテスト結果</div>';
+    html += '<table class="text-w-full-12"><tbody>';
+    html += '<tr><td>対象レース</td><td class="ta-r">'+r.samples+' R</td></tr>';
+    html += '<tr><td>投資総額</td><td class="ta-r">¥'+r.totalStake.toLocaleString()+'</td></tr>';
+    html += '<tr><td>払戻総額</td><td class="ta-r">¥'+r.totalPayout.toLocaleString()+'</td></tr>';
     html += '<tr><td>純損益</td><td style="text-align:right;color:'+(r.netProfit>=0?'var(--success)':'var(--danger)')+';font-weight:700">'
             +(r.netProfit>=0?'+':'')+'¥'+r.netProfit.toLocaleString()+'</td></tr>';
     html += '<tr><td><b>回収率</b></td><td style="text-align:right;color:'+roiColor+';font-weight:700;font-size:14px">'+roiPct+'%</td></tr>';
-    html += '<tr><td>3連単的中率</td><td style="text-align:right">'+(r.hitRate3*100).toFixed(1)+'%</td></tr>';
-    html += '<tr><td>2連単的中率</td><td style="text-align:right">'+(r.hitRate2*100).toFixed(1)+'%</td></tr>';
-    html += '<tr><td>最大ドローダウン</td><td style="text-align:right">¥'+r.maxDrawdown.toLocaleString()+'</td></tr>';
-    html += '<tr><td>シャープレシオ</td><td style="text-align:right">'+r.sharpe.toFixed(2)+'</td></tr>';
+    html += '<tr><td>3連単的中率</td><td class="ta-r">'+(r.hitRate3*100).toFixed(1)+'%</td></tr>';
+    html += '<tr><td>2連単的中率</td><td class="ta-r">'+(r.hitRate2*100).toFixed(1)+'%</td></tr>';
+    html += '<tr><td>最大ドローダウン</td><td class="ta-r">¥'+r.maxDrawdown.toLocaleString()+'</td></tr>';
+    html += '<tr><td>シャープレシオ</td><td class="ta-r">'+r.sharpe.toFixed(2)+'</td></tr>';
     html += '</tbody></table>';
     html += '</div></div>';
     resultDiv.innerHTML = html;
 
     // タイプ別内訳
-    var dh = '<div class="card"><div style="padding:12px">';
-    dh += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">レースタイプ別</div>';
-    dh += '<table style="width:100%;font-size:12px"><thead><tr><th>タイプ</th><th>R数</th><th>3連単的中</th><th>払戻合計</th></tr></thead><tbody>';
+    var dh = '<div class="card"><div class="p-12">';
+    dh += '<div class="card-title">レースタイプ別</div>';
+    dh += '<table class="text-w-full-12"><thead><tr><th>タイプ</th><th>R数</th><th>3連単的中</th><th>払戻合計</th></tr></thead><tbody>';
     ['honmei','middle','ana'].forEach(function(t){
       var tt = r.byType[t];
       var lbl = t==='honmei'?'⚡本命':t==='middle'?'📊混戦':'🔥穴';
-      dh += '<tr><td>'+lbl+'</td><td style="text-align:right">'+tt.n+'</td>'
-         +'<td style="text-align:right">'+tt.hits+' ('+(tt.n>0?(tt.hits/tt.n*100).toFixed(1):0)+'%)</td>'
-         +'<td style="text-align:right">¥'+tt.payout.toLocaleString()+'</td></tr>';
+      dh += '<tr><td>'+lbl+'</td><td class="ta-r">'+tt.n+'</td>'
+         +'<td class="ta-r">'+tt.hits+' ('+(tt.n>0?(tt.hits/tt.n*100).toFixed(1):0)+'%)</td>'
+         +'<td class="ta-r">¥'+tt.payout.toLocaleString()+'</td></tr>';
     });
     dh += '</tbody></table>';
     dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:8px">'
@@ -5368,7 +5368,7 @@ function renderStadiums(){
   sumDiv.innerHTML='<div class="summary-bar">'
     +'<div class="summary-item"><div class="s-num" style="color:var(--accent)">'+acc.total+'</div><div class="s-label">判定済</div></div>'
     +'<div class="summary-item"><div class="s-num" style="color:var(--gold)">'+acc.trifectaHit+'</div><div class="s-label">3連単的中</div></div>'
-    +'<div class="summary-item"><div class="s-num" style="color:var(--success)">'+acc.trifectaRate+'%</div><div class="s-label">的中率</div></div>'
+    +'<div class="summary-item"><div class="s-num" class="c-success">'+acc.trifectaRate+'%</div><div class="s-label">的中率</div></div>'
     +'<div class="summary-item"><div class="s-num" style="color:var(--text)">'+Object.keys(racerDB).length+'</div><div class="s-label">選手DB</div></div>'
     +'</div>';
 
@@ -5732,7 +5732,7 @@ function openRace(sid,rn){
       var bt=boatMap[bn];
       if(!bt){boatsHtml+='<td>-</td>';continue}
       var rid=bt.racer_number||0;
-      boatsHtml+='<td><b>'+rid+'</b> <span style="font-size:9px;color:var(--text-dim)">-期</span></td>';
+      boatsHtml+='<td><b>'+rid+'</b> <span class="fs-9 c-dim">-期</span></td>';
     }
     boatsHtml+='<th>登番</th></tr>';
 
@@ -5795,7 +5795,7 @@ function openRace(sid,rn){
       var wr=pf(bt.racer_national_top_1_percent);
       var t2=pf(bt.racer_national_top_2_percent);
       var hlCls=(wr>=6.0)?'hl-pink':'';
-      boatsHtml+='<td class="'+hlCls+'"><b>'+wr.toFixed(2)+'</b><br><span style="font-size:9px">2連:'+t2.toFixed(1)+'%</span></td>';
+      boatsHtml+='<td class="'+hlCls+'"><b>'+wr.toFixed(2)+'</b><br><span class="fs-9">2連:'+t2.toFixed(1)+'%</span></td>';
     }
     boatsHtml+='<th>全国勝率</th></tr>';
 
@@ -5807,7 +5807,7 @@ function openRace(sid,rn){
       var lwr=pf(bt.racer_local_top_1_percent);
       var lt2=pf(bt.racer_local_top_2_percent);
       var hlCls=(lwr>=6.0)?'hl-pink':'';
-      boatsHtml+='<td class="'+hlCls+'"><b>'+lwr.toFixed(2)+'</b><br><span style="font-size:9px">2連:'+lt2.toFixed(1)+'%</span></td>';
+      boatsHtml+='<td class="'+hlCls+'"><b>'+lwr.toFixed(2)+'</b><br><span class="fs-9">2連:'+lt2.toFixed(1)+'%</span></td>';
     }
     boatsHtml+='<th>当地勝率</th></tr>';
 
@@ -5829,7 +5829,7 @@ function openRace(sid,rn){
       var mNum=bt.racer_assigned_motor_number||'-';
       var mr2=pf(bt.racer_assigned_motor_top_2_percent);
       var hlCls=(mr2>=40)?'hl-pink':'';
-      boatsHtml+='<td class="'+hlCls+'"><b>'+mNum+'</b><br><span style="font-size:9px">'+mr2.toFixed(1)+'%</span></td>';
+      boatsHtml+='<td class="'+hlCls+'"><b>'+mNum+'</b><br><span class="fs-9">'+mr2.toFixed(1)+'%</span></td>';
     }
     boatsHtml+='<th>モーター</th></tr>';
 
@@ -5841,7 +5841,7 @@ function openRace(sid,rn){
       var bNum=bt.racer_assigned_boat_number||'-';
       var br2=pf(bt.racer_assigned_boat_top_2_percent);
       var hlCls=(br2>=40)?'hl-pink':'';
-      boatsHtml+='<td class="'+hlCls+'"><b>'+bNum+'</b><br><span style="font-size:9px">'+br2.toFixed(1)+'%</span></td>';
+      boatsHtml+='<td class="'+hlCls+'"><b>'+bNum+'</b><br><span class="fs-9">'+br2.toFixed(1)+'%</span></td>';
     }
     boatsHtml+='<th>ボート</th></tr>';
 
@@ -5942,7 +5942,7 @@ function openRace(sid,rn){
       exhHtml+='<td class="'+stCls+'">'+stDisp+'</td>';
       exhHtml+='<td class="'+etCls+'">'+(etVal!==null?etVal:'---')+'</td>';
       exhHtml+='<td>'+(tiltVal!==null?tiltVal:'---')+'</td>';
-      exhHtml+='<td style="font-size:9px">'+maintDisp+'</td>';
+      exhHtml+='<td class="fs-9">'+maintDisp+'</td>';
       exhHtml+='<td>'+adjDisp+'</td>';
       exhHtml+='</tr>';
     }
@@ -5997,7 +5997,7 @@ function openRace(sid,rn){
       predHtml+='</div>';
     });
     var progTypeIcon=progPred.raceType==='honmei'?'⚡':progPred.raceType==='ana'?'🔥':'📊';
-    predHtml+='<div style="font-size:11px;color:#666;margin-top:6px">'+progTypeIcon+progPred.typeLabel+'  信頼度: '+progPred.confidence+'%</div>';
+    predHtml+='<div class="note-orange">'+progTypeIcon+progPred.typeLabel+'  信頼度: '+progPred.confidence+'%</div>';
     if(progPred.marks[0].reasons&&progPred.marks[0].reasons.length>0){
       predHtml+='<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
       progPred.marks[0].reasons.slice(0,3).forEach(function(r){predHtml+='<div>・'+escText(r)+'</div>'});
@@ -6038,7 +6038,7 @@ function openRace(sid,rn){
       predHtml+='</div>';
     });
     var liveTypeIcon=pred.raceType==='honmei'?'⚡':pred.raceType==='ana'?'🔥':'📊';
-    predHtml+='<div style="font-size:11px;color:#666;margin-top:6px">'+liveTypeIcon+pred.typeLabel+'  信頼度: '+starsHtml(pred.confStars)+' '+pred.confidence+'%</div>';
+    predHtml+='<div class="note-orange">'+liveTypeIcon+pred.typeLabel+'  信頼度: '+starsHtml(pred.confStars)+' '+pred.confidence+'%</div>';
     // X5: シナリオ確率表示
     if(pred.scenarios){
       var scen = pred.scenarios;
@@ -6110,7 +6110,7 @@ function openRace(sid,rn){
         var oddsStr=odds3?'<span class="odds-val"> '+odds3+'倍</span>':'';
         // X1: EV モードの場合、Kelly 配分（円）を表示
         var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥'+t.stakeYen.toLocaleString()+'</span>' : '';
-        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+stakeStr+'</span>';
+        predHtml+='<span class="bet-chip">'+t.combo+' <span class="fs-9 c-dim">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+stakeStr+'</span>';
       });
       predHtml+='</div>';
       // X1: EV モード時の合計投資額表示
@@ -6135,7 +6135,7 @@ function openRace(sid,rn){
       var progBets=generateBetsV2(progPred.marks,method,betCount3,betCount2);
       predHtml+='<div class="bet-label">3連単推奨</div><div class="bet-combos">';
       progBets.trifecta.forEach(function(t){
-        predHtml+='<span class="bet-chip">'+t.combo+' <span style="font-size:9px;color:var(--text-dim)">'+(t.prob*100).toFixed(1)+'%</span></span>';
+        predHtml+='<span class="bet-chip">'+t.combo+' <span class="fs-9 c-dim">'+(t.prob*100).toFixed(1)+'%</span></span>';
       });
       predHtml+='</div>';
       predHtml+='<div class="bet-label">2連単推奨</div><div class="bet-combos">';
@@ -6286,7 +6286,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   html+=' <span class="odds-stale" id="oddsStaleMsg2"></span>';
   if(oddsLastFetched){
     var elapsed=Math.round((Date.now()-oddsLastFetched)/60000);
-    html+=' <span style="font-size:9px;color:var(--text-dim)">'+elapsed+'分前更新</span>';
+    html+=' <span class="fs-9 c-dim">'+elapsed+'分前更新</span>';
   }
   html+='<div style="font-size:9px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
   html+='</div>';
@@ -6384,7 +6384,7 @@ function renderStats(){
     if(sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
     if(recEl && !recEl.innerHTML.trim()){
       var rows = '';
-      for(var i=0;i<3;i++) rows += '<tr><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td></tr>';
+      for(var i=0;i<3;i++) rows += '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
       recEl.innerHTML = '<table style="width:100%"><tbody>'+rows+'</tbody></table>';
     }
     // 既存のフロー（calcTodayStats → 描画）にそのまま委ねる。result 0件でも 0件として描画される。
@@ -6402,8 +6402,8 @@ function renderStats(){
   var recHtml='';
 
   // 券種別 (本日)
-  recHtml+='<div class="card" style="padding:0;overflow:hidden">';
-  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 券種別</div>';
+  recHtml+='<div class="card" class="p-overflow-hidden">';
+  recHtml+='<div class="card-header-row">本日 券種別</div>';
   recHtml+='<table class="recovery-table">';
   recHtml+='<thead><tr><th>券種</th><th>的中</th><th>投資</th><th>回収</th><th>回収率</th></tr></thead><tbody>';
   var triR=s.tri.invest>0?Math.round(s.tri.payout/s.tri.invest*100):0;
@@ -6421,8 +6421,8 @@ function renderStats(){
   recHtml+='</tbody></table></div>';
 
   // レースタイプ別 (本日)
-  recHtml+='<div class="card" style="padding:0;overflow:hidden">';
-  recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 レースタイプ別 (3連単)</div>';
+  recHtml+='<div class="card" class="p-overflow-hidden">';
+  recHtml+='<div class="card-header-row">本日 レースタイプ別 (3連単)</div>';
   recHtml+='<table class="recovery-table">';
   recHtml+='<thead><tr><th>タイプ</th><th>R数</th><th>的中</th><th>的中率</th><th>回収率</th></tr></thead><tbody>';
   var typeLabels={honmei:'⚡本命',middle:'📊混戦',ana:'🔥穴'};
@@ -6445,8 +6445,8 @@ function renderStats(){
   stadArr.sort(function(a,b){return b.rate3-a.rate3});
 
   if(stadArr.length>0){
-    recHtml+='<div class="card" style="padding:0;overflow:hidden">';
-    recHtml+='<div style="padding:10px 12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">本日 場別 (回収率順)</div>';
+    recHtml+='<div class="card" class="p-overflow-hidden">';
+    recHtml+='<div class="card-header-row">本日 場別 (回収率順)</div>';
     recHtml+='<table class="recovery-table">';
     recHtml+='<thead><tr><th>場</th><th>R数</th><th>3連的中</th><th>3連投資</th><th>3連回収</th><th>3連率</th></tr></thead><tbody>';
     stadArr.forEach(function(ss){
@@ -6608,7 +6608,7 @@ function loadSettings(){
     + 'rolling stats N: '+fStatsN+' / warmup '+TUNING.PREDICTION.ZSCORE_WARMUP_N+'<br>'
     + 'Platt 校正: '+plattStatus+' ('+plattAge+', n='+(_plattCoeffs.n||0)+')<br>'
     + (withProbs.length >= TUNING.PREDICTION.PLATT_MIN_SAMPLES
-        ? '<span style="color:var(--success)">✓ 自動再校正条件を満たしています</span>'
+        ? '<span class="c-success">✓ 自動再校正条件を満たしています</span>'
         : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>');
 
   // PE-3 + PF-9: 自動再校正 — サンプル充足 & 7 日以上経過なら静かに Worker で再校正

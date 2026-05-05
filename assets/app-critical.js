@@ -1234,47 +1234,156 @@ window.addEventListener('unhandledrejection', function(e){
   var DEFAULT_LOCALE = "ja";
   var I18N_TABLES = {
     ja: {
+      // common
       "common.loading": "\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D...",
       "common.refresh": "\u66F4\u65B0",
       "common.close": "\u9589\u3058\u308B",
       "common.copy": "\u30B3\u30D4\u30FC",
       "common.share": "\u5171\u6709",
+      "common.delete": "\u524A\u9664",
+      "common.cancel": "\u30AD\u30E3\u30F3\u30BB\u30EB",
+      "common.ok": "OK",
+      "common.yes": "\u306F\u3044",
+      "common.no": "\u3044\u3044\u3048",
+      "common.reset": "\u30EA\u30BB\u30C3\u30C8",
+      "common.show": "\u8868\u793A",
+      "common.execute": "\u5B9F\u884C",
+      // race
       "race.honmei": "\u672C\u547D",
       "race.middle": "\u6DF7\u6226",
       "race.ana": "\u7A74",
       "race.confidence": "\u4FE1\u983C\u5EA6",
+      "race.lineup": "\u51FA\u8D70\u8868",
+      "race.ai_reasoning": "AI\u6839\u62E0",
+      "race.odds_picks": "\u30AA\u30C3\u30BA\u30FB\u8CB7\u3044\u76EE",
+      "race.back_to_list": "\u2190 \u30EC\u30FC\u30B9\u4E00\u89A7\u306B\u623B\u308B",
+      "race.back_to_top": "\u2190 \u5834\u9078\u629E\u306B\u623B\u308B",
+      "race.refresh_this": "\u{1F504} \u3053\u306E\u30EC\u30FC\u30B9\u3092\u66F4\u65B0",
+      // page
       "page.top": "\u30C8\u30C3\u30D7",
       "page.stats": "\u6210\u7E3E",
       "page.backtest": "\u691C\u8A3C",
       "page.settings": "\u8A2D\u5B9A",
+      // settings
       "settings.bet_count_3": "3\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
       "settings.bet_count_2": "2\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
       "settings.bet_method": "\u8CB7\u3044\u76EE\u65B9\u5F0F",
       "settings.kpi_mode": "KPI \u30E2\u30FC\u30C9",
+      "settings.ev_mode": "EV \u30E2\u30FC\u30C9",
+      "settings.ev_min": "EV \u6700\u4F4E\u95BE\u5024",
+      "settings.kelly_frac": "Kelly \u6BD4\u7387",
+      "settings.bankroll": "\u8CC7\u91D1 (\u5186)",
       "settings.notify": "\u7684\u4E2D\u901A\u77E5",
+      "settings.coi": "SAB\u9AD8\u901F\u5316(\u5B9F\u9A13)",
+      "settings.cache": "\u30C7\u30FC\u30BF\u30AD\u30E3\u30C3\u30B7\u30E5",
+      "settings.history": "\u6210\u7E3E\u5C65\u6B74",
+      "settings.racer_db": "\u9078\u624B/\u5834DB",
+      "settings.weights": "\u5B66\u7FD2\u91CD\u307F",
+      "settings.errors": "\u30A8\u30E9\u30FC\u30ED\u30B0",
+      "settings.platt": "\u78BA\u7387\u6821\u6B63 (Platt)",
+      "settings.csv_export": "\u5C65\u6B74 CSV \u30A8\u30AF\u30B9\u30DD\u30FC\u30C8",
+      "settings.forward_chain": "Forward-chain \u8A55\u4FA1",
+      "settings.language": "\u8868\u793A\u8A00\u8A9E",
+      // notify
       "notify.permission_request": "\u8A31\u53EF\u30EA\u30AF\u30A8\u30B9\u30C8",
       "notify.permission_granted": "\u2713 \u8A31\u53EF\u6E08",
       "notify.permission_denied": "\xD7 \u62D2\u5426\uFF08\u30D6\u30E9\u30A6\u30B6\u8A2D\u5B9A\u3067\u5909\u66F4\u53EF\uFF09",
       "notify.permission_default": "\u672A\u8A2D\u5B9A",
+      "notify.title": "\u304A\u6C17\u306B\u5165\u308A\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u304C\u78BA\u5B9A",
+      // api
       "api.health.fail": "API \u53D6\u5F97\u5931\u6557",
       "api.health.cached": "\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D",
-      "api.health.warning": "\u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059"
+      "api.health.warning": "\u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059",
+      "api.health.retry": "\u518D\u8A66\u884C",
+      // backtest
+      "backtest.run": "\u25B6 \u30D0\u30C3\u30AF\u30C6\u30B9\u30C8\u5B9F\u884C",
+      "backtest.period": "\u671F\u9593",
+      "backtest.title": "\u30D0\u30C3\u30AF\u30C6\u30B9\u30C8",
+      // stats
+      "stats.today_total": "\u672C\u65E5 \u5224\u5B9A\u6E08",
+      "stats.tri_hits": "3\u9023\u5358\u7684\u4E2D",
+      "stats.tri_recovery": "3\u9023\u5358\u56DE\u53CE\u7387",
+      "stats.loading": "\u8AAD\u8FBC\u4E2D...",
+      // confidence stars
+      "confidence.label": "\u4FE1\u983C\u5EA6",
+      // misc
+      "misc.no_data": "\u30C7\u30FC\u30BF\u306A\u3057"
     },
     en: {
-      // scaffold のみ。実翻訳は別 PR。
+      // common
       "common.loading": "Loading...",
       "common.refresh": "Refresh",
       "common.close": "Close",
       "common.copy": "Copy",
       "common.share": "Share",
+      "common.delete": "Delete",
+      "common.cancel": "Cancel",
+      "common.ok": "OK",
+      "common.yes": "Yes",
+      "common.no": "No",
+      "common.reset": "Reset",
+      "common.show": "Show",
+      "common.execute": "Run",
+      // race
       "race.honmei": "Favorite",
       "race.middle": "Mixed",
       "race.ana": "Long shot",
       "race.confidence": "Confidence",
+      "race.lineup": "Lineup",
+      "race.ai_reasoning": "AI reasoning",
+      "race.odds_picks": "Odds & picks",
+      "race.back_to_list": "\u2190 Back to race list",
+      "race.back_to_top": "\u2190 Back to stadiums",
+      "race.refresh_this": "\u{1F504} Refresh this race",
+      // page
       "page.top": "Top",
       "page.stats": "Stats",
       "page.backtest": "Backtest",
-      "page.settings": "Settings"
+      "page.settings": "Settings",
+      // settings
+      "settings.bet_count_3": "Trifecta # of bets",
+      "settings.bet_count_2": "Exacta # of bets",
+      "settings.bet_method": "Betting method",
+      "settings.kpi_mode": "KPI mode",
+      "settings.ev_mode": "EV mode",
+      "settings.ev_min": "Min EV threshold",
+      "settings.kelly_frac": "Kelly fraction",
+      "settings.bankroll": "Bankroll (JPY)",
+      "settings.notify": "Win notification",
+      "settings.coi": "SAB acceleration (exp.)",
+      "settings.cache": "Data cache",
+      "settings.history": "Bet history",
+      "settings.racer_db": "Racer / stadium DB",
+      "settings.weights": "Learned weights",
+      "settings.errors": "Error log",
+      "settings.platt": "Probability calibration (Platt)",
+      "settings.csv_export": "CSV export",
+      "settings.forward_chain": "Forward-chain eval",
+      "settings.language": "Display language",
+      // notify
+      "notify.permission_request": "Request permission",
+      "notify.permission_granted": "\u2713 Granted",
+      "notify.permission_denied": "\xD7 Denied (change in browser settings)",
+      "notify.permission_default": "Not set",
+      "notify.title": "Watched race result confirmed",
+      // api
+      "api.health.fail": "API fetch failed",
+      "api.health.cached": "Using cached data",
+      "api.health.warning": "Displayed data may be stale",
+      "api.health.retry": "Retry",
+      // backtest
+      "backtest.run": "\u25B6 Run backtest",
+      "backtest.period": "Period",
+      "backtest.title": "Backtest",
+      // stats
+      "stats.today_total": "Today judged",
+      "stats.tri_hits": "Trifecta hits",
+      "stats.tri_recovery": "Trifecta ROI",
+      "stats.loading": "Loading...",
+      // confidence
+      "confidence.label": "Confidence",
+      // misc
+      "misc.no_data": "No data"
     }
   };
   var _currentLocale = DEFAULT_LOCALE;
@@ -1323,12 +1432,53 @@ window.addEventListener('unhandledrejection', function(e){
   function availableLocales() {
     return Object.keys(I18N_TABLES);
   }
+  function translatePage(root) {
+    const r = root || (typeof document !== "undefined" ? document : null);
+    if (!r || typeof r.querySelectorAll !== "function") return 0;
+    let n = 0;
+    r.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.getAttribute("data-i18n");
+      if (!key) return;
+      const text = t(key);
+      if (text !== key) {
+        el.textContent = text;
+        n++;
+      }
+    });
+    r.querySelectorAll("[data-i18n-attr]").forEach((el) => {
+      const spec = el.getAttribute("data-i18n-attr") || "";
+      spec.split(",").forEach((pair) => {
+        const [attr, key] = pair.split(":").map((s) => s.trim());
+        if (!attr || !key) return;
+        const text = t(key);
+        if (text !== key) {
+          el.setAttribute(attr, text);
+          n++;
+        }
+      });
+    });
+    return n;
+  }
+  function applyLocale(locale) {
+    if (!setLocale(locale)) return false;
+    translatePage();
+    return true;
+  }
   _currentLocale = _detectLocale();
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => translatePage(), { once: true });
+    } else {
+      setTimeout(() => translatePage(), 0);
+    }
+  }
   globalThis.t = t;
   globalThis.setLocale = setLocale;
   globalThis.getLocale = getLocale;
   globalThis.availableLocales = availableLocales;
   globalThis.I18N_TABLES = I18N_TABLES;
+  globalThis.translatePage = translatePage;
+  globalThis.applyLocale = applyLocale;
 })();
 
 /* BUILD:I18N:END */
@@ -2768,7 +2918,7 @@ function renderStadiums(){
   sumDiv.innerHTML='<div class="summary-bar">'
     +'<div class="summary-item"><div class="s-num" style="color:var(--accent)">'+acc.total+'</div><div class="s-label">判定済</div></div>'
     +'<div class="summary-item"><div class="s-num" style="color:var(--gold)">'+acc.trifectaHit+'</div><div class="s-label">3連単的中</div></div>'
-    +'<div class="summary-item"><div class="s-num" style="color:var(--success)">'+acc.trifectaRate+'%</div><div class="s-label">的中率</div></div>'
+    +'<div class="summary-item"><div class="s-num" class="c-success">'+acc.trifectaRate+'%</div><div class="s-label">的中率</div></div>'
     +'<div class="summary-item"><div class="s-num" style="color:var(--text)">'+Object.keys(racerDB).length+'</div><div class="s-label">選手DB</div></div>'
     +'</div>';
 
