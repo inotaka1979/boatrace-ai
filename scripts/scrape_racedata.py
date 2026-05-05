@@ -35,6 +35,16 @@ def fetch_html(url: str) -> str:
 def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
     """出走表ページから今節成績（直近 6 艇分）を取得する。
 
+    boatrace.jp の HTML 構造（2026 時点）:
+      - tbody.is-fs12 = 1 名分の 4 行 group
+      - tr[0]: 枠/写真/名前/F.L/勝率等 + レースNo (今節各日)
+      - tr[1]: 進入コース (今節各日)
+      - tr[2]: スタートタイミング (今節各日)
+      - tr[3]: 着順 (全角数字、今節各日)  ← これを取りたい
+
+    着順が全角数字 (２, ５ 等) で入っているので半角に変換。
+    特殊コード (転覆/失格 等) は記号文字なので位置 0 にマップ（無効扱い）。
+
     Args:
         jcd: 場番号 2 桁文字列 (例 "01")
         rno: レース番号 (1..12)
@@ -50,22 +60,28 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
         soup = BeautifulSoup(html, "html.parser")
         boats = []
 
-        for i, row in enumerate(soup.select("tbody.is-fs12"), 1):
-            if i > 6: break
-            tds = row.select("td")
-            series_text = ""
-            for td in tds:
-                text = td.get_text(strip=True)
-                if re.match(r'^[\d\s]+$', text) and len(text) > 2:
-                    series_text = text
-                    break
+        # 全角→半角 変換テーブル
+        zen2han = str.maketrans("０１２３４５６７８９", "0123456789")
 
-            results = []
-            if series_text:
-                for ch in series_text.split():
+        for i, tbody in enumerate(soup.select("tbody.is-fs12"), 1):
+            if i > 6: break
+            trs = tbody.find_all("tr", recursive=False)
+            results: list[int] = []
+            if len(trs) >= 4:
+                # tr[3] が着順行（全角数字 / 特殊記号）
+                for td in trs[3].find_all("td", recursive=False):
+                    text = td.get_text(strip=True)
+                    if not text or text == "\xa0":
+                        continue
+                    # 全角数字を半角化して数値変換、失敗時は special code として除外
+                    han = text.translate(zen2han)
                     try:
-                        results.append(int(ch))
+                        v = int(han)
+                        if 1 <= v <= 6:
+                            results.append(v)
+                        # 7+ は特殊（失格/不完走/欠場/転覆等）— 着順統計から除外
                     except ValueError:
+                        # 「妨」「失」「転」等の漢字 — 出走したが完走せず
                         pass
 
             avg = sum(results) / len(results) if results else 0
