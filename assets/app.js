@@ -3089,11 +3089,15 @@ function savePrediction(date,sid,rn,pred,result){
     for(var i=0;i<history.length;i++){
       if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
     }
-    // F19: 既存エントリ更新ポリシー — 展示前/後で予想が変わる問題を修正
+    // F19b: 既存エントリ更新ポリシー (カウント安定化版)
+    //   - 既存が actual あり (確定済) → ロックイン、常に skip
+    //   - 既存が actual 無し + 新規 result あり → 上書き (初回確定時の予想を保存)
+    //   - 既存が actual 無し + 新規 result 無し → skip (mid-day churn 回避)
     if(existIdx >= 0){
       var existing = history[existIdx];
+      if(existing.actual && existing.actual.length > 0) return;
       var newHasResult = result && result.isFinished && result.results;
-      if(existing.actual && existing.actual.length > 0 && !newHasResult) return;
+      if(!newHasResult) return;
       history.splice(existIdx, 1);
     }
     var entry={

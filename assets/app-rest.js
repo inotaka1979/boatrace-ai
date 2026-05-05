@@ -2010,16 +2010,16 @@ function savePrediction(date,sid,rn,pred,result){
     for(var i=0;i<history.length;i++){
       if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
     }
-    // F19: 既存エントリ更新ポリシー
-    //   - 既存が actual あり (= 確定済) で、新規も actual あり → 上書きで予想を最新化
-    //     (展示前→展示後で予想が更新されるため、古い trifecta_bets で hit 判定されるバグを修正)
-    //   - 既存が actual あり、新規 result 無し (predict のみ) → 既存を保護 (skip)
-    //   - 既存が actual 無し → 上書き (predict 内容と確定情報を最新に)
+    // F19b: 既存エントリ更新ポリシー（カウント安定化版）
+    //   - 既存が actual あり (= 確定済 / ロックイン)        → 常に skip
+    //   - 既存が actual 無し (predict のみ) + 新規 result あり → 上書き (確定時の予想を保存)
+    //   - 既存が actual 無し + 新規 result 無し              → skip (mid-day の予想churnを避ける)
+    //   このルールで「初回確定時の予想」が永続化されカウントが揺れない。
     if(existIdx >= 0){
       var existing = history[existIdx];
+      if(existing.actual && existing.actual.length > 0) return;   // ロックイン
       var newHasResult = result && result.isFinished && result.results;
-      if(existing.actual && existing.actual.length > 0 && !newHasResult) return;
-      // それ以外は履歴の該当 index を上書きするため、削除して新規作成へ
+      if(!newHasResult) return;
       history.splice(existIdx, 1);
     }
     var entry={
