@@ -357,16 +357,27 @@ try {
   var _lsBytes = 0;
   for(var _k in localStorage) _lsBytes += ((localStorage.getItem(_k)||'').length * 2);
   if(_lsBytes > 2 * 1024 * 1024){   // 2MB 超 (Epic 28b: 閾値を下げ早期介入)
-    // Epic 28e: 容量超過時にキー別バイト数 TOP10 を出力 (原因究明用)
+    // Epic 28f: 容量超過時にキー別バイト数 TOP10 を console + reportError 両方に出力
+    //   (スマホで DevTools が見えないユーザでも、設定画面のエラーログから確認可能)
     var _topKeys = [];
     for(var _kx=0;_kx<localStorage.length;_kx++){
       var _kn = localStorage.key(_kx);
       if(!_kn) continue;
       _topKeys.push({ k:_kn, b:(localStorage.getItem(_kn)||'').length*2 });
     }
-    _topKeys.sort(function(a,b){return b.b-a.b}).slice(0,10).forEach(function(it){
+    var _top10 = _topKeys.sort(function(a,b){return b.b-a.b}).slice(0,10);
+    _top10.forEach(function(it){
       console.warn('[storage]   ' + (it.b/1024).toFixed(0) + ' KB - ' + it.k);
     });
+    // boatrace_errors にも保存して設定画面 → エラーログから確認可能に
+    try {
+      if(typeof reportError === 'function') reportError({
+        type: 'diag_storage_top10',
+        msg: 'localStorage usage ' + (_lsBytes/1024/1024).toFixed(2) + 'MB top10',
+        usage_mb: parseFloat((_lsBytes/1024/1024).toFixed(2)),
+        top10: _top10.map(function(it){ return { key: it.k, kb: parseFloat((it.b/1024).toFixed(1)) }; }),
+      });
+    } catch(_){}
     console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing all bc_*');
     var _bcRm = 0;
     var _bcK = [];
@@ -400,13 +411,25 @@ try {
       setTimeout(function(){ tryRun(retry+1); }, 100);
       return;
     }
-    console.log('[idb] migrate start (IDB available='+(typeof indexedDB !== 'undefined')+')');
+    var _idbAvail = (typeof indexedDB !== 'undefined');
+    console.log('[idb] migrate start (IDB available='+_idbAvail+')');
     idbMigrateFromLS().then(function(res){
-      console.log('[idb] migrate done: migrated=' + ((res && res.migrated)||[]).length
-                  + ' errors=' + ((res && res.errors)||[]).length);
+      var migN = ((res && res.migrated)||[]).length;
+      var errN = ((res && res.errors)||[]).length;
+      console.log('[idb] migrate done: migrated=' + migN + ' errors=' + errN);
       if(res && res.migrated && res.migrated.length){
         console.log('[idb]   migrated keys:', res.migrated.join(', '));
       }
+      // Epic 28f: 結果を reportError に保存 (スマホで DevTools 不可なユーザ向け)
+      try {
+        if(typeof reportError === 'function') reportError({
+          type: 'diag_idb_migrate',
+          msg: 'idb migrate: migrated=' + migN + ' errors=' + errN + ' (avail=' + _idbAvail + ')',
+          idb_available: _idbAvail,
+          migrated: (res && res.migrated) || [],
+          errors: (res && res.errors) || [],
+        });
+      } catch(_){}
       return Promise.all([ idbGet('boatrace_racerDB'), idbGet('boatrace_stadiumDB') ]);
     }).then(function(arr){
       if(arr[0] && typeof arr[0] === 'object' && Object.keys(arr[0]).length > 0){
@@ -416,7 +439,9 @@ try {
         try { stadiumDB = arr[1]; console.log('[idb] reloaded stadiumDB ('+Object.keys(arr[1]).length+' stadiums)'); } catch(_){}
       }
     }).catch(function(e){
-      console.warn('[idb] boot migrate/load failed:', e && e.message);
+      var msg = (e && e.message) || 'unknown';
+      console.warn('[idb] boot migrate/load failed:', msg);
+      try { if(typeof reportError === 'function') reportError({ type:'diag_idb_failed', msg: msg }); } catch(_){}
     });
   }
   tryRun(0);

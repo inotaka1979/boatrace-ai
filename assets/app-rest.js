@@ -4106,8 +4106,18 @@ function _loadErrorLog(){
 function showErrorLog(){
   var buf=_loadErrorLog();
   if(!buf.length){ alert('エラーログは空です'); return; }
-  var lines=buf.slice(-20).map(function(e){
-    return '['+(e.iso||new Date(e.ts).toISOString())+'] '+(e.type||'?')+': '+(e.msg||'')+(e.src?(' @ '+e.src+':'+(e.line||0)):'');
+  // Epic 28f: diag 系 (storage TOP10 / IDB migrate / worker error 詳細) を整形して表示
+  var lines=buf.slice(-30).map(function(e){
+    var head = '['+(e.iso||new Date(e.ts).toISOString()).slice(11,19)+'] '+(e.type||'?')+': '+(e.msg||'');
+    if(e.src) head += ' @ '+e.src+':'+(e.line||0);
+    if(e.type === 'diag_storage_top10' && Array.isArray(e.top10)){
+      head += '\n  ' + e.top10.map(function(t){return t.kb+'KB '+t.key;}).join('\n  ');
+    } else if(e.type === 'diag_idb_migrate'){
+      head += ' migrated=['+(e.migrated||[]).join(',')+'] errors=['+(e.errors||[]).join(',')+']';
+    } else if(e.type === 'worker_error'){
+      head += ' target='+(e.target||'(none)')+' eventType='+(e.eventType||'?');
+    }
+    return head;
   });
   alert('直近 '+lines.length+' 件 / 全 '+buf.length+' 件:\n\n'+lines.join('\n'));
 }
