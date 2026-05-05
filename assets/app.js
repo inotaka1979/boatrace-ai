@@ -5175,9 +5175,10 @@ setTimeout(function(){
 _runIdleTask(function(){
   cleanOldData();
 }, 100);
-_runIdleTask(function(){
-  _setupStadiumDelegation();
-}, 50);
+// PI-fix: iOS standalone PWA で scheduler.postTask({priority:'background'}) が
+//   loadAllData の重いタスクに starve され、stadium-card のタップが効かなくなる
+//   問題を修正。リスナ追加は ~0ms なので同期実行で LCP/FCP に影響しない。
+_setupStadiumDelegation();
 _runIdleTask(function(){
   // SW 登録は更に load イベント後で遅延
   if(document.readyState === 'complete') _setupServiceWorker();
