@@ -66,12 +66,15 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
         for i, tbody in enumerate(soup.select("tbody.is-fs12"), 1):
             if i > 6: break
             trs = tbody.find_all("tr", recursive=False)
-            # tr[1] = 進入コース、tr[2] = ST、tr[3] = 着順（同じ td index で対応）
+            # tr[0] td[9..]: レース番号 + 枠番(class is-boatColor{N})
+            # tr[1]: 進入コース、tr[2]: ST、tr[3]: 着順（td index で tr[0] と対応）
+            tr0 = trs[0].find_all("td", recursive=False) if len(trs) >= 1 else []
             tr1 = trs[1].find_all("td", recursive=False) if len(trs) >= 2 else []
             tr2 = trs[2].find_all("td", recursive=False) if len(trs) >= 3 else []
             tr3 = trs[3].find_all("td", recursive=False) if len(trs) >= 4 else []
-            # Macool 風: 14 cells (= 7 days × 2 slots) を全て保持、空セルは null。
-            # 当面 14 cells を保持し、フロントが日割りグルーピングを担当。
+            # tr[0] には先頭に枠番/写真/名前/勝率等の 9 cells があり、
+            # td[9..] が今節成績の cell。tr[1-3] は td[0..] が今節成績 cell。
+            # tr[0] td[9+j] と tr[1-3] td[j] が対応。
             n = max(len(tr1), len(tr2), len(tr3))
             results: list = []
             for j in range(n):
@@ -93,10 +96,21 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
                     if 1 <= cv <= 6: course = cv
                 except ValueError:
                     pass
-                # ST は ".26" 等。先頭ピリオド付の文字列として保持
-                results.append({"course": course, "place": place, "st": st or None})
+                # 枠番 = tr[0] td[9+j] の is-boatColor{N} class から抽出
+                waku = None
+                tr0_idx = 9 + j
+                if tr0_idx < len(tr0):
+                    cls_list = tr0[tr0_idx].get("class", []) or []
+                    for cls in cls_list:
+                        if cls.startswith("is-boatColor"):
+                            try:
+                                wv = int(cls.replace("is-boatColor", ""))
+                                if 1 <= wv <= 6: waku = wv
+                            except ValueError:
+                                pass
+                            break
+                results.append({"waku": waku, "course": course, "place": place, "st": st or None})
 
-            # サマリ計算は place のみ集計
             places = [r["place"] for r in results if r and r.get("place")]
             avg = sum(places) / len(places) if places else 0
             wins = places.count(1)
@@ -105,7 +119,7 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
 
             boats.append({
                 "boat_number": i,
-                "current_series_results": results,   # [{course,place,st} | null, ...] (14 entries 想定)
+                "current_series_results": results,   # [{waku,course,place,st} | null, ...]
                 "current_series_summary": {
                     "races": len(places),
                     "avg_place": round(avg, 2),

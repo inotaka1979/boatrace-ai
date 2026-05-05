@@ -3711,21 +3711,25 @@ function getRaceDataForRace(sid,rn){
   return raceData.racedata.find(function(r){return r.stadium===parseInt(sid)&&r.race===parseInt(rn)})||null;
 }
 
-// F16: Macool 風セルレンダリング。1 セル = TD 1 つ。
+// F16: Macool 風セルレンダリング (背景=枠番色 / 上=着順 / 下=進入コース漢数字+ST)
 function renderSeriesCell(entry){
   if(!entry) return '<td class="series-mc empty"></td>';
   var KANJI = ['','一','二','三','四','五','六'];
-  var place, course, st;
+  var place, course, waku, st;
   if(typeof entry === 'object'){
-    place = entry.place; course = entry.course; st = entry.st || '';
+    place = entry.place; course = entry.course; waku = entry.waku; st = entry.st || '';
   } else {
-    place = entry; course = null; st = '';
+    place = entry; course = null; waku = null; st = '';
   }
-  var placeKanji = (place && place >= 1 && place <= 6) ? KANJI[place] : (place || '');
-  var bgCls = place===1?'pl1':place===2?'pl2':place===3?'pl3':place?'plOther':'';
-  var courseHtml = course ? '<span class="course-num c'+course+'">'+course+'</span>' : '<span class="course-num c0">-</span>';
+  var bgWaku = waku || course;
+  var courseKanji = (course && course >= 1 && course <= 6) ? KANJI[course] : '-';
+  var bgCls = bgWaku ? 'wk'+bgWaku : 'wkNa';
+  var placeStr = (place && place >= 1 && place <= 6) ? place : '-';
   var stHtml = st ? '<span class="series-st">'+st+'</span>' : '';
-  return '<td class="series-mc '+bgCls+'">'+courseHtml+'<span class="series-place-row">'+placeKanji+stHtml+'</span></td>';
+  return '<td class="series-mc '+bgCls+'">'
+       + '<span class="series-top">'+placeStr+'</span>'
+       + '<span class="series-bottom">'+courseKanji+stHtml+'</span>'
+       + '</td>';
 }
 
 function renderSeriesNums(results){
