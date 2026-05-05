@@ -1595,6 +1595,18 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "stats.loading": "\u8AAD\u8FBC\u4E2D...",
       // confidence stars
       "confidence.label": "\u4FE1\u983C\u5EA6",
+      // motor evaluation labels
+      "motor.\u8D85\u629C": "\u8D85\u629C",
+      "motor.\u597D\u6A5F": "\u597D\u6A5F",
+      "motor.\u4E26\u6A5F": "\u4E26\u6A5F",
+      "motor.\u4F4E\u8ABF": "\u4F4E\u8ABF",
+      "motor.\u6574\u5099\u8981": "\u6574\u5099\u8981",
+      // form labels
+      "form.\u7D76\u597D\u8ABF": "\u7D76\u597D\u8ABF",
+      "form.\u597D\u8ABF": "\u597D\u8ABF",
+      "form.\u666E\u901A": "\u666E\u901A",
+      "form.\u4E0D\u8ABF": "\u4E0D\u8ABF",
+      "form.\u7D76\u4E0D\u8ABF": "\u7D76\u4E0D\u8ABF",
       // misc
       "misc.no_data": "\u30C7\u30FC\u30BF\u306A\u3057"
     },
@@ -1671,8 +1683,109 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "stats.loading": "Loading...",
       // confidence
       "confidence.label": "Confidence",
+      // motor evaluation labels
+      "motor.\u8D85\u629C": "Top-tier",
+      "motor.\u597D\u6A5F": "Good",
+      "motor.\u4E26\u6A5F": "Average",
+      "motor.\u4F4E\u8ABF": "Poor",
+      "motor.\u6574\u5099\u8981": "Maintenance",
+      // form labels
+      "form.\u7D76\u597D\u8ABF": "Excellent",
+      "form.\u597D\u8ABF": "Good",
+      "form.\u666E\u901A": "Average",
+      "form.\u4E0D\u8ABF": "Poor",
+      "form.\u7D76\u4E0D\u8ABF": "Terrible",
       // misc
       "misc.no_data": "No data"
+    },
+    // Epic 25: zh-CN (簡体中文) — UI 60キー完全翻訳
+    "zh-CN": {
+      // common
+      "common.loading": "\u52A0\u8F7D\u4E2D...",
+      "common.refresh": "\u5237\u65B0",
+      "common.close": "\u5173\u95ED",
+      "common.copy": "\u590D\u5236",
+      "common.share": "\u5206\u4EAB",
+      "common.delete": "\u5220\u9664",
+      "common.cancel": "\u53D6\u6D88",
+      "common.ok": "\u786E\u5B9A",
+      "common.yes": "\u662F",
+      "common.no": "\u5426",
+      "common.reset": "\u91CD\u7F6E",
+      "common.show": "\u663E\u793A",
+      "common.execute": "\u6267\u884C",
+      // race
+      "race.honmei": "\u672C\u547D",
+      "race.middle": "\u6DF7\u6218",
+      "race.ana": "\u51B7\u95E8",
+      "race.confidence": "\u53EF\u4FE1\u5EA6",
+      "race.lineup": "\u51FA\u573A\u8868",
+      "race.ai_reasoning": "AI \u63A8\u7406",
+      "race.odds_picks": "\u8D54\u7387\u4E0E\u4E70\u70B9",
+      "race.back_to_list": "\u2190 \u8FD4\u56DE\u6BD4\u8D5B\u5217\u8868",
+      "race.back_to_top": "\u2190 \u8FD4\u56DE\u8D5B\u573A\u9009\u62E9",
+      "race.refresh_this": "\u{1F504} \u5237\u65B0\u6B64\u573A\u6BD4\u8D5B",
+      // page
+      "page.top": "\u9996\u9875",
+      "page.stats": "\u4E1A\u7EE9",
+      "page.backtest": "\u56DE\u6D4B",
+      "page.settings": "\u8BBE\u7F6E",
+      // settings
+      "settings.bet_count_3": "\u4E09\u8FDE\u5355\u6CE8\u6570",
+      "settings.bet_count_2": "\u4E8C\u8FDE\u5355\u6CE8\u6570",
+      "settings.bet_method": "\u6295\u6CE8\u65B9\u5F0F",
+      "settings.kpi_mode": "KPI \u6A21\u5F0F",
+      "settings.ev_mode": "EV \u6A21\u5F0F",
+      "settings.ev_min": "EV \u6700\u4F4E\u9608\u503C",
+      "settings.kelly_frac": "Kelly \u6BD4\u7387",
+      "settings.bankroll": "\u8D44\u91D1 (\u65E5\u5143)",
+      "settings.notify": "\u4E2D\u5956\u901A\u77E5",
+      "settings.coi": "SAB \u52A0\u901F (\u5B9E\u9A8C)",
+      "settings.cache": "\u6570\u636E\u7F13\u5B58",
+      "settings.history": "\u6295\u6CE8\u5386\u53F2",
+      "settings.racer_db": "\u9009\u624B / \u8D5B\u573A DB",
+      "settings.weights": "\u5B66\u4E60\u6743\u91CD",
+      "settings.errors": "\u9519\u8BEF\u65E5\u5FD7",
+      "settings.platt": "\u6982\u7387\u6821\u51C6 (Platt)",
+      "settings.csv_export": "CSV \u5BFC\u51FA",
+      "settings.forward_chain": "Forward-chain \u8BC4\u4F30",
+      "settings.language": "\u663E\u793A\u8BED\u8A00",
+      // notify
+      "notify.permission_request": "\u8BF7\u6C42\u6743\u9650",
+      "notify.permission_granted": "\u2713 \u5DF2\u6388\u6743",
+      "notify.permission_denied": "\xD7 \u5DF2\u62D2\u7EDD\uFF08\u5728\u6D4F\u89C8\u5668\u8BBE\u7F6E\u4E2D\u66F4\u6539\uFF09",
+      "notify.permission_default": "\u672A\u8BBE\u7F6E",
+      "notify.title": "\u5173\u6CE8\u6BD4\u8D5B\u7ED3\u679C\u5DF2\u786E\u8BA4",
+      // api
+      "api.health.fail": "API \u83B7\u53D6\u5931\u8D25",
+      "api.health.cached": "\u4F7F\u7528\u7F13\u5B58\u6570\u636E",
+      "api.health.warning": "\u663E\u793A\u6570\u636E\u53EF\u80FD\u8FC7\u65F6",
+      "api.health.retry": "\u91CD\u8BD5",
+      // backtest
+      "backtest.run": "\u25B6 \u8FD0\u884C\u56DE\u6D4B",
+      "backtest.period": "\u671F\u95F4",
+      "backtest.title": "\u56DE\u6D4B",
+      // stats
+      "stats.today_total": "\u4ECA\u65E5\u5DF2\u5224\u5B9A",
+      "stats.tri_hits": "\u4E09\u8FDE\u5355\u4E2D\u5956",
+      "stats.tri_recovery": "\u4E09\u8FDE\u5355\u56DE\u6536\u7387",
+      "stats.loading": "\u52A0\u8F7D\u4E2D...",
+      // confidence
+      "confidence.label": "\u53EF\u4FE1\u5EA6",
+      // motor evaluation labels
+      "motor.\u8D85\u629C": "\u6781\u4F73",
+      "motor.\u597D\u6A5F": "\u826F\u597D",
+      "motor.\u4E26\u6A5F": "\u4E00\u822C",
+      "motor.\u4F4E\u8ABF": "\u8F83\u5DEE",
+      "motor.\u6574\u5099\u8981": "\u9700\u68C0\u4FEE",
+      // form labels
+      "form.\u7D76\u597D\u8ABF": "\u6781\u4F73",
+      "form.\u597D\u8ABF": "\u826F\u597D",
+      "form.\u666E\u901A": "\u4E00\u822C",
+      "form.\u4E0D\u8ABF": "\u8F83\u5DEE",
+      "form.\u7D76\u4E0D\u8ABF": "\u6781\u5DEE",
+      // misc
+      "misc.no_data": "\u65E0\u6570\u636E"
     }
   };
   var _currentLocale = DEFAULT_LOCALE;

@@ -88,6 +88,18 @@ const I18N_TABLES = {
     'stats.loading': '読込中...',
     // confidence stars
     'confidence.label': '信頼度',
+    // motor evaluation labels
+    'motor.超抜': '超抜',
+    'motor.好機': '好機',
+    'motor.並機': '並機',
+    'motor.低調': '低調',
+    'motor.整備要': '整備要',
+    // form labels
+    'form.絶好調': '絶好調',
+    'form.好調': '好調',
+    'form.普通': '普通',
+    'form.不調': '不調',
+    'form.絶不調': '絶不調',
     // misc
     'misc.no_data': 'データなし',
   },
@@ -164,8 +176,109 @@ const I18N_TABLES = {
     'stats.loading': 'Loading...',
     // confidence
     'confidence.label': 'Confidence',
+    // motor evaluation labels
+    'motor.超抜': 'Top-tier',
+    'motor.好機': 'Good',
+    'motor.並機': 'Average',
+    'motor.低調': 'Poor',
+    'motor.整備要': 'Maintenance',
+    // form labels
+    'form.絶好調': 'Excellent',
+    'form.好調': 'Good',
+    'form.普通': 'Average',
+    'form.不調': 'Poor',
+    'form.絶不調': 'Terrible',
     // misc
     'misc.no_data': 'No data',
+  },
+  // Epic 25: zh-CN (簡体中文) — UI 60キー完全翻訳
+  'zh-CN': {
+    // common
+    'common.loading': '加载中...',
+    'common.refresh': '刷新',
+    'common.close': '关闭',
+    'common.copy': '复制',
+    'common.share': '分享',
+    'common.delete': '删除',
+    'common.cancel': '取消',
+    'common.ok': '确定',
+    'common.yes': '是',
+    'common.no': '否',
+    'common.reset': '重置',
+    'common.show': '显示',
+    'common.execute': '执行',
+    // race
+    'race.honmei': '本命',
+    'race.middle': '混战',
+    'race.ana': '冷门',
+    'race.confidence': '可信度',
+    'race.lineup': '出场表',
+    'race.ai_reasoning': 'AI 推理',
+    'race.odds_picks': '赔率与买点',
+    'race.back_to_list': '← 返回比赛列表',
+    'race.back_to_top': '← 返回赛场选择',
+    'race.refresh_this': '🔄 刷新此场比赛',
+    // page
+    'page.top': '首页',
+    'page.stats': '业绩',
+    'page.backtest': '回测',
+    'page.settings': '设置',
+    // settings
+    'settings.bet_count_3': '三连单注数',
+    'settings.bet_count_2': '二连单注数',
+    'settings.bet_method': '投注方式',
+    'settings.kpi_mode': 'KPI 模式',
+    'settings.ev_mode': 'EV 模式',
+    'settings.ev_min': 'EV 最低阈值',
+    'settings.kelly_frac': 'Kelly 比率',
+    'settings.bankroll': '资金 (日元)',
+    'settings.notify': '中奖通知',
+    'settings.coi': 'SAB 加速 (实验)',
+    'settings.cache': '数据缓存',
+    'settings.history': '投注历史',
+    'settings.racer_db': '选手 / 赛场 DB',
+    'settings.weights': '学习权重',
+    'settings.errors': '错误日志',
+    'settings.platt': '概率校准 (Platt)',
+    'settings.csv_export': 'CSV 导出',
+    'settings.forward_chain': 'Forward-chain 评估',
+    'settings.language': '显示语言',
+    // notify
+    'notify.permission_request': '请求权限',
+    'notify.permission_granted': '✓ 已授权',
+    'notify.permission_denied': '× 已拒绝（在浏览器设置中更改）',
+    'notify.permission_default': '未设置',
+    'notify.title': '关注比赛结果已确认',
+    // api
+    'api.health.fail': 'API 获取失败',
+    'api.health.cached': '使用缓存数据',
+    'api.health.warning': '显示数据可能过时',
+    'api.health.retry': '重试',
+    // backtest
+    'backtest.run': '▶ 运行回测',
+    'backtest.period': '期间',
+    'backtest.title': '回测',
+    // stats
+    'stats.today_total': '今日已判定',
+    'stats.tri_hits': '三连单中奖',
+    'stats.tri_recovery': '三连单回收率',
+    'stats.loading': '加载中...',
+    // confidence
+    'confidence.label': '可信度',
+    // motor evaluation labels
+    'motor.超抜': '极佳',
+    'motor.好機': '良好',
+    'motor.並機': '一般',
+    'motor.低調': '较差',
+    'motor.整備要': '需检修',
+    // form labels
+    'form.絶好調': '极佳',
+    'form.好調': '良好',
+    'form.普通': '一般',
+    'form.不調': '较差',
+    'form.絶不調': '极差',
+    // misc
+    'misc.no_data': '无数据',
   },
 };
 
