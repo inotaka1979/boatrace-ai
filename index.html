@@ -333,9 +333,26 @@ button.action-btn:active{background:#F0F0F0}
 .type-honmei{background:#E3F2FD;color:#1565C0}
 .type-middle{background:#FFF3E0;color:#E65100}
 .type-ana{background:#FFEBEE;color:#C62828}
+/* P0-10: 高コントラスト要求時のみ斜線パターンを重ね、色覚多様性に二重で対応（絵文字併記済） */
+@media (prefers-contrast: more){
+  .type-honmei{background-image:repeating-linear-gradient(45deg,rgba(21,101,192,.18) 0,rgba(21,101,192,.18) 2px,transparent 2px,transparent 4px)}
+  .type-ana{background-image:repeating-linear-gradient(135deg,rgba(198,40,40,.18) 0,rgba(198,40,40,.18) 2px,transparent 2px,transparent 4px)}
+}
+/* P1-Q9: ユーザーが motion 削減を希望している場合は全 transition / animation を無効化 */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important;scroll-behavior:auto !important}
+}
 
 /* Section header */
 .section-title{font-size:13px;font-weight:700;color:var(--text);padding:8px 0 4px;border-bottom:2px solid var(--accent);margin-bottom:8px}
+/* P0-4: Detail Tabs */
+.detail-tabs{display:flex;gap:4px;margin:6px 0 10px;border-bottom:2px solid var(--border);background:var(--card-bg);padding:4px 4px 0;border-radius:6px 6px 0 0}
+.detail-tab-btn{flex:1;min-height:40px;padding:6px 4px;font-size:12px;font-weight:600;color:var(--text-sub);background:transparent;border:0;border-bottom:3px solid transparent;cursor:pointer;border-radius:4px 4px 0 0;transition:color .12s ease,border-color .12s ease}
+.detail-tab-btn:hover{background:rgba(0,0,0,.03)}
+.detail-tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);background:rgba(25,118,210,.06)}
+.detail-tab-btn:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.detail-tab-section{display:none}
+.detail-tab-section.active{display:block}
 /* PE-6: assets/app.css の内容をここに埋め戻し（外部化は HTTP オーバーヘッドで悪化） */
 </style>
 </head>
@@ -353,6 +370,14 @@ button.action-btn:active{background:#F0F0F0}
     <button class="refresh-btn" onclick="hardReload()">更新</button>
   </div>
 </header>
+<!-- P0-7: API障害バナー — fetch失敗 / schema不正時のみ表示、再試行/閉じるボタン付き -->
+<div id="apiHealthBanner" role="alert" aria-live="assertive" style="display:none;background:#FFF3CD;color:#856404;border-bottom:1px solid #FFE69C;padding:8px 12px;font-size:12px;text-align:left">
+  <span id="apiHealthMsg">API応答に問題があります</span>
+  <span style="float:right;display:flex;gap:6px">
+    <button onclick="hardReload()" style="background:#856404;color:#fff;border:0;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">再試行</button>
+    <button onclick="document.getElementById('apiHealthBanner').style.display='none'" aria-label="閉じる" style="background:transparent;color:#856404;border:1px solid #856404;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">×</button>
+  </span>
+</div>
 
 <!-- Screen 1: Top -->
 <div class="page active" id="pageTop">
@@ -388,12 +413,24 @@ button.action-btn:active{background:#F0F0F0}
     <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshThisRace()">🔄 このレースを更新</button>
     <span class="odds-stale" id="oddsStaleMsg"></span>
   </div>
-  <div id="detailWeather"></div>
-  <div id="detailResult"></div>
-  <div id="detailBoats"></div>
-  <div id="detailExhibition"></div>
-  <div id="detailPrediction"></div>
-  <div id="detailOdds"></div>
+  <!-- P0-4: 詳細画面の Tabs 化 — 縦スクロール 10画面超 → 3タブで認知負荷を低減 -->
+  <div class="detail-tabs" role="tablist" aria-label="レース詳細セクション">
+    <button class="detail-tab-btn active" data-detail-tab="lineup" role="tab" aria-selected="true" onclick="_showDetailTab('lineup')">📋 出走表</button>
+    <button class="detail-tab-btn" data-detail-tab="ai" role="tab" aria-selected="false" onclick="_showDetailTab('ai')">🧠 AI根拠</button>
+    <button class="detail-tab-btn" data-detail-tab="odds" role="tab" aria-selected="false" onclick="_showDetailTab('odds')">💰 オッズ・買い目</button>
+  </div>
+  <section class="detail-tab-section active" data-detail-section="lineup" role="tabpanel">
+    <div id="detailWeather"></div>
+    <div id="detailResult"></div>
+    <div id="detailBoats"></div>
+    <div id="detailExhibition"></div>
+  </section>
+  <section class="detail-tab-section" data-detail-section="ai" role="tabpanel">
+    <div id="detailPrediction"></div>
+  </section>
+  <section class="detail-tab-section" data-detail-section="odds" role="tabpanel">
+    <div id="detailOdds"></div>
+  </section>
 </div>
 
 <!-- Screen 4: Stats -->
@@ -514,6 +551,16 @@ button.action-btn:active{background:#F0F0F0}
       <input type="number" id="setBankroll" min="1000" step="1000" value="10000"
              onchange="saveSetting('bankroll',parseInt(this.value)||10000)"
              style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
+    </div>
+    <!-- P0-3: KPI モード — race_type 別の evMin/maxBets 自動調整プリセット -->
+    <div class="setting-row">
+      <span class="setting-label">KPI モード</span>
+      <select id="setKpiMode" onchange="saveSetting('kpiMode',this.value)">
+        <option value="off">OFF（手動 evMin/点数）</option>
+        <option value="balanced" selected>balanced（中庸 / 推奨）</option>
+        <option value="roi">roi（高EV厳選・低点数）</option>
+        <option value="hit">hit（低EV多点・的中率優先）</option>
+      </select>
     </div>
   </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" onclick="clearCache()">クリア</button></div>

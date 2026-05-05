@@ -4,11 +4,16 @@ boatrace.jp公式サイトからレース結果（着順・払戻金）を取得
 Open API互換のJSON形式で出力する。
 """
 
-import json, os, re, sys, time, datetime
+import json, os, re, sys, time, datetime, logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds  # PC-10 / D-02
 from http_utils import fetch_text, fetch_json  # PC-1: HTTP 共通化
+from io_utils import atomic_write_json, quality_header  # P0-8 / P1-B4
+
+# P1-C2: print → logging 統一（cron log の level 制御を可能にする）
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+log = logging.getLogger("results")
 
 BASE_URL = "https://www.boatrace.jp/owpc/pc/race/raceresult"
 PROG_API = "https://boatraceopenapi.github.io/programs/v2/today.json"
@@ -158,25 +163,22 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
 def main() -> None:
     """エントリーポイント: 本日の全レース結果を取得し OUTPUT に書き出す。"""
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
+    _t_start = time.monotonic()  # P1-B4: 品質ヘッダ用
 
-    print("Fetching today's programs...")
+    log.info("Fetching today's programs...")
     try:
         prog = fetch_json(PROG_API)
     except Exception as e:
-        print(f"Programs fetch failed: {e}")
+        log.error("Programs fetch failed: %s", e)
         return
 
     programs = prog.get("programs", [])
     if not programs:
-        print("No programs today")
-        with open(OUTPUT, "w") as f:
-            json.dump(
-                {
-                    "results": [],
-                    "updated_at": utc_iso_seconds(),  # PC-10
-                },
-                f,
-            )
+        log.info("No programs today")
+        atomic_write_json(
+            OUTPUT,
+            {"results": [], "updated_at": utc_iso_seconds()},
+        )
         return
 
     races = set()
@@ -192,7 +194,7 @@ def main() -> None:
     if not date_str:
         date_str = datetime.datetime.now().strftime("%Y%m%d")
 
-    print(f"Date: {date_str}, {len(races)} races")
+    log.info("Date: %s, %d races", date_str, len(races))
 
     all_results = []
     for sid, rn in sorted(races):
@@ -203,20 +205,30 @@ def main() -> None:
             race_result = parse_raceresult(html, sid, rn)
             all_results.append(race_result)
             status = "finished" if race_result["race_technique_number"] else "not yet"
-            print(f"  Stadium {sid} Race {rn}: {status}")
+            log.info("  Stadium %d Race %d: %s", sid, rn, status)
         except Exception as e:
-            print(f"  Stadium {sid} Race {rn}: {e}")
+            log.warning("  Stadium %d Race %d: %s", sid, rn, e)
         time.sleep(INTERVAL)
 
+    # P1-B4: 部分失敗を含めた信頼度スコア（finished/total）
+    finished_n = len([r for r in all_results if r.get('race_technique_number')])
+    requested_n = len(races) if races else 1
+    rel = finished_n / requested_n if requested_n > 0 else 1.0
     output = {
         "results": all_results,
         "updated_at": utc_iso_seconds(),  # PC-10
+        "_meta": quality_header(
+            schema_version=1,
+            source_freshness_sec=time.monotonic() - _t_start,
+            reliability_score=rel,
+            scraper="results",
+        ),
     }
-    with open(OUTPUT, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False)
+    atomic_write_json(OUTPUT, output)
 
-    print(
-        f"Done! {len([r for r in all_results if r['race_technique_number']])} finished races"
+    log.info(
+        "Done! %d finished races",
+        len([r for r in all_results if r['race_technique_number']]),
     )
 
 

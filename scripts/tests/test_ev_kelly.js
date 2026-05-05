@@ -81,9 +81,18 @@ t('full-Kelly larger than half-Kelly', () => {
   const full = ctx.selectBetsByEV({'A':0.5},{'A':3.0},Object.assign({},opt,{kellyFrac:1.0}));
   assert.ok(full[0].stakeYen > half[0].stakeYen);
 });
-t('maxBets cap', () => {
+t('maxBets cap (P1-A6: 高EV時は dynamic 圧縮)', () => {
+  // 旧: avgEV 1.5 でも maxBets=5 が cap → 5点
+  // 新: avgEV >= 1.35 → dynMaxBets=3 が更に効いて 3点に圧縮（高EV厳選）
   const probs = {}, odds = {};
   for(let i=0;i<20;i++){ probs['x'+i]=0.10; odds['x'+i]=15; }   // EV=1.5 each
+  const r = ctx.selectBetsByEV(probs, odds, {evMin:1.0, maxBets:5});
+  assert.strictEqual(r.length, 3);
+});
+t('maxBets cap (低EV時は maxBets 通り)', () => {
+  // avgEV 1.18 (1.20未満) → dynamic 圧縮なし、maxBets=5 が cap
+  const probs = {}, odds = {};
+  for(let i=0;i<20;i++){ probs['x'+i]=0.10; odds['x'+i]=11.8; }   // EV=1.18 each
   const r = ctx.selectBetsByEV(probs, odds, {evMin:1.0, maxBets:5});
   assert.strictEqual(r.length, 5);
 });

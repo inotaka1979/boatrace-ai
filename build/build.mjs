@@ -178,6 +178,35 @@ async function main() {
     await minifyFile(restSrc, resolve(ROOT, 'assets/app-rest.min.js'), 'assets/app-rest.min.js');
   }
 
+  // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
+  //   critical は LCP に直結するため hard fail、それ以外は warn 留め。
+  //   超過時は CI が PR を block して退行を防ぐ。
+  // Epic 1-7 完了時点のベースライン（critical=45.6KB / rest=104KB / worker=59KB）
+  // 予算は ~10-15% のヘッドルームを与えてあるが、これを超える追加は別 PR で都度合意。
+  const BUDGETS = [
+    { path: 'assets/app-critical.min.js', max: 50000,  level: 'fail' },
+    { path: 'assets/app-rest.min.js',     max: 120000, level: 'warn' },
+    { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
+  ];
+  let budgetFail = false;
+  for (const b of BUDGETS) {
+    const buf = await readFile(resolve(ROOT, b.path)).catch(()=>null);
+    if (!buf){ console.warn('[budget] missing ' + b.path); continue; }
+    const size = buf.length;
+    const pct = ((size / b.max) * 100).toFixed(1);
+    if (size > b.max){
+      const tag = b.level === 'fail' ? '[budget FAIL]' : '[budget WARN]';
+      console.error(tag + ' ' + b.path + ' = ' + size + 'B > ' + b.max + 'B (' + pct + '%)');
+      if (b.level === 'fail') budgetFail = true;
+    } else {
+      console.log('[budget OK] ' + b.path + ' = ' + size + 'B / ' + b.max + 'B (' + pct + '%)');
+    }
+  }
+  if (budgetFail && CHECK_MODE){
+    console.error('[budget] critical bundle exceeded budget — failing CI');
+    process.exit(1);
+  }
+
   // 3) Hash report
   console.log('');
   console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');

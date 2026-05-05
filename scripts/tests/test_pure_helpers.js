@@ -23,6 +23,18 @@ function extract(name, src){
 const code = [
   extract('_computeClassAttenuation', html),
   extract('_resolveCourse', html),
+  // P0-1: クラス×コース相互作用係数
+  'var CLASS_COURSE_MULT = ' + (function(){
+    return JSON.stringify([
+      [1.10, 1.02, 1.00, 0.85],
+      [1.08, 1.02, 1.00, 0.88],
+      [1.06, 1.02, 1.00, 0.92],
+      [1.05, 1.02, 1.00, 0.94],
+      [1.03, 1.01, 1.00, 0.97],
+      [1.02, 1.01, 1.00, 0.98]
+    ]);
+  })() + ';',
+  extract('_classCourseMult', html),
 ].join('\n');
 
 const ctx = vm.createContext({});
@@ -96,6 +108,23 @@ t('preview あり course なし → preview.racer_boat_number',
     const r = ctx._resolveCourse({racer_boat_number:6}, {racer_boat_number:6}, null);
     return r.course === 6 && r.source === 'frame';
   })());
+
+console.log('');
+console.log('[_classCourseMult]');
+// P0-1: A1 in 1コース は B2 in 1コース より大きく加点される
+t('A1×1コース > B2×1コース',
+  ctx._classCourseMult(1, 1) > ctx._classCourseMult(4, 1));
+t('A1×1コース = 1.10 (内側で級影響大)',
+  near(ctx._classCourseMult(1, 1), 1.10));
+t('B1(基準) は常に 1.00',
+  ctx._classCourseMult(3, 1) === 1.00 && ctx._classCourseMult(3, 6) === 1.00);
+t('B2×6コース > B2×1コース (外側は級影響小)',
+  ctx._classCourseMult(4, 6) > ctx._classCourseMult(4, 1));
+t('class/course 範囲外でも fallback (0=falsy→B1基準, 99→clamp)',
+  ctx._classCourseMult(0, 0) === ctx._classCourseMult(3, 3)
+  && ctx._classCourseMult(99, 99) === ctx._classCourseMult(4, 6));
+t('null引数でも crash しない',
+  Number.isFinite(ctx._classCourseMult(null, null)));
 
 console.log('');
 console.log(`=== Result: ${pass} passed, ${fail} failed ===`);

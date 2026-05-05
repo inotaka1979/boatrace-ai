@@ -75,6 +75,10 @@ step "Plackett-Luce probability tests" \
 step "Pure helper tests (_computeClassAttenuation / _resolveCourse)" \
      "node scripts/tests/test_pure_helpers.js"
 
+# P1-Q11: 極端入力下での softmax / sigmoid / safeDiv 安定性
+step "Numerical stability tests (P1-Q11)" \
+     "node scripts/tests/test_numerical_stability.js"
+
 # 8e) PC-7b / PE-4: build パイプライン (Step 2 = src/utils/safe_storage を bundle 注入)
 #     --check モードで「再ビルドしても index.html が変わらない」ことを検証 (CI 再現性ガード)
 #     CI 環境では node_modules が無いため、初回のみ npm ci を実施

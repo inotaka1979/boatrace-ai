@@ -33,7 +33,7 @@ from urllib.request import urlopen, Request
 from io import BytesIO
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from time_utils import utc_iso_seconds  # PC-10 / D-02
+from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / P1-C4
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 OUTPUT_RACER = "data/db/racerDB.json"
@@ -341,7 +341,7 @@ def main() -> None:
     print("=== Step 2: 過去30日分の競走成績 ===")
     stadium_stats = {}
     for d in range(1, 31):
-        date = datetime.datetime.now() - datetime.timedelta(days=d)
+        date = jst_now() - datetime.timedelta(days=d)  # P1-C4: time_utils 統一
         yyyymm = date.strftime("%Y%m")
         yymmdd = date.strftime("%y%m%d")
         url = f"{RESULTS_BASE}{yyyymm}/k{yymmdd}.lzh"

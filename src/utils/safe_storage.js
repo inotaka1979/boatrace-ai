@@ -17,6 +17,28 @@
 const FEATURE_DIM = 12;
 const ERROR_BUF_MAX = 100;
 
+// P1-C3: localStorage キー正規一覧（参照用カタログ）
+//   既存 literal 散在は段階移行。新規コードはこの定数経由で参照すること。
+//   schema migration / 容量監視 / cleanup スクリプトのターゲットとしても利用。
+const STORAGE_KEYS = Object.freeze({
+  SCHEMA_VERSION:   'boatrace_schema_version', // P0-6: 互換性管理
+  SETTINGS:         'boatrace_settings',
+  RACER_DB:         'boatrace_racerDB',
+  STADIUM_DB:       'boatrace_stadiumDB',
+  MOTOR_STATS:      'boatrace_motorStats',
+  EXHIBITION_STATS: 'boatrace_exhibitionStats',
+  PAIRWISE_DB:      'boatrace_pairwiseDB',
+  WEIGHTS:          'boatrace_weights',        // PB-1: L2 学習重み
+  LEARNED:          'boatrace_learned',        // PB-1: 学習ガード
+  TRAINSTEP:        'boatrace_trainstep',      // PB-2: LR decay 用
+  FEATURE_STATS:    'boatrace_featurestats',   // PB-7: rolling stats
+  PLATT:            'boatrace_platt',          // PB-6: Platt 校正
+  HISTORY:          'boatrace_history',
+  ERRORS:           'boatrace_errors',         // PC-6: エラーログ
+  DIAG:             'boatrace_diag',           // PI 診断オーバーレイ
+  NAV:              'boatrace_nav',            // P0-5: PWA 状態復元（sessionStorage 側）
+});
+
 // L2_INIT_WEIGHTS は index.html の constants 部で定義済（global）。
 // _validateLS が weights schema 検証で参照する。
 function _validateLS(key, value) {
@@ -131,10 +153,14 @@ function safeSet(key, value) {
         }
         keys.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
         localStorage.setItem(key, s);
+        // P1-Q6: history 削減で復旧したことを UI 監視可能に
+        try { reportError({ type:'warn', msg:'storage quota recovered by history trim', key:key }); } catch(_){}
         return true;
       } catch (_) {}
     }
     console.warn('[storage] set failed', key, e);
+    // P1-Q6: 呼出側が戻り値を見落としても reportError 経由で UI に到達する
+    try { reportError({ type:'error', msg:'storage set failed: '+(e&&e.message||'unknown'), key:key }); } catch(_){}
     return false;
   }
 }
@@ -157,6 +183,42 @@ function reportError(payload) {
   } catch (_) { /* reporter 自身の失敗は無視（無限ループ防止） */ }
 }
 
+// P0-6: スキーマバージョン管理 + マイグレーション
+//   旧端末で localStorage が古いスキーマのまま放置されると新コードが silent fail する。
+//   起動時に boot から `_runMigrations()` を呼び、CURRENT_SCHEMA まで段階適用する。
+//   各 migration は idempotent（多重実行しても無害）に書くこと。
+const SCHEMA_KEY = 'boatrace_schema_version';
+const CURRENT_SCHEMA = 2;
+const MIGRATIONS = {
+  // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
+  2: function(){
+    try {
+      const raw = localStorage.getItem('boatrace_settings');
+      const s = raw ? JSON.parse(raw) : {};
+      if(s && typeof s === 'object' && s.kpiMode == null){
+        s.kpiMode = 'balanced';
+        localStorage.setItem('boatrace_settings', JSON.stringify(s));
+      }
+    } catch(_){ /* migration 失敗は致命にしない、次回再試行 */ }
+  }
+};
+function _runMigrations(){
+  let cur = 1;
+  try {
+    const raw = localStorage.getItem(SCHEMA_KEY);
+    const v = raw ? parseInt(raw, 10) : 1;
+    if(Number.isFinite(v) && v >= 1 && v <= 1000) cur = v;
+  } catch(_){}
+  if(cur >= CURRENT_SCHEMA) return;
+  for(let v = cur + 1; v <= CURRENT_SCHEMA; v++){
+    const fn = MIGRATIONS[v];
+    if(typeof fn === 'function'){
+      try { fn(); } catch(e){ console.warn('[migrate] v'+v+' failed', e); }
+    }
+    try { localStorage.setItem(SCHEMA_KEY, String(v)); } catch(_){}
+  }
+}
+
 // グローバルへ export（index.html の他のインライン JS / onclick handler が参照可能）
 globalThis._validateLS = _validateLS;
 globalThis._bootParseLS = _bootParseLS;
@@ -164,3 +226,7 @@ globalThis.safeParse = safeParse;
 globalThis.safeSet = safeSet;
 globalThis.reportError = reportError;
 globalThis.ERROR_BUF_MAX = ERROR_BUF_MAX;
+globalThis._runMigrations = _runMigrations;
+globalThis.SCHEMA_KEY = SCHEMA_KEY;
+globalThis.CURRENT_SCHEMA = CURRENT_SCHEMA;
+globalThis.STORAGE_KEYS = STORAGE_KEYS;

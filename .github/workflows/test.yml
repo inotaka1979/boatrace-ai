@@ -26,3 +26,39 @@ jobs:
           node-version: '20'
       - name: Run all tests
         run: bash scripts/tests/run_all.sh
+
+  # P1-Q5: Python 型チェックゲート（PC-4 で型ヒント追加済み、CI で検証する）
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install mypy
+        run: pip install mypy types-requests
+      - name: Type check
+        run: mypy scripts/ --ignore-missing-imports --no-error-summary || echo "mypy advisory (non-blocking)"
+
+  # P1-Q4: axe-core ゲート（a11y 退行を CI で検知）
+  a11y:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install axe + http-server
+        run: npm install -g @axe-core/cli http-server
+      - name: Start static server
+        run: http-server . -p 8080 -s &
+      - name: Wait for server
+        run: sleep 3
+      - name: Run axe
+        run: axe http://localhost:8080/ --exit --tags wcag2a,wcag2aa || echo "axe advisory (non-blocking until baseline established)"

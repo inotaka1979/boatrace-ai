@@ -22,8 +22,18 @@ now=$(date +%s)
 hour=$(date +%H)
 
 alert() {
+    # 後方互換のため alert() は維持。新規呼出は alert_critical/alert_warn を推奨。
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ALERT: $*" >> "$ALERT_FILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ALERT: $*" >&2
+}
+# P1-Q10: alert level 分化 — Slack 通知は CRITICAL のみ ping、WARN は朝レビューに回す運用
+alert_critical() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] CRITICAL: $*" >> "$ALERT_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] CRITICAL: $*" >&2
+}
+alert_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*" >> "$ALERT_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*" >&2
 }
 
 check_mode() {
@@ -53,7 +63,8 @@ check_mode() {
 
     # M-06: 24h ハード閾値は時間外でも常時評価
     if [ "$age" -gt "$HARD_STALE_SECONDS" ]; then
-        alert "${mode} CRITICAL: no heartbeat for ${age}s (>24h, last=${last})"
+        # P1-Q10: 24h停止は本物の障害 → CRITICAL で Slack ping 対象
+        alert_critical "${mode} no heartbeat for ${age}s (>24h, last=${last})"
         return
     fi
 

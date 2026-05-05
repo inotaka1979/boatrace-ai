@@ -42,6 +42,33 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
   // ../src/utils/safe_storage.js
   var FEATURE_DIM = 12;
   var ERROR_BUF_MAX = 100;
+  var STORAGE_KEYS = Object.freeze({
+    SCHEMA_VERSION: "boatrace_schema_version",
+    // P0-6: 互換性管理
+    SETTINGS: "boatrace_settings",
+    RACER_DB: "boatrace_racerDB",
+    STADIUM_DB: "boatrace_stadiumDB",
+    MOTOR_STATS: "boatrace_motorStats",
+    EXHIBITION_STATS: "boatrace_exhibitionStats",
+    PAIRWISE_DB: "boatrace_pairwiseDB",
+    WEIGHTS: "boatrace_weights",
+    // PB-1: L2 学習重み
+    LEARNED: "boatrace_learned",
+    // PB-1: 学習ガード
+    TRAINSTEP: "boatrace_trainstep",
+    // PB-2: LR decay 用
+    FEATURE_STATS: "boatrace_featurestats",
+    // PB-7: rolling stats
+    PLATT: "boatrace_platt",
+    // PB-6: Platt 校正
+    HISTORY: "boatrace_history",
+    ERRORS: "boatrace_errors",
+    // PC-6: エラーログ
+    DIAG: "boatrace_diag",
+    // PI 診断オーバーレイ
+    NAV: "boatrace_nav"
+    // P0-5: PWA 状態復元（sessionStorage 側）
+  });
   function _validateLS(key, value) {
     if (value === null || value === void 0) return null;
     switch (key) {
@@ -173,11 +200,19 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
             }
           });
           localStorage.setItem(key, s);
+          try {
+            reportError({ type: "warn", msg: "storage quota recovered by history trim", key });
+          } catch (_) {
+          }
           return true;
         } catch (_) {
         }
       }
       console.warn("[storage] set failed", key, e);
+      try {
+        reportError({ type: "error", msg: "storage set failed: " + (e && e.message || "unknown"), key });
+      } catch (_) {
+      }
       return false;
     }
   }
@@ -205,15 +240,62 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     } catch (_) {
     }
   }
+  var SCHEMA_KEY = "boatrace_schema_version";
+  var CURRENT_SCHEMA = 2;
+  var MIGRATIONS = {
+    // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
+    2: function() {
+      try {
+        const raw = localStorage.getItem("boatrace_settings");
+        const s = raw ? JSON.parse(raw) : {};
+        if (s && typeof s === "object" && s.kpiMode == null) {
+          s.kpiMode = "balanced";
+          localStorage.setItem("boatrace_settings", JSON.stringify(s));
+        }
+      } catch (_) {
+      }
+    }
+  };
+  function _runMigrations() {
+    let cur = 1;
+    try {
+      const raw = localStorage.getItem(SCHEMA_KEY);
+      const v = raw ? parseInt(raw, 10) : 1;
+      if (Number.isFinite(v) && v >= 1 && v <= 1e3) cur = v;
+    } catch (_) {
+    }
+    if (cur >= CURRENT_SCHEMA) return;
+    for (let v = cur + 1; v <= CURRENT_SCHEMA; v++) {
+      const fn = MIGRATIONS[v];
+      if (typeof fn === "function") {
+        try {
+          fn();
+        } catch (e) {
+          console.warn("[migrate] v" + v + " failed", e);
+        }
+      }
+      try {
+        localStorage.setItem(SCHEMA_KEY, String(v));
+      } catch (_) {
+      }
+    }
+  }
   globalThis._validateLS = _validateLS;
   globalThis._bootParseLS = _bootParseLS;
   globalThis.safeParse = safeParse;
   globalThis.safeSet = safeSet;
   globalThis.reportError = reportError;
   globalThis.ERROR_BUF_MAX = ERROR_BUF_MAX;
+  globalThis._runMigrations = _runMigrations;
+  globalThis.SCHEMA_KEY = SCHEMA_KEY;
+  globalThis.CURRENT_SCHEMA = CURRENT_SCHEMA;
+  globalThis.STORAGE_KEYS = STORAGE_KEYS;
 })();
 
 /* BUILD:SAFE_STORAGE:END */
+
+// P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
+try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
 
 // =====================================================================
 // PI-fix: 診断オーバーレイ（iOS standalone PWA タップ不能問題の調査用）
@@ -700,6 +782,38 @@ function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT
 function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
 function pf(v){return parseFloat(v)||0}
 
+// P0-7: API health 状態 — 'ok' | 'cached' | 'fail'
+var _apiHealth = { programs:'ok', previews:'ok', results:'ok', odds:'ok' };
+function _setApiHealth(url, state){
+  var key = (url.indexOf('/programs/')>=0) ? 'programs'
+          : (url.indexOf('/previews/')>=0) ? 'previews'
+          : (url.indexOf('/results/')>=0) ? 'results'
+          : (url.indexOf('/odds/')>=0)     ? 'odds' : null;
+  if(!key) return;
+  _apiHealth[key] = state;
+  _renderApiHealthBanner();
+}
+function _renderApiHealthBanner(){
+  var banner = document.getElementById('apiHealthBanner');
+  var msg = document.getElementById('apiHealthMsg');
+  if(!banner || !msg) return;
+  var fails = [];
+  var caches = [];
+  for(var k in _apiHealth){
+    if(_apiHealth[k]==='fail') fails.push(k);
+    else if(_apiHealth[k]==='cached') caches.push(k);
+  }
+  if(fails.length === 0 && caches.length === 0){
+    banner.style.display = 'none';
+    return;
+  }
+  var parts = [];
+  if(fails.length) parts.push('API取得失敗: ' + fails.join('/'));
+  if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
+  msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
+  banner.style.display = 'block';
+}
+
 function fetchWithFallback(url){
   // キャッシュキーはクエリパラメータを除いたベースURL
   var baseUrl=url.split('?')[0];
@@ -707,11 +821,25 @@ function fetchWithFallback(url){
   var tid=setTimeout(function(){controller.abort()},15000);
   return fetch(url,{signal:controller.signal,cache:'no-store'})
     .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
-    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
+    .then(function(d){
+      try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}
+      _setApiHealth(baseUrl, 'ok'); // P0-7
+      return d;
+    })
     .catch(function(e){
       clearTimeout(tid);
       console.warn('API error:',baseUrl,e.message);
-      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
+      try{
+        var c=localStorage.getItem(cacheKey(baseUrl));
+        if(c){
+          var o=JSON.parse(c);
+          if(Date.now()-o.time<600000){
+            _setApiHealth(baseUrl, 'cached'); // P0-7: キャッシュ fallback 使用中
+            return o.data;
+          }
+        }
+      }catch(ex){}
+      _setApiHealth(baseUrl, 'fail'); // P0-7: 完全失敗（cache 無し or 期限切れ）
       return null;
     });
 }
@@ -726,7 +854,11 @@ function validateApiPayload(apiJson, key){
 
 function indexByStadiumRace(apiJson, key){
   if(!validateApiPayload(apiJson, key)){
-    if(apiJson) console.warn('[schema] invalid payload for', key);
+    if(apiJson){
+      console.warn('[schema] invalid payload for', key);
+      // P0-7: スキーマ不正は API 異常と同等に扱う
+      try { _setApiHealth('/'+key+'/', 'fail'); } catch(_){}
+    }
     return null;
   }
   var arr=apiJson[key];
@@ -1287,8 +1419,13 @@ function predictWithScenarios(boats, preview, weather, sid, grade){
 var STADIUM_WIND_PROFILE = {
   '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
   '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
-  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '04': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'運河地形・北東〜東で1コース不利（平和島）' }, // P1-A1
   '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
+  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '19': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'関門海峡・南東で外有利（下関）' }, // P1-A1
+  '20': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'玄界灘・北東で1コース不利（若松）' }, // P1-A1
+  // 残り18場は将来 GitHub Actions nightly で「場×風向×1コース勝率」を集計し
+  // 自動更新する `config/wind_profile.json` で補完予定（P2）。
 };
 var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
 var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
@@ -1641,24 +1778,32 @@ function exhibitionZScore(etTime, sid){
 }
 
 // X2: ST 個人乖離スコア（自分の平均 ST との比較）
+// P1-A3: 級別×コースの ST 標本平均（プロ定石ベースの経験値）
+//   新人/転勤直後で stStats 5件未満でも、級別での想定 ST に対する乖離で評価可能に
+//   キー: classNum (1=A1, 2=A2, 3=B1=base, 4=B2)
+var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
 function stDivergenceScore(thisSt, rid, course){
   if(thisSt < 0) return -6;   // フライング
   var rdb = racerDB[rid];
   var key = String(course);
-  if(!rdb || !rdb.stStats || !rdb.stStats[key] || rdb.stStats[key].count < 5){
-    // フォールバック: 旧絶対値判定
-    if(thisSt <= 0.05) return +4;
-    if(thisSt <= 0.10) return +2;
-    if(thisSt >= 0.20) return -2;
-    return 0;
+  if(rdb && rdb.stStats && rdb.stStats[key] && rdb.stStats[key].count >= 5){
+    var personalAvg = rdb.stStats[key].mean;
+    var z = (thisSt - personalAvg) / 0.04;
+    if(z <= -1.0) return +5;   // 自己平均より +1σ 以上鋭い → 神スタ
+    if(z <= -0.5) return +3;
+    if(z <= +0.5) return 0;
+    if(z <= +1.0) return -2;
+    return -4;
   }
-  var personalAvg = rdb.stStats[key].mean;
-  var z = (thisSt - personalAvg) / 0.04;
-  if(z <= -1.0) return +5;   // 自己平均より +1σ 以上鋭い → 神スタ
-  if(z <= -0.5) return +3;
-  if(z <= +0.5) return 0;
-  if(z <= +1.0) return -2;
-  return -4;
+  // P1-A3: サンプル不足時は級別 baseline で z 評価（旧: 絶対値判定だけでは新人で常に同じ）
+  var classNum = (rdb && rdb.classNum) || 3;
+  var classAvg = ST_CLASS_BASELINE[classNum] || 0.16;
+  var zc = (thisSt - classAvg) / 0.03;  // class baseline は分散小さめなので std=0.03
+  if(zc <= -1.0) return +4;
+  if(zc <= -0.5) return +2;
+  if(zc <= +0.5) return 0;
+  if(zc <= +1.0) return -2;
+  return -3;
 }
 
 function updateDBFromResults(resultsJson, programsJson){
@@ -1879,6 +2024,56 @@ function _computeClassAttenuation(allBoats){
   return 1.0;
 }
 
+// P0-1: 場別×級別×コースの相互作用係数。
+//   常識: 「A1の1コース」と「B2の1コース」では同じ scwr でも実勝率は大きく違う。
+//   1コースほど級の影響大、6コースほど小（外側はそもそも不利が支配的）。
+//   row index = course-1, col index = classNum-1 (1=A1,2=A2,3=B1=base,4=B2)
+var CLASS_COURSE_MULT = [
+  [1.10, 1.02, 1.00, 0.85],
+  [1.08, 1.02, 1.00, 0.88],
+  [1.06, 1.02, 1.00, 0.92],
+  [1.05, 1.02, 1.00, 0.94],
+  [1.03, 1.01, 1.00, 0.97],
+  [1.02, 1.01, 1.00, 0.98]
+];
+function _classCourseMult(classNum, course){
+  var c = classNum || 3, k = course || 3;
+  if(c<1) c=1; if(c>4) c=4;
+  if(k<1) k=1; if(k>6) k=6;
+  return CLASS_COURSE_MULT[k-1][c-1];
+}
+
+// P0-2: レース毎に1度だけ算出するシナリオ確率。
+//   nige_success_prob(1コース) = ∏(1 - attack_prob_c) for c=2..6
+//   attack_prob は隣接艇の決まり手主体率を簡略化（max(sashi, makuri+makuriSashi)）
+//   1コース以外は対象外（影響度が小さく、既存 C カテゴリで十分カバー）。
+function _computeRaceScenario(allBoats, allPreviews){
+  if(!Array.isArray(allBoats)) return null;
+  var attackProbs = [0,0,0,0,0,0,0]; // index 1..6
+  for(var c=2;c<=6;c++){
+    var bt = allBoats.find(function(b){ return b.racer_boat_number===c; });
+    if(!bt){ attackProbs[c] = 0.10; continue; }
+    var rid = bt.racer_number || 0;
+    var style = getRacerCourseStyle(rid, c) || DEFAULT_COURSE_TECHNIQUE[c];
+    if(!style){ attackProbs[c] = 0.08; continue; }
+    var total = (style.nige||0)+(style.sashi||0)+(style.makuri||0)+(style.makuriSashi||0)+(style.nuki||0)+(style.megumare||0);
+    if(total < 3){ attackProbs[c] = 0.08; continue; }
+    var sashiRate = (style.sashi||0)/total;
+    var makuriComboRate = ((style.makuri||0)+(style.makuriSashi||0))/total;
+    var threat = (c===2) ? sashiRate*0.7 + makuriComboRate*0.4
+              : (c===3) ? makuriComboRate*0.6 + sashiRate*0.3
+              : makuriComboRate*0.5; // 4-6コースは外側まくりが主脅威
+    if(threat < 0.02) threat = 0.02;
+    if(threat > 0.55) threat = 0.55;
+    attackProbs[c] = threat;
+  }
+  var nigeSuccess = 1;
+  for(var i=2;i<=6;i++) nigeSuccess *= (1 - attackProbs[i]);
+  if(nigeSuccess < 0.02) nigeSuccess = 0.02;
+  if(nigeSuccess > 0.95) nigeSuccess = 0.95;
+  return { nigeSuccess: nigeSuccess, attackProbs: attackProbs };
+}
+
 // X3 進入予想 → 採用コースと信頼度を決定
 //   preview.racer_course_number > predictedEntries > 枠番 の優先順
 function _resolveCourse(boat, preview, predictedEntries){
@@ -1915,8 +2110,33 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
 
   // PC-2b: 階級減衰係数を _computeClassAttenuation に委譲
   var attn = _computeClassAttenuation(allBoats);
-  var coursePt=baseCoursePt*attn;
+  // P0-1: 自艇の class × course の相互作用係数を追加（A1の1コースとB2の1コースを区別）
+  var classCM = _classCourseMult(boat.racer_class_number, course);
+  var coursePt;
+  // P1-A2: 進入予想の二値判定をやめ、entryConf による加重平均化
+  //   予想コースと枠コースの coursePt を信頼度で smooth に補間。
+  //   データ蓄積に応じて段階的に予想を反映できる（旧: 0.6閾値で binary 切替）
+  if(resolved.source === 'predicted' && course !== bn && entryConf > 0 && entryConf < 1){
+    var scwrFrame = getStadiumCourseWinRate(String(sid), bn);
+    var classCMFrame = _classCourseMult(boat.racer_class_number, bn);
+    var ptPred  = scwr * COURSE_MULTIPLIER * attn * classCM;
+    var ptFrame = scwrFrame * COURSE_MULTIPLIER * attn * classCMFrame;
+    coursePt = ptPred * entryConf + ptFrame * (1 - entryConf);
+  } else {
+    coursePt = baseCoursePt * attn * classCM;
+  }
   score+=coursePt;
+
+  // P0-2: 1コースのみ「レース全体の逃げ成功確率」を log_odds 換算で加算
+  if(course === 1 && allBoats){
+    var sc = _computeRaceScenario(allBoats, allPreviews);
+    if(sc && Number.isFinite(sc.nigeSuccess)){
+      var lodd = Math.log(sc.nigeSuccess/(1-sc.nigeSuccess));
+      score += lodd * 4;
+      if(sc.nigeSuccess >= 0.65) reasons.push('逃げ成功率推定 '+Math.round(sc.nigeSuccess*100)+'%');
+      else if(sc.nigeSuccess <= 0.35) risks.push('逃げ阻止リスク('+Math.round((1-sc.nigeSuccess)*100)+'%)');
+    }
+  }
 
   if(preview&&preview.racer_course_number!=null){
     if(bn>course){score+=3;reasons.push('前付け成功('+bn+'→'+course+'コース)')}
@@ -2165,7 +2385,8 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
     reasons:reasons,risks:risks,
     motorLabel:motorLabel,motorEmoji:motorEmoji,motorRate:motorRate,
     boatRate:boatRate,form:form,
-    classNum:boat.racer_class_number
+    classNum:boat.racer_class_number,
+    fc:fc, lc:lc  // P1-A4: F/L 確率乗数で使用
   };
 }
 
@@ -2587,6 +2808,17 @@ function predictRace(sid,raceNum){
   // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
   //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
   finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
+  // P1-A4: F/L ペナルティを 1着確率乗数として post-hoc 適用
+  //   既存の score 減点 (-25/-15/-5) は L1 段階の減衰、本層は確率の心理的補正:
+  //   F2 持ちは斡旋停止リスクで 2 着狙いに走り、1 着確率は更に 0.75 倍程度になる経験則。
+  //   l1scores から fc/lc を引き、p.prob に乗算（再正規化で Σp=1 を維持）
+  finalProbs.forEach(function(p){
+    var l1 = l1scores.find(function(s){ return s.boat === p.boat; });
+    var fc = l1 ? (l1.fc||0) : 0;
+    var lc = l1 ? (l1.lc||0) : 0;
+    var mult = (fc>=2) ? 0.75 : (fc>=1) ? 0.85 : (lc>=1) ? 0.95 : 1.0;
+    p.prob *= mult;
+  });
   var _sumCalib = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
   if(_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6){
     finalProbs.forEach(function(p){ p.prob = p.prob / _sumCalib; });
@@ -2614,9 +2846,24 @@ function predictRace(sid,raceNum){
   var method=settings.betMethod||'auto';
   // X1: EV モード優先（オッズが揃っていれば）
   var evMode = settings.evMode === true || settings.evMode === 'true';
+  // P0-3: KPI モードによる race_type 別 evMin/maxBets プリセット（off で従来挙動）
+  var kpiMode = settings.kpiMode || 'balanced';
+  var TYPE_EVMIN = {
+    roi:      { honmei: 1.20, middle: 1.25, ana: 1.35 },
+    balanced: { honmei: 1.10, middle: 1.15, ana: 1.25 },
+    hit:      { honmei: 1.00, middle: 1.05, ana: 1.10 }
+  };
+  var TYPE_MAXBETS = {
+    roi:      { honmei: 4, middle: 5, ana: 3 },
+    balanced: { honmei: 6, middle: 8, ana: 5 },
+    hit:      { honmei: 10, middle: 12, ana: 8 }
+  };
+  var defEvMin = parseFloat(settings.evMin)||1.15;
+  var modeEvMin = (kpiMode!=='off' && TYPE_EVMIN[kpiMode]) ? TYPE_EVMIN[kpiMode][raceType] : null;
+  var modeMaxBets = (kpiMode!=='off' && TYPE_MAXBETS[kpiMode]) ? TYPE_MAXBETS[kpiMode][raceType] : null;
   var evOpt = {
-    evMin: parseFloat(settings.evMin)||1.15,
-    maxBets: betCount3,
+    evMin: (modeEvMin!=null) ? modeEvMin : defEvMin,
+    maxBets: (modeMaxBets!=null) ? modeMaxBets : betCount3,
     kellyFrac: parseFloat(settings.kellyFrac)||0.5,
     bankroll: parseInt(settings.bankroll)||10000,
   };
@@ -2716,6 +2963,14 @@ function predictRaceProgram(sid,raceNum){
   });
   // PB-6: Platt scaling（番組予想にも同じく適用）
   finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
+  // P1-A4: F/L 1着確率乗数（番組予想にも適用）
+  finalProbs.forEach(function(p){
+    var l1 = l1scores.find(function(s){ return s.boat === p.boat; });
+    var fc = l1 ? (l1.fc||0) : 0;
+    var lc = l1 ? (l1.lc||0) : 0;
+    var mult = (fc>=2) ? 0.75 : (fc>=1) ? 0.85 : (lc>=1) ? 0.95 : 1.0;
+    p.prob *= mult;
+  });
   var _sum2 = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
   if(_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6){
     finalProbs.forEach(function(p){ p.prob = p.prob / _sum2; });
@@ -2786,14 +3041,21 @@ function selectBetsByEV(probs, odds, opt){
   var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : 0.5;
   var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
   if(!probs || !odds) return [];
-  var ranked = Object.keys(probs)
+  var rankedAll = Object.keys(probs)
     .filter(function(k){ return odds[k] && probs[k] > 0; })
     .map(function(k){
       return { combo: k, prob: probs[k], odds: odds[k], ev: probs[k] * odds[k] };
     })
     .filter(function(b){ return b.ev >= evMin; })
-    .sort(function(a, b){ return b.ev - a.ev; })
-    .slice(0, maxBets);
+    .sort(function(a, b){ return b.ev - a.ev; });
+  // P1-A6: 高EV案件は厳選するほど ROI が安定する（プロの定石）。
+  //   平均 EV が高いほど maxBets を圧縮（既存 maxBets を上限としつつ更に絞る）
+  var avgEv = rankedAll.length ? rankedAll.reduce(function(s,b){return s+b.ev;},0)/rankedAll.length : 0;
+  var dynMaxBets = (avgEv >= 1.35) ? 3
+                 : (avgEv >= 1.25) ? 5
+                 : (avgEv >= 1.20) ? 7
+                 : maxBets;
+  var ranked = rankedAll.slice(0, Math.min(maxBets, dynMaxBets));
   // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
   ranked.forEach(function(b){
     var bn = b.odds - 1;
@@ -3839,6 +4101,69 @@ function showPage(page){
   else if(page==='backtest'){document.getElementById('pageBacktest').classList.add('active');_setActive('navBacktest')}
   else if(page==='settings'){document.getElementById('pageSettings').classList.add('active');_setActive('navSettings');loadSettings()}
   window.scrollTo(0,0);
+  // P0-5: ナビ状態を sessionStorage に保存（PWA 自動更新リロード後の位置復元用）
+  try { _persistNavState(page, currentStadium, currentRace); } catch(_){}
+}
+
+// P0-4: 詳細画面のタブ切替（lineup / ai / odds）
+function _showDetailTab(name){
+  if(!name) name = 'lineup';
+  var btns = document.querySelectorAll('.detail-tab-btn');
+  for(var i=0;i<btns.length;i++){
+    var on = btns[i].getAttribute('data-detail-tab') === name;
+    btns[i].classList.toggle('active', on);
+    btns[i].setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  var secs = document.querySelectorAll('.detail-tab-section');
+  for(var j=0;j<secs.length;j++){
+    var on2 = secs[j].getAttribute('data-detail-section') === name;
+    secs[j].classList.toggle('active', on2);
+  }
+  // タブ切替で表示位置を上に戻す（長スクロール対策）
+  try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch(_) { window.scrollTo(0,0); }
+}
+
+// P0-5: ナビ状態の保存/復元（PWA 再起動時のページ位置保持）
+//   sessionStorage は同一タブセッション内のみ保持されるため、
+//   タブを閉じれば消える。安全 / シンプル / quota も別枠。
+function _persistNavState(page, sid, rn){
+  try {
+    var st = { page: page||'top', sid: sid||null, rn: rn||null, ts: Date.now() };
+    sessionStorage.setItem('boatrace_nav', JSON.stringify(st));
+  } catch(_){}
+}
+function _restoreNavState(){
+  var raw = null;
+  try { raw = sessionStorage.getItem('boatrace_nav'); }catch(_){ return; }
+  if(!raw) return;
+  var st = null;
+  try { st = JSON.parse(raw); }catch(_){ return; }
+  if(!st || !st.page || st.page === 'top') return;
+  // 1時間以上前は古いとして無視（ユーザー意図ではない可能性）
+  if(!st.ts || Date.now() - st.ts > 3600000) return;
+  function ready(){
+    if(typeof showPage !== 'function') return false;
+    if(st.page === 'races' && typeof openStadium !== 'function') return false;
+    if(st.page === 'detail' && typeof openRace !== 'function') return false;
+    return true;
+  }
+  function doRestore(){
+    try {
+      if(st.page === 'races' && st.sid){ openStadium(st.sid); }
+      else if(st.page === 'detail' && st.sid && st.rn){ openRace(st.sid, st.rn); }
+      else if(st.page === 'stats' || st.page === 'settings' || st.page === 'backtest'){ showPage(st.page); }
+    } catch(e) {
+      try{ reportError({type:'warn', msg:'_restoreNavState failed: '+e.message}); }catch(_){}
+    }
+  }
+  if(ready()){ doRestore(); return; }
+  // rest 関数の lazy load を最大 6 秒待つ
+  var retry = 0;
+  var iv = setInterval(function(){
+    retry++;
+    if(ready()){ clearInterval(iv); doRestore(); }
+    else if(retry > 30){ clearInterval(iv); }
+  }, 200);
 }
 
 // ===============================================
@@ -4086,6 +4411,8 @@ function openRace(sid,rn){
   if(closedTime) closedTime=closedTime.slice(0,5);
   document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'');
   document.getElementById('detailBack').onclick=function(){openStadium(sid)};
+  // P0-4: 詳細画面を開く度にデフォルトタブ（出走表）にリセット
+  if(typeof _showDetailTab === 'function') _showDetailTab('lineup');
 
   var preview=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
   var result=resultData&&resultData[sid]&&resultData[sid][rn]?resultData[sid][rn]:null;
@@ -5021,6 +5348,9 @@ function loadSettings(){
   if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.5);
   var br = document.getElementById('setBankroll');
   if(br) br.value = settings.bankroll || 10000;
+  // P0-3: KPI モード（保存値があれば反映、なければ balanced）
+  var km = document.getElementById('setKpiMode');
+  if(km) km.value = settings.kpiMode || 'balanced';
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}
@@ -5043,11 +5373,17 @@ function loadSettings(){
   var l2Step = l2trainStep;
   var learnedN = Object.keys(l2learnedKeys).length;
 
+  // P1-Q7: localStorage 容量バー — 5MB クォータに対する使用率を可視化
+  //   60% で warn 色、80% で alert 色（自動 cleanup を促す）
+  var lsRatio = lsUsed / (5 * 1024 * 1024);
+  var lsColor = lsRatio >= 0.80 ? '#C62828' : (lsRatio >= 0.60 ? '#E65100' : '#2E7D32');
+  var lsBar = '<div style="background:#eee;border-radius:3px;height:8px;overflow:hidden;margin:2px 0">'
+            + '<div style="background:'+lsColor+';height:100%;width:'+Math.min(100,lsRatio*100).toFixed(1)+'%"></div></div>';
   dbInfo.innerHTML =
       '<b>📊 ストレージ</b><br>'
     + '選手DB: '+racerCount+'人 / 場DB: '+stadiumCount+'場<br>'
     + '予想履歴: '+historyCount+'件 ('+dayCount+'日分、確率付 '+withProbs.length+'件)<br>'
-    + 'localStorage: '+(lsUsed/1024/1024).toFixed(2)+' / 5 MB<br><br>'
+    + 'localStorage: '+(lsUsed/1024/1024).toFixed(2)+' / 5 MB ('+(lsRatio*100).toFixed(0)+'%)'+lsBar+'<br>'
     + '<b>🧠 予測モデル状態</b><br>'
     + 'L2 学習ステップ: '+l2Step+' (済レース '+learnedN+')<br>'
     + 'rolling stats N: '+fStatsN+' / warmup '+TUNING.PREDICTION.ZSCORE_WARMUP_N+'<br>'
@@ -5444,7 +5780,11 @@ document.getElementById('headerDate').innerHTML=formatDate();
 //   (prerender HTML が既に LCP 要素として測定される)
 //   100ms 遅延 → defer 直後の同期処理 burst を完全に分離
 setTimeout(function(){
-  loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
+  loadAllData().then(function(){
+    if(typeof _renderFreshness==='function') _renderFreshness();
+    // P0-5: PWA 再起動時のページ復元（rest 関数 lazy load 後に発火）
+    if(typeof _restoreNavState === 'function') _restoreNavState();
+  });
 }, 100);
 
 // PH-1: 非クリティカル setup は first paint 後の idle に分散

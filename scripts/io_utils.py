@@ -69,3 +69,32 @@ def safe_load_json(path: str, default: Any = None) -> Any:
         return default
     except (json.JSONDecodeError, OSError):
         raise
+
+
+# P1-B4: Scraper 出力の品質メタヘッダ
+#   各 scraper 出力 JSON に統一して埋め込むことで、クライアント側で
+#   「鮮度・信頼度・スキーマ版」を取り扱える。retention/監視ダッシュボードでも利用。
+def quality_header(
+    *,
+    schema_version: int = 1,
+    source_freshness_sec: float | None = None,
+    reliability_score: float = 1.0,
+    scraper: str = "",
+) -> dict:
+    """共通品質メタヘッダを返す。
+
+    Parameters
+    ----------
+    schema_version : 出力スキーマのバージョン（互換性破壊時に bump）
+    source_freshness_sec : ソース取得から書込までの秒数
+    reliability_score : 0.0-1.0 の取得成功率（部分失敗を表現）
+    scraper : スクレイパ識別名（例 'results' / 'previews'）
+    """
+    return {
+        "schema_version": int(schema_version),
+        "source_freshness_sec": (
+            float(source_freshness_sec) if source_freshness_sec is not None else None
+        ),
+        "reliability_score": max(0.0, min(1.0, float(reliability_score))),
+        "scraper": str(scraper or ""),
+    }

@@ -210,35 +210,72 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     } catch (_) {
     }
   }
+  var SCHEMA_KEY = "boatrace_schema_version";
+  var CURRENT_SCHEMA = 2;
+  var MIGRATIONS = {
+    // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
+    2: function() {
+      try {
+        const raw = localStorage.getItem("boatrace_settings");
+        const s = raw ? JSON.parse(raw) : {};
+        if (s && typeof s === "object" && s.kpiMode == null) {
+          s.kpiMode = "balanced";
+          localStorage.setItem("boatrace_settings", JSON.stringify(s));
+        }
+      } catch (_) {
+      }
+    }
+  };
+  function _runMigrations() {
+    let cur = 1;
+    try {
+      const raw = localStorage.getItem(SCHEMA_KEY);
+      const v = raw ? parseInt(raw, 10) : 1;
+      if (Number.isFinite(v) && v >= 1 && v <= 1e3) cur = v;
+    } catch (_) {
+    }
+    if (cur >= CURRENT_SCHEMA) return;
+    for (let v = cur + 1; v <= CURRENT_SCHEMA; v++) {
+      const fn = MIGRATIONS[v];
+      if (typeof fn === "function") {
+        try {
+          fn();
+        } catch (e) {
+          console.warn("[migrate] v" + v + " failed", e);
+        }
+      }
+      try {
+        localStorage.setItem(SCHEMA_KEY, String(v));
+      } catch (_) {
+      }
+    }
+  }
   globalThis._validateLS = _validateLS;
   globalThis._bootParseLS = _bootParseLS;
   globalThis.safeParse = safeParse;
   globalThis.safeSet = safeSet;
   globalThis.reportError = reportError;
   globalThis.ERROR_BUF_MAX = ERROR_BUF_MAX;
+  globalThis._runMigrations = _runMigrations;
+  globalThis.SCHEMA_KEY = SCHEMA_KEY;
+  globalThis.CURRENT_SCHEMA = CURRENT_SCHEMA;
 })();
 
 /* BUILD:SAFE_STORAGE:END */
 
+// P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
+try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
+
 // =====================================================================
 // PI-fix: 診断オーバーレイ（iOS standalone PWA タップ不能問題の調査用）
 //   - capture-phase で touchstart/touchend/click/pointerdown を全て記録
-//   - タイトル「BOATRACE AI」を 5 回タップで debug overlay 表示
+//   - タイトル「BOATRACE AI」(.logo) を 5 連打で debug overlay 表示
 //   - リング 100 件、stadium-card 関連は別セクションで強調表示
-//   - 「CLEAR」ボタンでバッファ初期化 → ノイズ無しの再採取が可能
-//   - 独立 in-memory traceRing でも記録（localStorage 失敗対策）
+//   - 「クリア」ボタンでバッファ初期化 → ノイズ無しの再採取が可能
 // =====================================================================
 (function(){
   var DIAG_MAX = 100;
   var ring = [];
-  // in-memory only trace ring（localStorage に依存しない）
-  var traceRing = [];
-  function pushTrace(msg){
-    traceRing.push({t:Date.now(), msg:String(msg)});
-    if(traceRing.length > 200) traceRing.shift();
-  }
-  globalThis._diagTrace = pushTrace;
-  pushTrace('boot: diagIIFE init');
   function pushDiag(o){
     o.t = Date.now();
     ring.push(o);
@@ -272,9 +309,8 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
       }catch(_){}
       pushDiag({ev:ev, tg:targetInfo(t), x:x|0, y:y|0, top:top,
         ostype:typeof openStadium, hasCtrl:!!(navigator.serviceWorker && navigator.serviceWorker.controller)});
-    }, true);   // capture phase
+    }, true);
   });
-  // タイトル「BOATRACE AI」(.logo) を 5 連打で overlay 表示
   var headerTaps = [];
   document.addEventListener('click', function(e){
     var hd = e.target.closest && e.target.closest('.logo');
@@ -292,7 +328,6 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     var dm = matchMedia('(display-mode: standalone)').matches;
     var sw = navigator.serviceWorker;
     var ctrl = sw && sw.controller;
-    // 静的診断: ロゴ要素のサイズ / カード中央の elementFromPoint
     function rectOf(sel){
       var el = document.querySelector(sel);
       if(!el) return '<no '+sel+'>';
@@ -336,7 +371,6 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     function fmt(d){
       return new Date(d.t).toISOString().slice(11,19)+' '+d.ev+' '+d.tg+' @'+d.x+','+d.y+' top='+d.top+' os='+d.ostype;
     }
-    // stadium-card 関連は別セクション（target に [card あり 全件）
     var cardEvents = ring.filter(function(d){ return d.tg && d.tg.indexOf('[card')>=0; });
     var cardLines = cardEvents.length === 0
       ? '(NO STADIUM-CARD EVENTS — タップしても記録されていません)'
@@ -345,72 +379,10 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     var ov = document.createElement('div');
     ov.id = 'diagOverlay';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);color:#0f0;font:11px monospace;padding:12px;overflow:auto;z-index:2147483647;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
-    // boatrace_errors も表示（reportError の永続ログ）
-    var errLog = '';
-    try {
-      var errs = JSON.parse(localStorage.getItem('boatrace_errors')||'[]');
-      errLog = errs.slice(-30).map(function(e){
-        return new Date(e.ts||0).toISOString().slice(11,19)+' '+(e.type||'?')+': '+((e.msg||JSON.stringify(e))+'').slice(0,140);
-      }).join('\n');
-    } catch(_){ errLog = '(boatrace_errors parse failed)'; }
-    // localStorage write-test
-    var lsTest = '';
-    try {
-      var k = 'boatrace_diagprobe';
-      var v = String(Date.now());
-      localStorage.setItem(k, v);
-      var got = localStorage.getItem(k);
-      lsTest = 'set/get '+(got===v?'OK':'MISMATCH')+' (val='+got+')';
-      var lens = [];
-      for(var i=0;i<localStorage.length;i++){
-        var kk = localStorage.key(i);
-        if(kk && kk.indexOf('boatrace_')===0){
-          var s = localStorage.getItem(kk)||'';
-          lens.push(kk+'='+s.length+'B');
-        }
-      }
-      lsTest += '\n'+lens.join('\n');
-    } catch(e){ lsTest = 'localStorage THROW: '+e.message; }
-    var traceLines = traceRing.slice(-30).map(function(t){
-      return new Date(t.t).toISOString().slice(11,19)+' '+t.msg;
-    }).join('\n') || '(empty)';
-    var probeUrls = ['data/programs/today.json','data/db/racerDB.json','sw.js'];
-    var swSect = '...';
-    var netSect = '...';
-    function build(){
-      ov.textContent = '=== DIAG ===\n'+summary
-        +'\n\n=== STATIC PROBES ===\n'+staticProbes
-        +'\n\n=== SW STATE ===\n'+swSect
-        +'\n\n=== NET PROBES ===\n'+netSect
-        +'\n\n=== LS PROBE ===\n'+lsTest
-        +'\n\n=== IN-MEMORY TRACE (last 30) ===\n'+traceLines
-        +'\n\n=== reportError LOG (last 30) ===\n'+errLog
-        +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
-        +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
-    }
-    if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){
-      navigator.serviceWorker.getRegistration().then(function(reg){
-        if(!reg){ swSect = 'NO_REGISTRATION'; }
-        else {
-          var ctrl = navigator.serviceWorker.controller;
-          swSect = 'scope: '+reg.scope
-            +'\ninstalling: '+(reg.installing?reg.installing.state:'none')
-            +'\nwaiting: '+(reg.waiting?reg.waiting.state:'none')
-            +'\nactive: '+(reg.active?reg.active.state+' '+reg.active.scriptURL.split('/').slice(-1)[0]:'none')
-            +'\ncontroller: '+(ctrl?ctrl.state+' '+ctrl.scriptURL.split('/').slice(-1)[0]:'NONE');
-        }
-        build();
-      }).catch(function(e){ swSect = 'getRegistration THROW: '+e.message; build(); });
-    } else { swSect = 'serviceWorker API missing'; }
-    Promise.all(probeUrls.map(function(u){
-      var t0 = performance.now();
-      return fetch(u, {cache:'no-store'}).then(function(r){
-        return u+' → '+r.status+' '+((performance.now()-t0)|0)+'ms';
-      }).catch(function(e){
-        return u+' → THROW '+e.name+': '+(e.message||'').slice(0,60);
-      });
-    })).then(function(results){ netSect = results.join('\n'); build(); });
-    build();
+    ov.textContent = '=== DIAG ===\n'+summary
+      +'\n\n=== STATIC PROBES ===\n'+staticProbes
+      +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
+      +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
     var close = document.createElement('button');
     close.textContent = '× 閉じる';
     close.style.cssText = 'position:fixed;top:10px;right:10px;background:#f00;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
@@ -446,15 +418,11 @@ var COURSE_LOG_PRIOR = [
 //   ENABLE_ZSCORE が true で初めて適用される（既存重みとの整合性のため既定 OFF）
 var FEATURE_DIM = 12;
 /* MOVED: function _initFeatureStats */
-// PI-fix CRITICAL: _initFeatureStats は app-rest.js にあり defer の実行順で
-//   critical 実行時には未定義。fresh ユーザで _bootParseLS が null を返すと
-//   ReferenceError → window.onerror 未設定区間なので silent halt。
-//   インライン初期化で critical を rest 非依存にする（最重要修正）。
 var _featureStats = (function(){
   var raw = _bootParseLS('boatrace_featurestats', null);
   if(raw && Array.isArray(raw.mean) && raw.mean.length===FEATURE_DIM
         && Array.isArray(raw.m2) && typeof raw.n==='number'){ return raw; }
-  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
+  return _initFeatureStats();
 })();
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
@@ -643,6 +611,11 @@ window.addEventListener('unhandledrejection', function(e){
 /* MOVED: function starsHtml */
 /* MOVED: function pf */
 
+// P0-7: API health 状態 — 'ok' | 'cached' | 'fail'
+var _apiHealth = { programs:'ok', previews:'ok', results:'ok', odds:'ok' };
+/* MOVED: function _setApiHealth */
+/* MOVED: function _renderApiHealthBanner */
+
 /* MOVED: function fetchWithFallback */
 
 // P4 W-08: 受信 JSON のスキーマ最小検証
@@ -777,8 +750,13 @@ var SCENARIO_DIST = {
 var STADIUM_WIND_PROFILE = {
   '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
   '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
-  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '04': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'運河地形・北東〜東で1コース不利（平和島）' }, // P1-A1
   '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
+  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '19': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'関門海峡・南東で外有利（下関）' }, // P1-A1
+  '20': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'玄界灘・北東で1コース不利（若松）' }, // P1-A1
+  // 残り18場は将来 GitHub Actions nightly で「場×風向×1コース勝率」を集計し
+  // 自動更新する `config/wind_profile.json` で補完予定（P2）。
 };
 var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
 var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
@@ -855,6 +833,10 @@ var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:
 /* MOVED: function exhibitionZScore */
 
 // X2: ST 個人乖離スコア（自分の平均 ST との比較）
+// P1-A3: 級別×コースの ST 標本平均（プロ定石ベースの経験値）
+//   新人/転勤直後で stStats 5件未満でも、級別での想定 ST に対する乖離で評価可能に
+//   キー: classNum (1=A1, 2=A2, 3=B1=base, 4=B2)
+var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
 /* MOVED: function stDivergenceScore */
 
 /* MOVED: function updateDBFromResults */
@@ -887,6 +869,26 @@ var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:
 // 平均クラスから階級減衰係数を計算
 //   B2 多 → 0.55, B1 多 → 0.70, A2 多 → 0.85, A1 多 → 1.00
 /* MOVED: function _computeClassAttenuation */
+
+// P0-1: 場別×級別×コースの相互作用係数。
+//   常識: 「A1の1コース」と「B2の1コース」では同じ scwr でも実勝率は大きく違う。
+//   1コースほど級の影響大、6コースほど小（外側はそもそも不利が支配的）。
+//   row index = course-1, col index = classNum-1 (1=A1,2=A2,3=B1=base,4=B2)
+var CLASS_COURSE_MULT = [
+  [1.10, 1.02, 1.00, 0.85],
+  [1.08, 1.02, 1.00, 0.88],
+  [1.06, 1.02, 1.00, 0.92],
+  [1.05, 1.02, 1.00, 0.94],
+  [1.03, 1.01, 1.00, 0.97],
+  [1.02, 1.01, 1.00, 0.98]
+];
+/* MOVED: function _classCourseMult */
+
+// P0-2: レース毎に1度だけ算出するシナリオ確率。
+//   nige_success_prob(1コース) = ∏(1 - attack_prob_c) for c=2..6
+//   attack_prob は隣接艇の決まり手主体率を簡略化（max(sashi, makuri+makuriSashi)）
+//   1コース以外は対象外（影響度が小さく、既存 C カテゴリで十分カバー）。
+/* MOVED: function _computeRaceScenario */
 
 // X3 進入予想 → 採用コースと信頼度を決定
 //   preview.racer_course_number > predictedEntries > 枠番 の優先順
@@ -1104,6 +1106,9 @@ var _backfillTimer = null;
 // ===============================================
 /* MOVED: function getRaceDataForRace */
 
+// F16: Macool 風セルレンダリング (背景=枠番色 / 上=着順 / 下=進入コース漢数字+ST)
+/* MOVED: function renderSeriesCell */
+
 /* MOVED: function renderSeriesNums */
 
 // PF-6: partsHtml は未使用（旧 race detail の名残）→ 削除
@@ -1127,6 +1132,15 @@ var _backfillTimer = null;
 // PAGE CONTROL (REWRITTEN)
 // ===============================================
 /* MOVED: function showPage */
+
+// P0-4: 詳細画面のタブ切替（lineup / ai / odds）
+/* MOVED: function _showDetailTab */
+
+// P0-5: ナビ状態の保存/復元（PWA 再起動時のページ位置保持）
+//   sessionStorage は同一タブセッション内のみ保持されるため、
+//   タブを閉じれば消える。安全 / シンプル / quota も別枠。
+/* MOVED: function _persistNavState */
+/* MOVED: function _restoreNavState */
 
 // ===============================================
 // SCREEN 1: TOP - 4 column stadium grid (REWRITTEN)
@@ -1241,6 +1255,8 @@ try{ localStorage.removeItem('boatrace_github_pat'); }catch(_){}
 /* MOVED: function _setupServiceWorker */
 
 // PG-6: stadium-card event delegation
+// PI-fix: prerendered card は inline onclick も持つ（iOS standalone 防御）。
+//   その場合 onclick が先に発火しているので、ここは無視（card.dataset._fired guard）。
 /* MOVED: function _setupStadiumDelegation */
 
 // PH-1 + PH-4: 起動 setup を分散
@@ -1254,7 +1270,11 @@ document.getElementById('headerDate').innerHTML=formatDate();
 //   (prerender HTML が既に LCP 要素として測定される)
 //   100ms 遅延 → defer 直後の同期処理 burst を完全に分離
 setTimeout(function(){
-  loadAllData().then(function(){ if(typeof _renderFreshness==='function') _renderFreshness(); });
+  loadAllData().then(function(){
+    if(typeof _renderFreshness==='function') _renderFreshness();
+    // P0-5: PWA 再起動時のページ復元（rest 関数 lazy load 後に発火）
+    if(typeof _restoreNavState === 'function') _restoreNavState();
+  });
 }, 100);
 
 // PH-1: 非クリティカル setup は first paint 後の idle に分散
@@ -1413,14 +1433,12 @@ async function forceRefresh(){
     var rawPv = _filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
     if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
     // results: 自前 data/results/today.json を優先、fallback で Open API
-    //   公式 Open API は反映が遅い (~30 min) ため、cron が更新する自前を先に試す
     var rawR = null;
     try{
       var rR = await fetch('data/results/today.json?t='+t, {cache:'no-store'});
       if(rR.ok){
         var rd = await rR.json();
         var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        // updated_at が今日 OR results 内に今日のレースが 1 件以上含まれていれば採用
         if(rd && Array.isArray(rd.results) && rd.results.length > 0
            && rd.results.some(function(r){return r.race_date===todayJst})){
           rawR = rd;
@@ -1489,6 +1507,37 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
 
 function pf(v){return parseFloat(v)||0}
 
+function _setApiHealth(url, state){
+  var key = (url.indexOf('/programs/')>=0) ? 'programs'
+          : (url.indexOf('/previews/')>=0) ? 'previews'
+          : (url.indexOf('/results/')>=0) ? 'results'
+          : (url.indexOf('/odds/')>=0)     ? 'odds' : null;
+  if(!key) return;
+  _apiHealth[key] = state;
+  _renderApiHealthBanner();
+}
+
+function _renderApiHealthBanner(){
+  var banner = document.getElementById('apiHealthBanner');
+  var msg = document.getElementById('apiHealthMsg');
+  if(!banner || !msg) return;
+  var fails = [];
+  var caches = [];
+  for(var k in _apiHealth){
+    if(_apiHealth[k]==='fail') fails.push(k);
+    else if(_apiHealth[k]==='cached') caches.push(k);
+  }
+  if(fails.length === 0 && caches.length === 0){
+    banner.style.display = 'none';
+    return;
+  }
+  var parts = [];
+  if(fails.length) parts.push('API取得失敗: ' + fails.join('/'));
+  if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
+  msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
+  banner.style.display = 'block';
+}
+
 function fetchWithFallback(url){
   // キャッシュキーはクエリパラメータを除いたベースURL
   var baseUrl=url.split('?')[0];
@@ -1496,11 +1545,25 @@ function fetchWithFallback(url){
   var tid=setTimeout(function(){controller.abort()},15000);
   return fetch(url,{signal:controller.signal,cache:'no-store'})
     .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
-    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
+    .then(function(d){
+      try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}
+      _setApiHealth(baseUrl, 'ok'); // P0-7
+      return d;
+    })
     .catch(function(e){
       clearTimeout(tid);
       console.warn('API error:',baseUrl,e.message);
-      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
+      try{
+        var c=localStorage.getItem(cacheKey(baseUrl));
+        if(c){
+          var o=JSON.parse(c);
+          if(Date.now()-o.time<600000){
+            _setApiHealth(baseUrl, 'cached'); // P0-7: キャッシュ fallback 使用中
+            return o.data;
+          }
+        }
+      }catch(ex){}
+      _setApiHealth(baseUrl, 'fail'); // P0-7: 完全失敗（cache 無し or 期限切れ）
       return null;
     });
 }
@@ -1514,7 +1577,11 @@ function validateApiPayload(apiJson, key){
 
 function indexByStadiumRace(apiJson, key){
   if(!validateApiPayload(apiJson, key)){
-    if(apiJson) console.warn('[schema] invalid payload for', key);
+    if(apiJson){
+      console.warn('[schema] invalid payload for', key);
+      // P0-7: スキーマ不正は API 異常と同等に扱う
+      try { _setApiHealth('/'+key+'/', 'fail'); } catch(_){}
+    }
     return null;
   }
   var arr=apiJson[key];
@@ -1681,10 +1748,7 @@ function _filterStalePreviews(raw){
     return { previews: [], updated_at: raw.updated_at };
   }
   // 「データが何もない」プレースホルダだけ除外。
-  //   PI-fix: 旧版は exhibition_time 一つでも >0 でないと弾いていたが、展示前で
-  //   気象 (race_wind / race_water_temperature) だけ計測済のレースまで捨てて
-  //   レース詳細の気象情報が表示されない問題があった。
-  //   気象が計測済 OR 展示済 ならそのレースは「データあり」と扱う。
+  //   PI-fix: 気象が計測済 OR 展示済 ならそのレースは「データあり」と扱う。
   var filtered = raw.previews.filter(function(p){
     var hasWeather = (p.race_wind||0)>0 || (p.race_water_temperature||0)>0
                   || (p.race_temperature||0)>0 || (p.race_wave||0)>0
@@ -1854,6 +1918,15 @@ function showPage(page){
   else if(page==='backtest'){document.getElementById('pageBacktest').classList.add('active');_setActive('navBacktest')}
   else if(page==='settings'){document.getElementById('pageSettings').classList.add('active');_setActive('navSettings');loadSettings()}
   window.scrollTo(0,0);
+  // P0-5: ナビ状態を sessionStorage に保存（PWA 自動更新リロード後の位置復元用）
+  try { _persistNavState(page, currentStadium, currentRace); } catch(_){}
+}
+
+function _persistNavState(page, sid, rn){
+  try {
+    var st = { page: page||'top', sid: sid||null, rn: rn||null, ts: Date.now() };
+    sessionStorage.setItem('boatrace_nav', JSON.stringify(st));
+  } catch(_){}
 }
 
 function renderStadiums(){
@@ -1917,7 +1990,8 @@ function renderStadiums(){
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
       // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
-      //   inline onclick + role="button" + tabindex="0" を必ず付ける
+      //   inline onclick + role="button" + tabindex="0" を必ず付ける（既存の
+      //   `<button onclick="showPage(...)">` 動作と同じパスを使う）
       html += '<div class="stadium-card active-stadium" data-sid="'+sid+'" '
         +'role="button" tabindex="0" onclick="openStadium(\''+sid+'\')">'
         +'<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
@@ -1937,14 +2011,11 @@ function renderStadiums(){
 }
 
 function openStadium(sid){
-  var trace = (typeof globalThis._diagTrace === 'function') ? globalThis._diagTrace : function(){};
-  trace('openStadium ENTER sid='+sid+' predictRaceDef='+(typeof predictRace)+' savePredictionDef='+(typeof savePrediction));
-  // PI-fix: 真因確定 — predictRace 等は app-rest.js にあり async load。
-  //   rest が未 load の状態で openStadium 内部で参照すると ReferenceError で
-  //   サイレント失敗 → 画面遷移しない。rest load を待ってから再実行する。
+  // PI-fix: predictRace 等は app-rest.js (lazy load) にあるため、rest 未 load
+  //   で呼ばれた場合は ReferenceError で silently fail する。これを防ぐため
+  //   guard + retry を入れる。
   if(typeof predictRace !== 'function' || typeof savePrediction !== 'function'){
     try { reportError({type:'info', msg:'openStadium deferred: rest not ready', sid:sid}); }catch(_){}
-    // 一旦 races ページに遷移してプレースホルダ表示、rest load 完了後に再実行
     currentStadium = sid;
     var name0 = (typeof STADIUMS!=='undefined' && STADIUMS[parseInt(sid)]) || ('場'+sid);
     var t = document.getElementById('racesTitle');
@@ -1958,7 +2029,7 @@ function openStadium(sid){
       if(typeof predictRace === 'function' && typeof savePrediction === 'function'){
         clearInterval(_iv);
         try { openStadium(sid); }catch(e){ try{ reportError({type:'error', msg:'openStadium retry threw: '+e.message}); }catch(_){} }
-      } else if(_retry > 30){   // 6 秒で諦め
+      } else if(_retry > 30){
         clearInterval(_iv);
         if(l) l.innerHTML = '<div class="card">予測モジュールの読込に失敗しました。「更新」ボタンを押してください。</div>';
       }
@@ -1968,23 +2039,12 @@ function openStadium(sid){
   currentStadium=sid;
   var name=STADIUMS[parseInt(sid)]||('場'+sid);
   var stadium=programData[sid];
-  trace('openStadium: stadium='+(stadium?'has data ('+Object.keys(stadium).length+' races)':'NULL/undefined'));
   if(!stadium){
-    trace('openStadium: NO DATA path → showPage(races)');
     document.getElementById('racesTitle').textContent=name;
     document.getElementById('racesList').innerHTML='<div class="card">データがありません</div>';
-    var beforePages = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
-    trace('openStadium: before showPage activePages='+JSON.stringify(beforePages));
-    try {
-      showPage('races');
-      var afterPages = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
-      trace('openStadium: after showPage activePages='+JSON.stringify(afterPages));
-    } catch(err) {
-      trace('openStadium: showPage THREW '+(err && err.message));
-    }
+    showPage('races');
     return;
   }
-  trace('openStadium: HAS DATA path, building race table');
 
   var firstRace=stadium[Object.keys(stadium)[0]];
   var gradeNum=firstRace?firstRace.race_grade_number||5:5;
@@ -2008,14 +2068,13 @@ function openStadium(sid){
     var hasResult=resultData&&resultData[sid]&&resultData[sid][rn]&&resultData[sid][rn].isFinished;
 
     if(pred) savePrediction(todayStr(),sid,rn,pred,hasResult?resultData[sid][rn]:null);
-    // F19c: 終了済レースは履歴の pred_snapshot を優先して表示 (lock & 統計と一致)
+    // F19c: 終了済レースは履歴の pred_snapshot を優先 (lock & 統計と一致)
     if(hasResult){
       try {
         var _h = safeParse('boatrace_history', []);
         for(var _hi=0;_hi<_h.length;_hi++){
           var _e = _h[_hi];
           if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
-            // snapshot を pred に再構成（typeCls/raceType も維持）
             pred = {
               marks: _e.pred_snapshot.marks || pred.marks,
               trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
@@ -2032,7 +2091,6 @@ function openStadium(sid){
     // 直前予想があるか判定
     var pvData=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
     var hasRealPv=false;
-    // F19c: != null だと 0 (展示未実施) も真と判定してしまうため > 0 に修正
     if(pvData&&pvData.boats){for(var pk in pvData.boats){if(pvData.boats[pk]&&(pvData.boats[pk].racer_exhibition_time||0)>0){hasRealPv=true;break}}}
 
     // 表示用の予想（直前あれば直前、なければ番組）
@@ -2094,16 +2152,7 @@ function openStadium(sid){
   document.getElementById('racesList').innerHTML=html;
   document.getElementById('raceSummary').innerHTML='';
 
-  trace('openStadium: race table built, calling showPage(races)');
-  var beforePages2 = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
-  trace('openStadium: before showPage activePages='+JSON.stringify(beforePages2));
-  try {
-    showPage('races');
-    var afterPages2 = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
-    trace('openStadium: after showPage activePages='+JSON.stringify(afterPages2));
-  } catch(err) {
-    trace('openStadium: showPage THREW '+(err && err.message));
-  }
+  showPage('races');
 }
 
 function showUpdateToast(onUpdate){
@@ -2182,43 +2231,27 @@ function _setupServiceWorker(){
 }
 
 function _setupStadiumDelegation(){
-  // PI-fix: in-memory trace を最優先（reportError が動かない場合の保険）
-  var trace = (typeof globalThis._diagTrace === 'function') ? globalThis._diagTrace : function(){};
-  trace('setupDelegation: ENTER');
   var list = document.getElementById('stadiumList');
-  if(!list){
-    trace('setupDelegation: #stadiumList NOT FOUND');
-    try { reportError({type:'diag', msg:'_setupStadiumDelegation: #stadiumList not found'}); }catch(_){}
-    return;
-  }
-  trace('setupDelegation: list found, attaching listeners');
-  function handleCardClick(phase, e){
-    var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
+  if(!list) return;
+  // PI-fix: hasAttribute('onclick') スキップを撤廃 + capture/bubble 両方で
+  //   フォールバック。iOS standalone PWA で innerHTML 経由 div の
+  //   inline onclick が動かない事象への防御。openStadium は idempotent。
+  list.addEventListener('click', function(e){
+    var card = e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
-    trace('cardClick['+phase+'] target='+(e.target && e.target.tagName ? e.target.tagName.toLowerCase()+'.'+(e.target.className||'').split(/\s+/)[0] : '?')+' sid='+card.getAttribute('data-sid'));
-    if(e._delegationHandled){
-      trace('cardClick['+phase+'] SKIPPED (already handled)');
-      return;
-    }
+    if(e._delegationHandled) return;
     e._delegationHandled = true;
     var sid = card.getAttribute('data-sid');
-    var hasOpenStadium = typeof openStadium === 'function';
-    trace('cardClick['+phase+'] FIRE sid='+sid+' osDef='+hasOpenStadium);
-    try { reportError({type:'diag', msg:'delegation['+phase+'] FIRE sid='+sid+' osDef='+hasOpenStadium}); }catch(_){}
-    if(sid && hasOpenStadium){
-      try {
-        openStadium(sid);
-        trace('cardClick['+phase+'] openStadium returned');
-      } catch(err) {
-        trace('cardClick['+phase+'] openStadium THREW: '+(err && err.message));
-        try { reportError({type:'diag', msg:'delegation['+phase+'] openStadium THREW: '+(err && err.message)}); }catch(_){}
-      }
-    }
-  }
-  list.addEventListener('click', function(e){ handleCardClick('bubble', e); });
-  document.addEventListener('click', function(e){ handleCardClick('capture', e); }, true);
-  trace('setupDelegation: listeners attached');
-  try { reportError({type:'diag', msg:'_setupStadiumDelegation: listeners attached'}); }catch(_){}
+    if(sid && typeof openStadium === 'function') openStadium(sid);
+  });
+  document.addEventListener('click', function(e){
+    var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
+    if(!card) return;
+    if(e._delegationHandled) return;
+    e._delegationHandled = true;
+    var sid = card.getAttribute('data-sid');
+    if(sid && typeof openStadium === 'function') openStadium(sid);
+  }, true);
 }
 
 function setManagedInterval(fn, ms){

@@ -90,9 +90,15 @@ def render_grid(programs: list[dict]) -> str:
             grade_num = races[0].get("race_grade_number", 5)
             grade_name, grade_cls = GRADE_CLASS.get(grade_num, GRADE_CLASS[5])
             first_rno = min((r.get("race_number", 99) for r in races), default=1)
+            # P1-B6: aria-label を付与し、screen reader 用の文脈を補完。
+            #   data-hydrated は JS renderStadiums() が in-place 上書きする際の
+            #   識別子（将来的な hydration 化のフック）。
             cards.append(
                 f'<div class="stadium-card active-stadium" data-sid="{sid}" '
-                f'role="button" tabindex="0" onclick="openStadium(\'{sid}\')">'
+                f'data-hydrated="true" '
+                f'role="button" tabindex="0" '
+                f'aria-label="{name} 開催中 0/{total}R 次は{first_rno}R" '
+                f'onclick="openStadium(\'{sid}\')">'
                 f'<span class="stadium-grade {grade_cls}">{grade_name}</span>'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">0/{total}R</span>'
@@ -102,7 +108,10 @@ def render_grid(programs: list[dict]) -> str:
             )
         else:
             cards.append(
-                f'<div class="stadium-card inactive-stadium">'
+                f'<div class="stadium-card inactive-stadium" '
+                f'data-hydrated="true" '
+                f'aria-label="{name} 次節（本日非開催）" '
+                f'aria-disabled="true">'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">次節</span>'
                 f"</div>"

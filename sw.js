@@ -1,5 +1,18 @@
-// BoatRace Oracle - Service Worker v6 (PA-7 + PD-2 + PD-3)
+// BoatRace Oracle - Service Worker (PA-7 + PD-2 + PD-3 + P1-B5/C6)
 // 設計書 §6 / docs/A_PLUS_化設計書.md PD-2/3 を参照
+//
+// =====================================================================
+// キャッシュ戦略（3 層、独立 cache 名で寿命管理）
+// =====================================================================
+//   1) STATIC (VERSION = 自オリジン静的): index.html / manifest / icon /
+//      app-{critical,rest}.min.js / worker(.js|_predictor.js)
+//      → activate で旧バージョン全削除、新バージョンへの atomic 移行
+//      → 戦略: index.html / data/ は network-first、その他は cache-first
+//   2) DATA (VERSION 内に格納、DATA は概念名): /data/ 配下と外部 API
+//      → 常に最新性優先 (network-first → fail 時 cache fallback → 503)
+//   3) CDN (CDN_CACHE 別名、寿命長): cdnjs / gstatic / fonts.googleapis
+//      → immutable 前提（SRI ハッシュで verify 済）の cache-first + SWR
+//      → VERSION bump で消えない（=fonts/Chart.js を毎回 re-download しない）
 //
 // 変更履歴:
 //   W-01 caches.put を await して race を防止
@@ -9,9 +22,11 @@
 //   PA-7 fetch handler に origin allowlist、GET 以外はバイパス
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
+//   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
 const VERSION = 'br-oracle-v44';
 const CDN_CACHE = 'br-oracle-cdn-v1';
+// STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -25,6 +40,10 @@ const STATIC_ASSETS = [
 ];
 
 // PD-2: 別 cache 名で永続キャッシュする外部リソース origin
+//   理由: 外部 CDN コンテンツは immutable（URL に hash / バージョン込み）。
+//   毎回 revalidate するとフォント描画遅延 / Chart.js 初期化遅延の主因になる。
+//   従って cache-first + SWR（背景で再取得）で最速表示を優先する。
+//   SRI ハッシュ（index.html の <script integrity=...>）で改ざん耐性を担保。
 const CDN_ORIGINS = new Set([
   'https://cdnjs.cloudflare.com',
   'https://fonts.gstatic.com',
@@ -87,7 +106,11 @@ self.addEventListener('message', (e) => {
   }
 });
 
-// W-09: キャッシュキーは querystring を除いた URL に正規化
+// W-09 / P1-Q8: キャッシュキーは querystring を除いた URL に正規化
+//   合理: 自前 fetch で常に `?t=<timestamp>` を付ける（cache:no-store 相当の意図）
+//   ため、normalize しないとキー分散して net 通信ばかりになる。
+//   静的アセットの cache bust は VERSION 文字列（cache 名）で実現しているので、
+//   `?v=N` のような URL クエリには依存しない設計。
 function normalizeRequest(req) {
   const url = new URL(req.url);
   url.search = '';

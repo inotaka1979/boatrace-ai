@@ -5,7 +5,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "presplit": "echo '[prebuild] splitting app.js -> app-critical.js / app-rest.js'",
+    "split": "python3 ../scripts/split_app.py",
+    "prebuild": "npm run split",
     "build": "node build.mjs",
+    "prebuild:check": "npm run split",
     "build:check": "node build.mjs --check",
     "lint": "echo 'lint not yet configured'",
     "typecheck": "echo 'typecheck not yet configured'"
