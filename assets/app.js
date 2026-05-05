@@ -2846,6 +2846,30 @@ function generateBetsV2(marks,method,count3,count2){
 // ===============================================
 // F17: 全場の確定レースに対して predictRace + savePrediction を一括実行
 // ユーザーが開いていない場の成績も「本日の場別」に反映されるようにする
+// 一度だけ実行する migration: 過去の garbage を一括除去
+// （前日の _backfillTodayPredictions バグで「entry.date=今日」と
+// 書き込まれた entry を、resultData の有無に関係なく一律削除する）。
+// 1 度実行したら localStorage キーで二度と走らない。
+// 削除しても、修正後の _backfillTodayPredictions が今日の正規 entry を
+// 再構築するので最終状態は正しい。
+function _migrateDropStaleTodayHistory(){
+  var key = 'boatrace_history_migrated_v20';
+  try { if(localStorage.getItem(key)) return; } catch(e){ return; }
+  var today = todayStr();
+  var hist = safeParse('boatrace_history', []);
+  var before = hist.length;
+  hist = hist.filter(function(h){
+    if(h.date !== today) return true;
+    if(!h.actual || h.actual.length === 0) return true;
+    return false;   // entry.date=今日 かつ actual あり = 削除
+  });
+  if(hist.length !== before){
+    safeSet('boatrace_history', hist);
+    console.warn('[migration v20] dropped '+(before-hist.length)+' stale today entries');
+  }
+  try { localStorage.setItem(key, '1'); } catch(e){}
+}
+
 // 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
 // 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
 // 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
@@ -2990,6 +3014,8 @@ function updateHistoryWithResults(){
 }
 
 function getAccuracy(){
+  if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today&&h.actual&&h.actual.length>0});
@@ -4498,6 +4524,8 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 //   ・レースタイプ別: 本命 / 混戦 / 穴 ごとの的中率 / 回収率
 //   ・場別 (全場): 場ごとに R数 / 3連単的中 / 投資 / 払戻 / 回収率
 function calcTodayStats(){
+  if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});

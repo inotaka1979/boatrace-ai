@@ -160,6 +160,8 @@ CRITICAL_SEEDS = [
     'validateApiPayload',   # PA-7: API スキーマ検証
     'cleanOldData', 'saveDB',  # critical setup 直呼び (PI-fix)
     '_filterStalePreviews',  # loadAllData で呼ぶ critical helper
+    '_migrateDropStaleTodayHistory', '_cleanStaleHistoryToday',
+    'getAccuracy',  # renderStadiums で必須 (critical)
 ]
 
 critical_funcs: set[str] = set()

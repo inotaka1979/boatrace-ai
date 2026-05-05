@@ -1962,25 +1962,6 @@ function generateBetsV2(marks,method,count3,count2){
   };
 }
 
-function _cleanStaleHistoryToday(){
-  if(!resultData || Object.keys(resultData).length===0) return;
-  var today = todayStr();
-  var hist = safeParse('boatrace_history', []);
-  var before = hist.length;
-  hist = hist.filter(function(h){
-    if(h.date !== today) return true;            // 今日扱い以外はそのまま
-    if(!h.actual || h.actual.length === 0) return true; // 予想のみで結果未出は touch しない
-    var res = resultData[h.stadium] && resultData[h.stadium][h.race];
-    if(!res) return false;                       // 今日の resultData に存在しない = 古い
-    var rdate = (res.race_date||'').replace(/-/g,'');
-    return !rdate || rdate === today;
-  });
-  if(hist.length !== before){
-    safeSet('boatrace_history', hist);
-    console.warn('[history] cleaned '+(before-hist.length)+' stale "today" entries');
-  }
-}
-
 async function _backfillTodayPredictions(){
   if(!programData || !resultData) return;
   _cleanStaleHistoryToday();   // 古いゴミを掃除してから backfill
@@ -3150,6 +3131,8 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 }
 
 function calcTodayStats(){
+  if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});
