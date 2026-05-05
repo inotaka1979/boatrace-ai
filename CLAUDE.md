@@ -739,3 +739,101 @@ Run 4 が「正しく計測できた」結果 = 実 user 体験の真値。
 - CLS: 0.19 → **0.026** ⭐
 - A11y / BP / SEO: **100 / 96 / 100** ⭐
 - 全 6 主要メトリクス Good 圏内達成
+
+## 修正履歴 (2026-05-05: PJ Phase — iOS standalone PWA 致命バグ追跡と修正)
+
+### 症状
+- iPhone ホーム画面に追加した PWA (display:standalone) で**場のタップが無反応**
+- Safari ブラウザでは同 URL でも完全動作 → standalone 限定の問題
+- 「成績ページが空」「DB情報を読込中... が終わらない」も同時発生
+- 「昨日までは動いていた」とユーザ報告 → 直近の変更が引金
+
+### 探索の経緯（24 commit / 6 時間）
+最初は **iOS standalone での event delegation 不発** や **innerHTML 経由の inline onclick** 等の WebKit 仕様問題を疑い、何度も対症療法的な修正を入れたが解決せず:
+- v20-v24: SW skipWaiting + clients.claim、controllerchange 自動 reload
+- v25-v27: cache-bust query (`?v=N`)、`updateViaCache:'none'`、prerender に inline onclick 復活
+- v28: openStadium に rest 未 load の guard 追加
+- v29: rest bundle を defer load に変更（lazy 撤廃）
+- v30: delegation を bubble + capture 二重 attach
+- v31-v33: 診断オーバーレイ強化 — タイトル「BOATRACE AI」5 連打で表示
+
+### 診断オーバーレイの設計
+iPhone は console / DevTools 不可なので、画面上で読める診断 UI を実装:
+- `assets/app-critical.js` 冒頭の IIFE で capture-phase の touchstart / touchend / click / pointerdown を全記録 (ring 100 件、localStorage `boatrace_diag` 永続化)
+- ロゴ 5 連打で全画面オーバーレイ表示
+  - DIAG: standalone / sw.controller / openStadium typeof / cards / cards.onclick / delegation
+  - STATIC PROBES: `.logo` / `.header` / `#stadiumList` の rect + position + z-index + pointer-events、各座標の `elementFromPoint`
+  - SW STATE: registration の installing / waiting / active / controller 各状態
+  - NET PROBES: `data/programs/today.json` / `data/db/racerDB.json` / `sw.js` を fetch no-store で叩き、status + ms 記録
+  - LS PROBE: localStorage 書込みテスト + `boatrace_*` キーの byte 数一覧
+  - IN-MEMORY TRACE: `globalThis._diagTrace` 経由の独立リング（localStorage 不調時の保険）
+  - reportError LOG: 永続エラーログ（`boatrace_errors`）
+  - STADIUM-CARD EVENTS / ALL EVENTS: 直近のタップ記録
+
+### 真因（v33 の IN-MEMORY TRACE で確定）
+```
+02:54:55 boot: diagIIFE init
+02:54:55 openStadium ENTER sid=1 predictRaceDef=function savePredictionDef=function
+（setupDelegation: ENTER が無い）
+（boatrace_errors も完全に空）
+```
+
+`_setupStadiumDelegation()` が呼ばれていない / window.onerror が catch していない / openStadium だけ inline onclick 経由で動いている、という非対称が決定打。**スクリプトが setupDelegation() より手前で halt している**ことが確定し、source を読み返した結果 `app-critical.js:449` の `_featureStats` IIFE で:
+
+```js
+var _featureStats = (function(){
+  var raw = _bootParseLS('boatrace_featurestats', null);
+  if(raw && ...) return raw;
+  return _initFeatureStats();   // ← rest bundle にしか無い、ReferenceError
+})();
+```
+
+`_initFeatureStats` は `app-rest.js:7` にしか存在せず、defer の実行順 (critical → rest) で critical 実行時点では未定義。fresh ユーザ（localStorage 空）で `_bootParseLS` が null を返すと **ReferenceError → window.onerror が bind される line 535 より前なので silent halt**。
+
+### 全症状の一元的説明
+| 症状 | 原因 |
+|---|---|
+| `_setupStadiumDelegation: ENTER` トレースなし | line 449 で halt、line 1263 まで到達せず |
+| `boatrace_errors` 完全に空 | window.onerror が line 535 で bind、それより前の例外は記録不可 |
+| 場のタップ無反応 | delegation listener が attach されない |
+| inline onclick だけは動く | HTML 属性は parser が parse 時に直接 bind |
+| `openStadium ENTER` だけは出る | inline onclick から呼ばれた |
+| openStadium 後の処理が止まる | 内部で rest 関数を呼び同様に ReferenceError |
+| 成績ページ空 | renderStats も rest にあるため reachable しない |
+| 「DB情報を読込中...」が終わらない | loadSettings が走らないので dbInfo 初期文字列のまま |
+| Safari ブラウザでは動く | 何らかのタイミング差で raw が null にならず IIFE が早期 return（推定）|
+
+### 修正
+```js
+// app-critical.js:449 修正後
+var _featureStats = (function(){
+  var raw = _bootParseLS('boatrace_featurestats', null);
+  if(raw && Array.isArray(raw.mean) && raw.mean.length===FEATURE_DIM
+        && Array.isArray(raw.m2) && typeof raw.n==='number'){ return raw; }
+  // PI-fix: _initFeatureStats() は rest bundle にあり defer で未定義のため
+  //   インラインリテラルに置換。critical を rest 非依存にする最重要修正。
+  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
+})();
+```
+
+`commit 55a3046` で 1 行の置換で全症状解消。21/21 テスト全 PASS。
+
+### 副次的に入った堅牢化
+- `sw.js:install` を skipWaiting() 先行 + 個別 put fallback で**1 アセット失敗時の永久停止を回避**
+- `navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'})` で sw.js の HTTP cache を無効化
+- `<script src="...?v=N" defer>` で HTTP cache bypass（`?v=N` は VERSION と同期して bump）
+- `controllerchange` で 1 回限りの自動 reload（`_swReloadDone` フラグで loop 防止）
+- prerender カードと `renderStadiums()` 出力カード両方に `onclick + role="button" + tabindex="0"`（防御の二重化）
+- delegation handler は bubble (#stadiumList) + capture (document) 二重 attach、`e._delegationHandled` で 2 重実行防止
+
+### 学んだこと
+- iOS standalone PWA の DevTools 不可環境では**画面上で読める診断 UI** が決定的に重要
+- `window.onerror` 設定**前**に発生する例外は完全に silent。critical bundle の冒頭は **絶対に rest 依存させない**こと
+- code splitting で関数を rest 側に移動するときは、**critical 側の top-level 即時実行コード**から呼ばれていないか必ず DFS で検証する必要
+- inline onclick (HTML 属性) は parser bind なので script halt しても生きる、これが misleading な症状を生む
+
+### 関連 commit
+- 9a7021c〜21aa350: 多数の対症療法（多くは妥当な堅牢化）
+- bac8d6e: 診断オーバーレイに SW STATE / NET PROBES / LS PROBE / IN-MEMORY TRACE を一括追加
+- 6bb7018: setupDelegation / openStadium に in-memory trace 埋込み（真因特定の決定打）
+- **55a3046: 真因確定 — `_initFeatureStats` のインライン化** ⭐
