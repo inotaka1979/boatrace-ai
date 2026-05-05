@@ -1679,7 +1679,10 @@ function renderStadiums(){
       else nextRaceInfo='終了';
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
-      html += '<div class="stadium-card active-stadium" data-sid="'+sid+'">'
+      // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
+      //   inline onclick + role="button" + tabindex="0" を必ず付ける
+      html += '<div class="stadium-card active-stadium" data-sid="'+sid+'" '
+        +'role="button" tabindex="0" onclick="openStadium(\''+sid+'\')">'
         +'<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
         +'<span class="stadium-name">'+name+'</span>'
         +'<span class="stadium-status">'+doneCount+'/'+totalRaces+'R</span>'
