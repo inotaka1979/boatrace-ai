@@ -446,11 +446,15 @@ var COURSE_LOG_PRIOR = [
 //   ENABLE_ZSCORE が true で初めて適用される（既存重みとの整合性のため既定 OFF）
 var FEATURE_DIM = 12;
 /* MOVED: function _initFeatureStats */
+// PI-fix CRITICAL: _initFeatureStats は app-rest.js にあり defer の実行順で
+//   critical 実行時には未定義。fresh ユーザで _bootParseLS が null を返すと
+//   ReferenceError → window.onerror 未設定区間なので silent halt。
+//   インライン初期化で critical を rest 非依存にする（最重要修正）。
 var _featureStats = (function(){
   var raw = _bootParseLS('boatrace_featurestats', null);
   if(raw && Array.isArray(raw.mean) && raw.mean.length===FEATURE_DIM
         && Array.isArray(raw.m2) && typeof raw.n==='number'){ return raw; }
-  return _initFeatureStats();
+  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 })();
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
@@ -1941,12 +1945,23 @@ function openStadium(sid){
   currentStadium=sid;
   var name=STADIUMS[parseInt(sid)]||('場'+sid);
   var stadium=programData[sid];
+  trace('openStadium: stadium='+(stadium?'has data ('+Object.keys(stadium).length+' races)':'NULL/undefined'));
   if(!stadium){
+    trace('openStadium: NO DATA path → showPage(races)');
     document.getElementById('racesTitle').textContent=name;
     document.getElementById('racesList').innerHTML='<div class="card">データがありません</div>';
-    showPage('races');
+    var beforePages = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
+    trace('openStadium: before showPage activePages='+JSON.stringify(beforePages));
+    try {
+      showPage('races');
+      var afterPages = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
+      trace('openStadium: after showPage activePages='+JSON.stringify(afterPages));
+    } catch(err) {
+      trace('openStadium: showPage THREW '+(err && err.message));
+    }
     return;
   }
+  trace('openStadium: HAS DATA path, building race table');
 
   var firstRace=stadium[Object.keys(stadium)[0]];
   var gradeNum=firstRace?firstRace.race_grade_number||5:5;
@@ -2035,7 +2050,16 @@ function openStadium(sid){
   document.getElementById('racesList').innerHTML=html;
   document.getElementById('raceSummary').innerHTML='';
 
-  showPage('races');
+  trace('openStadium: race table built, calling showPage(races)');
+  var beforePages2 = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
+  trace('openStadium: before showPage activePages='+JSON.stringify(beforePages2));
+  try {
+    showPage('races');
+    var afterPages2 = Array.prototype.filter.call(document.querySelectorAll('.page'), function(p){return p.classList.contains('active')}).map(function(p){return p.id});
+    trace('openStadium: after showPage activePages='+JSON.stringify(afterPages2));
+  } catch(err) {
+    trace('openStadium: showPage THREW '+(err && err.message));
+  }
 }
 
 function showUpdateToast(onUpdate){
