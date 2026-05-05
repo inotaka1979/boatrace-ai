@@ -130,7 +130,13 @@ function _blendCommunityWeights(){
     .then(function(cw){
       if(!cw || !Array.isArray(cw.weights) || cw.weights.length !== L2_INIT_WEIGHTS.length) return;
       _communityWeightsCache = cw;
-      // 旧挙動: global weight を local と blend（後方互換）
+      // Epic 28d: placeholder (cw.n === 0 または _meta.placeholder=true) は blend skip。
+      //   ユーザの local 学習結果 (n=390 等) を INIT_WEIGHTS と混ぜると劣化するため。
+      //   compute_community_weights.py が cron で実重みを生成したら blend 開始。
+      if((cw._meta && cw._meta.placeholder === true) || !cw.n || cw.n === 0){
+        console.log('[community] placeholder detected (n='+cw.n+'), skip blend (cache only)');
+        return;
+      }
       var n = l2trainStep || 0;
       var alpha = (n < 100) ? 0.7 : 0.3;
       var blended = new Array(L2_INIT_WEIGHTS.length);
@@ -150,6 +156,8 @@ function _blendCommunityWeights(){
 function _hierarchicalWeights(sid){
   var cw = _communityWeightsCache;
   if(!cw || !Array.isArray(cw.weights)) return l2weights;
+  // Epic 28d: placeholder は階層 blend からも除外
+  if((cw._meta && cw._meta.placeholder === true) || !cw.n || cw.n === 0) return l2weights;
   var stad = (cw.stadium_weights || {})[String(sid)];
   if(!Array.isArray(stad) || stad.length !== L2_INIT_WEIGHTS.length){
     return l2weights;  // stadium 未学習 → 既存 blend を維持
@@ -1670,7 +1678,20 @@ function _getAppWorker(){
       }
     });
     _appWorker.addEventListener('error', function(e){
-      console.warn('[PG-3] worker error', e);
+      // Epic 28d: ErrorEvent から詳細を取り出して reportError に流す
+      var detail = {
+        type: 'worker_error',
+        msg: (e && e.message) || 'unknown',
+        filename: (e && e.filename) || '',
+        line: (e && e.lineno) || 0,
+        col: (e && e.colno) || 0,
+      };
+      console.warn('[PG-3] worker error', detail.msg, '@', detail.filename + ':' + detail.line + ':' + detail.col);
+      try { reportError(detail); } catch(_){}
+    });
+    _appWorker.addEventListener('messageerror', function(e){
+      console.warn('[PG-3] worker messageerror (structured-clone failed)', e);
+      try { reportError({ type:'worker_messageerror', msg:'structured clone failed' }); } catch(_){}
     });
     return _appWorker;
   } catch(e) {
