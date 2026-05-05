@@ -285,6 +285,45 @@ function motorTrendWarning(rid, sid){
   return null;
 }
 
+function _renderPairwiseSummary(boats){
+  if(!Array.isArray(boats) || boats.length < 2) return '';
+  if(typeof pairwiseDB === 'undefined' || !pairwiseDB) return '';
+  var insights = [];
+  for(var i=0;i<boats.length;i++){
+    for(var j=i+1;j<boats.length;j++){
+      var a = boats[i], b = boats[j];
+      var ridA = a.racer_number||0, ridB = b.racer_number||0;
+      if(!ridA || !ridB) continue;
+      var key = (ridA < ridB) ? ridA+'-'+ridB : ridB+'-'+ridA;
+      var rec = pairwiseDB[key];
+      if(!rec || rec.races < 5) continue;
+      var aWins = rec.head2head[String(ridA)] || 0;
+      var bWins = rec.head2head[String(ridB)] || 0;
+      var diff = (aWins - bWins) / rec.races;
+      if(Math.abs(diff) >= 0.20){
+        insights.push({
+          aBoat: a.racer_boat_number, bBoat: b.racer_boat_number,
+          aWins: aWins, bWins: bWins, races: rec.races,
+          advantage: diff > 0 ? a.racer_boat_number : b.racer_boat_number,
+          absDiff: Math.abs(diff)
+        });
+      }
+    }
+  }
+  if(insights.length === 0) return '';
+  insights.sort(function(x,y){ return y.absDiff - x.absDiff; });
+  var top = insights.slice(0, 3);
+  var html = '<div style="margin-top:10px;padding:8px;background:#F3F8FF;border-left:3px solid var(--accent);border-radius:4px;font-size:11px">'
+    + '<div style="font-weight:700;margin-bottom:4px">🤝 過去対戦データ (TOP'+top.length+')</div>';
+  top.forEach(function(it){
+    html += '<div>'+it.aBoat+'号艇 vs '+it.bBoat+'号艇: '
+      + it.aWins+'勝'+it.bWins+'敗 ('+it.races+'戦) '
+      + '<span style="color:var(--success);font-weight:700">→ '+it.advantage+'号艇有利</span></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 function pairwiseScore(rid, sid, opponentRids){
   if(!rid || !opponentRids || opponentRids.length === 0) return { score: 0, hits: 0 };
   if(!pairwiseDB) return { score: 0, hits: 0 };
@@ -932,7 +971,7 @@ function _classCourseMult(classNum, course){
   return CLASS_COURSE_MULT[k-1][c-1];
 }
 
-function _computeRaceScenario(allBoats, allPreviews){
+function _computeRaceScenario(allBoats, allPreviews, sid, raceHour){
   if(!Array.isArray(allBoats)) return null;
   var attackProbs = [0,0,0,0,0,0,0]; // index 1..6
   for(var c=2;c<=6;c++){
@@ -951,6 +990,27 @@ function _computeRaceScenario(allBoats, allPreviews){
     if(threat < 0.02) threat = 0.02;
     if(threat > 0.55) threat = 0.55;
     attackProbs[c] = threat;
+  }
+  // P1-A5: 潮汐×まくり相互作用（プロ B-02）。
+  //   既存 TIDE_COURSE_BIAS は score 加算（コース別係数）と独立し、attack_probs を
+  //   乗算で調整。満潮は流れが内側強で外側まくりが届きにくく、干潮で逆。
+  //   1コース有利／不利の方向は TIDE_COURSE_BIAS が既定（場別キャリブレーション済）、
+  //   ここは「外側 4-6 のまくり成功率」だけを補正することで二重カウントを避ける。
+  if(sid != null && raceHour != null && typeof tideData !== 'undefined' && tideData && tideData.stadiums){
+    var tideEntry = tideData.stadiums[String(sid)];
+    if(tideEntry && typeof classifyTidePhase === 'function'){
+      var phase = classifyTidePhase(tideEntry, raceHour);
+      // 4-6 外側まくり攻撃の成功率調整（最大 ±15%）
+      var outsideMakuriFactor = (phase==='high') ? 0.85
+                              : (phase==='low')  ? 1.15 : 1.0;
+      if(outsideMakuriFactor !== 1.0){
+        for(var k=4;k<=6;k++){
+          attackProbs[k] *= outsideMakuriFactor;
+          if(attackProbs[k] < 0.02) attackProbs[k] = 0.02;
+          if(attackProbs[k] > 0.55) attackProbs[k] = 0.55;
+        }
+      }
+    }
   }
   var nigeSuccess = 1;
   for(var i=2;i<=6;i++) nigeSuccess *= (1 - attackProbs[i]);
@@ -1010,9 +1070,22 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
   }
   score+=coursePt;
 
-  // P0-2: 1コースのみ「レース全体の逃げ成功確率」を log_odds 換算で加算
+  // P0-2 + P1-A5: 1コースのみ「レース全体の逃げ成功確率」を log_odds 換算で加算。
+  //   sid と raceHour（programData 経由で取得試行）を渡し、潮汐補正も活かす。
   if(course === 1 && allBoats){
-    var sc = _computeRaceScenario(allBoats, allPreviews);
+    var _rh = null;
+    try {
+      if(typeof programData !== 'undefined' && programData && programData[String(sid)]){
+        var _races = programData[String(sid)];
+        var _firstKey = Object.keys(_races)[0];
+        var _ca = _firstKey ? (_races[_firstKey].race_closed_at || '') : '';
+        if(_ca){
+          var _hh = _ca.split(' ')[1] || '';
+          if(_hh) _rh = parseInt(_hh.split(':')[0], 10);
+        }
+      }
+    } catch(_){}
+    var sc = _computeRaceScenario(allBoats, allPreviews, sid, _rh);
     if(sc && Number.isFinite(sc.nigeSuccess)){
       var lodd = Math.log(sc.nigeSuccess/(1-sc.nigeSuccess));
       score += lodd * 4;
@@ -2596,6 +2669,33 @@ function racerBadges(boat,form,divergence){
   return badges.join('');
 }
 
+function _loadWatched(){
+  try { return safeParse(_WATCHED_KEY, []); } catch(_) { return []; }
+}
+
+function _isRaceWatched(sid, rn){
+  var arr = _loadWatched();
+  return arr.some(function(w){ return String(w.sid)===String(sid) && String(w.race)===String(rn); });
+}
+
+function _toggleRaceWatched(sid, rn){
+  var arr = _loadWatched();
+  var idx = arr.findIndex(function(w){ return String(w.sid)===String(sid) && String(w.race)===String(rn); });
+  if(idx >= 0){
+    arr.splice(idx, 1);
+  } else {
+    arr.push({ sid: String(sid), race: String(rn), ts: Date.now() });
+    if(arr.length > _WATCHED_MAX) arr = arr.slice(-_WATCHED_MAX);
+  }
+  try { safeSet(_WATCHED_KEY, arr); } catch(_){}
+  // ボタン表示更新
+  var btn = document.getElementById('raceStarBtn');
+  if(btn){
+    var nowOn = !( idx >= 0 );
+    btn.textContent = nowOn ? '⭐' : '☆';
+  }
+}
+
 function _showDetailTab(name){
   if(!name) name = 'lineup';
   var btns = document.querySelectorAll('.detail-tab-btn');
@@ -2655,7 +2755,13 @@ function openRace(sid,rn){
   var closedAt=race?race.race_closed_at||'':'';
   var closedTime=closedAt?closedAt.split(' ')[1]||'':'';
   if(closedTime) closedTime=closedTime.slice(0,5);
-  document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'');
+  // P2-2: お気に入り（⭐）状態をタイトル横に表示し、トグル可能に
+  var _watched = (typeof _isRaceWatched === 'function') ? _isRaceWatched(sid, rn) : false;
+  var _starHtml = '<button id="raceStarBtn" aria-label="お気に入り切替" '
+    + 'style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" '
+    + 'onclick="_toggleRaceWatched(\''+sid+'\',\''+rn+'\')">'
+    + (_watched ? '⭐' : '☆') + '</button>';
+  document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'')+_starHtml;
   document.getElementById('detailBack').onclick=function(){openStadium(sid)};
   // P0-4: 詳細画面を開く度にデフォルトタブ（出走表）にリセット
   if(typeof _showDetailTab === 'function') _showDetailTab('lineup');
@@ -3199,6 +3305,11 @@ function openRace(sid,rn){
     }
     predHtml+='</div>';
   }
+  // P2-3: pairwise matchup 表示（pairwiseDB に十分なデータがある対戦のみ TOP3）
+  if(typeof _renderPairwiseSummary === 'function' && race && race.boats){
+    var pwHtml = _renderPairwiseSummary(race.boats);
+    if(pwHtml) predHtml += pwHtml;
+  }
   document.getElementById('detailPrediction').innerHTML=predHtml;
 
   // ==========================================
@@ -3412,6 +3523,21 @@ function _rateColor(rate){
 function renderStats(){
   // PF-3: 成績タブ open 時に backfill を即時実行（lazy 起動）
   if(typeof _runLazyBackfillOnce === 'function') _runLazyBackfillOnce('stats tab opened');
+  // 設計者A P1: history 未 load 中は skeleton placeholder を出して「読込中…」放置を防ぐ
+  //   resultData が空 = まだ Phase 2 lazy load 完了前と推定
+  if(!resultData || (Array.isArray(resultData) && resultData.length === 0)
+      || (typeof resultData === 'object' && Object.keys(resultData).length === 0)){
+    var sumEl = document.getElementById('statSummary');
+    var recEl = document.getElementById('statRecovery');
+    var skel = '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">…</div><div class="stat-label">読込中</div></div>';
+    if(sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
+    if(recEl && !recEl.innerHTML.trim()){
+      var rows = '';
+      for(var i=0;i<3;i++) rows += '<tr><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td><td style="background:#f5f5f5">&nbsp;</td></tr>';
+      recEl.innerHTML = '<table style="width:100%"><tbody>'+rows+'</tbody></table>';
+    }
+    // 既存のフロー（calcTodayStats → 描画）にそのまま委ねる。result 0件でも 0件として描画される。
+  }
   var s=calcTodayStats();
 
   // ヘッダ: 本日サマリ

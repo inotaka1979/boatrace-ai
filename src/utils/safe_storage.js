@@ -41,13 +41,60 @@ const STORAGE_KEYS = Object.freeze({
 
 // L2_INIT_WEIGHTS は index.html の constants 部で定義済（global）。
 // _validateLS が weights schema 検証で参照する。
+// P1-Q4 (QA-B): nested 型検証ヘルパ — racerDB.courseStats.*.count 等が文字列でも素通り
+//   していた問題を防ぐ。サンプリング検査（全件は重いので先頭 50 件のみ）。
+function _isFiniteNum(v){ return typeof v === 'number' && Number.isFinite(v); }
+function _validateRacerDBSample(value) {
+  var ids = Object.keys(value);
+  var sample = ids.slice(0, 50);
+  for (var i = 0; i < sample.length; i++) {
+    var r = value[sample[i]];
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+    if (r.courseStats && typeof r.courseStats === 'object'){
+      for (var c in r.courseStats){
+        var cs = r.courseStats[c];
+        if (!cs || typeof cs !== 'object') return false;
+        if (cs.races != null && !_isFiniteNum(cs.races)) return false;
+        if (cs.win   != null && !_isFiniteNum(cs.win))   return false;
+      }
+    }
+    if (r.classNum != null && !_isFiniteNum(r.classNum)) return false;
+  }
+  return true;
+}
+function _validateStadiumDBSample(value) {
+  var sids = Object.keys(value).slice(0, 30);
+  for (var i = 0; i < sids.length; i++) {
+    var s = value[sids[i]];
+    if (!s || typeof s !== 'object') return false;
+    if (s.courseWinRate && typeof s.courseWinRate === 'object'){
+      for (var c in s.courseWinRate){
+        var cw = s.courseWinRate[c];
+        if (cw && typeof cw === 'object'){
+          if (cw.races != null && !_isFiniteNum(cw.races)) return false;
+          if (cw.win   != null && !_isFiniteNum(cw.win))   return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 function _validateLS(key, value) {
   if (value === null || value === undefined) return null;
   switch (key) {
     case 'boatrace_settings':
       return (typeof value === 'object' && !Array.isArray(value)) ? value : null;
     case 'boatrace_racerDB':
+      if (typeof value !== 'object' || Array.isArray(value)) return null;
+      if (Object.keys(value).length > 10000) return null;
+      if (!_validateRacerDBSample(value)) return null;
+      return value;
     case 'boatrace_stadiumDB':
+      if (typeof value !== 'object' || Array.isArray(value)) return null;
+      if (Object.keys(value).length > 10000) return null;
+      if (!_validateStadiumDBSample(value)) return null;
+      return value;
     case 'boatrace_motorStats':
     case 'boatrace_exhibitionStats':
     case 'boatrace_pairwiseDB':

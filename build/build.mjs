@@ -207,6 +207,27 @@ async function main() {
     process.exit(1);
   }
 
+  // Epic 10: inline onclick 計測（Phase 2 移行までに削減すべき箇所を可視化）
+  //   docs/CSP_MIGRATION_ROADMAP.md 参照
+  try {
+    const htmlForCsp = await readFile(indexPath, 'utf8');
+    const onclickCount = (htmlForCsp.match(/\sonclick=/g) || []).length;
+    // baseline = 静的 ~17 + prerender 開催場 24 = ~41 (Epic 10 計測時点)
+    // Phase 2 で削減し、最終的に 0 を目指す。
+    const ONCLICK_BASELINE = 50;
+    const tag = onclickCount <= ONCLICK_BASELINE ? '[csp OK]' : '[csp WARN]';
+    console.log(tag + ' index.html inline onclick = ' + onclickCount + ' (baseline ' + ONCLICK_BASELINE + ')');
+    if (onclickCount > ONCLICK_BASELINE){
+      console.warn('  → onclick が増えています。delegation 化を検討してください。');
+    }
+  } catch(_){}
+
+  // Epic 10: nonce 生成 scaffold (Phase 3 で activate)
+  //   今は使われない。CSP unsafe-inline 撤去時に index.html の <!-- CSP-NONCE-PLACEHOLDER -->
+  //   と <script> タグへ注入する想定。
+  //   const { randomBytes } = await import('node:crypto');
+  //   const nonce = randomBytes(16).toString('base64');
+
   // 3) Hash report
   console.log('');
   console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');

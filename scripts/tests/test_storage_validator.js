@@ -33,6 +33,10 @@ function extract(name, src){
 
 const code = [
   extract('L2_INIT_WEIGHTS', html),
+  // P1-Q4: nested 型検証ヘルパも合わせて抽出（_validateLS から呼ばれる）
+  extract('_isFiniteNum', html),
+  extract('_validateRacerDBSample', html),
+  extract('_validateStadiumDBSample', html),
   extract('_validateLS', html),
 ].join('\n');
 

@@ -1,0 +1,104 @@
+# P1-B3: データ retention ポリシー
+#
+# 目的: 各データソースの保持期間を一元管理し、容量予測 / 監視ダッシュボード /
+#       cleanup スクリプトのターゲットとして利用する。
+#
+# 現状（2026-05-05 時点）はあくまで「文書化された期待値」であり、強制 enforcement は
+# health_check.sh / cron_monitor.sh の各 cleanup ロジックで個別実装されている。
+# 将来的にこの YAML を読み取って scripts/cleanup_by_policy.py が一括実行する想定。
+
+# ----------------------------------------------------------------
+# サーバ側 (Raspberry Pi data/ 配下、cron スクレイプ出力)
+# ----------------------------------------------------------------
+server:
+  data/odds:
+    keep_days: 1            # 当日のみ。3 分間隔で上書き、過去日は不要
+    cleanup_strategy: overwrite_in_place
+
+  data/previews:
+    keep_days: 7            # 直前情報。後日の検証で参照する可能性あり
+    cleanup_strategy: rotate_daily
+
+  data/results:
+    keep_days: 30           # 結果。L2 学習や Platt 校正のソース
+    cleanup_strategy: rotate_daily
+
+  data/racedata:
+    keep_days: 30           # 出走表詳細
+    cleanup_strategy: rotate_daily
+
+  data/schedule:
+    keep_days: 90           # 開催スケジュール、長めに保持
+    cleanup_strategy: rotate_daily
+
+  data/tide:
+    keep_days: 90           # 潮汐データは月単位で計算可能、長めに保持
+    cleanup_strategy: rotate_daily
+
+  data/photos:
+    keep_days: 365          # 選手写真。容量小、長期保持で問題なし
+    cleanup_strategy: monthly_refresh
+
+  data/db:
+    keep_days: -1           # racerDB / stadiumDB は永続。月次で再構築のみ
+    cleanup_strategy: rebuild_monthly
+
+  logs/:
+    keep_days: 30           # cron / health_check ログ
+    cleanup_strategy: rotate_daily
+    enforced_by: scripts/cron_monitor.sh
+
+# ----------------------------------------------------------------
+# クライアント側 (localStorage、browser ごと)
+# ----------------------------------------------------------------
+client:
+  boatrace_history:
+    keep_days: 60           # 60 日超は自動削除（既存実装、index.html 参照）
+    soft_limit: 50000_entries
+    enforced_by: assets/app.js cleanOldData()
+
+  boatrace_racerDB:
+    keep_days: -1           # 永続。月初に再構築
+    soft_limit: 10000_keys
+    enforced_by: src/utils/safe_storage.js _validateLS()
+
+  boatrace_stadiumDB:
+    keep_days: -1
+    soft_limit: 10000_keys
+    enforced_by: src/utils/safe_storage.js _validateLS()
+
+  boatrace_weights:
+    keep_days: 30           # L2 学習重みは 30 日でリセット候補化
+    soft_limit: 12_features
+    enforced_by: src/utils/safe_storage.js _validateLS()
+
+  boatrace_platt:
+    keep_days: 30           # Platt 係数も 30 日で再校正
+    enforced_by: assets/app.js loadSettings() auto-refit
+
+  boatrace_errors:
+    keep_days: -1           # circular buffer 100 件、リング更新
+    soft_limit: 100_entries
+    enforced_by: src/utils/safe_storage.js reportError()
+
+# ----------------------------------------------------------------
+# アーカイブ（将来）
+# ----------------------------------------------------------------
+archive:
+  data/archive/YYYY/MM/:
+    keep_years: 3           # 月別アーカイブを 3 年保持
+    cleanup_strategy: tar_gz_to_github_releases   # 将来計画
+    enforced_by: NOT_YET_IMPLEMENTED
+
+# ----------------------------------------------------------------
+# 注意事項
+# ----------------------------------------------------------------
+notes:
+  - keep_days = -1 は無期限保持（明示的削除なし）
+  - keep_days < 0 はサポート外、エラー扱い
+  - cleanup_strategy:
+      rotate_daily       — 当日 ファイル名上書き、N 日前は手動削除
+      overwrite_in_place — ファイル名固定で上書き
+      rebuild_monthly    — 月次 cron で完全再構築
+      monthly_refresh    — 月初に差分のみ更新
+  - サーバ側の strict enforcement は未実装。本ファイルは設計上のターゲット定義。

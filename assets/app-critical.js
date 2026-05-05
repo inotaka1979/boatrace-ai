@@ -74,13 +74,59 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     NAV: "boatrace_nav"
     // P0-5: PWA 状態復元（sessionStorage 側）
   });
+  function _isFiniteNum(v) {
+    return typeof v === "number" && Number.isFinite(v);
+  }
+  function _validateRacerDBSample(value) {
+    var ids = Object.keys(value);
+    var sample = ids.slice(0, 50);
+    for (var i = 0; i < sample.length; i++) {
+      var r = value[sample[i]];
+      if (!r || typeof r !== "object" || Array.isArray(r)) return false;
+      if (r.courseStats && typeof r.courseStats === "object") {
+        for (var c in r.courseStats) {
+          var cs = r.courseStats[c];
+          if (!cs || typeof cs !== "object") return false;
+          if (cs.races != null && !_isFiniteNum(cs.races)) return false;
+          if (cs.win != null && !_isFiniteNum(cs.win)) return false;
+        }
+      }
+      if (r.classNum != null && !_isFiniteNum(r.classNum)) return false;
+    }
+    return true;
+  }
+  function _validateStadiumDBSample(value) {
+    var sids = Object.keys(value).slice(0, 30);
+    for (var i = 0; i < sids.length; i++) {
+      var s = value[sids[i]];
+      if (!s || typeof s !== "object") return false;
+      if (s.courseWinRate && typeof s.courseWinRate === "object") {
+        for (var c in s.courseWinRate) {
+          var cw = s.courseWinRate[c];
+          if (cw && typeof cw === "object") {
+            if (cw.races != null && !_isFiniteNum(cw.races)) return false;
+            if (cw.win != null && !_isFiniteNum(cw.win)) return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
   function _validateLS(key, value) {
     if (value === null || value === void 0) return null;
     switch (key) {
       case "boatrace_settings":
         return typeof value === "object" && !Array.isArray(value) ? value : null;
       case "boatrace_racerDB":
+        if (typeof value !== "object" || Array.isArray(value)) return null;
+        if (Object.keys(value).length > 1e4) return null;
+        if (!_validateRacerDBSample(value)) return null;
+        return value;
       case "boatrace_stadiumDB":
+        if (typeof value !== "object" || Array.isArray(value)) return null;
+        if (Object.keys(value).length > 1e4) return null;
+        if (!_validateStadiumDBSample(value)) return null;
+        return value;
       case "boatrace_motorStats":
       case "boatrace_exhibitionStats":
       case "boatrace_pairwiseDB":
@@ -748,6 +794,10 @@ var _apiHealth = { programs:'ok', previews:'ok', results:'ok', odds:'ok' };
 // R-13: モーター急変警告 — 現在 UI 未使用だがテスト (test_series_pairwise.js) でカバー済
 /* MOVED: function motorTrendWarning */
 
+// P2-3: pairwise matchup の人間可読サマリ（race detail で TOP3 表示）
+//   既存 pairwiseDB を活用。サンプル 5件以上、勝率差 20%以上の対戦のみ抽出。
+/* MOVED: function _renderPairwiseSummary */
+
 // R-09: 対戦相性スコア（他艇との pairwise 履歴）
 /* MOVED: function pairwiseScore */
 
@@ -1211,6 +1261,14 @@ var _backfillTimer = null;
 // ===============================================
 /* MOVED: function showPage */
 
+// P2-2: お気に入りレース管理（注目したいレースを localStorage に記録）
+//   key: boatrace_watched = [{sid, race, ts}]、上限 100 件のリングバッファ
+var _WATCHED_KEY = 'boatrace_watched';
+var _WATCHED_MAX = 100;
+/* MOVED: function _loadWatched */
+/* MOVED: function _isRaceWatched */
+/* MOVED: function _toggleRaceWatched */
+
 // P0-4: 詳細画面のタブ切替（lineup / ai / odds）
 /* MOVED: function _showDetailTab */
 
@@ -1350,8 +1408,19 @@ document.getElementById('headerDate').innerHTML=formatDate();
 setTimeout(function(){
   loadAllData().then(function(){
     if(typeof _renderFreshness==='function') _renderFreshness();
-    // P0-5: PWA 再起動時のページ復元（rest 関数 lazy load 後に発火）
-    if(typeof _restoreNavState === 'function') _restoreNavState();
+    // 設計者A P1: PWA shortcut URL routing — manifest.json の ?tab=stats 等に対応
+    //   優先順: URL ?tab=xxx > sessionStorage 復元 > top
+    var routed = false;
+    try {
+      var qs = new URLSearchParams(location.search || '');
+      var tab = qs.get('tab');
+      if(tab && /^(stats|settings|backtest)$/.test(tab) && typeof showPage === 'function'){
+        showPage(tab);
+        routed = true;
+      }
+    } catch(_){}
+    // P0-5: PWA 再起動時のページ復元（shortcut ルーティングが優先）
+    if(!routed && typeof _restoreNavState === 'function') _restoreNavState();
   });
 }, 100);
 
