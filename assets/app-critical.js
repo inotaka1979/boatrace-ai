@@ -568,13 +568,18 @@ var COURSE_LOG_PRIOR = [
 //   既定: mean=0, var=1 → z(x) ≈ x（identity）。学習が進むと真の z-score へ収束。
 //   ENABLE_ZSCORE が true で初めて適用される（既存重みとの整合性のため既定 OFF）
 var FEATURE_DIM = 12;
-/* MOVED: function _initFeatureStats */
+// PJ Phase 致命バグ修正 (commit 55a3046) と同等の対処を再適用 (Epic 12 で再発したため)。
+//   _initFeatureStats() は split_app.py により rest bundle 側へ MOVE されるため、
+//   critical bundle の boot 時点 (rest 未 load) では ReferenceError → silent halt する。
+//   よって critical の IIFE 内ではインラインリテラルで初期化する。
 var _featureStats = (function(){
   var raw = _bootParseLS('boatrace_featurestats', null);
   if(raw && Array.isArray(raw.mean) && raw.mean.length===FEATURE_DIM
         && Array.isArray(raw.m2) && typeof raw.n==='number'){ return raw; }
-  return _initFeatureStats();
+  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 })();
+// _initFeatureStats は rest 側 utility として後方互換のため残置（呼出元 0 件、安全）
+/* MOVED: function _initFeatureStats */
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
 //   将来 _refitPlattCoeffs(history) で auto-tune
@@ -702,8 +707,22 @@ var ACTION_HANDLERS = {
 /* MOVED: function _shareLearnedWeights */
 
 /* MOVED: function _setupActionDelegation */
-// 起動時に登録（_setupStadiumDelegation の隣で）
-try { _setupActionDelegation(); } catch(_){}
+// PJ Phase 致命バグ再発防止: split_app.py により _setupActionDelegation 等は rest bundle
+//   側に MOVE される → critical の boot 時点では未定義 → ReferenceError → silent halt。
+//   よって polling で typeof チェックしながら確実に rest load 完了後に呼ぶ。
+(function _bootRetry(){
+  var n = 0;
+  function tick(){
+    n++;
+    var ok = (typeof _setupActionDelegation === 'function');
+    if(ok){
+      try { _setupActionDelegation(); } catch(_){}
+      return;
+    }
+    if(n < 50) setTimeout(tick, 100); // 5 秒上限
+  }
+  tick();
+})();
 
 // Epic 19: font 等の async stylesheet の onload="this.media='all'" は CSP unsafe-inline
 //   依存。代替として data-csp-onload-media を見て JS で listener を attach する。
@@ -740,10 +759,11 @@ try {
 /* MOVED: function _toggleCOI */
 /* MOVED: function _refreshCOIStatus */
 /* MOVED: function _packStringToSAB */
-// 起動ログで COI 状態を可視化（デバッグ用）
+// 起動ログで COI 状態を可視化（デバッグ用、_isSABAvailable は rest 側のため typeof guard 必須）
 try {
+  var _sabOk = (typeof _isSABAvailable === 'function') ? _isSABAvailable() : false;
   console.log('[Epic18] crossOriginIsolated=' + (typeof window !== 'undefined' && window.crossOriginIsolated)
-    + ' SABAvailable=' + _isSABAvailable());
+    + ' SABAvailable=' + _sabOk);
 } catch(_){}
 
 // Epic 17 (P2-6) + Epic 21: 階層的 federated learning — global + per-stadium 重みを blend
@@ -757,7 +777,10 @@ var _communityWeightsCache = null;
 //                stadium ある & local n<100 なら (stadium 0.5, global 0.3, self 0.2)
 //                stadium 無し → 既存挙動（self / global blend）
 /* MOVED: function _hierarchicalWeights */
-try { setTimeout(_blendCommunityWeights, 5000); } catch(_){}
+// _blendCommunityWeights は rest bundle 側のため typeof guard 必須（さもなくば setTimeout(undefined) で silent fail）
+setTimeout(function(){
+  if(typeof _blendCommunityWeights === 'function'){ try { _blendCommunityWeights(); } catch(_){} }
+}, 5000);
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;

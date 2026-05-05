@@ -5,11 +5,7 @@
 'use strict';
 
 function _initFeatureStats(){
-  return {
-    mean: new Array(FEATURE_DIM).fill(0),
-    m2:   new Array(FEATURE_DIM).fill(0),   // Welford's M2 (sum of squared diffs)
-    n:    0
-  };
+  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 }
 
 function _shareLearnedWeights(){
