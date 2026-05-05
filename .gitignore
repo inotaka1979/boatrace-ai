@@ -12,3 +12,7 @@ dist/
 .venv/
 # build/ で実行時に作られる一時データ（cwd ずれによるスクレイプ出力等）
 build/data/
+# Epic 20: Playwright artifacts (baseline は __snapshots__/ に commit)
+build/playwright-report/
+build/test-results/
+test-results/

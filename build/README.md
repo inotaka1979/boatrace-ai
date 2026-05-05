@@ -84,3 +84,38 @@ src/
 - ビルド再生成の差分が出ないよう、esbuild の minify オプションは
   決定論的な設定（`legalComments:'none'`, `minifyIdentifiers:false`, etc.）
   にすることで `git diff --exit-code` を CI ガードにする
+
+## Epic 20: Visual Regression Testing (VRT)
+
+Playwright snapshot で 5 画面の見た目退行を CI で検出。
+
+### 初回セットアップ
+```bash
+cd build
+npm install
+npx playwright install chromium
+```
+
+### baseline 生成 (UI 変更時)
+```bash
+cd build
+npm run test:vrt:update
+git add ../tests/e2e/screens.vrt.spec.mjs-snapshots/*.png
+git commit -m "vrt: baseline update"
+```
+
+### 通常実行 (差分検証)
+```bash
+cd build
+npm run test:vrt
+# 差分があれば exit 1 + build/playwright-report/index.html に diff 画像
+```
+
+### CI 統合
+`.github/workflows/e2e.yml` で PR 毎自動実行、失敗時は report を artifact にアップロード。
+
+### baseline 管理方針
+- マスク領域: 動的データ部 (#headerDate, #dataFreshness, #dbInfo, #statSummary 等)
+- 固定値: Date.now() を 2026-05-05T12:00:00+09:00 に固定
+- animation/transition は CSS で全停止
+- 許容差分: maxDiffPixelRatio: 0.02 (フォントレンダ差異吸収)
