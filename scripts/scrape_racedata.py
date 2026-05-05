@@ -66,32 +66,38 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
         for i, tbody in enumerate(soup.select("tbody.is-fs12"), 1):
             if i > 6: break
             trs = tbody.find_all("tr", recursive=False)
-            # tr[1] = 進入コース、tr[3] = 着順（同じ td index で対応）
+            # tr[1] = 進入コース、tr[2] = ST、tr[3] = 着順（同じ td index で対応）
             tr1 = trs[1].find_all("td", recursive=False) if len(trs) >= 2 else []
+            tr2 = trs[2].find_all("td", recursive=False) if len(trs) >= 3 else []
             tr3 = trs[3].find_all("td", recursive=False) if len(trs) >= 4 else []
-            results: list[dict] = []
-            n = min(len(tr1), len(tr3))
+            # Macool 風: 14 cells (= 7 days × 2 slots) を全て保持、空セルは null。
+            # 当面 14 cells を保持し、フロントが日割りグルーピングを担当。
+            n = max(len(tr1), len(tr2), len(tr3))
+            results: list = []
             for j in range(n):
-                place_text = tr3[j].get_text(strip=True).translate(zen2han)
-                if not place_text or place_text == "\xa0":
+                ct = tr1[j].get_text(strip=True).translate(zen2han) if j < len(tr1) else ""
+                st = tr2[j].get_text(strip=True) if j < len(tr2) else ""
+                pt = tr3[j].get_text(strip=True).translate(zen2han) if j < len(tr3) else ""
+                if (not ct or ct == "\xa0") and (not st or st == "\xa0") and (not pt or pt == "\xa0"):
+                    results.append(None)
                     continue
+                place = None
                 try:
-                    place = int(place_text)
-                    if not (1 <= place <= 6):
-                        continue   # 7+ (失格/不完走) はスキップ
-                except ValueError:
-                    continue   # 漢字記号 (妨/失/転 等) はスキップ
-                course_text = tr1[j].get_text(strip=True).translate(zen2han)
-                course = None
-                try:
-                    c = int(course_text)
-                    if 1 <= c <= 6:
-                        course = c
+                    pv = int(pt)
+                    if 1 <= pv <= 6: place = pv
                 except ValueError:
                     pass
-                results.append({"course": course, "place": place})
+                course = None
+                try:
+                    cv = int(ct)
+                    if 1 <= cv <= 6: course = cv
+                except ValueError:
+                    pass
+                # ST は ".26" 等。先頭ピリオド付の文字列として保持
+                results.append({"course": course, "place": place, "st": st or None})
 
-            places = [r["place"] for r in results]
+            # サマリ計算は place のみ集計
+            places = [r["place"] for r in results if r and r.get("place")]
             avg = sum(places) / len(places) if places else 0
             wins = places.count(1)
             top2 = sum(1 for p in places if p <= 2)
@@ -99,9 +105,9 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
 
             boats.append({
                 "boat_number": i,
-                "current_series_results": results,   # [{course, place}, ...]
+                "current_series_results": results,   # [{course,place,st} | null, ...] (14 entries 想定)
                 "current_series_summary": {
-                    "races": len(results),
+                    "races": len(places),
                     "avg_place": round(avg, 2),
                     "win": wins,
                     "top2": top2,

@@ -50,8 +50,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=36" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=36" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=37" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=37" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -175,22 +175,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 .series-2{background:#2255FF;color:#fff}
 .series-3{background:#22CC44;color:#fff}
 .series-other{background:#E0E0E0;color:#999}
-/* F16: 今節着順セル — 進入コース色で背景、初日/2/3...日目ラベル */
-.series-td{padding:2px !important}
-.series-row{display:flex;flex-wrap:wrap;gap:2px;justify-content:center}
-.series-cell{display:inline-flex;flex-direction:column;align-items:center;width:22px;border-radius:3px;border:1px solid rgba(0,0,0,0.15);padding:1px 0;line-height:1.1}
-.series-day{font-size:8px;font-weight:600;opacity:0.85;letter-spacing:-0.5px}
-.series-place{font-size:11px;font-weight:700;line-height:1.1}
-/* 進入コース色 (boat color と同一スキーム) */
-.series-cell.course1{background:#FFFFFF;color:#222;border-color:#999}
-.series-cell.course2{background:#222222;color:#FFF;border-color:#000}
-.series-cell.course3{background:#E53935;color:#FFF;border-color:#B71C1C}
-.series-cell.course4{background:#1E88E5;color:#FFF;border-color:#0D47A1}
-.series-cell.course5{background:#FDD835;color:#222;border-color:#F9A825}
-.series-cell.course6{background:#43A047;color:#FFF;border-color:#1B5E20}
-.series-cell.course-na{background:#F5F5F5;color:#999}
-/* 着順による文字強調 (1着のみ太字下線) */
-.series-cell .series-place.p-1{text-decoration:underline;text-underline-offset:1px;font-weight:800}
+/* F16: Macool 風 今節成績セル — 上に進入コース番号(色)、下に漢字着順 + ST */
+.series-mc{padding:1px 2px;line-height:1.15;text-align:center;border:1px solid #E0E0E0;min-width:30px;white-space:nowrap}
+.series-mc.empty{background:#FAFAFA}
+/* 着順別 背景色 (淡い) */
+.series-mc.pl1{background:#FFE0E6}
+.series-mc.pl2{background:#FFF7CC}
+.series-mc.pl3{background:#E0F5E0}
+.series-mc.plOther{background:#FFFFFF}
+/* 進入コース番号 (上段、色付き太字) */
+.series-mc .course-num{display:block;font-size:11px;font-weight:700;line-height:1.1}
+.series-mc .course-num.c1{color:#1565C0}      /* 1コース 青系 */
+.series-mc .course-num.c2{color:#D32F2F}      /* 2コース 赤系 */
+.series-mc .course-num.c3{color:#F57C00}      /* 3コース 橙 */
+.series-mc .course-num.c4{color:#1E88E5}      /* 4コース 青 */
+.series-mc .course-num.c5{color:#6A1B9A}      /* 5コース 紫 */
+.series-mc .course-num.c6{color:#43A047}      /* 6コース 緑 */
+.series-mc .course-num.c0{color:#999}
+/* 着順 + ST (下段) */
+.series-mc .series-place-row{display:block;font-size:10px;color:#333;line-height:1.1}
+.series-mc .series-st{font-size:9px;color:#666;margin-left:1px}
+/* 日ラベル右側 TH */
+.series-day-th{font-size:9px;color:#555;background:#F0F0F0;writing-mode:vertical-rl;padding:2px 1px}
 .hl-pink{background:#FCE4EC}
 .hl-rank1{background:#FFCDD2}
 .hl-rank2{background:#BBDEFB}
@@ -550,7 +556,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=36" defer></script>
-<script src="assets/app-rest.min.js?v=36" defer></script>
+<script src="assets/app-critical.min.js?v=37" defer></script>
+<script src="assets/app-rest.min.js?v=37" defer></script>
 </body>
 </html>

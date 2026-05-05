@@ -3711,27 +3711,26 @@ function getRaceDataForRace(sid,rn){
   return raceData.racedata.find(function(r){return r.stadium===parseInt(sid)&&r.race===parseInt(rn)})||null;
 }
 
+// F16: Macool 風セルレンダリング。1 セル = TD 1 つ。
+function renderSeriesCell(entry){
+  if(!entry) return '<td class="series-mc empty"></td>';
+  var KANJI = ['','一','二','三','四','五','六'];
+  var place, course, st;
+  if(typeof entry === 'object'){
+    place = entry.place; course = entry.course; st = entry.st || '';
+  } else {
+    place = entry; course = null; st = '';
+  }
+  var placeKanji = (place && place >= 1 && place <= 6) ? KANJI[place] : (place || '');
+  var bgCls = place===1?'pl1':place===2?'pl2':place===3?'pl3':place?'plOther':'';
+  var courseHtml = course ? '<span class="course-num c'+course+'">'+course+'</span>' : '<span class="course-num c0">-</span>';
+  var stHtml = st ? '<span class="series-st">'+st+'</span>' : '';
+  return '<td class="series-mc '+bgCls+'">'+courseHtml+'<span class="series-place-row">'+placeKanji+stHtml+'</span></td>';
+}
+
 function renderSeriesNums(results){
   if(!results||!results.length) return'';
-  // F16: 新形式 [{course, place}, ...] / 旧形式 [2,5,5,...] 両対応
-  //   日付ラベル: 初日 / 2 / 3 / 4 / ... 最終日
-  //   セル背景色: 進入コース (1-6) で分け、無ければグレー
-  var lastIdx = results.length - 1;
-  return '<div class="series-row">' + results.map(function(r, idx){
-    var place, course;
-    if(typeof r === 'object' && r !== null){
-      place = r.place; course = r.course;
-    } else {
-      place = r; course = null;
-    }
-    var label = (idx === 0) ? '初日' : (idx === lastIdx && results.length >= 4) ? '最終' : String(idx + 1);
-    var courseCls = course ? 'course'+course : 'course-na';
-    var placeCls = place===1?'p-1':place===2?'p-2':place===3?'p-3':'p-other';
-    return '<div class="series-cell '+courseCls+'">'
-         + '<span class="series-day">'+label+'</span>'
-         + '<span class="series-place '+placeCls+'">'+place+'</span>'
-         + '</div>';
-  }).join('') + '</div>';
+  return results.map(function(r){ return renderSeriesCell(r); }).join('');
 }
 
 // PF-6: partsHtml は未使用（旧 race detail の名残）→ 削除
@@ -4262,21 +4261,39 @@ function openRace(sid,rn){
     }
     boatsHtml+='<th>F/L</th></tr>';
 
-    // F16: 今節着順のみ表示（旧 Row 14 サマリーは撤廃、進入コース色 + 日付ラベル）
+    // F16: 今節成績 (Macool 風) — 14 cells (= 7 days × 2 slots) を縦並べ
     if(rdForRace&&rdForRace.boats){
-      boatsHtml+='<tr>';
+      var boatsSeries = [];
+      var maxNonNull = 0;
       for(var bn=1;bn<=6;bn++){
         var bt=boatMap[bn];
         var rid=bt?bt.racer_number||0:0;
         var rdBoat=rdForRace.boats?rdForRace.boats.find(function(rb){return rb.boat_number===bn||rb.racer_number===rid}):null;
-        var seriesArr = rdBoat ? (rdBoat.current_series_results || rdBoat.current_series || []) : [];
-        if(seriesArr.length>0){
-          boatsHtml+='<td class="series-td">'+renderSeriesNums(seriesArr)+'</td>';
-        } else {
-          boatsHtml+='<td style="color:#CCC">-</td>';
+        var arr = rdBoat ? (rdBoat.current_series_results || []) : [];
+        boatsSeries.push(arr);
+        for(var i=0;i<arr.length;i++){
+          if(arr[i] != null && i+1 > maxNonNull) maxNonNull = i+1;
         }
       }
-      boatsHtml+='<th>今節着順</th></tr>';
+      if(maxNonNull > 0){
+        var pairs = Math.ceil(maxNonNull / 2);
+        var DAY_LABELS = ['初日','2日目','3日目','4日目','5日目','準優','最終'];
+        for(var p=0; p<pairs; p++){
+          for(var slot=0; slot<2; slot++){
+            var idx = p*2 + slot;
+            if(idx >= maxNonNull) break;
+            boatsHtml+='<tr>';
+            for(var bi=0; bi<6; bi++){
+              boatsHtml += renderSeriesCell(boatsSeries[bi][idx]);
+            }
+            if(slot === 0){
+              var rs = (idx+1 < maxNonNull) ? 2 : 1;
+              boatsHtml += '<th rowspan="'+rs+'" class="series-day-th">'+(DAY_LABELS[p]||(p+1)+'日目')+'</th>';
+            }
+            boatsHtml += '</tr>';
+          }
+        }
+      }
     }
 
     boatsHtml+='</table></div>';
