@@ -50,8 +50,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=39" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=39" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=40" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=40" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -178,14 +178,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 /* F16: Macool 風 今節成績セル — 背景=枠番色 / 上=着順 / 下=進入コース(漢)+ST */
 .series-mc{padding:1px 2px;line-height:1.15;text-align:center;border:1px solid #BDBDBD;min-width:30px;white-space:nowrap}
 .series-mc.empty{background:#FAFAFA;border-color:#E0E0E0}
-/* 枠番色 背景 (薄め) + 文字は基本黒 (コントラスト確保) */
+/* 枠番色 背景 (極薄) + 文字は黒 */
 .series-mc.wk1{background:#FFFFFF;color:#222}
-.series-mc.wk2{background:#E0E0E0;color:#222}
-.series-mc.wk3{background:#FFCDD2;color:#222}
-.series-mc.wk4{background:#BBDEFB;color:#222}
-.series-mc.wk5{background:#FFF59D;color:#222}
-.series-mc.wk6{background:#C8E6C9;color:#222}
-.series-mc.wkNa{background:#F5F5F5;color:#999}
+.series-mc.wk2{background:#F5F5F5;color:#222}
+.series-mc.wk3{background:#FFEBEE;color:#222}
+.series-mc.wk4{background:#E3F2FD;color:#222}
+.series-mc.wk5{background:#FFF9C4;color:#222}
+.series-mc.wk6{background:#E8F5E9;color:#222}
+.series-mc.wkNa{background:#FAFAFA;color:#999}
 /* 上段: 着順 (アラビア) */
 .series-mc .series-top{display:block;font-size:13px;font-weight:800;line-height:1.1}
 /* 下段: 進入コース (漢数字) + ST */
@@ -552,7 +552,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=39" defer></script>
-<script src="assets/app-rest.min.js?v=39" defer></script>
+<script src="assets/app-critical.min.js?v=40" defer></script>
+<script src="assets/app-rest.min.js?v=40" defer></script>
 </body>
 </html>
