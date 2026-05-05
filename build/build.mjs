@@ -245,6 +245,64 @@ async function main() {
   //   const { randomBytes } = await import('node:crypto');
   //   const nonce = randomBytes(16).toString('base64');
 
+  // Epic 27: critical bundle が rest 関数を typeof guard なしで呼んでいないかを lint
+  //   PJ Phase / Epic 26 後の致命バグ (commit 05f4a2c) と同種の事故を build 時に防ぐ。
+  //   検出条件:
+  //     1) /* MOVED: function xxx */ で rest へ移譲された関数 xxx を取得
+  //     2) critical の top-level (= 行頭が空白で始まらない) で `xxx(...)` を直接呼出
+  //     3) ただし以下は OK:
+  //        - 同行に typeof xxx (guard あり)
+  //        - 同行に setTimeout / setInterval (deferred 実行)
+  //        - 関数定義行 (function ...) や var/let/const 宣言行
+  //        - コメント行
+  try {
+    const criticalSrcLint = await readFile(criticalSrc, 'utf8').catch(()=>null);
+    if (criticalSrcLint){
+      // MOVED コメントで rest 移譲されたものを取得
+      const moved = new Set();
+      for (const m of criticalSrcLint.matchAll(/\/\* MOVED: function (\w+) \*\//g)) moved.add(m[1]);
+      // ただし critical 内に function 定義もある場合 (重複定義) は除外
+      //   split_app.py が anchor 判定で両方に出力するケースがある (例: _runIdleTask)
+      const definedInCritical = new Set();
+      for (const m of criticalSrcLint.matchAll(/^(?:async\s+)?function\s+(\w+)\s*\(/gm)) {
+        definedInCritical.add(m[1]);
+      }
+      const trulyMoved = new Set([...moved].filter(fn => !definedInCritical.has(fn)));
+
+      const violations = [];
+      const linesL = criticalSrcLint.split('\n');
+      for (let i = 0; i < linesL.length; i++){
+        const line = linesL[i];
+        // top-level statement のみ (行頭非空白)
+        if (line.length === 0 || /^\s/.test(line)) continue;
+        // 関数定義 / 変数宣言 / コメントは除外（async function も含む）
+        if (/^(async\s+)?function\s|^var\s|^let\s|^const\s|^class\s/.test(line)) continue;
+        if (/^\/\/|^\/\*|^\*/.test(line)) continue;
+        for (const fn of trulyMoved){
+          const re = new RegExp(`\\b${fn}\\s*\\(`);
+          if (!re.test(line)) continue;
+          if (line.includes(`typeof ${fn}`)) continue;        // guard あり OK
+          if (/\bsetTimeout\b|\bsetInterval\b/.test(line)) continue; // deferred OK
+          if (/\bif\s*\(\s*typeof\b/.test(line)) continue;     // typeof if guard 同様
+          violations.push({ line: i + 1, fn, src: line.trim().slice(0, 140) });
+        }
+      }
+      const lintTag = violations.length === 0 ? '[lint OK]' : '[lint FAIL]';
+      console.log(lintTag + ' critical→rest 直接呼出 = ' + violations.length + ' (Epic 27 / PJ Phase 致命バグ防止)');
+      if (violations.length > 0){
+        console.error('  以下の箇所で rest 関数を typeof guard なしに呼んでいます:');
+        for (const v of violations){
+          console.error('    L' + v.line + ' [' + v.fn + ']: ' + v.src);
+        }
+        console.error('  対処: typeof xxx === "function" の guard、または setTimeout / polling でラップしてください。');
+        if (CHECK_MODE){
+          console.error('[lint] critical→rest violation found — failing CI');
+          process.exit(1);
+        }
+      }
+    }
+  } catch(_){}
+
   // 3) Hash report
   console.log('');
   console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');

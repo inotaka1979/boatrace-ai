@@ -58,6 +58,22 @@ script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
 
 毎 PR で `grep -c 'onclick=' index.html` の数を CI が比較し、増えていたら warn。
 
+## Epic 27: build lint で critical→rest 直接呼出を防ぐ
+
+PJ Phase / Epic 26 後に同種の致命バグが 4 回再発したため、build.mjs に lint を導入。
+
+検出ロジック:
+1. `/* MOVED: function xxx */` で rest 移譲された関数一覧を取得
+2. ただし critical 内に function 定義 (重複) がある関数は除外
+3. critical の top-level (行頭非空白) で `xxx(...)` の呼出を検索
+4. 同行に `typeof xxx` (guard) や `setTimeout`/`setInterval` (deferred) がある場合は OK
+5. それ以外は `[lint FAIL]`、CHECK_MODE 時は exit 1
+
+対処:
+- `if (typeof xxx === 'function') xxx()` でガード
+- または `setTimeout(function(){ if(typeof xxx === 'function') xxx(); }, 100)` で deferred 実行
+- 確実な方法は polling: `var n=0;function tick(){if(typeof xxx==='function'){xxx();return}if(n++<50)setTimeout(tick,100)}tick();`
+
 ## 参考
 
 - [MDN: CSP script-src](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src)
