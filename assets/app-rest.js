@@ -2414,10 +2414,25 @@ function getRaceDataForRace(sid,rn){
 
 function renderSeriesNums(results){
   if(!results||!results.length) return'';
-  return results.map(function(r){
-    var cls=r===1?'series-1':r===2?'series-2':r===3?'series-3':'series-other';
-    return'<span class="series-num '+cls+'">'+r+'</span>';
-  }).join('');
+  // F16: 新形式 [{course, place}, ...] / 旧形式 [2,5,5,...] 両対応
+  //   日付ラベル: 初日 / 2 / 3 / 4 / ... 最終日想定
+  //   セル背景色: 進入コース (1-6) で分け、無ければグレー
+  var lastIdx = results.length - 1;
+  return '<div class="series-row">' + results.map(function(r, idx){
+    var place, course;
+    if(typeof r === 'object' && r !== null){
+      place = r.place; course = r.course;
+    } else {
+      place = r; course = null;
+    }
+    var label = (idx === 0) ? '初日' : (idx === lastIdx && results.length >= 4) ? '最終' : String(idx + 1);
+    var courseCls = course ? 'course'+course : 'course-na';
+    var placeCls = place===1?'p-1':place===2?'p-2':place===3?'p-3':'p-other';
+    return '<div class="series-cell '+courseCls+'">'
+         + '<span class="series-day">'+label+'</span>'
+         + '<span class="series-place '+placeCls+'">'+place+'</span>'
+         + '</div>';
+  }).join('') + '</div>';
 }
 
 function motorEvalGrade(r){
@@ -2695,46 +2710,21 @@ function openRace(sid,rn){
     }
     boatsHtml+='<th>F/L</th></tr>';
 
-    // Row 13: 今節成績 着順履歴 (F15: フィールド名修正、avg_place 表示追加)
+    // F16: 今節着順のみ表示（旧 Row 14 サマリーは撤廃、進入コース色 + 日付ラベル）
     if(rdForRace&&rdForRace.boats){
       boatsHtml+='<tr>';
       for(var bn=1;bn<=6;bn++){
         var bt=boatMap[bn];
         var rid=bt?bt.racer_number||0:0;
         var rdBoat=rdForRace.boats?rdForRace.boats.find(function(rb){return rb.boat_number===bn||rb.racer_number===rid}):null;
-        // F15: current_series_results が正式フィールド名
         var seriesArr = rdBoat ? (rdBoat.current_series_results || rdBoat.current_series || []) : [];
         if(seriesArr.length>0){
-          boatsHtml+='<td>'+renderSeriesNums(seriesArr)+'</td>';
+          boatsHtml+='<td class="series-td">'+renderSeriesNums(seriesArr)+'</td>';
         } else {
           boatsHtml+='<td style="color:#CCC">-</td>';
         }
       }
       boatsHtml+='<th>今節着順</th></tr>';
-
-      // F15 Row 14: 今節サマリー (出走数 / 勝率 / 連対率 / 平均着順)
-      boatsHtml+='<tr>';
-      for(var bn=1;bn<=6;bn++){
-        var bt=boatMap[bn];
-        var rid=bt?bt.racer_number||0:0;
-        var rdBoat=rdForRace.boats?rdForRace.boats.find(function(rb){return rb.boat_number===bn||rb.racer_number===rid}):null;
-        var sm = rdBoat && rdBoat.current_series_summary ? rdBoat.current_series_summary : null;
-        if(sm && sm.races > 0){
-          var winRate = (sm.win / sm.races * 100).toFixed(0);
-          var top2Rate = (sm.top2 / sm.races * 100).toFixed(0);
-          var avgPlace = sm.avg_place ? sm.avg_place.toFixed(2) : '-';
-          // 平均着順で色付け
-          var avgColor = avgPlace <= 2.5 ? 'var(--success)' : avgPlace <= 3.5 ? 'var(--warn)' : 'var(--danger)';
-          boatsHtml+='<td style="font-size:9px;line-height:1.3">'
-                  + sm.races + '走<br>'
-                  + '勝率<b>'+winRate+'%</b><br>'
-                  + '連対<b>'+top2Rate+'%</b><br>'
-                  + '<span style="color:'+avgColor+'">平均'+avgPlace+'</span></td>';
-        } else {
-          boatsHtml+='<td style="color:#CCC">-</td>';
-        }
-      }
-      boatsHtml+='<th>今節成績</th></tr>';
     }
 
     boatsHtml+='</table></div>';

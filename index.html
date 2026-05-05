@@ -50,8 +50,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=35" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=35" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=36" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=36" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -175,6 +175,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 .series-2{background:#2255FF;color:#fff}
 .series-3{background:#22CC44;color:#fff}
 .series-other{background:#E0E0E0;color:#999}
+/* F16: 今節着順セル — 進入コース色で背景、初日/2/3...日目ラベル */
+.series-td{padding:2px !important}
+.series-row{display:flex;flex-wrap:wrap;gap:2px;justify-content:center}
+.series-cell{display:inline-flex;flex-direction:column;align-items:center;width:22px;border-radius:3px;border:1px solid rgba(0,0,0,0.15);padding:1px 0;line-height:1.1}
+.series-day{font-size:8px;font-weight:600;opacity:0.85;letter-spacing:-0.5px}
+.series-place{font-size:11px;font-weight:700;line-height:1.1}
+/* 進入コース色 (boat color と同一スキーム) */
+.series-cell.course1{background:#FFFFFF;color:#222;border-color:#999}
+.series-cell.course2{background:#222222;color:#FFF;border-color:#000}
+.series-cell.course3{background:#E53935;color:#FFF;border-color:#B71C1C}
+.series-cell.course4{background:#1E88E5;color:#FFF;border-color:#0D47A1}
+.series-cell.course5{background:#FDD835;color:#222;border-color:#F9A825}
+.series-cell.course6{background:#43A047;color:#FFF;border-color:#1B5E20}
+.series-cell.course-na{background:#F5F5F5;color:#999}
+/* 着順による文字強調 (1着のみ太字下線) */
+.series-cell .series-place.p-1{text-decoration:underline;text-underline-offset:1px;font-weight:800}
 .hl-pink{background:#FCE4EC}
 .hl-rank1{background:#FFCDD2}
 .hl-rank2{background:#BBDEFB}
@@ -348,7 +364,7 @@ button.action-btn:active{background:#F0F0F0}
   <div id="topSummary" style="min-height:52px"></div>
   <!-- PE-11: pre-rendered stadium grid (LCP 即時化、JS load 後に上書き) -->
   <div id="stadiumList" class="stadium-grid"><!-- PRERENDER:STADIUMS:START -->
-  <!-- prerendered at 2026-05-05T09:57:37+09:00 (17/24 active stadiums) -->
+  <!-- prerendered at 2026-05-05T12:49:52+09:00 (17/24 active stadiums) -->
 <div class="stadium-card active-stadium" data-sid="1" role="button" tabindex="0" onclick="openStadium('1')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">桐生</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="2" role="button" tabindex="0" onclick="openStadium('2')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">戸田</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">江戸川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="4" role="button" tabindex="0" onclick="openStadium('4')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">平和島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">多摩川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="6" role="button" tabindex="0" onclick="openStadium('6')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">浜名湖</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="7" role="button" tabindex="0" onclick="openStadium('7')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">蒲郡</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="8" role="button" tabindex="0" onclick="openStadium('8')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">常滑</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="9" role="button" tabindex="0" onclick="openStadium('9')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="10" role="button" tabindex="0" onclick="openStadium('10')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">三国</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="11" role="button" tabindex="0" onclick="openStadium('11')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">びわこ</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="12" role="button" tabindex="0" onclick="openStadium('12')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">住之江</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="13" role="button" tabindex="0" onclick="openStadium('13')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">尼崎</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">鳴門</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="15" role="button" tabindex="0" onclick="openStadium('15')"><span class="stadium-grade grade-g2">G2</span><span class="stadium-name">丸亀</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="16" role="button" tabindex="0" onclick="openStadium('16')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">児島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="17" role="button" tabindex="0" onclick="openStadium('17')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">宮島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="18" role="button" tabindex="0" onclick="openStadium('18')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">徳山</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">下関</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="20" role="button" tabindex="0" onclick="openStadium('20')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">若松</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">芦屋</span><span class="stadium-status">次節</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">福岡</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="23" role="button" tabindex="0" onclick="openStadium('23')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">唐津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">大村</span><span class="stadium-status">次節</span></div>
   <!-- PRERENDER:STADIUMS:END --></div>
   <div class="footer-note">予想は統計モデルによる参考情報です。的中を保証するものではありません。</div>
@@ -534,7 +550,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=35" defer></script>
-<script src="assets/app-rest.min.js?v=35" defer></script>
+<script src="assets/app-critical.min.js?v=36" defer></script>
+<script src="assets/app-rest.min.js?v=36" defer></script>
 </body>
 </html>

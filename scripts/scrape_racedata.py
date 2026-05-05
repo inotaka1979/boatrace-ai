@@ -66,32 +66,40 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
         for i, tbody in enumerate(soup.select("tbody.is-fs12"), 1):
             if i > 6: break
             trs = tbody.find_all("tr", recursive=False)
-            results: list[int] = []
-            if len(trs) >= 4:
-                # tr[3] が着順行（全角数字 / 特殊記号）
-                for td in trs[3].find_all("td", recursive=False):
-                    text = td.get_text(strip=True)
-                    if not text or text == "\xa0":
-                        continue
-                    # 全角数字を半角化して数値変換、失敗時は special code として除外
-                    han = text.translate(zen2han)
-                    try:
-                        v = int(han)
-                        if 1 <= v <= 6:
-                            results.append(v)
-                        # 7+ は特殊（失格/不完走/欠場/転覆等）— 着順統計から除外
-                    except ValueError:
-                        # 「妨」「失」「転」等の漢字 — 出走したが完走せず
-                        pass
+            # tr[1] = 進入コース、tr[3] = 着順（同じ td index で対応）
+            tr1 = trs[1].find_all("td", recursive=False) if len(trs) >= 2 else []
+            tr3 = trs[3].find_all("td", recursive=False) if len(trs) >= 4 else []
+            results: list[dict] = []
+            n = min(len(tr1), len(tr3))
+            for j in range(n):
+                place_text = tr3[j].get_text(strip=True).translate(zen2han)
+                if not place_text or place_text == "\xa0":
+                    continue
+                try:
+                    place = int(place_text)
+                    if not (1 <= place <= 6):
+                        continue   # 7+ (失格/不完走) はスキップ
+                except ValueError:
+                    continue   # 漢字記号 (妨/失/転 等) はスキップ
+                course_text = tr1[j].get_text(strip=True).translate(zen2han)
+                course = None
+                try:
+                    c = int(course_text)
+                    if 1 <= c <= 6:
+                        course = c
+                except ValueError:
+                    pass
+                results.append({"course": course, "place": place})
 
-            avg = sum(results) / len(results) if results else 0
-            wins = results.count(1)
-            top2 = sum(1 for r in results if r <= 2)
-            top3 = sum(1 for r in results if r <= 3)
+            places = [r["place"] for r in results]
+            avg = sum(places) / len(places) if places else 0
+            wins = places.count(1)
+            top2 = sum(1 for p in places if p <= 2)
+            top3 = sum(1 for p in places if p <= 3)
 
             boats.append({
                 "boat_number": i,
-                "current_series_results": results,
+                "current_series_results": results,   # [{course, place}, ...]
                 "current_series_summary": {
                     "races": len(results),
                     "avg_place": round(avg, 2),
