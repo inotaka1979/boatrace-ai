@@ -1839,6 +1839,32 @@ function renderStadiums(){
 }
 
 function openStadium(sid){
+  // PI-fix: 真因確定 — predictRace 等は app-rest.js にあり async load。
+  //   rest が未 load の状態で openStadium 内部で参照すると ReferenceError で
+  //   サイレント失敗 → 画面遷移しない。rest load を待ってから再実行する。
+  if(typeof predictRace !== 'function' || typeof savePrediction !== 'function'){
+    try { reportError({type:'info', msg:'openStadium deferred: rest not ready', sid:sid}); }catch(_){}
+    // 一旦 races ページに遷移してプレースホルダ表示、rest load 完了後に再実行
+    currentStadium = sid;
+    var name0 = (typeof STADIUMS!=='undefined' && STADIUMS[parseInt(sid)]) || ('場'+sid);
+    var t = document.getElementById('racesTitle');
+    if(t) t.textContent = name0;
+    var l = document.getElementById('racesList');
+    if(l) l.innerHTML = '<div class="card">読込中... (予測モジュール待機)</div>';
+    showPage('races');
+    var _retry = 0;
+    var _iv = setInterval(function(){
+      _retry++;
+      if(typeof predictRace === 'function' && typeof savePrediction === 'function'){
+        clearInterval(_iv);
+        try { openStadium(sid); }catch(e){ try{ reportError({type:'error', msg:'openStadium retry threw: '+e.message}); }catch(_){} }
+      } else if(_retry > 30){   // 6 秒で諦め
+        clearInterval(_iv);
+        if(l) l.innerHTML = '<div class="card">予測モジュールの読込に失敗しました。「更新」ボタンを押してください。</div>';
+      }
+    }, 200);
+    return;
+  }
   currentStadium=sid;
   var name=STADIUMS[parseInt(sid)]||('場'+sid);
   var stadium=programData[sid];
