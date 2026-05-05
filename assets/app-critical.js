@@ -2043,13 +2043,30 @@ function _setupServiceWorker(){
 function _setupStadiumDelegation(){
   var list = document.getElementById('stadiumList');
   if(!list) return;
+  // PI-fix: hasAttribute('onclick') スキップを撤廃。
+  //   iOS standalone PWA では innerHTML 経由で挿入された div の
+  //   inline onclick が無視されるケースがあり、両方止まると
+  //   完全にデッドロック。delegation は常に走らせ、inline と二重に
+  //   呼ばれても openStadium は idempotent なので問題なし。
+  //   _delegationCallId で同一イベントの再入は防ぐ。
   list.addEventListener('click', function(e){
     var card = e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
-    if(card.hasAttribute('onclick')) return;   // inline onclick が処理済（prerender）
+    if(e._delegationHandled) return;
+    e._delegationHandled = true;
     var sid = card.getAttribute('data-sid');
     if(sid && typeof openStadium === 'function') openStadium(sid);
   });
+  // capture-phase でも同一カードの click を捕捉して openStadium を呼ぶ
+  //   bubbling が iOS の理由で阻害されるケースの保険
+  document.addEventListener('click', function(e){
+    var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
+    if(!card) return;
+    if(e._delegationHandled) return;
+    e._delegationHandled = true;
+    var sid = card.getAttribute('data-sid');
+    if(sid && typeof openStadium === 'function') openStadium(sid);
+  }, true);
 }
 
 function setManagedInterval(fn, ms){

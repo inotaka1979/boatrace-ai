@@ -5322,13 +5322,25 @@ function _setupServiceWorker(){
 function _setupStadiumDelegation(){
   var list = document.getElementById('stadiumList');
   if(!list) return;
+  // PI-fix: hasAttribute('onclick') スキップを撤廃 + capture/bubble 両方で
+  //   フォールバック。iOS standalone PWA で innerHTML 経由 div の
+  //   inline onclick が動かない事象への防御。openStadium は idempotent。
   list.addEventListener('click', function(e){
     var card = e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
-    if(card.hasAttribute('onclick')) return;   // inline onclick が処理済
+    if(e._delegationHandled) return;
+    e._delegationHandled = true;
     var sid = card.getAttribute('data-sid');
     if(sid && typeof openStadium === 'function') openStadium(sid);
   });
+  document.addEventListener('click', function(e){
+    var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
+    if(!card) return;
+    if(e._delegationHandled) return;
+    e._delegationHandled = true;
+    var sid = card.getAttribute('data-sid');
+    if(sid && typeof openStadium === 'function') openStadium(sid);
+  }, true);
 }
 
 // PH-1 + PH-4: 起動 setup を分散
