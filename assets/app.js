@@ -343,30 +343,24 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 // P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
 try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
 
-// Epic 28: localStorage 緊急クリーンアップ — 起動時に容量が 80% 超ならクリーンアップ
-//   ユーザ報告 5.34MB/5MB (107%) 対策。bc_* cache の自動 expire を起動最早期にも走らせる
-//   (cleanOldData は idle で遅延、間に合わないケースの保険)
+// Epic 28: localStorage 緊急クリーンアップ — 起動時に容量超過チェック
+//   2MB 超で全 bc_* を強制削除（時間 cutoff 無関係）
+//   旧仕様 (Epic 28a 4MB + 10分 expire) は programs (~1MB) が新規 fetch 直後でも
+//   削除対象になり結局効果薄。Epic 28b で BC_MAX_BYTES=100KB を導入したため、
+//   今後は小さい cache のみが保存される。既存の巨大 bc_* は強制削除で一掃。
 try {
   var _lsBytes = 0;
   for(var _k in localStorage) _lsBytes += ((localStorage.getItem(_k)||'').length * 2);
-  if(_lsBytes > 4 * 1024 * 1024){   // 4MB 超
-    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — emergency cleanup');
-    var _bcRm = 0, _bcCutoff = Date.now() - 10*60*1000;
+  if(_lsBytes > 2 * 1024 * 1024){   // 2MB 超 (Epic 28b: 閾値を下げ早期介入)
+    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing all bc_*');
+    var _bcRm = 0;
     var _bcK = [];
     for(var _i=0;_i<localStorage.length;_i++){
       var _kk = localStorage.key(_i);
       if(_kk && _kk.indexOf('bc_')===0) _bcK.push(_kk);
     }
-    _bcK.forEach(function(_kk){
-      try {
-        var _raw = localStorage.getItem(_kk);
-        if(!_raw){ localStorage.removeItem(_kk); _bcRm++; return; }
-        var _obj = JSON.parse(_raw);
-        if(!_obj || typeof _obj.time !== 'number' || _obj.time < _bcCutoff){
-          localStorage.removeItem(_kk); _bcRm++;
-        }
-      } catch(_) { try { localStorage.removeItem(_kk); _bcRm++; }catch(__){} }
-    });
+    // 全削除 (時間 cutoff 無関係) — SW cache が fallback の役割を担う
+    _bcK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _bcRm++; } catch(_){} });
     // diag / 破損キー も一掃
     try { localStorage.removeItem('boatrace_diag'); }catch(_){}
     var _corrK = [];
@@ -375,7 +369,7 @@ try {
       if(_ck && _ck.indexOf('__corrupt_') > 0) _corrK.push(_ck);
     }
     _corrK.forEach(function(_kk){ try{ localStorage.removeItem(_kk); }catch(__){} });
-    console.warn('[storage] emergency cleanup done: bc_*='+_bcRm+' corrupt='+_corrK.length);
+    console.warn('[storage] force-clear done: bc_*='+_bcRm+' corrupt='+_corrK.length);
   }
 } catch(_){ /* localStorage 全体不可なら諦め */ }
 
@@ -2068,6 +2062,12 @@ function _renderApiHealthBanner(){
   banner.style.display = 'block';
 }
 
+// Epic 28b: localStorage 5MB 超過の真因 — fetchWithFallback が programs/previews
+//   (各 ~1MB の API response 全体) を毎回 bc_* に保存していた。
+//   「更新」で再 fetch すると 2-3MB が即座に復活し、容量解放しても元に戻る現象。
+//   対策: サイズ上限 (BC_MAX_BYTES=100KB) を設け、超過レスポンスは bc_* 非保存。
+//        SW (sw.js) のキャッシュ戦略が大きい response の fallback を担うため重複不要。
+var BC_MAX_BYTES = 100 * 1024;
 function fetchWithFallback(url){
   // キャッシュキーはクエリパラメータを除いたベースURL
   var baseUrl=url.split('?')[0];
@@ -2076,7 +2076,13 @@ function fetchWithFallback(url){
   return fetch(url,{signal:controller.signal,cache:'no-store'})
     .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
     .then(function(d){
-      try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}
+      // Epic 28b: 大きいレスポンスは bc_* に保存しない（SW cache に任せる）
+      try{
+        var serialized = JSON.stringify({data:d,time:Date.now()});
+        if(serialized.length <= BC_MAX_BYTES){
+          localStorage.setItem(cacheKey(baseUrl), serialized);
+        }
+      }catch(e){}
       _setApiHealth(baseUrl, 'ok'); // P0-7
       return d;
     })
