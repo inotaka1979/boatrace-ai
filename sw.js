@@ -10,7 +10,7 @@
 //   PD-2 CDN (cdnjs / gstatic) を別 cache 名で cache-first + SWR 化
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 
-const VERSION = 'br-oracle-v22';
+const VERSION = 'br-oracle-v23';
 const CDN_CACHE = 'br-oracle-cdn-v1';
 const STATIC_ASSETS = [
   './',
@@ -37,10 +37,14 @@ const ALLOWED_API_ORIGINS = new Set([
   'https://inotaka1979.github.io',
 ]);
 
-// install: 静的アセットのみキャッシュ（skipWaiting しない）
+// install: 静的アセットをキャッシュし、即座に skipWaiting で activate へ進む
+//   PI-fix: iOS standalone PWA で waiting のまま old SW が居座り、ユーザが
+//   toast を押せず古い JS を引きずる事故を防ぐため W-03 を一部緩和。
+//   page 側 controllerchange で自動 reload するので体感は数秒の自動更新のみ。
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(VERSION).then((c) => c.addAll(STATIC_ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 

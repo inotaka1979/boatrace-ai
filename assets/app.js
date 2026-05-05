@@ -5132,10 +5132,14 @@ function _setupServiceWorker(){
     .catch(function(err){ console.warn('[SW] register failed', err); });
 
   var _userTriggeredSwUpdate = false;
+  var _swReloadDone = false;
   window._markSwUpdateRequested = function(){ _userTriggeredSwUpdate = true; };
   navigator.serviceWorker.addEventListener('controllerchange', function(){
-    if(!_userTriggeredSwUpdate) return;
-    console.log('[SW] new controller after user request, reloading');
+    // PI-fix: iOS standalone で SW skipWaiting した場合も自動 reload して
+    //   新 JS に切替（古い JS を引きずるのを防ぐ）。1 セッション 1 回だけ。
+    if(_swReloadDone) return;
+    _swReloadDone = true;
+    console.log('[SW] new controller, reloading');
     location.reload();
   });
   navigator.serviceWorker.addEventListener('message', function(e){
