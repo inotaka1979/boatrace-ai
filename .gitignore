@@ -8,6 +8,8 @@ __pycache__/
 *.bak
 .DS_Store
 node_modules/
+# Epic 20: tests/e2e から build/node_modules を解決するための symlink
+/node_modules
 dist/
 .venv/
 # build/ で実行時に作られる一時データ（cwd ずれによるスクレイプ出力等）

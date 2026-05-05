@@ -95,22 +95,43 @@ function _blendCommunityWeights(){
     .then(function(r){ if(!r.ok) throw new Error('no community'); return r.json(); })
     .then(function(cw){
       if(!cw || !Array.isArray(cw.weights) || cw.weights.length !== L2_INIT_WEIGHTS.length) return;
-      // 自身の学習サンプル数に応じて blend 比率を決定
-      //   n < 100 (新規): community 0.7 + local 0.3
-      //   n >= 100 (経験): community 0.3 + local 0.7
+      _communityWeightsCache = cw;
+      // 旧挙動: global weight を local と blend（後方互換）
       var n = l2trainStep || 0;
-      var alpha = (n < 100) ? 0.7 : 0.3;   // community の重み
+      var alpha = (n < 100) ? 0.7 : 0.3;
       var blended = new Array(L2_INIT_WEIGHTS.length);
       for(var i = 0; i < blended.length; i++){
         var c = Number.isFinite(cw.weights[i]) ? cw.weights[i] : L2_INIT_WEIGHTS[i];
         var l = Number.isFinite(l2weights[i]) ? l2weights[i] : L2_INIT_WEIGHTS[i];
         blended[i] = alpha * c + (1 - alpha) * l;
       }
-      // 元の l2weights を更新（in-memory のみ、永続化しない＝次回 fetch で再 blend）
       l2weights = blended;
-      console.log('[community] weights blended (alpha='+alpha+', n='+n+', cw.n='+cw.n+')');
+      var nStad = (cw.stadium_weights && typeof cw.stadium_weights === 'object')
+        ? Object.keys(cw.stadium_weights).length : 0;
+      console.log('[community] blended (alpha='+alpha+', n='+n+', cw.n='+cw.n+', stadiums='+nStad+')');
     })
     .catch(function(_){ /* community_weights 未配信は通常の状態 */ });
+}
+
+function _hierarchicalWeights(sid){
+  var cw = _communityWeightsCache;
+  if(!cw || !Array.isArray(cw.weights)) return l2weights;
+  var stad = (cw.stadium_weights || {})[String(sid)];
+  if(!Array.isArray(stad) || stad.length !== L2_INIT_WEIGHTS.length){
+    return l2weights;  // stadium 未学習 → 既存 blend を維持
+  }
+  var n = l2trainStep || 0;
+  var ws, wt, wg;  // self / stadium / global の比率
+  if(n >= 100){ ws = 0.5; wt = 0.3; wg = 0.2; }
+  else        { ws = 0.2; wt = 0.5; wg = 0.3; }
+  var out = new Array(L2_INIT_WEIGHTS.length);
+  for(var i = 0; i < out.length; i++){
+    var s = Number.isFinite(l2weights[i]) ? l2weights[i] : L2_INIT_WEIGHTS[i];
+    var t = Number.isFinite(stad[i])      ? stad[i]      : L2_INIT_WEIGHTS[i];
+    var g = Number.isFinite(cw.weights[i])? cw.weights[i]: L2_INIT_WEIGHTS[i];
+    out[i] = ws * s + wt * t + wg * g;
+  }
+  return out;
 }
 
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}

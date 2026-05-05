@@ -174,30 +174,78 @@ def train_l2(pairs: list[tuple[list[list[float]], int]]) -> tuple[list[float], i
     return weights, n_steps
 
 
+def collect_training_pairs_by_stadium() -> dict[str, list]:
+    """場別 training pairs を返す（階層的 FL の per-stadium 学習用）。"""
+    racer_db = safe_load_json(str(RACER_DB_PATH), {}) or {}
+    stadium_db = safe_load_json(str(STADIUM_DB_PATH), {}) or {}
+    by_sid: dict[str, list] = {}
+    if not RESULTS_DIR.exists():
+        return by_sid
+    files = sorted(RESULTS_DIR.glob("*.json"))[-30:]
+    for fp in files:
+        data = safe_load_json(str(fp), {}) or {}
+        for race in data.get("results", []):
+            sid = str(race.get("race_stadium_number") or "")
+            if not sid or not race.get("boats"):
+                continue
+            boats = race["boats"]
+            if len(boats) < 6:
+                continue
+            winner_idx = -1
+            for i, b in enumerate(boats):
+                if b.get("racer_place") == 1:
+                    winner_idx = i
+                    break
+            if winner_idx < 0:
+                continue
+            feats = [get_l2_features(b, None, racer_db, stadium_db, sid, 5, 5) for b in boats]
+            by_sid.setdefault(sid, []).append((feats, winner_idx))
+    return by_sid
+
+
 def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     print(f"[community] collecting training pairs from {RESULTS_DIR}/*.json")
+
+    # Epic 21 拡張: global + per-stadium の階層的学習
     pairs = collect_training_pairs()
-    print(f"[community] collected {len(pairs)} race samples")
+    print(f"[community] collected {len(pairs)} race samples (global)")
     if not pairs:
         print("[community] no training data, skipping")
         return
     weights, n_steps = train_l2(pairs)
+
+    # per-stadium の独立学習（場別の流れ・水面特性を吸収）
+    by_sid = collect_training_pairs_by_stadium()
+    stadium_weights: dict[str, list[float]] = {}
+    stadium_n: dict[str, int] = {}
+    for sid, sid_pairs in by_sid.items():
+        if len(sid_pairs) < 20:  # 学習には最低 20 サンプル必要
+            continue
+        sw, sn = train_l2(sid_pairs)
+        stadium_weights[sid] = sw
+        stadium_n[sid] = sn
+    print(f"[community] per-stadium weights computed for {len(stadium_weights)} stadiums")
+
     payload = {
         "weights": weights,
         "n": n_steps,
         "feature_dim": FEATURE_DIM,
         "feature_version": 1,
         "fitted_at": utc_iso_seconds(),
+        # Epic 21: 階層的 FL 構造 — クライアントは self / stadium / global を blend
+        "stadium_weights": stadium_weights,
+        "stadium_n": stadium_n,
+        "fl_architecture": "centralized_hierarchical",
         "_meta": quality_header(
-            schema_version=1,
+            schema_version=2,  # bump (stadium_weights 追加)
             source_freshness_sec=0.0,
             reliability_score=min(1.0, len(pairs) / 1000.0),
             scraper="community_weights",
         ),
     }
     atomic_write_json(str(OUTPUT), payload)
-    print(f"[community] wrote {OUTPUT} (weights[12], n={n_steps})")
+    print(f"[community] wrote {OUTPUT} (global n={n_steps}, stadium_weights={len(stadium_weights)})")
 
 
 if __name__ == "__main__":

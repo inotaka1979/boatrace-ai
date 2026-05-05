@@ -116,6 +116,7 @@ async function main() {
     { marker: 'IDB',          src: 'utils/idb_store.js' },  // Epic 13
     { marker: 'BANDIT',       src: 'utils/bandit.js' },     // Epic 15
     { marker: 'I18N',         src: 'utils/i18n.js' },       // Epic 16
+    { marker: 'DP_GRADIENT',  src: 'utils/dp_gradient.js' },// Epic 21
   ];
   let beforeApp = await readFile(appJsPath, 'utf8');
   let currentApp = beforeApp;

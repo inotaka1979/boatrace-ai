@@ -693,25 +693,29 @@ try { _setupActionDelegation(); } catch(_){}
 // Epic 19: font 等の async stylesheet の onload="this.media='all'" は CSP unsafe-inline
 //   依存。代替として data-csp-onload-media を見て JS で listener を attach する。
 //   既に load 済（link.sheet が truthy）なら即時適用 → race condition 回避。
-(function _setupCSPOnloadShim(){
-  function applyAll(){
-    var links = document.querySelectorAll('link[data-csp-onload-media]');
-    for(var i=0;i<links.length;i++){
-      (function(l){
-        var target = l.getAttribute('data-csp-onload-media') || 'all';
-        function flip(){ try { l.media = target; } catch(_){} }
-        if(l.sheet){ flip(); return; }
-        l.addEventListener('load', flip, { once: true });
-        l.addEventListener('error', function(){ /* 失敗は無視、システムフォントが使われる */ }, { once: true });
-      })(links[i]);
+//   try/catch で test VM 等の document.querySelectorAll 不在環境でも安全。
+try {
+  (function _setupCSPOnloadShim(){
+    function applyAll(){
+      if(typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+      var links = document.querySelectorAll('link[data-csp-onload-media]');
+      for(var i=0;i<links.length;i++){
+        (function(l){
+          var target = l.getAttribute('data-csp-onload-media') || 'all';
+          function flip(){ try { l.media = target; } catch(_){} }
+          if(l.sheet){ flip(); return; }
+          l.addEventListener('load', flip, { once: true });
+          l.addEventListener('error', function(){ /* 失敗は無視、システムフォントが使われる */ }, { once: true });
+        })(links[i]);
+      }
     }
-  }
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', applyAll, { once: true });
-  } else {
-    applyAll();
-  }
-})();
+    if(typeof document !== 'undefined' && document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', applyAll, { once: true });
+    } else {
+      applyAll();
+    }
+  })();
+} catch(_){ /* test 環境等で document が不完全な場合は no-op */ }
 
 // Epic 18 (P2-7): SharedArrayBuffer ヘルパ — crossOriginIsolated 環境でのみ動作
 //   Worker への state 転送を構造化複製（〜50ms）から SAB（〜0ms）に置換するための土台。
@@ -727,10 +731,17 @@ try {
     + ' SABAvailable=' + _isSABAvailable());
 } catch(_){}
 
-// Epic 17 (P2-6): 疑似 federated learning — community weights を fetch して blend
-//   起動時に data/db/community_weights.json を取得し、自身の学習サンプル数に応じて重み合成
+// Epic 17 (P2-6) + Epic 21: 階層的 federated learning — global + per-stadium 重みを blend
+//   起動時に data/db/community_weights.json を取得し、in-memory に保持
+//   predictRace 時に sid を見て stadium_weights が利用可能なら 3 段 blend（self/stadium/global）
+var _communityWeightsCache = null;
 /* MOVED: function _blendCommunityWeights */
-// boot 経路: loadAllData 完了後の idle で呼出（重要度低のため後回し）
+// Epic 21: predictRace 時に sid に応じた階層 blend 重みを返す
+//   優先順: self (local) -> per-stadium -> global
+//   weight 比率: stadium がある & local n>=100 なら (self 0.5, stadium 0.3, global 0.2)
+//                stadium ある & local n<100 なら (stadium 0.5, global 0.3, self 0.2)
+//                stadium 無し → 既存挙動（self / global blend）
+/* MOVED: function _hierarchicalWeights */
 try { setTimeout(_blendCommunityWeights, 5000); } catch(_){}
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
@@ -1316,6 +1327,12 @@ window.addEventListener('unhandledrejection', function(e){
 })();
 
 /* BUILD:I18N:END */
+
+/* BUILD:DP_GRADIENT:START */
+// Epic 21: src/utils/dp_gradient.js — 差分プライバシー gradient ヘルパ
+// L2 norm clipping + Gaussian noise mechanism。
+// globalThis.clipGradient / addGaussianNoise / buildDPGradient / estimateDPParams を export。
+/* BUILD:DP_GRADIENT:END */
 
 // PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
