@@ -219,12 +219,11 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 // PI-fix: 診断オーバーレイ（iOS standalone PWA タップ不能問題の調査用）
 //   - capture-phase で touchstart/touchend/click/pointerdown を全て記録
 //   - タイトル「BOATRACE AI」(.logo) を 5 連打で debug overlay 表示
-//   - 表示内容: SW state / typeof openStadium / 直近 15 タップの target chain
-//     / pointer-events / display-mode standalone 判定
-//   - リング 30 件を localStorage 'boatrace_diag' に保存（コピーして共有可能）
+//   - リング 100 件、stadium-card 関連は別セクションで強調表示
+//   - 「クリア」ボタンでバッファ初期化 → ノイズ無しの再採取が可能
 // =====================================================================
 (function(){
-  var DIAG_MAX = 30;
+  var DIAG_MAX = 100;
   var ring = [];
   function pushDiag(o){
     o.t = Date.now();
@@ -287,19 +286,35 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
       'delegation:'+(typeof _setupStadiumDelegation),
       'UA:'+navigator.userAgent.slice(0,80)
     ].join('\n');
-    var lines = ring.slice(-15).map(function(d){
+    function fmt(d){
       return new Date(d.t).toISOString().slice(11,19)+' '+d.ev+' '+d.tg+' @'+d.x+','+d.y+' top='+d.top+' os='+d.ostype;
-    }).join('\n');
+    }
+    var cardEvents = ring.filter(function(d){ return d.tg && d.tg.indexOf('[card')>=0; });
+    var cardLines = cardEvents.length === 0
+      ? '(NO STADIUM-CARD EVENTS — タップしても記録されていません)'
+      : cardEvents.map(fmt).join('\n');
+    var otherLines = ring.slice(-25).map(fmt).join('\n');
     var ov = document.createElement('div');
     ov.id = 'diagOverlay';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);color:#0f0;font:11px monospace;padding:12px;overflow:auto;z-index:2147483647;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
-    ov.textContent = '=== DIAG ===\n'+summary+'\n\n=== EVENTS (last 15) ===\n'+lines;
+    ov.textContent = '=== DIAG ===\n'+summary
+      +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
+      +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
     var close = document.createElement('button');
     close.textContent = '× 閉じる';
     close.style.cssText = 'position:fixed;top:10px;right:10px;background:#f00;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
-    close.onclick = function(){ ov.remove(); close.remove(); };
+    close.onclick = function(){ ov.remove(); close.remove(); clearBtn.remove(); };
+    var clearBtn = document.createElement('button');
+    clearBtn.textContent = '🗑 クリア';
+    clearBtn.style.cssText = 'position:fixed;top:10px;right:100px;background:#f80;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
+    clearBtn.onclick = function(){
+      ring.length = 0;
+      try { localStorage.removeItem('boatrace_diag'); }catch(_){}
+      ov.remove(); close.remove(); clearBtn.remove();
+    };
     document.body.appendChild(ov);
     document.body.appendChild(close);
+    document.body.appendChild(clearBtn);
   }
   globalThis.showDiagOverlay = showDiagOverlay;
 })();

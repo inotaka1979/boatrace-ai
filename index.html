@@ -526,7 +526,7 @@ button.action-btn:active{background:#F0F0F0}
 <!-- PI-3: code splitting — critical (33KB, top page render) を defer で即時実行
      rest (100KB, 詳細・stats・predictor) は window.load 後に dynamic 読込み
      これにより初期 TBT を ~600ms 削減見込み -->
-<script src="assets/app-critical.min.js?v=25" defer></script>
+<script src="assets/app-critical.min.js?v=26" defer></script>
 <script>
   // critical 読込み完了後、window.load の少し後に rest を非同期 inject
   //   defer 完了 → DOMContentLoaded → load → +50ms → rest 開始
@@ -536,7 +536,7 @@ button.action-btn:active{background:#F0F0F0}
     function _loadRest(){
       setTimeout(function(){
         var s = document.createElement('script');
-        s.src = 'assets/app-rest.min.js?v=25';
+        s.src = 'assets/app-rest.min.js?v=26';
         s.async = true;
         document.head.appendChild(s);
       }, 50);
