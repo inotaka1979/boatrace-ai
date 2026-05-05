@@ -1665,14 +1665,22 @@ function _filterStalePreviews(raw){
     console.warn('公式 API previews は古い('+firstDate+' JST), 全件 skip');
     return { previews: [], updated_at: raw.updated_at };
   }
-  // 展示済みのみ残す（boat の exhibition_time が 1 つでも >0 ならそのレースは展示済）
+  // 「データが何もない」プレースホルダだけ除外。
+  //   PI-fix: 旧版は exhibition_time 一つでも >0 でないと弾いていたが、展示前で
+  //   気象 (race_wind / race_water_temperature) だけ計測済のレースまで捨てて
+  //   レース詳細の気象情報が表示されない問題があった。
+  //   気象が計測済 OR 展示済 ならそのレースは「データあり」と扱う。
   var filtered = raw.previews.filter(function(p){
+    var hasWeather = (p.race_wind||0)>0 || (p.race_water_temperature||0)>0
+                  || (p.race_temperature||0)>0 || (p.race_wave||0)>0
+                  || (p.race_wind_direction_number!=null);
     var bs = p.boats || [];
     if(!Array.isArray(bs)) bs = Object.keys(bs).map(function(k){return bs[k]});
-    return bs.some(function(b){ return b && (b.racer_exhibition_time||0) > 0; });
+    var hasExh = bs.some(function(b){ return b && (b.racer_exhibition_time||0) > 0; });
+    return hasWeather || hasExh;
   });
   if(filtered.length !== raw.previews.length){
-    console.info('previews: '+raw.previews.length+' → '+filtered.length+' (展示前のレースを除外)');
+    console.info('previews: '+raw.previews.length+' → '+filtered.length+' (データ未取得のレースを除外)');
   }
   return { previews: filtered, updated_at: raw.updated_at };
 }
