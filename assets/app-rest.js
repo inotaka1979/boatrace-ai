@@ -2011,16 +2011,23 @@ function savePrediction(date,sid,rn,pred,result){
       if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
     }
     // F19b: 既存エントリ更新ポリシー（カウント安定化版）
-    //   - 既存が actual あり (= 確定済 / ロックイン)        → 常に skip
-    //   - 既存が actual 無し (predict のみ) + 新規 result あり → 上書き (確定時の予想を保存)
-    //   - 既存が actual 無し + 新規 result 無し              → skip (mid-day の予想churnを避ける)
-    //   このルールで「初回確定時の予想」が永続化されカウントが揺れない。
     if(existIdx >= 0){
       var existing = history[existIdx];
       if(existing.actual && existing.actual.length > 0) return;   // ロックイン
       var newHasResult = result && result.isFinished && result.results;
       if(!newHasResult) return;
       history.splice(existIdx, 1);
+    }
+    // F19c: 表示・統計ともに同じ予想を見せるためレース終了時の予想を snapshot 保存
+    var snapshot = null;
+    if(result && result.isFinished){
+      snapshot = {
+        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score}}),
+        trifecta: (pred.trifecta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
+        exacta: (pred.exacta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
+        raceType: pred.raceType,
+        typeCls: pred.typeCls
+      };
     }
     var entry={
       date:date,stadium:sid,race:rn,
@@ -2037,6 +2044,7 @@ function savePrediction(date,sid,rn,pred,result){
       trifecta_bets:pred.trifecta.map(function(t){return t.combo}),
       exacta_bets:pred.exacta.map(function(t){return t.combo}),
       raceType:pred.raceType,
+      pred_snapshot:snapshot,   // F19c: 終了時の予想 snapshot（表示も lock）
       actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false
     };
     if(result&&result.isFinished&&result.results){
@@ -2503,6 +2511,25 @@ function openRace(sid,rn){
   var preview=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
   var result=resultData&&resultData[sid]&&resultData[sid][rn]?resultData[sid][rn]:null;
   var pred=predictRace(sid,parseInt(rn));
+  // F19c: 終了済レースは履歴の pred_snapshot を優先 (lock & 統計と一致)
+  if(result && result.isFinished){
+    try {
+      var _h = safeParse('boatrace_history', []);
+      for(var _hi=0;_hi<_h.length;_hi++){
+        var _e = _h[_hi];
+        if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
+          pred = {
+            marks: _e.pred_snapshot.marks || pred.marks,
+            trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
+            exacta: _e.pred_snapshot.exacta || pred.exacta,
+            raceType: _e.pred_snapshot.raceType || pred.raceType,
+            typeCls: _e.pred_snapshot.typeCls || pred.typeCls
+          };
+          break;
+        }
+      }
+    } catch(_){}
+  }
   var raceOdds=getOddsForRace(sid,rn);
   var popularity=calcPopularity(raceOdds);
   var rdForRace=getRaceDataForRace(sid,rn);
@@ -2888,9 +2915,10 @@ function openRace(sid,rn){
   }
 
   // ========= 直前予想 =========
+  // F19c: != null だと 0 (展示未実施) も真と判定してしまうため > 0 に修正
   var hasRealPreview=false;
   if(preview&&preview.boats){
-    for(var pk in preview.boats){if(preview.boats[pk]&&preview.boats[pk].racer_exhibition_time!=null){hasRealPreview=true;break}}
+    for(var pk in preview.boats){if(preview.boats[pk]&&(preview.boats[pk].racer_exhibition_time||0)>0){hasRealPreview=true;break}}
   }
 
   predHtml+='<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';

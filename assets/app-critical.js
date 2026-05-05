@@ -2008,11 +2008,32 @@ function openStadium(sid){
     var hasResult=resultData&&resultData[sid]&&resultData[sid][rn]&&resultData[sid][rn].isFinished;
 
     if(pred) savePrediction(todayStr(),sid,rn,pred,hasResult?resultData[sid][rn]:null);
+    // F19c: 終了済レースは履歴の pred_snapshot を優先して表示 (lock & 統計と一致)
+    if(hasResult){
+      try {
+        var _h = safeParse('boatrace_history', []);
+        for(var _hi=0;_hi<_h.length;_hi++){
+          var _e = _h[_hi];
+          if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
+            // snapshot を pred に再構成（typeCls/raceType も維持）
+            pred = {
+              marks: _e.pred_snapshot.marks || pred.marks,
+              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
+              exacta: _e.pred_snapshot.exacta || pred.exacta,
+              raceType: _e.pred_snapshot.raceType || pred.raceType,
+              typeCls: _e.pred_snapshot.typeCls || pred.typeCls
+            };
+            break;
+          }
+        }
+      } catch(_){}
+    }
 
     // 直前予想があるか判定
     var pvData=previewData&&previewData[sid]&&previewData[sid][rn]?previewData[sid][rn]:null;
     var hasRealPv=false;
-    if(pvData&&pvData.boats){for(var pk in pvData.boats){if(pvData.boats[pk]&&pvData.boats[pk].racer_exhibition_time!=null){hasRealPv=true;break}}}
+    // F19c: != null だと 0 (展示未実施) も真と判定してしまうため > 0 に修正
+    if(pvData&&pvData.boats){for(var pk in pvData.boats){if(pvData.boats[pk]&&(pvData.boats[pk].racer_exhibition_time||0)>0){hasRealPv=true;break}}}
 
     // 表示用の予想（直前あれば直前、なければ番組）
     var dispPred=(hasRealPv&&pred)?pred:null;
