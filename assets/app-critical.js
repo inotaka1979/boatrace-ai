@@ -226,10 +226,19 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 //   - タイトル「BOATRACE AI」を 5 回タップで debug overlay 表示
 //   - リング 100 件、stadium-card 関連は別セクションで強調表示
 //   - 「CLEAR」ボタンでバッファ初期化 → ノイズ無しの再採取が可能
+//   - 独立 in-memory traceRing でも記録（localStorage 失敗対策）
 // =====================================================================
 (function(){
   var DIAG_MAX = 100;
   var ring = [];
+  // in-memory only trace ring（localStorage に依存しない）
+  var traceRing = [];
+  function pushTrace(msg){
+    traceRing.push({t:Date.now(), msg:String(msg)});
+    if(traceRing.length > 200) traceRing.shift();
+  }
+  globalThis._diagTrace = pushTrace;
+  pushTrace('boot: diagIIFE init');
   function pushDiag(o){
     o.t = Date.now();
     ring.push(o);
@@ -344,11 +353,64 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         return new Date(e.ts||0).toISOString().slice(11,19)+' '+(e.type||'?')+': '+((e.msg||JSON.stringify(e))+'').slice(0,140);
       }).join('\n');
     } catch(_){ errLog = '(boatrace_errors parse failed)'; }
-    ov.textContent = '=== DIAG ===\n'+summary
-      +'\n\n=== STATIC PROBES ===\n'+staticProbes
-      +'\n\n=== reportError LOG (last 30) ===\n'+errLog
-      +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
-      +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
+    // localStorage write-test
+    var lsTest = '';
+    try {
+      var k = 'boatrace_diagprobe';
+      var v = String(Date.now());
+      localStorage.setItem(k, v);
+      var got = localStorage.getItem(k);
+      lsTest = 'set/get '+(got===v?'OK':'MISMATCH')+' (val='+got+')';
+      var lens = [];
+      for(var i=0;i<localStorage.length;i++){
+        var kk = localStorage.key(i);
+        if(kk && kk.indexOf('boatrace_')===0){
+          var s = localStorage.getItem(kk)||'';
+          lens.push(kk+'='+s.length+'B');
+        }
+      }
+      lsTest += '\n'+lens.join('\n');
+    } catch(e){ lsTest = 'localStorage THROW: '+e.message; }
+    var traceLines = traceRing.slice(-30).map(function(t){
+      return new Date(t.t).toISOString().slice(11,19)+' '+t.msg;
+    }).join('\n') || '(empty)';
+    var probeUrls = ['data/programs/today.json','data/db/racerDB.json','sw.js'];
+    var swSect = '...';
+    var netSect = '...';
+    function build(){
+      ov.textContent = '=== DIAG ===\n'+summary
+        +'\n\n=== STATIC PROBES ===\n'+staticProbes
+        +'\n\n=== SW STATE ===\n'+swSect
+        +'\n\n=== NET PROBES ===\n'+netSect
+        +'\n\n=== LS PROBE ===\n'+lsTest
+        +'\n\n=== IN-MEMORY TRACE (last 30) ===\n'+traceLines
+        +'\n\n=== reportError LOG (last 30) ===\n'+errLog
+        +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
+        +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
+    }
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        if(!reg){ swSect = 'NO_REGISTRATION'; }
+        else {
+          var ctrl = navigator.serviceWorker.controller;
+          swSect = 'scope: '+reg.scope
+            +'\ninstalling: '+(reg.installing?reg.installing.state:'none')
+            +'\nwaiting: '+(reg.waiting?reg.waiting.state:'none')
+            +'\nactive: '+(reg.active?reg.active.state+' '+reg.active.scriptURL.split('/').slice(-1)[0]:'none')
+            +'\ncontroller: '+(ctrl?ctrl.state+' '+ctrl.scriptURL.split('/').slice(-1)[0]:'NONE');
+        }
+        build();
+      }).catch(function(e){ swSect = 'getRegistration THROW: '+e.message; build(); });
+    } else { swSect = 'serviceWorker API missing'; }
+    Promise.all(probeUrls.map(function(u){
+      var t0 = performance.now();
+      return fetch(u, {cache:'no-store'}).then(function(r){
+        return u+' → '+r.status+' '+((performance.now()-t0)|0)+'ms';
+      }).catch(function(e){
+        return u+' → THROW '+e.name+': '+(e.message||'').slice(0,60);
+      });
+    })).then(function(results){ netSect = results.join('\n'); build(); });
+    build();
     var close = document.createElement('button');
     close.textContent = '× 閉じる';
     close.style.cssText = 'position:fixed;top:10px;right:10px;background:#f00;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
