@@ -99,6 +99,10 @@ step "Bandit (Thompson sampling) tests (P2-4)" \
 step "i18n scaffold tests (P2-5)" \
      "node scripts/tests/test_i18n.js"
 
+# Epic 17 (P2-6): community weights 計算
+step "Community weights tests (P2-6)" \
+     "python3 scripts/tests/test_community_weights.py"
+
 # 8e) PC-7b / PE-4: build パイプライン (Step 2 = src/utils/safe_storage を bundle 注入)
 #     --check モードで「再ビルドしても index.html が変わらない」ことを検証 (CI 再現性ガード)
 #     CI 環境では node_modules が無いため、初回のみ npm ci を実施

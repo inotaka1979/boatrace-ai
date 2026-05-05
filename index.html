@@ -575,6 +575,12 @@ button.action-btn:active{background:#F0F0F0}
       <span><button class="action-btn" onclick="_enableNotifyPermission()">許可リクエスト</button>
             <span id="notifyStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未設定</span></span>
     </div>
+    <!-- Epic 18 (P2-7): SharedArrayBuffer 実験オプション -->
+    <div class="setting-row">
+      <span class="setting-label">SAB高速化(実験)</span>
+      <span><button class="action-btn" onclick="_toggleCOI()">切替</button>
+            <span id="coiStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未確認</span></span>
+    </div>
   </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" onclick="clearCache()">クリア</button></div>
     <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" onclick="clearHistory()">リセット</button></div>

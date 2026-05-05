@@ -117,6 +117,35 @@ function normalizeRequest(req) {
   return new Request(url.toString(), { method: req.method, headers: req.headers });
 }
 
+// Epic 18 (P2-7): COI (cross-origin isolation) ヘッダ inject — SharedArrayBuffer 解禁
+//   GitHub Pages はカスタム HTTP ヘッダ不可だが、SW が response を clone して
+//   COOP / COEP を付与すれば crossOriginIsolated になり SAB が利用可能になる。
+//
+//   **opt-in 化**: 無条件注入は CORP 無しの外部リソース（フォント等）を block する
+//   リスクがあるため、cookie `coi=1` または URL ?coi=1 が付いた時のみ有効。
+//   Phase 2 で外部リソースの CORP 対応を確認後、デフォルト ON へ移行検討。
+function _shouldInjectCOI(req) {
+  try {
+    const url = new URL(req.url);
+    if (url.searchParams.get('coi') === '1') return true;
+  } catch (_) {}
+  // SW からは document.cookie が見えないため、クライアント側が ?coi=1 を URL に
+  // 付与した場合のみ有効化。設定 UI は app.js 側で実装する。
+  return false;
+}
+function _injectCOIHeaders(resp, req) {
+  if (!resp || resp.type === 'opaque') return resp;
+  if (req && !_shouldInjectCOI(req)) return resp;
+  const newHeaders = new Headers(resp.headers);
+  newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+  newHeaders.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  return new Response(resp.body, {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers: newHeaders,
+  });
+}
+
 // network-first 共通関数
 async function netFirst(req) {
   const cacheKey = normalizeRequest(req);
@@ -172,9 +201,10 @@ self.addEventListener('fetch', (e) => {
 
   const path = url.pathname;
 
-  // index.html はネットワーク優先
+  // index.html はネットワーク優先 + Epic 18: opt-in で COOP/COEP ヘッダ inject (SAB 解禁)
   if (isOwnOrigin && (path.endsWith('/') || path.endsWith('/index.html'))) {
-    e.respondWith(netFirst(e.request));
+    const req = e.request;
+    e.respondWith(netFirst(req).then(function(resp){ return _injectCOIHeaders(resp, req); }));
     return;
   }
 

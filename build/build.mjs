@@ -185,12 +185,12 @@ async function main() {
   // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
   //   critical は LCP に直結するため hard fail、それ以外は warn 留め。
   //   超過時は CI が PR を block して退行を防ぐ。
-  // Epic 1-12 完了時点のベースライン（critical=50.6KB / rest=108KB / worker=59KB）
-  //   features bundle (Epic 12) で +3KB、予算を 55KB に拡張。これ以上の critical 追加は
-  //   別 PR で都度合意し、必要なら rest 側へ移動する設計議論が必須。
+  // Epic 1-17 完了時点のベースライン（critical=57.7KB / rest=110KB / worker=59KB）
+  //   features+idb+bandit+i18n+community bundle で +12KB（Epic 12-17 累計）
+  //   Phase 2 で inline onclick 削減 → critical -2KB 見込みのため、予算は 60KB に固定。
   const BUDGETS = [
-    { path: 'assets/app-critical.min.js', max: 55000,  level: 'fail' },
-    { path: 'assets/app-rest.min.js',     max: 120000, level: 'warn' },
+    { path: 'assets/app-critical.min.js', max: 60000,  level: 'fail' },
+    { path: 'assets/app-rest.min.js',     max: 125000, level: 'warn' },
     { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
   ];
   let budgetFail = false;

@@ -48,6 +48,11 @@ LANG=ja_JP.UTF-8
 30 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh racedata >> /dev/null 2>&1
 0 12 * * * /home/pi/boatrace-ai/scripts/cron_scrape.sh racedata >> /dev/null 2>&1
 
+# --- Epic 17 (P2-6): community weights 週次計算 (JST 月曜 4:00) ---
+# 全 results を集約して L2 重みを学習、新規ユーザのコールドスタート問題を解消。
+# atomic_write_json + git commit/push は cron_scrape.sh 経由ではなく直接実行で軽量化。
+0 4 * * 1 cd /home/pi/boatrace-ai && python3 scripts/compute_community_weights.py >> logs/community_weights.log 2>&1 && cd /home/pi/boatrace-ai && git add data/db/community_weights.json && git commit -m "community_weights: $(date '+%Y-%m-%dT%H:%M:%S+0900') [rpi]" && git push 2>&1 | tail -5
+
 # --- 日次: レースデータ+スケジュール (JST 8:30, 12:00) ---
 # ※racedata はGitHub Actionsのままでも可（頻度が低いため）
 # 30 8 * * * /home/pi/boatrace-ai/scripts/cron_scrape_racedata.sh >> /dev/null 2>&1

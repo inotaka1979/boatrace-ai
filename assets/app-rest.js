@@ -12,6 +12,78 @@ function _initFeatureStats(){
   };
 }
 
+function _isSABAvailable(){
+  return (typeof window !== 'undefined' && window.crossOriginIsolated === true
+       && typeof SharedArrayBuffer !== 'undefined');
+}
+
+function _toggleCOI(){
+  // 現在 ?coi=1 が付いていなければ付けて reload、付いていれば削除して reload
+  try {
+    var u = new URL(location.href);
+    if(u.searchParams.get('coi') === '1'){
+      u.searchParams.delete('coi');
+      sessionStorage.removeItem('_coi_reloaded');
+      alert('SAB 実験モードを OFF にして再読込します');
+    } else {
+      u.searchParams.set('coi', '1');
+      alert('SAB 実験モードを ON にして再読込します。フォントやアイコンが崩れる場合は OFF に戻してください。');
+    }
+    location.href = u.toString();
+  } catch(e){
+    alert('再読込に失敗: ' + e.message);
+  }
+}
+
+function _refreshCOIStatus(){
+  var el = document.getElementById('coiStatus');
+  if(!el) return;
+  var coi = (typeof window !== 'undefined') && window.crossOriginIsolated;
+  var sab = _isSABAvailable();
+  var qsCoi = false;
+  try { qsCoi = (new URLSearchParams(location.search)).get('coi') === '1'; } catch(_){}
+  el.textContent = coi ? ('✓ 有効 (SAB ' + (sab ? '可' : '不可') + ')')
+                   : qsCoi ? '読込中...'
+                   : 'OFF';
+  el.style.color = coi ? 'var(--success)' : 'var(--text-sub)';
+}
+
+function _packStringToSAB(str){
+  if(!_isSABAvailable() || typeof str !== 'string') return null;
+  try {
+    var enc = new TextEncoder().encode(str);
+    var sab = new SharedArrayBuffer(enc.byteLength);
+    new Uint8Array(sab).set(enc);
+    return { sab: sab, length: enc.byteLength };
+  } catch(e){
+    console.warn('[SAB] pack failed:', e);
+    return null;
+  }
+}
+
+function _blendCommunityWeights(){
+  fetch('data/db/community_weights.json?_=' + Date.now(), { cache: 'no-store' })
+    .then(function(r){ if(!r.ok) throw new Error('no community'); return r.json(); })
+    .then(function(cw){
+      if(!cw || !Array.isArray(cw.weights) || cw.weights.length !== L2_INIT_WEIGHTS.length) return;
+      // 自身の学習サンプル数に応じて blend 比率を決定
+      //   n < 100 (新規): community 0.7 + local 0.3
+      //   n >= 100 (経験): community 0.3 + local 0.7
+      var n = l2trainStep || 0;
+      var alpha = (n < 100) ? 0.7 : 0.3;   // community の重み
+      var blended = new Array(L2_INIT_WEIGHTS.length);
+      for(var i = 0; i < blended.length; i++){
+        var c = Number.isFinite(cw.weights[i]) ? cw.weights[i] : L2_INIT_WEIGHTS[i];
+        var l = Number.isFinite(l2weights[i]) ? l2weights[i] : L2_INIT_WEIGHTS[i];
+        blended[i] = alpha * c + (1 - alpha) * l;
+      }
+      // 元の l2weights を更新（in-memory のみ、永続化しない＝次回 fetch で再 blend）
+      l2weights = blended;
+      console.log('[community] weights blended (alpha='+alpha+', n='+n+', cw.n='+cw.n+')');
+    })
+    .catch(function(_){ /* community_weights 未配信は通常の状態 */ });
+}
+
 function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT_COLORS[num]+';color:'+BOAT_TEXT[num]+';border:1px solid '+(num===1?'#ccc':'transparent')+'">'+num+'</span>'}
 
 function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
@@ -3771,6 +3843,8 @@ function loadSettings(){
   if(km) km.value = settings.kpiMode || 'balanced';
   // P2-1 (Epic 14): 通知許可状態をボタン横に表示
   if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
+  // Epic 18 (P2-7): COI 状態をボタン横に表示
+  if(typeof _refreshCOIStatus === 'function') _refreshCOIStatus();
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}

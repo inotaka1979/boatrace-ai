@@ -648,6 +648,88 @@ var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var l2learnedKeys=_bootParseLS('boatrace_learned', {});
 // PB-2: 学習更新カウンタ（LR decay 用）
 var l2trainStep=(function(){ var v=_bootParseLS('boatrace_trainstep', 0); return (typeof v==='number'&&Number.isFinite(v))?v:0; })();
+
+// Epic 18 (P2-7): SharedArrayBuffer ヘルパ — crossOriginIsolated 環境でのみ動作
+//   Worker への state 転送を構造化複製（〜50ms）から SAB（〜0ms）に置換するための土台。
+//   COI は opt-in（URL ?coi=1 が付いた navigation のみ SW が COOP/COEP を inject）。
+//   外部リソース (font/CDN) の CORP 対応を確認するため段階展開。
+function _isSABAvailable(){
+  return (typeof window !== 'undefined' && window.crossOriginIsolated === true
+       && typeof SharedArrayBuffer !== 'undefined');
+}
+function _toggleCOI(){
+  // 現在 ?coi=1 が付いていなければ付けて reload、付いていれば削除して reload
+  try {
+    var u = new URL(location.href);
+    if(u.searchParams.get('coi') === '1'){
+      u.searchParams.delete('coi');
+      sessionStorage.removeItem('_coi_reloaded');
+      alert('SAB 実験モードを OFF にして再読込します');
+    } else {
+      u.searchParams.set('coi', '1');
+      alert('SAB 実験モードを ON にして再読込します。フォントやアイコンが崩れる場合は OFF に戻してください。');
+    }
+    location.href = u.toString();
+  } catch(e){
+    alert('再読込に失敗: ' + e.message);
+  }
+}
+function _refreshCOIStatus(){
+  var el = document.getElementById('coiStatus');
+  if(!el) return;
+  var coi = (typeof window !== 'undefined') && window.crossOriginIsolated;
+  var sab = _isSABAvailable();
+  var qsCoi = false;
+  try { qsCoi = (new URLSearchParams(location.search)).get('coi') === '1'; } catch(_){}
+  el.textContent = coi ? ('✓ 有効 (SAB ' + (sab ? '可' : '不可') + ')')
+                   : qsCoi ? '読込中...'
+                   : 'OFF';
+  el.style.color = coi ? 'var(--success)' : 'var(--text-sub)';
+}
+function _packStringToSAB(str){
+  if(!_isSABAvailable() || typeof str !== 'string') return null;
+  try {
+    var enc = new TextEncoder().encode(str);
+    var sab = new SharedArrayBuffer(enc.byteLength);
+    new Uint8Array(sab).set(enc);
+    return { sab: sab, length: enc.byteLength };
+  } catch(e){
+    console.warn('[SAB] pack failed:', e);
+    return null;
+  }
+}
+// 起動ログで COI 状態を可視化（デバッグ用）
+try {
+  console.log('[Epic18] crossOriginIsolated=' + (typeof window !== 'undefined' && window.crossOriginIsolated)
+    + ' SABAvailable=' + _isSABAvailable());
+} catch(_){}
+
+// Epic 17 (P2-6): 疑似 federated learning — community weights を fetch して blend
+//   起動時に data/db/community_weights.json を取得し、自身の学習サンプル数に応じて重み合成
+function _blendCommunityWeights(){
+  fetch('data/db/community_weights.json?_=' + Date.now(), { cache: 'no-store' })
+    .then(function(r){ if(!r.ok) throw new Error('no community'); return r.json(); })
+    .then(function(cw){
+      if(!cw || !Array.isArray(cw.weights) || cw.weights.length !== L2_INIT_WEIGHTS.length) return;
+      // 自身の学習サンプル数に応じて blend 比率を決定
+      //   n < 100 (新規): community 0.7 + local 0.3
+      //   n >= 100 (経験): community 0.3 + local 0.7
+      var n = l2trainStep || 0;
+      var alpha = (n < 100) ? 0.7 : 0.3;   // community の重み
+      var blended = new Array(L2_INIT_WEIGHTS.length);
+      for(var i = 0; i < blended.length; i++){
+        var c = Number.isFinite(cw.weights[i]) ? cw.weights[i] : L2_INIT_WEIGHTS[i];
+        var l = Number.isFinite(l2weights[i]) ? l2weights[i] : L2_INIT_WEIGHTS[i];
+        blended[i] = alpha * c + (1 - alpha) * l;
+      }
+      // 元の l2weights を更新（in-memory のみ、永続化しない＝次回 fetch で再 blend）
+      l2weights = blended;
+      console.log('[community] weights blended (alpha='+alpha+', n='+n+', cw.n='+cw.n+')');
+    })
+    .catch(function(_){ /* community_weights 未配信は通常の状態 */ });
+}
+// boot 経路: loadAllData 完了後の idle で呼出（重要度低のため後回し）
+try { setTimeout(_blendCommunityWeights, 5000); } catch(_){}
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;
@@ -6152,6 +6234,8 @@ function loadSettings(){
   if(km) km.value = settings.kpiMode || 'balanced';
   // P2-1 (Epic 14): 通知許可状態をボタン横に表示
   if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
+  // Epic 18 (P2-7): COI 状態をボタン横に表示
+  if(typeof _refreshCOIStatus === 'function') _refreshCOIStatus();
 
   // F19: RPi URL 設定 UI を撤去（古い localStorage キーがあれば clean up）
   try{ localStorage.removeItem('boatrace_rpi_url'); }catch(_){}
@@ -6509,6 +6593,17 @@ function _setupServiceWorker(){
       console.log('[SW] registered scope=', reg.scope);
       _runIdleTask(function(){ reg.update(); }, 100);
       setInterval(function(){ reg.update(); }, 1800000);
+      // Epic 18 (P2-7): URL ?coi=1 が opt-in されている場合のみ COI reload を実施
+      try {
+        var _coiOptIn = (new URLSearchParams(location.search)).get('coi') === '1';
+        if(_coiOptIn && navigator.serviceWorker.controller && !window.crossOriginIsolated
+           && !sessionStorage.getItem('_coi_reloaded')){
+          sessionStorage.setItem('_coi_reloaded', '1');
+          console.log('[SW] coi opt-in: reloading once to activate cross-origin isolation');
+          setTimeout(function(){ location.reload(); }, 100);
+          return;
+        }
+      } catch(_){}
       reg.addEventListener('updatefound', function(){
         var nw = reg.installing;
         if(!nw) return;

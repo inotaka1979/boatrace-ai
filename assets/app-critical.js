@@ -647,6 +647,26 @@ var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 var l2learnedKeys=_bootParseLS('boatrace_learned', {});
 // PB-2: 学習更新カウンタ（LR decay 用）
 var l2trainStep=(function(){ var v=_bootParseLS('boatrace_trainstep', 0); return (typeof v==='number'&&Number.isFinite(v))?v:0; })();
+
+// Epic 18 (P2-7): SharedArrayBuffer ヘルパ — crossOriginIsolated 環境でのみ動作
+//   Worker への state 転送を構造化複製（〜50ms）から SAB（〜0ms）に置換するための土台。
+//   COI は opt-in（URL ?coi=1 が付いた navigation のみ SW が COOP/COEP を inject）。
+//   外部リソース (font/CDN) の CORP 対応を確認するため段階展開。
+/* MOVED: function _isSABAvailable */
+/* MOVED: function _toggleCOI */
+/* MOVED: function _refreshCOIStatus */
+/* MOVED: function _packStringToSAB */
+// 起動ログで COI 状態を可視化（デバッグ用）
+try {
+  console.log('[Epic18] crossOriginIsolated=' + (typeof window !== 'undefined' && window.crossOriginIsolated)
+    + ' SABAvailable=' + _isSABAvailable());
+} catch(_){}
+
+// Epic 17 (P2-6): 疑似 federated learning — community weights を fetch して blend
+//   起動時に data/db/community_weights.json を取得し、自身の学習サンプル数に応じて重み合成
+/* MOVED: function _blendCommunityWeights */
+// boot 経路: loadAllData 完了後の idle で呼出（重要度低のため後回し）
+try { setTimeout(_blendCommunityWeights, 5000); } catch(_){}
 var statsChart=null;
 var oddsAutoRefreshTimer=null;
 var oddsLastFetched=null;
@@ -1027,6 +1047,210 @@ window.addEventListener('unhandledrejection', function(e){
 })();
 
 /* BUILD:IDB:END */
+
+/* BUILD:BANDIT:START */
+"use strict";
+(() => {
+  // ../src/utils/bandit.js
+  var BANDIT_KEY = "boatrace_bandit";
+  function _sampleGamma(shape) {
+    if (shape < 1) {
+      return _sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
+    }
+    const d = shape - 1 / 3;
+    const c = 1 / Math.sqrt(9 * d);
+    while (true) {
+      let x, v;
+      do {
+        x = _sampleNormal();
+        v = 1 + c * x;
+      } while (v <= 0);
+      v = v * v * v;
+      const u = Math.random();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+  function _sampleNormal() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _sampleBeta(alpha, beta) {
+    const x = _sampleGamma(alpha);
+    const y = _sampleGamma(beta);
+    return x / (x + y);
+  }
+  function banditSelect(variants) {
+    if (!Array.isArray(variants) || variants.length === 0) return null;
+    let best = variants[0];
+    let bestSample = -Infinity;
+    for (const v of variants) {
+      const a = Math.max(1e-3, v.alpha || 1);
+      const b = Math.max(1e-3, v.beta || 1);
+      const s = _sampleBeta(a, b);
+      if (s > bestSample) {
+        bestSample = s;
+        best = v;
+      }
+    }
+    return best;
+  }
+  function banditUpdate(variants, variantId, reward) {
+    const v = variants.find((x) => x.id === variantId);
+    if (!v) return false;
+    const r = Math.max(0, Math.min(1, +reward || 0));
+    v.alpha = (v.alpha || 1) + r;
+    v.beta = (v.beta || 1) + (1 - r);
+    v.n = (v.n || 0) + 1;
+    v.lastReward = r;
+    v.lastUpdated = Date.now();
+    return true;
+  }
+  function banditMeans(variants) {
+    return variants.map((v) => ({
+      id: v.id,
+      mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
+      n: v.n || 0
+    })).sort((a, b) => b.mean - a.mean);
+  }
+  function banditLoad(defaults) {
+    let parsed = null;
+    try {
+      const raw = localStorage.getItem(BANDIT_KEY);
+      if (raw) parsed = JSON.parse(raw);
+    } catch (_) {
+    }
+    if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length === 0) {
+      return Array.isArray(defaults) ? defaults.slice() : [];
+    }
+    return parsed.variants;
+  }
+  function banditSave(variants) {
+    try {
+      localStorage.setItem(BANDIT_KEY, JSON.stringify({ variants, updated_at: Date.now() }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  globalThis.banditSelect = banditSelect;
+  globalThis.banditUpdate = banditUpdate;
+  globalThis.banditMeans = banditMeans;
+  globalThis.banditLoad = banditLoad;
+  globalThis.banditSave = banditSave;
+  globalThis.BANDIT_KEY = BANDIT_KEY;
+})();
+
+/* BUILD:BANDIT:END */
+
+/* BUILD:I18N:START */
+"use strict";
+(() => {
+  // ../src/utils/i18n.js
+  var I18N_KEY = "boatrace_locale";
+  var DEFAULT_LOCALE = "ja";
+  var I18N_TABLES = {
+    ja: {
+      "common.loading": "\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D...",
+      "common.refresh": "\u66F4\u65B0",
+      "common.close": "\u9589\u3058\u308B",
+      "common.copy": "\u30B3\u30D4\u30FC",
+      "common.share": "\u5171\u6709",
+      "race.honmei": "\u672C\u547D",
+      "race.middle": "\u6DF7\u6226",
+      "race.ana": "\u7A74",
+      "race.confidence": "\u4FE1\u983C\u5EA6",
+      "page.top": "\u30C8\u30C3\u30D7",
+      "page.stats": "\u6210\u7E3E",
+      "page.backtest": "\u691C\u8A3C",
+      "page.settings": "\u8A2D\u5B9A",
+      "settings.bet_count_3": "3\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
+      "settings.bet_count_2": "2\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
+      "settings.bet_method": "\u8CB7\u3044\u76EE\u65B9\u5F0F",
+      "settings.kpi_mode": "KPI \u30E2\u30FC\u30C9",
+      "settings.notify": "\u7684\u4E2D\u901A\u77E5",
+      "notify.permission_request": "\u8A31\u53EF\u30EA\u30AF\u30A8\u30B9\u30C8",
+      "notify.permission_granted": "\u2713 \u8A31\u53EF\u6E08",
+      "notify.permission_denied": "\xD7 \u62D2\u5426\uFF08\u30D6\u30E9\u30A6\u30B6\u8A2D\u5B9A\u3067\u5909\u66F4\u53EF\uFF09",
+      "notify.permission_default": "\u672A\u8A2D\u5B9A",
+      "api.health.fail": "API \u53D6\u5F97\u5931\u6557",
+      "api.health.cached": "\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D",
+      "api.health.warning": "\u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059"
+    },
+    en: {
+      // scaffold のみ。実翻訳は別 PR。
+      "common.loading": "Loading...",
+      "common.refresh": "Refresh",
+      "common.close": "Close",
+      "common.copy": "Copy",
+      "common.share": "Share",
+      "race.honmei": "Favorite",
+      "race.middle": "Mixed",
+      "race.ana": "Long shot",
+      "race.confidence": "Confidence",
+      "page.top": "Top",
+      "page.stats": "Stats",
+      "page.backtest": "Backtest",
+      "page.settings": "Settings"
+    }
+  };
+  var _currentLocale = DEFAULT_LOCALE;
+  function _detectLocale() {
+    try {
+      const qs = new URLSearchParams(location.search || "");
+      const q = qs.get("lang");
+      if (q && I18N_TABLES[q]) return q;
+    } catch (_) {
+    }
+    try {
+      const stored = localStorage.getItem(I18N_KEY);
+      if (stored && I18N_TABLES[stored]) return stored;
+    } catch (_) {
+    }
+    try {
+      const nav = (navigator.language || "").slice(0, 2);
+      if (nav && I18N_TABLES[nav]) return nav;
+    } catch (_) {
+    }
+    return DEFAULT_LOCALE;
+  }
+  function setLocale(locale) {
+    if (!I18N_TABLES[locale]) return false;
+    _currentLocale = locale;
+    try {
+      localStorage.setItem(I18N_KEY, locale);
+    } catch (_) {
+    }
+    return true;
+  }
+  function getLocale() {
+    return _currentLocale;
+  }
+  function t(key, params) {
+    const table = I18N_TABLES[_currentLocale] || I18N_TABLES[DEFAULT_LOCALE];
+    let text = table[key];
+    if (text == null) {
+      text = I18N_TABLES[DEFAULT_LOCALE] && I18N_TABLES[DEFAULT_LOCALE][key] || key;
+    }
+    if (params && typeof params === "object") {
+      text = text.replace(/\{\{(\w+)\}\}/g, (_, k) => params[k] != null ? String(params[k]) : "{{" + k + "}}");
+    }
+    return text;
+  }
+  function availableLocales() {
+    return Object.keys(I18N_TABLES);
+  }
+  _currentLocale = _detectLocale();
+  globalThis.t = t;
+  globalThis.setLocale = setLocale;
+  globalThis.getLocale = getLocale;
+  globalThis.availableLocales = availableLocales;
+  globalThis.I18N_TABLES = I18N_TABLES;
+})();
+
+/* BUILD:I18N:END */
 
 // PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
@@ -2663,6 +2887,17 @@ function _setupServiceWorker(){
       console.log('[SW] registered scope=', reg.scope);
       _runIdleTask(function(){ reg.update(); }, 100);
       setInterval(function(){ reg.update(); }, 1800000);
+      // Epic 18 (P2-7): URL ?coi=1 が opt-in されている場合のみ COI reload を実施
+      try {
+        var _coiOptIn = (new URLSearchParams(location.search)).get('coi') === '1';
+        if(_coiOptIn && navigator.serviceWorker.controller && !window.crossOriginIsolated
+           && !sessionStorage.getItem('_coi_reloaded')){
+          sessionStorage.setItem('_coi_reloaded', '1');
+          console.log('[SW] coi opt-in: reloading once to activate cross-origin isolation');
+          setTimeout(function(){ location.reload(); }, 100);
+          return;
+        }
+      } catch(_){}
       reg.addEventListener('updatefound', function(){
         var nw = reg.installing;
         if(!nw) return;
