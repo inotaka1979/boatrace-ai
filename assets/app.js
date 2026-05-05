@@ -3085,8 +3085,17 @@ function savePrediction(date,sid,rn,pred,result){
   try{
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
-    var exists=history.some(function(h){return h.date===date&&h.stadium===sid&&h.race===rn});
-    if(exists) return;
+    var existIdx = -1;
+    for(var i=0;i<history.length;i++){
+      if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
+    }
+    // F19: 既存エントリ更新ポリシー — 展示前/後で予想が変わる問題を修正
+    if(existIdx >= 0){
+      var existing = history[existIdx];
+      var newHasResult = result && result.isFinished && result.results;
+      if(existing.actual && existing.actual.length > 0 && !newHasResult) return;
+      history.splice(existIdx, 1);
+    }
     var entry={
       date:date,stadium:sid,race:rn,
       predicted:pred.marks.map(function(m){return m.boat}),

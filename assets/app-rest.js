@@ -2006,8 +2006,22 @@ function savePrediction(date,sid,rn,pred,result){
   try{
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
-    var exists=history.some(function(h){return h.date===date&&h.stadium===sid&&h.race===rn});
-    if(exists) return;
+    var existIdx = -1;
+    for(var i=0;i<history.length;i++){
+      if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
+    }
+    // F19: 既存エントリ更新ポリシー
+    //   - 既存が actual あり (= 確定済) で、新規も actual あり → 上書きで予想を最新化
+    //     (展示前→展示後で予想が更新されるため、古い trifecta_bets で hit 判定されるバグを修正)
+    //   - 既存が actual あり、新規 result 無し (predict のみ) → 既存を保護 (skip)
+    //   - 既存が actual 無し → 上書き (predict 内容と確定情報を最新に)
+    if(existIdx >= 0){
+      var existing = history[existIdx];
+      var newHasResult = result && result.isFinished && result.results;
+      if(existing.actual && existing.actual.length > 0 && !newHasResult) return;
+      // それ以外は履歴の該当 index を上書きするため、削除して新規作成へ
+      history.splice(existIdx, 1);
+    }
     var entry={
       date:date,stadium:sid,race:rn,
       predicted:pred.marks.map(function(m){return m.boat}),
