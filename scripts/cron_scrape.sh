@@ -36,7 +36,7 @@ export TZ="Asia/Tokyo"
 
 # --- 引数チェック ---
 MODE="${1:-all}"
-if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" && "$MODE" != "photos" ]]; then
+if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" && "$MODE" != "photos" && "$MODE" != "results" ]]; then
     echo "Usage: $0 {odds|previews|all|tide|racedata|photos}" >&2
     exit 1
 fi
@@ -228,6 +228,12 @@ case "$MODE" in
         # download_photo の attempts=2 + timeout 20s に依存し、欠損のみ拾う。
         run_scrape "refresh_all_photos.py" "photos" || overall=$?
         git_push_locked "photos" || overall=$?
+        ;;
+    results)
+        # 自前 results scraper（boatrace.jp 直接、~3 min）
+        # 公式 Open API は反映が遅い (~30 min) ので自前を優先する
+        run_scrape "scrape_results.py" "results" || overall=$?
+        git_push_locked "results" || overall=$?
         ;;
 esac
 

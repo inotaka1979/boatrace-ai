@@ -1412,12 +1412,27 @@ async function forceRefresh(){
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
     var rawPv = _filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
     if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
-    var rawR  = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
+    // results: 自前 data/results/today.json を優先、fallback で Open API
+    //   公式 Open API は反映が遅い (~30 min) ため、cron が更新する自前を先に試す
+    var rawR = null;
+    try{
+      var rR = await fetch('data/results/today.json?t='+t, {cache:'no-store'});
+      if(rR.ok){
+        var rd = await rR.json();
+        var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        // updated_at が今日 OR results 内に今日のレースが 1 件以上含まれていれば採用
+        if(rd && Array.isArray(rd.results) && rd.results.length > 0
+           && rd.results.some(function(r){return r.race_date===todayJst})){
+          rawR = rd;
+        }
+      }
+    }catch(_){}
+    if(!rawR) rawR = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
       if(programData) updateDBFromResults(resultData, programData);
-      await learnFromResults();   // PE-9: async
+      await learnFromResults();
       updateHistoryWithResults();
     }
     try{
