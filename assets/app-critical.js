@@ -3040,7 +3040,10 @@ async function loadAllData(){
 
   // PE-8: Phase 1 — 起動 critical fetch を並列化（programs + previews）
   // PH-5: 各 fetch / 重い同期処理の前後で yield、long task 化を回避
-  var ts='?t='+Date.now();
+  // Epic 28c: 初回 loadAllData では timestamp 不要 (fetchWithFallback が cache:no-store 指定済)。
+  //   ?t= を付けると <link rel="preload"> の URL と乖離して preload が無駄になり警告発生。
+  //   refresh 系 (hardReload / forceRefresh) では timestamp を付ける (CDN bust 確実化)。
+  var ts='';
   var phase1 = await Promise.all([
     fetchWithFallback(API_BASE+'/programs/v2/today.json'+ts),
     fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts),

@@ -1,0 +1,16 @@
+{
+  "weights": [3.0, 1.5, -1.0, -4.0, -1.5, 0.5, 4.0, -0.8, 1.0, 1.5, 0.3, 3.5],
+  "n": 0,
+  "feature_dim": 12,
+  "feature_version": 1,
+  "fitted_at": "2026-05-06T00:00:00Z",
+  "stadium_weights": {},
+  "stadium_n": {},
+  "fl_architecture": "centralized_hierarchical_with_uploads",
+  "fl_upload_count": 0,
+  "_meta": {
+    "schema_version": 2,
+    "placeholder": true,
+    "note": "compute_community_weights.py が cron で初回 commit するまでの placeholder。L2_INIT_WEIGHTS と同値のため blend 無効化"
+  }
+}
