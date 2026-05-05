@@ -14,14 +14,16 @@
 <title>BoatRace AI</title>
 <!-- PE-2: favicon 404 対策 -->
 <link rel="icon" type="image/png" href="icon-192.png">
-<!-- PA-2 + PE-2 + Epic 10: CSP 強化。frame-ancestors は meta では無視されるため除外（HTTP ヘッダで要設定）
-     'unsafe-inline' (script/style) は inline onclick / inline style 維持のため残置中。
-     Phase 2/3 で nonce 化計画 → docs/CSP_MIGRATION_ROADMAP.md 参照 -->
-<!-- CSP-NONCE-PLACEHOLDER: build.mjs Phase 3 で <meta http-equiv="Content-Security-Policy" ... 'nonce-XXX' ...> に置換予定 -->
+<!-- PA-2 + PE-2 + Epic 10/19: CSP 厳格化。frame-ancestors は meta では無視されるため除外（HTTP ヘッダで要設定）
+     Epic 19: script-src から 'unsafe-inline' を撤去。inline onclick は data-action delegation
+              に移行済み (assets/app.js ACTION_HANDLERS)。inline-script は build pipeline
+              で外部化済み (script タグ自体はもう存在しない)。
+     style-src の 'unsafe-inline' は inline style="..." 多数のため残置（Phase 4 で削減検討）。
+     詳細: docs/CSP_MIGRATION_ROADMAP.md -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   connect-src 'self' https://boatraceopenapi.github.io https://inotaka1979.github.io;
-  script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
+  script-src 'self' https://cdnjs.cloudflare.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
   img-src 'self' data: https:;
@@ -63,7 +65,9 @@
 <!-- PF-7: Google Fonts を非同期 load (render-blocking 解消)
      PF-4 の system font fallback が即時表示、Noto load 完了後に置換 (FOUT) -->
 <link rel="preload" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" as="style" referrerpolicy="no-referrer">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" media="print" referrerpolicy="no-referrer" onload="this.media='all'">
+<!-- Epic 19: onload="this.media='all'" は inline handler のため CSP に抵触。
+     data-csp-onload-media を JS で監視する CSP-safe パターンに置換。 -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" media="print" referrerpolicy="no-referrer" data-csp-onload-media="all">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" referrerpolicy="no-referrer"></noscript>
 <!-- PD-13b: Chart.js は成績タブ初表示時のみ動的 load。LCP / 初回 INP 改善（200KB 削減） -->
 <!-- PA-3: SRI ハッシュは _loadChartLib() で integrity 属性を付与して読み込む -->
@@ -374,15 +378,15 @@ button.action-btn:active{background:#F0F0F0}
   <div class="header-right">
     <div id="headerDate" aria-live="off"></div>
     <div id="dataFreshness" style="font-size:12px" aria-live="off"></div>
-    <button class="refresh-btn" onclick="hardReload()">更新</button>
+    <button class="refresh-btn" data-action="hardReload">更新</button>
   </div>
 </header>
 <!-- P0-7: API障害バナー — fetch失敗 / schema不正時のみ表示、再試行/閉じるボタン付き -->
 <div id="apiHealthBanner" role="alert" aria-live="assertive" style="display:none;background:#FFF3CD;color:#856404;border-bottom:1px solid #FFE69C;padding:8px 12px;font-size:12px;text-align:left">
   <span id="apiHealthMsg">API応答に問題があります</span>
   <span style="float:right;display:flex;gap:6px">
-    <button onclick="hardReload()" style="background:#856404;color:#fff;border:0;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">再試行</button>
-    <button onclick="document.getElementById('apiHealthBanner').style.display='none'" aria-label="閉じる" style="background:transparent;color:#856404;border:1px solid #856404;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">×</button>
+    <button data-action="hardReload" style="background:#856404;color:#fff;border:0;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">再試行</button>
+    <button data-action="closeApiHealthBanner" aria-label="閉じる" style="background:transparent;color:#856404;border:1px solid #856404;padding:2px 8px;font-size:11px;border-radius:3px;cursor:pointer">×</button>
   </span>
 </div>
 
@@ -398,15 +402,15 @@ button.action-btn:active{background:#F0F0F0}
   <div id="topSummary" style="min-height:52px"></div>
   <!-- PE-11: pre-rendered stadium grid (LCP 即時化、JS load 後に上書き) -->
   <div id="stadiumList" class="stadium-grid"><!-- PRERENDER:STADIUMS:START -->
-  <!-- prerendered at 2026-05-05T12:49:52+09:00 (17/24 active stadiums) -->
-<div class="stadium-card active-stadium" data-sid="1" role="button" tabindex="0" onclick="openStadium('1')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">桐生</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="2" role="button" tabindex="0" onclick="openStadium('2')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">戸田</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">江戸川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="4" role="button" tabindex="0" onclick="openStadium('4')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">平和島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">多摩川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="6" role="button" tabindex="0" onclick="openStadium('6')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">浜名湖</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="7" role="button" tabindex="0" onclick="openStadium('7')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">蒲郡</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="8" role="button" tabindex="0" onclick="openStadium('8')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">常滑</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="9" role="button" tabindex="0" onclick="openStadium('9')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="10" role="button" tabindex="0" onclick="openStadium('10')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">三国</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="11" role="button" tabindex="0" onclick="openStadium('11')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">びわこ</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="12" role="button" tabindex="0" onclick="openStadium('12')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">住之江</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="13" role="button" tabindex="0" onclick="openStadium('13')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">尼崎</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">鳴門</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="15" role="button" tabindex="0" onclick="openStadium('15')"><span class="stadium-grade grade-g2">G2</span><span class="stadium-name">丸亀</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="16" role="button" tabindex="0" onclick="openStadium('16')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">児島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="17" role="button" tabindex="0" onclick="openStadium('17')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">宮島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="18" role="button" tabindex="0" onclick="openStadium('18')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">徳山</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">下関</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="20" role="button" tabindex="0" onclick="openStadium('20')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">若松</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">芦屋</span><span class="stadium-status">次節</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">福岡</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="23" role="button" tabindex="0" onclick="openStadium('23')"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">唐津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium"><span class="stadium-name">大村</span><span class="stadium-status">次節</span></div>
+  <!-- prerendered at 2026-05-05T23:32:35+09:00 (17/24 active stadiums) -->
+<div class="stadium-card active-stadium" data-sid="1" data-hydrated="true" role="button" tabindex="0" aria-label="桐生 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="1"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">桐生</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="2" data-hydrated="true" role="button" tabindex="0" aria-label="戸田 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="2"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">戸田</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="江戸川 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">江戸川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="4" data-hydrated="true" role="button" tabindex="0" aria-label="平和島 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="4"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">平和島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="多摩川 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">多摩川</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="6" data-hydrated="true" role="button" tabindex="0" aria-label="浜名湖 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="6"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">浜名湖</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="7" data-hydrated="true" role="button" tabindex="0" aria-label="蒲郡 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="7"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">蒲郡</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="8" data-hydrated="true" role="button" tabindex="0" aria-label="常滑 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="8"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">常滑</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="9" data-hydrated="true" role="button" tabindex="0" aria-label="津 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="9"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="10" data-hydrated="true" role="button" tabindex="0" aria-label="三国 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="10"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">三国</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="11" data-hydrated="true" role="button" tabindex="0" aria-label="びわこ 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="11"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">びわこ</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="12" data-hydrated="true" role="button" tabindex="0" aria-label="住之江 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="12"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">住之江</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="13" data-hydrated="true" role="button" tabindex="0" aria-label="尼崎 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="13"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">尼崎</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="鳴門 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">鳴門</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="15" data-hydrated="true" role="button" tabindex="0" aria-label="丸亀 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="15"><span class="stadium-grade grade-g2">G2</span><span class="stadium-name">丸亀</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="16" data-hydrated="true" role="button" tabindex="0" aria-label="児島 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="16"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">児島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="17" data-hydrated="true" role="button" tabindex="0" aria-label="宮島 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="17"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">宮島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="18" data-hydrated="true" role="button" tabindex="0" aria-label="徳山 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="18"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">徳山</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="下関 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">下関</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="20" data-hydrated="true" role="button" tabindex="0" aria-label="若松 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="20"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">若松</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="芦屋 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">芦屋</span><span class="stadium-status">次節</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="福岡 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">福岡</span><span class="stadium-status">次節</span></div><div class="stadium-card active-stadium" data-sid="23" data-hydrated="true" role="button" tabindex="0" aria-label="唐津 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="23"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">唐津</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" aria-label="大村 次節（本日非開催）" aria-disabled="true"><span class="stadium-name">大村</span><span class="stadium-status">次節</span></div>
   <!-- PRERENDER:STADIUMS:END --></div>
   <div class="footer-note">予想は統計モデルによる参考情報です。的中を保証するものではありません。</div>
 </div>
 
 <!-- Screen 2: Race List -->
 <div class="page" id="pageRaces">
-  <button class="back-btn" onclick="showPage('top')">← 場選択に戻る</button>
+  <button class="back-btn" data-action="showPage" data-arg-page="top">← 場選択に戻る</button>
   <div style="font-weight:700;font-size:16px;margin-bottom:8px" id="racesTitle"></div>
   <div id="raceSummary"></div>
   <div id="racesList"></div>
@@ -417,14 +421,14 @@ button.action-btn:active{background:#F0F0F0}
   <button class="back-btn" id="detailBack">← レース一覧に戻る</button>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
     <div style="font-weight:700;font-size:16px" id="detailTitle"></div>
-    <button class="odds-refresh-btn" id="oddsRefreshBtn" onclick="refreshThisRace()">🔄 このレースを更新</button>
+    <button class="odds-refresh-btn" id="oddsRefreshBtn" data-action="refreshThisRace">🔄 このレースを更新</button>
     <span class="odds-stale" id="oddsStaleMsg"></span>
   </div>
   <!-- P0-4: 詳細画面の Tabs 化 — 縦スクロール 10画面超 → 3タブで認知負荷を低減 -->
   <div class="detail-tabs" role="tablist" aria-label="レース詳細セクション">
-    <button class="detail-tab-btn active" data-detail-tab="lineup" role="tab" aria-selected="true" onclick="_showDetailTab('lineup')">📋 出走表</button>
-    <button class="detail-tab-btn" data-detail-tab="ai" role="tab" aria-selected="false" onclick="_showDetailTab('ai')">🧠 AI根拠</button>
-    <button class="detail-tab-btn" data-detail-tab="odds" role="tab" aria-selected="false" onclick="_showDetailTab('odds')">💰 オッズ・買い目</button>
+    <button class="detail-tab-btn active" data-detail-tab="lineup" role="tab" aria-selected="true" data-action="showDetailTab" data-arg-tab="lineup">📋 出走表</button>
+    <button class="detail-tab-btn" data-detail-tab="ai" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="ai">🧠 AI根拠</button>
+    <button class="detail-tab-btn" data-detail-tab="odds" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="odds">💰 オッズ・買い目</button>
   </div>
   <section class="detail-tab-section active" data-detail-section="lineup" role="tabpanel">
     <div id="detailWeather"></div>
@@ -490,7 +494,7 @@ button.action-btn:active{background:#F0F0F0}
         <input type="number" id="btBankroll" value="10000" min="1000" step="1000"
                style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
       </div>
-      <button class="action-btn" onclick="runBacktest()" style="width:100%;margin-top:8px">▶ バックテスト実行</button>
+      <button class="action-btn" data-action="runBacktest" style="width:100%;margin-top:8px">▶ バックテスト実行</button>
     </div>
   </div>
   <div id="btResult"></div>
@@ -503,20 +507,20 @@ button.action-btn:active{background:#F0F0F0}
   <div class="card">
     <div class="setting-row">
       <span class="setting-label">3連単 買い目点数</span>
-      <select id="setBetCount3" aria-label="3連単 買い目点数" onchange="saveSetting('betCount3',this.value)">
+      <select id="setBetCount3" aria-label="3連単 買い目点数" data-action="saveSetting" data-arg-key="betCount3">
         <option value="5">5点</option><option value="8">8点</option>
         <option value="10" selected>10点</option><option value="15">15点</option><option value="20">20点</option>
       </select>
     </div>
     <div class="setting-row">
       <span class="setting-label">2連単 買い目点数</span>
-      <select id="setBetCount2" aria-label="2連単 買い目点数" onchange="saveSetting('betCount2',this.value)">
+      <select id="setBetCount2" aria-label="2連単 買い目点数" data-action="saveSetting" data-arg-key="betCount2">
         <option value="3">3点</option><option value="5" selected>5点</option>
       </select>
     </div>
     <div class="setting-row">
       <span class="setting-label">買い目方式</span>
-      <select id="setBetMethod" aria-label="買い目方式" onchange="saveSetting('betMethod',this.value)">
+      <select id="setBetMethod" aria-label="買い目方式" data-action="saveSetting" data-arg-key="betMethod">
         <option value="auto" selected>自動</option>
         <option value="ev">EV (期待値ベース)</option>
         <option value="prob">確率順</option>
@@ -530,14 +534,14 @@ button.action-btn:active{background:#F0F0F0}
     <div style="padding:12px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border)">期待値（EV）戦略</div>
     <div class="setting-row">
       <span class="setting-label">EV モード</span>
-      <select id="setEvMode" aria-label="EV モード ON/OFF" onchange="saveSetting('evMode',this.value==='true')">
+      <select id="setEvMode" aria-label="EV モード ON/OFF" data-action="saveSetting" data-arg-key="evMode">
         <option value="false">OFF（従来のロジック）</option>
         <option value="true">ON（オッズ揃い時に EV 優先）</option>
       </select>
     </div>
     <div class="setting-row">
       <span class="setting-label">EV 最低閾値</span>
-      <select id="setEvMin" aria-label="EV 最低閾値" onchange="saveSetting('evMin',this.value)">
+      <select id="setEvMin" aria-label="EV 最低閾値" data-action="saveSetting" data-arg-key="evMin">
         <option value="1.05">1.05（緩め）</option>
         <option value="1.15" selected>1.15（標準）</option>
         <option value="1.30">1.30（厳しめ）</option>
@@ -546,7 +550,7 @@ button.action-btn:active{background:#F0F0F0}
     </div>
     <div class="setting-row">
       <span class="setting-label">Kelly 比率</span>
-      <select id="setKellyFrac" aria-label="Kelly 比率" onchange="saveSetting('kellyFrac',this.value)">
+      <select id="setKellyFrac" aria-label="Kelly 比率" data-action="saveSetting" data-arg-key="kellyFrac">
         <option value="0">0（均等配分）</option>
         <option value="0.25">0.25（保守）</option>
         <option value="0.5" selected>0.5（half-Kelly 推奨）</option>
@@ -556,13 +560,13 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row">
       <span class="setting-label">資金 (円)</span>
       <input type="number" id="setBankroll" min="1000" step="1000" value="10000"
-             onchange="saveSetting('bankroll',parseInt(this.value)||10000)"
+             data-action="saveSetting" data-arg-key="bankroll"
              style="width:100px;padding:4px;border:1px solid var(--border);border-radius:4px;text-align:right">
     </div>
     <!-- P0-3: KPI モード — race_type 別の evMin/maxBets 自動調整プリセット -->
     <div class="setting-row">
       <span class="setting-label">KPI モード</span>
-      <select id="setKpiMode" aria-label="KPI モード" onchange="saveSetting('kpiMode',this.value)">
+      <select id="setKpiMode" aria-label="KPI モード" data-action="saveSetting" data-arg-key="kpiMode">
         <option value="off">OFF（手動 evMin/点数）</option>
         <option value="balanced" selected>balanced（中庸 / 推奨）</option>
         <option value="roi">roi（高EV厳選・低点数）</option>
@@ -572,27 +576,27 @@ button.action-btn:active{background:#F0F0F0}
     <!-- P2-1 (Epic 14): ローカル通知 — 前回訪問後に確定した的中レースを通知 -->
     <div class="setting-row">
       <span class="setting-label">的中通知</span>
-      <span><button class="action-btn" onclick="_enableNotifyPermission()">許可リクエスト</button>
+      <span><button class="action-btn" data-action="enableNotifyPermission">許可リクエスト</button>
             <span id="notifyStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未設定</span></span>
     </div>
     <!-- Epic 18 (P2-7): SharedArrayBuffer 実験オプション -->
     <div class="setting-row">
       <span class="setting-label">SAB高速化(実験)</span>
-      <span><button class="action-btn" onclick="_toggleCOI()">切替</button>
+      <span><button class="action-btn" data-action="toggleCOI">切替</button>
             <span id="coiStatus" style="font-size:11px;margin-left:8px;color:var(--text-sub)">未確認</span></span>
     </div>
   </div>
-    <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" onclick="clearCache()">クリア</button></div>
-    <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" onclick="clearHistory()">リセット</button></div>
-    <div class="setting-row"><span class="setting-label">選手/場DB</span><button class="action-btn" onclick="rebuildDB()">再構築</button></div>
-    <div class="setting-row"><span class="setting-label">学習重み</span><button class="action-btn" onclick="resetWeights()">リセット</button></div>
+    <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" data-action="clearCache">クリア</button></div>
+    <div class="setting-row"><span class="setting-label">成績履歴</span><button class="action-btn" data-action="clearHistory">リセット</button></div>
+    <div class="setting-row"><span class="setting-label">選手/場DB</span><button class="action-btn" data-action="rebuildDB">再構築</button></div>
+    <div class="setting-row"><span class="setting-label">学習重み</span><button class="action-btn" data-action="resetWeights">リセット</button></div>
     <!-- PC-6: client-side error log の表示・コピー -->
-    <div class="setting-row"><span class="setting-label">エラーログ</span><span><button class="action-btn" onclick="showErrorLog()">表示</button> <button class="action-btn" onclick="copyErrorLog()">コピー</button> <button class="action-btn" onclick="clearErrorLog()">削除</button></span></div>
+    <div class="setting-row"><span class="setting-label">エラーログ</span><span><button class="action-btn" data-action="showErrorLog">表示</button> <button class="action-btn" data-action="copyErrorLog">コピー</button> <button class="action-btn" data-action="clearErrorLog">削除</button></span></div>
     <!-- PB-6: Platt scaling auto-fit -->
-    <div class="setting-row"><span class="setting-label">確率校正 (Platt)</span><button class="action-btn" onclick="refitPlattCoefficients()">再校正</button></div>
+    <div class="setting-row"><span class="setting-label">確率校正 (Platt)</span><button class="action-btn" data-action="refitPlattCoefficients">再校正</button></div>
     <!-- PE-3: データエクスポート + Forward-chain 即時評価 -->
-    <div class="setting-row"><span class="setting-label">履歴 CSV エクスポート</span><button class="action-btn" onclick="exportHistoryCSV()">DL</button></div>
-    <div class="setting-row"><span class="setting-label">Forward-chain 評価</span><button class="action-btn" onclick="runForwardChainNow()">即時実行</button></div>
+    <div class="setting-row"><span class="setting-label">履歴 CSV エクスポート</span><button class="action-btn" data-action="exportHistoryCSV">DL</button></div>
+    <div class="setting-row"><span class="setting-label">Forward-chain 評価</span><button class="action-btn" data-action="runForwardChainNow">即時実行</button></div>
   </div>
   <div class="card">
     <div class="db-info" id="dbInfo">DB情報を読込中...</div>
@@ -603,11 +607,11 @@ button.action-btn:active{background:#F0F0F0}
 <!-- Navigation - 5 tabs (X7: バックテスト追加) -->
 <!-- PD-7 + PE-2: aria-label は visible text と一致（label-content-name-mismatch 解消） -->
 <nav class="nav" role="navigation" aria-label="メインメニュー">
-  <button class="nav-btn active" onclick="showPage('top')" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
-  <button class="nav-btn" onclick="showPage('stats')" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
-  <button class="nav-btn" onclick="showPage('backtest')" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
-  <button class="nav-btn" onclick="showPage('settings')" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
-  <button class="nav-btn" onclick="forceRefresh()" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
+  <button class="nav-btn active" data-action="showPage" data-arg-page="top" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span>TOP</button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="stats" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span>成績</button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="backtest" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span>検証</button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="settings" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span>設定</button>
+  <button class="nav-btn" data-action="forceRefresh" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span>更新</button>
 </nav>
 
 <!-- PI-3: code splitting — critical (33KB, top page render) を defer で即時実行

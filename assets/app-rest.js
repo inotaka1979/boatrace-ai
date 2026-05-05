@@ -12,6 +12,35 @@ function _initFeatureStats(){
   };
 }
 
+function _setupActionDelegation(){
+  if(window._actionDelegationInstalled) return;
+  window._actionDelegationInstalled = true;
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    var depth = 0;
+    while(el && el !== document.documentElement && depth < 8){
+      var act = el.dataset && el.dataset.action;
+      if(act && ACTION_HANDLERS[act]){
+        try { ACTION_HANDLERS[act](el, e); }
+        catch(err){ console.error('[action]', act, err); }
+        return;
+      }
+      el = el.parentElement;
+      depth++;
+    }
+  }, true); // capture phase で確実に拾う（iOS standalone PWA で bubble が止まる事例対策）
+  // change イベントも処理（select/input の data-action 用）
+  document.addEventListener('change', function(e){
+    var el = e.target;
+    if(!el || !el.dataset) return;
+    var act = el.dataset.action;
+    if(act && ACTION_HANDLERS[act]){
+      try { ACTION_HANDLERS[act](el, e); }
+      catch(err){ console.error('[action change]', act, err); }
+    }
+  }, true);
+}
+
 function _isSABAvailable(){
   return (typeof window !== 'undefined' && window.crossOriginIsolated === true
        && typeof SharedArrayBuffer !== 'undefined');
@@ -2895,7 +2924,7 @@ function openRace(sid,rn){
   var _watched = (typeof _isRaceWatched === 'function') ? _isRaceWatched(sid, rn) : false;
   var _starHtml = '<button id="raceStarBtn" aria-label="お気に入り切替" '
     + 'style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" '
-    + 'onclick="_toggleRaceWatched(\''+sid+'\',\''+rn+'\')">'
+    + 'data-action="toggleRaceWatched" data-arg-sid="'+sid+'" data-arg-rn="'+rn+'">'
     + (_watched ? '⭐' : '☆') + '</button>';
   document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'')+_starHtml;
   document.getElementById('detailBack').onclick=function(){openStadium(sid)};
@@ -3575,7 +3604,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
   // 3f. Odds refresh + auto-refresh timer + PAT settings link
   html+='<div class="odds-section" style="text-align:center">';
-  html+='<button class="odds-refresh-btn" onclick="refreshOdds()">オッズ更新</button>';
+  html+='<button class="odds-refresh-btn" data-action="refreshOdds">オッズ更新</button>';
   html+=' <span class="odds-stale" id="oddsStaleMsg2"></span>';
   if(oddsLastFetched){
     var elapsed=Math.round((Date.now()-oddsLastFetched)/60000);

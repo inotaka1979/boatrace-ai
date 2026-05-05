@@ -649,6 +649,102 @@ var l2learnedKeys=_bootParseLS('boatrace_learned', {});
 // PB-2: 学習更新カウンタ（LR decay 用）
 var l2trainStep=(function(){ var v=_bootParseLS('boatrace_trainstep', 0); return (typeof v==='number'&&Number.isFinite(v))?v:0; })();
 
+// Epic 19: data-action delegation — CSP 'unsafe-inline' 撤去のための inline onclick 代替
+//   各 button/element に data-action="xxx" を付与。capture phase で document が
+//   ハンドリングし、ACTION_HANDLERS テーブルから関数を引いて呼び出す。
+//   引数は data-arg-* （camelCase 化された dataset.argXxx）から取得する。
+//   既存 inline onclick と並存可能（先に inline が動けば preventDefault されない）。
+var ACTION_HANDLERS = {
+  hardReload:              function(){ if(typeof hardReload==='function') hardReload(); },
+  forceRefresh:            function(){ if(typeof forceRefresh==='function') forceRefresh(); },
+  refreshOdds:             function(){ if(typeof refreshOdds==='function') refreshOdds(); },
+  refreshThisRace:         function(){ if(typeof refreshThisRace==='function') refreshThisRace(); },
+  openStadium:             function(el){ if(typeof openStadium==='function') openStadium(el.dataset.argSid); },
+  openRace:                function(el){ if(typeof openRace==='function') openRace(el.dataset.argSid, el.dataset.argRn); },
+  showPage:                function(el){ if(typeof showPage==='function') showPage(el.dataset.argPage); },
+  showDetailTab:           function(el){ if(typeof _showDetailTab==='function') _showDetailTab(el.dataset.argTab); },
+  toggleRaceWatched:       function(el){ if(typeof _toggleRaceWatched==='function') _toggleRaceWatched(el.dataset.argSid, el.dataset.argRn); },
+  enableNotifyPermission:  function(){ if(typeof _enableNotifyPermission==='function') _enableNotifyPermission(); },
+  toggleCOI:               function(){ if(typeof _toggleCOI==='function') _toggleCOI(); },
+  closeApiHealthBanner:    function(){ var b=document.getElementById('apiHealthBanner'); if(b) b.style.display='none'; },
+  runBacktest:             function(){ if(typeof runBacktest==='function') runBacktest(); },
+  clearCache:              function(){ if(typeof clearCache==='function') clearCache(); },
+  clearHistory:            function(){ if(typeof clearHistory==='function') clearHistory(); },
+  rebuildDB:               function(){ if(typeof rebuildDB==='function') rebuildDB(); },
+  resetWeights:            function(){ if(typeof resetWeights==='function') resetWeights(); },
+  showErrorLog:            function(){ if(typeof showErrorLog==='function') showErrorLog(); },
+  copyErrorLog:            function(){ if(typeof copyErrorLog==='function') copyErrorLog(); },
+  clearErrorLog:           function(){ if(typeof clearErrorLog==='function') clearErrorLog(); },
+  refitPlattCoefficients:  function(){ if(typeof refitPlattCoefficients==='function') refitPlattCoefficients(); },
+  exportHistoryCSV:        function(){ if(typeof exportHistoryCSV==='function') exportHistoryCSV(); },
+  runForwardChainNow:      function(){ if(typeof runForwardChainNow==='function') runForwardChainNow(); },
+  saveSetting:             function(el){
+    if(typeof saveSetting !== 'function') return;
+    var key = el.dataset.argKey;
+    var v = el.value;
+    if(key === 'evMode') v = (v === 'true');
+    else if(key === 'bankroll') v = parseInt(v, 10) || 10000;
+    saveSetting(key, v);
+  },
+};
+function _setupActionDelegation(){
+  if(window._actionDelegationInstalled) return;
+  window._actionDelegationInstalled = true;
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    var depth = 0;
+    while(el && el !== document.documentElement && depth < 8){
+      var act = el.dataset && el.dataset.action;
+      if(act && ACTION_HANDLERS[act]){
+        try { ACTION_HANDLERS[act](el, e); }
+        catch(err){ console.error('[action]', act, err); }
+        return;
+      }
+      el = el.parentElement;
+      depth++;
+    }
+  }, true); // capture phase で確実に拾う（iOS standalone PWA で bubble が止まる事例対策）
+  // change イベントも処理（select/input の data-action 用）
+  document.addEventListener('change', function(e){
+    var el = e.target;
+    if(!el || !el.dataset) return;
+    var act = el.dataset.action;
+    if(act && ACTION_HANDLERS[act]){
+      try { ACTION_HANDLERS[act](el, e); }
+      catch(err){ console.error('[action change]', act, err); }
+    }
+  }, true);
+}
+// 起動時に登録（_setupStadiumDelegation の隣で）
+try { _setupActionDelegation(); } catch(_){}
+
+// Epic 19: font 等の async stylesheet の onload="this.media='all'" は CSP unsafe-inline
+//   依存。代替として data-csp-onload-media を見て JS で listener を attach する。
+//   既に load 済（link.sheet が truthy）なら即時適用 → race condition 回避。
+//   try/catch で test VM 等の document.querySelectorAll 不在環境でも安全。
+try {
+  (function _setupCSPOnloadShim(){
+    function applyAll(){
+      if(typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+      var links = document.querySelectorAll('link[data-csp-onload-media]');
+      for(var i=0;i<links.length;i++){
+        (function(l){
+          var target = l.getAttribute('data-csp-onload-media') || 'all';
+          function flip(){ try { l.media = target; } catch(_){} }
+          if(l.sheet){ flip(); return; }
+          l.addEventListener('load', flip, { once: true });
+          l.addEventListener('error', function(){ /* 失敗は無視、システムフォントが使われる */ }, { once: true });
+        })(links[i]);
+      }
+    }
+    if(typeof document !== 'undefined' && document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', applyAll, { once: true });
+    } else {
+      applyAll();
+    }
+  })();
+} catch(_){ /* test 環境等で document が不完全な場合は no-op */ }
+
 // Epic 18 (P2-7): SharedArrayBuffer ヘルパ — crossOriginIsolated 環境でのみ動作
 //   Worker への state 転送を構造化複製（〜50ms）から SAB（〜0ms）に置換するための土台。
 //   COI は opt-in（URL ?coi=1 が付いた navigation のみ SW が COOP/COEP を inject）。
@@ -5087,8 +5183,9 @@ function renderStadiums(){
       // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
       //   inline onclick + role="button" + tabindex="0" を必ず付ける（既存の
       //   `<button onclick="showPage(...)">` 動作と同じパスを使う）
+      // Epic 19: data-action delegation 化（CSP unsafe-inline 撤去）
       html += '<div class="stadium-card active-stadium" data-sid="'+sid+'" '
-        +'role="button" tabindex="0" onclick="openStadium(\''+sid+'\')">'
+        +'role="button" tabindex="0" data-action="openStadium" data-arg-sid="'+sid+'">'
         +'<span class="stadium-grade '+grade.cls+'">'+grade.name+'</span>'
         +'<span class="stadium-name">'+name+'</span>'
         +'<span class="stadium-status">'+doneCount+'/'+totalRaces+'R</span>'
@@ -5204,7 +5301,7 @@ function openStadium(sid){
       if(diff&&diff.biggestRiser) riserStr=' <span style="color:#43A047;font-size:9px">↑'+diff.biggestRiser.boat+'</span>';
     }
 
-    html+='<tr onclick="openRace(\''+sid+'\',\''+rn+'\')">';
+    html+='<tr data-action="openRace" data-arg-sid="'+sid+'" data-arg-rn="'+rn+'">';
     var closedAt=race.race_closed_at||'';
     var closedTime=closedAt?closedAt.split(' ')[1]||'':'';
     if(closedTime) closedTime=closedTime.slice(0,5);
@@ -5235,7 +5332,7 @@ function openStadium(sid){
       var places=res.results.slice().sort(function(a,b){return a.place-b.place}).slice(0,3);
       var actualCombo=places[0].racer_boat_number+'-'+places[1].racer_boat_number+'-'+places[2].racer_boat_number;
       var hit=pred.trifecta.some(function(t){return t.combo===actualCombo});
-      html+='<tr onclick="openRace(\''+sid+'\',\''+rn+'\')" style="background:'+(hit?'#E8F5E9':'#FFEBEE')+'">';
+      html+='<tr data-action="openRace" data-arg-sid="'+sid+'" data-arg-rn="'+rn+'" style="background:'+(hit?'#E8F5E9':'#FFEBEE')+'">';
       html+='<td class="race-result-cell '+(hit?'hit':'miss')+'">'+(hit?'的中':'×')+'</td>';
       for(var bn2=1;bn2<=6;bn2++){
         var placeNum=null;
@@ -5268,7 +5365,7 @@ function openRace(sid,rn){
   var _watched = (typeof _isRaceWatched === 'function') ? _isRaceWatched(sid, rn) : false;
   var _starHtml = '<button id="raceStarBtn" aria-label="お気に入り切替" '
     + 'style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" '
-    + 'onclick="_toggleRaceWatched(\''+sid+'\',\''+rn+'\')">'
+    + 'data-action="toggleRaceWatched" data-arg-sid="'+sid+'" data-arg-rn="'+rn+'">'
     + (_watched ? '⭐' : '☆') + '</button>';
   document.getElementById('detailTitle').innerHTML=name+' '+rn+'R'+(closedTime?' <span style="font-size:12px;color:var(--text-dim);font-weight:400">締切 '+closedTime+'</span>':'')+_starHtml;
   document.getElementById('detailBack').onclick=function(){openStadium(sid)};
@@ -5951,7 +6048,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
   // 3f. Odds refresh + auto-refresh timer + PAT settings link
   html+='<div class="odds-section" style="text-align:center">';
-  html+='<button class="odds-refresh-btn" onclick="refreshOdds()">オッズ更新</button>';
+  html+='<button class="odds-refresh-btn" data-action="refreshOdds">オッズ更新</button>';
   html+=' <span class="odds-stale" id="oddsStaleMsg2"></span>';
   if(oddsLastFetched){
     var elapsed=Math.round((Date.now()-oddsLastFetched)/60000);

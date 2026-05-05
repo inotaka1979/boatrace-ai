@@ -93,12 +93,13 @@ def render_grid(programs: list[dict]) -> str:
             # P1-B6: aria-label を付与し、screen reader 用の文脈を補完。
             #   data-hydrated は JS renderStadiums() が in-place 上書きする際の
             #   識別子（将来的な hydration 化のフック）。
+            # Epic 19: inline onclick を data-action delegation に置換 (CSP 厳格化のため)
             cards.append(
                 f'<div class="stadium-card active-stadium" data-sid="{sid}" '
                 f'data-hydrated="true" '
                 f'role="button" tabindex="0" '
                 f'aria-label="{name} 開催中 0/{total}R 次は{first_rno}R" '
-                f'onclick="openStadium(\'{sid}\')">'
+                f'data-action="openStadium" data-arg-sid="{sid}">'
                 f'<span class="stadium-grade {grade_cls}">{grade_name}</span>'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">0/{total}R</span>'
