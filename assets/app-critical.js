@@ -336,8 +336,17 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     var ov = document.createElement('div');
     ov.id = 'diagOverlay';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);color:#0f0;font:11px monospace;padding:12px;overflow:auto;z-index:2147483647;white-space:pre-wrap;-webkit-user-select:text;user-select:text';
+    // boatrace_errors も表示（reportError の永続ログ）
+    var errLog = '';
+    try {
+      var errs = JSON.parse(localStorage.getItem('boatrace_errors')||'[]');
+      errLog = errs.slice(-30).map(function(e){
+        return new Date(e.ts||0).toISOString().slice(11,19)+' '+(e.type||'?')+': '+((e.msg||JSON.stringify(e))+'').slice(0,140);
+      }).join('\n');
+    } catch(_){ errLog = '(boatrace_errors parse failed)'; }
     ov.textContent = '=== DIAG ===\n'+summary
       +'\n\n=== STATIC PROBES ===\n'+staticProbes
+      +'\n\n=== reportError LOG (last 30) ===\n'+errLog
       +'\n\n=== STADIUM-CARD EVENTS ('+cardEvents.length+') ===\n'+cardLines
       +'\n\n=== ALL EVENTS (last 25 of '+ring.length+') ===\n'+otherLines;
     var close = document.createElement('button');
@@ -2042,31 +2051,33 @@ function _setupServiceWorker(){
 
 function _setupStadiumDelegation(){
   var list = document.getElementById('stadiumList');
-  if(!list) return;
-  // PI-fix: hasAttribute('onclick') スキップを撤廃。
-  //   iOS standalone PWA では innerHTML 経由で挿入された div の
-  //   inline onclick が無視されるケースがあり、両方止まると
-  //   完全にデッドロック。delegation は常に走らせ、inline と二重に
-  //   呼ばれても openStadium は idempotent なので問題なし。
-  //   _delegationCallId で同一イベントの再入は防ぐ。
-  list.addEventListener('click', function(e){
-    var card = e.target.closest('.stadium-card[data-sid]');
-    if(!card) return;
-    if(e._delegationHandled) return;
-    e._delegationHandled = true;
-    var sid = card.getAttribute('data-sid');
-    if(sid && typeof openStadium === 'function') openStadium(sid);
-  });
-  // capture-phase でも同一カードの click を捕捉して openStadium を呼ぶ
-  //   bubbling が iOS の理由で阻害されるケースの保険
-  document.addEventListener('click', function(e){
+  if(!list){
+    try { reportError({type:'diag', msg:'_setupStadiumDelegation: #stadiumList not found'}); }catch(_){}
+    return;
+  }
+  function handleCardClick(phase, e){
     var card = e.target.closest && e.target.closest('.stadium-card[data-sid]');
     if(!card) return;
-    if(e._delegationHandled) return;
+    if(e._delegationHandled) {
+      try { reportError({type:'diag', msg:'delegation['+phase+'] skipped (already handled)'}); }catch(_){}
+      return;
+    }
     e._delegationHandled = true;
     var sid = card.getAttribute('data-sid');
-    if(sid && typeof openStadium === 'function') openStadium(sid);
-  }, true);
+    var hasOpenStadium = typeof openStadium === 'function';
+    try { reportError({type:'diag', msg:'delegation['+phase+'] FIRE sid='+sid+' osDef='+hasOpenStadium}); }catch(_){}
+    if(sid && hasOpenStadium){
+      try {
+        openStadium(sid);
+        try { reportError({type:'diag', msg:'delegation['+phase+'] openStadium('+sid+') returned ok'}); }catch(_){}
+      } catch(err) {
+        try { reportError({type:'diag', msg:'delegation['+phase+'] openStadium THREW: '+(err && err.message)}); }catch(_){}
+      }
+    }
+  }
+  list.addEventListener('click', function(e){ handleCardClick('bubble', e); });
+  document.addEventListener('click', function(e){ handleCardClick('capture', e); }, true);
+  try { reportError({type:'diag', msg:'_setupStadiumDelegation: listeners attached'}); }catch(_){}
 }
 
 function setManagedInterval(fn, ms){
