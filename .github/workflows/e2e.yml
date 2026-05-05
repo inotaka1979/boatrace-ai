@@ -1,0 +1,98 @@
+name: E2E (Playwright)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'assets/**'
+      - 'sw.js'
+      - 'manifest.json'
+      - 'src/**'
+      - 'tests/e2e/**'
+      - 'build/playwright.config.mjs'
+      - 'build/package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'assets/**'
+      - 'sw.js'
+      - 'manifest.json'
+      - 'src/**'
+      - 'tests/e2e/**'
+      - 'build/playwright.config.mjs'
+      - 'build/package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # L1: WebKit smoke — iOS Safari エンジンで critical flow を毎 PR で検証
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: build/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright + WebKit
+        working-directory: build
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps webkit
+      - name: Run WebKit smoke tests
+        working-directory: build
+        env:
+          CI: '1'
+        run: npx playwright test --config playwright.config.mjs --project=webkit-smoke
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: build/playwright-report
+          retention-days: 7
+
+  # VRT: Chromium snapshot — 5 画面の見た目退行を検出
+  vrt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: build/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright + Chromium
+        working-directory: build
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run VRT
+        working-directory: build
+        env:
+          CI: '1'
+        run: npx playwright test --config playwright.config.mjs --project=chromium-vrt
+      - name: Upload diff report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-vrt-report
+          path: build/playwright-report
+          retention-days: 7

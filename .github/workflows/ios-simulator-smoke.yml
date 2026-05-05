@@ -1,0 +1,93 @@
+name: iOS Simulator Smoke (nightly)
+
+# L2: 実 iOS Simulator (Safari WebKit) で smoke。public repo なら macOS runner も無料。
+#   nightly cron + workflow_dispatch のみ実行（毎 PR は L1 WebKit smoke で十分）
+
+on:
+  schedule:
+    - cron: '0 18 * * *'    # JST 03:00 (= UTC 18:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: build/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: List available iOS Simulator runtimes
+        run: xcrun simctl list runtimes
+
+      - name: Boot iOS 17 Simulator (iPhone 15)
+        run: |
+          set -e
+          DEVICE_NAME="iPhone 15"
+          # 利用可能な最新の iOS runtime を選ぶ
+          RUNTIME=$(xcrun simctl list runtimes | grep -E "^iOS [0-9]+\.[0-9]+" | tail -1 | awk '{print $NF}')
+          echo "Using runtime: $RUNTIME"
+          UDID=$(xcrun simctl create "br-test" "$DEVICE_NAME" "$RUNTIME" || true)
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices "$DEVICE_NAME" --json | python3 -c "import sys,json; d=json.load(sys.stdin); [print(dev['udid']) for runs in d['devices'].values() for dev in runs if dev['name']=='br-test']" | head -1)
+          fi
+          echo "Booting UDID=$UDID"
+          xcrun simctl boot "$UDID" || true
+          echo "BR_SIM_UDID=$UDID" >> $GITHUB_ENV
+
+      - name: Start static HTTP server
+        run: |
+          python3 -m http.server 8181 &
+          echo $! > /tmp/server.pid
+          sleep 2
+
+      - name: Open URL in Simulator Safari
+        run: |
+          xcrun simctl openurl "$BR_SIM_UDID" 'http://127.0.0.1:8181/index.html'
+          sleep 8
+
+      - name: Capture screenshot
+        run: |
+          mkdir -p artifacts
+          xcrun simctl io "$BR_SIM_UDID" screenshot artifacts/ios-smoke.png
+          ls -la artifacts/
+
+      - name: Tap stadium-card area (sanity check via UI Automator-less coords)
+        # Simulator の中心付近をタップして動作するか軽く確認。
+        # 真の自動化が必要になったら Appium / WebDriverAgent を後フェーズで導入。
+        run: |
+          # 200,400 はトップカード辺りの座標（プリレンダ込み）
+          xcrun simctl io "$BR_SIM_UDID" touch 200 400 || true
+          sleep 4
+          xcrun simctl io "$BR_SIM_UDID" screenshot artifacts/ios-smoke-after-tap.png
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill "$(cat /tmp/server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshots
+          path: artifacts/
+          retention-days: 14
+
+      - name: Shutdown Simulator
+        if: always()
+        run: |
+          xcrun simctl shutdown "$BR_SIM_UDID" || true
+          xcrun simctl delete "$BR_SIM_UDID" || true

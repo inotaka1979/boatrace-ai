@@ -47,6 +47,33 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
   // ../src/utils/safe_storage.js
   var FEATURE_DIM = 12;
   var ERROR_BUF_MAX = 100;
+  var STORAGE_KEYS = Object.freeze({
+    SCHEMA_VERSION: "boatrace_schema_version",
+    // P0-6: 互換性管理
+    SETTINGS: "boatrace_settings",
+    RACER_DB: "boatrace_racerDB",
+    STADIUM_DB: "boatrace_stadiumDB",
+    MOTOR_STATS: "boatrace_motorStats",
+    EXHIBITION_STATS: "boatrace_exhibitionStats",
+    PAIRWISE_DB: "boatrace_pairwiseDB",
+    WEIGHTS: "boatrace_weights",
+    // PB-1: L2 学習重み
+    LEARNED: "boatrace_learned",
+    // PB-1: 学習ガード
+    TRAINSTEP: "boatrace_trainstep",
+    // PB-2: LR decay 用
+    FEATURE_STATS: "boatrace_featurestats",
+    // PB-7: rolling stats
+    PLATT: "boatrace_platt",
+    // PB-6: Platt 校正
+    HISTORY: "boatrace_history",
+    ERRORS: "boatrace_errors",
+    // PC-6: エラーログ
+    DIAG: "boatrace_diag",
+    // PI 診断オーバーレイ
+    NAV: "boatrace_nav"
+    // P0-5: PWA 状態復元（sessionStorage 側）
+  });
   function _validateLS(key, value) {
     if (value === null || value === void 0) return null;
     switch (key) {
@@ -178,11 +205,19 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
             }
           });
           localStorage.setItem(key, s);
+          try {
+            reportError({ type: "warn", msg: "storage quota recovered by history trim", key });
+          } catch (_) {
+          }
           return true;
         } catch (_) {
         }
       }
       console.warn("[storage] set failed", key, e);
+      try {
+        reportError({ type: "error", msg: "storage set failed: " + (e && e.message || "unknown"), key });
+      } catch (_) {
+      }
       return false;
     }
   }
@@ -259,6 +294,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
   globalThis._runMigrations = _runMigrations;
   globalThis.SCHEMA_KEY = SCHEMA_KEY;
   globalThis.CURRENT_SCHEMA = CURRENT_SCHEMA;
+  globalThis.STORAGE_KEYS = STORAGE_KEYS;
 })();
 
 /* BUILD:SAFE_STORAGE:END */
@@ -394,10 +430,52 @@ try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
       ring.length = 0;
       try { localStorage.removeItem('boatrace_diag'); }catch(_){}
       ov.remove(); close.remove(); clearBtn.remove();
+      shareBtn.remove();
+    };
+    // L3 (Epic 8): 診断テキストを共有可能な形式で書出。
+    //   iOS standalone PWA は DevTools 不可かつ AirDrop / メール送信に頼ることが多い。
+    //   1) clipboard 書込 (失敗時は textarea で選択状態にして手動コピー可能に)
+    //   2) data URL を新規 window で開いて長押し→「リンクをコピー」「メールで送信」を可能に
+    var shareBtn = document.createElement('button');
+    shareBtn.textContent = '📤 共有';
+    shareBtn.style.cssText = 'position:fixed;top:10px;right:200px;background:#28a;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
+    shareBtn.onclick = function(){
+      var diagText = ov.textContent || '';
+      // 1) Web Share API（iOS PWA でも対応）
+      if(navigator.share){
+        navigator.share({
+          title: 'BoatRace Oracle 診断',
+          text: diagText.length > 8000 ? diagText.slice(0, 8000) + '\n... (truncated)' : diagText
+        }).catch(function(){
+          // user キャンセル等は無視
+        });
+        return;
+      }
+      // 2) clipboard fallback
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(diagText).then(function(){
+          shareBtn.textContent = '✓ コピー済';
+          setTimeout(function(){ shareBtn.textContent = '📤 共有'; }, 2000);
+        }).catch(function(){
+          showShareFallback();
+        });
+        return;
+      }
+      showShareFallback();
+      function showShareFallback(){
+        // 3) textarea で選択状態にして手動コピーを促す（iOS 古バージョン向け）
+        var ta = document.createElement('textarea');
+        ta.value = diagText;
+        ta.style.cssText = 'position:fixed;top:60px;left:10px;right:10px;height:200px;z-index:2147483647;font:11px monospace';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        setTimeout(function(){ ta.remove(); }, 30000);
+      }
     };
     document.body.appendChild(ov);
     document.body.appendChild(close);
     document.body.appendChild(clearBtn);
+    document.body.appendChild(shareBtn);
   }
   globalThis.showDiagOverlay = showDiagOverlay;
 })();

@@ -425,10 +425,52 @@ try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
       ring.length = 0;
       try { localStorage.removeItem('boatrace_diag'); }catch(_){}
       ov.remove(); close.remove(); clearBtn.remove();
+      shareBtn.remove();
+    };
+    // L3 (Epic 8): 診断テキストを共有可能な形式で書出。
+    //   iOS standalone PWA は DevTools 不可かつ AirDrop / メール送信に頼ることが多い。
+    //   1) clipboard 書込 (失敗時は textarea で選択状態にして手動コピー可能に)
+    //   2) data URL を新規 window で開いて長押し→「リンクをコピー」「メールで送信」を可能に
+    var shareBtn = document.createElement('button');
+    shareBtn.textContent = '📤 共有';
+    shareBtn.style.cssText = 'position:fixed;top:10px;right:200px;background:#28a;color:#fff;border:0;padding:8px 14px;font:14px sans-serif;border-radius:6px;z-index:2147483648';
+    shareBtn.onclick = function(){
+      var diagText = ov.textContent || '';
+      // 1) Web Share API（iOS PWA でも対応）
+      if(navigator.share){
+        navigator.share({
+          title: 'BoatRace Oracle 診断',
+          text: diagText.length > 8000 ? diagText.slice(0, 8000) + '\n... (truncated)' : diagText
+        }).catch(function(){
+          // user キャンセル等は無視
+        });
+        return;
+      }
+      // 2) clipboard fallback
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(diagText).then(function(){
+          shareBtn.textContent = '✓ コピー済';
+          setTimeout(function(){ shareBtn.textContent = '📤 共有'; }, 2000);
+        }).catch(function(){
+          showShareFallback();
+        });
+        return;
+      }
+      showShareFallback();
+      function showShareFallback(){
+        // 3) textarea で選択状態にして手動コピーを促す（iOS 古バージョン向け）
+        var ta = document.createElement('textarea');
+        ta.value = diagText;
+        ta.style.cssText = 'position:fixed;top:60px;left:10px;right:10px;height:200px;z-index:2147483647;font:11px monospace';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        setTimeout(function(){ ta.remove(); }, 30000);
+      }
     };
     document.body.appendChild(ov);
     document.body.appendChild(close);
     document.body.appendChild(clearBtn);
+    document.body.appendChild(shareBtn);
   }
   globalThis.showDiagOverlay = showDiagOverlay;
 })();
