@@ -378,15 +378,19 @@ try {
         top10: _top10.map(function(it){ return { key: it.k, kb: parseFloat((it.b/1024).toFixed(1)) }; }),
       });
     } catch(_){}
-    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing all bc_*');
-    var _bcRm = 0;
-    var _bcK = [];
+    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing bc_* / cache_* / corrupt');
+    // Epic 28g: bc_* に加え cache_* (boatrace 以外のアプリが書いた汎用 cache キー) も削除
+    //   ユーザログで cache_915902876 (439KB) cache_593280445 (436KB) 等が判明
+    var _bcRm = 0, _cacheRm = 0;
+    var _bcK = [], _cacheK = [];
     for(var _i=0;_i<localStorage.length;_i++){
       var _kk = localStorage.key(_i);
-      if(_kk && _kk.indexOf('bc_')===0) _bcK.push(_kk);
+      if(!_kk) continue;
+      if(_kk.indexOf('bc_')===0) _bcK.push(_kk);
+      else if(_kk.indexOf('cache_')===0) _cacheK.push(_kk);
     }
-    // 全削除 (時間 cutoff 無関係) — SW cache が fallback の役割を担う
     _bcK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _bcRm++; } catch(_){} });
+    _cacheK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _cacheRm++; } catch(_){} });
     // diag / 破損キー も一掃
     try { localStorage.removeItem('boatrace_diag'); }catch(_){}
     var _corrK = [];
@@ -395,7 +399,12 @@ try {
       if(_ck && _ck.indexOf('__corrupt_') > 0) _corrK.push(_ck);
     }
     _corrK.forEach(function(_kk){ try{ localStorage.removeItem(_kk); }catch(__){} });
-    console.warn('[storage] force-clear done: bc_*='+_bcRm+' corrupt='+_corrK.length);
+    console.warn('[storage] force-clear done: bc_*='+_bcRm+' cache_*='+_cacheRm+' corrupt='+_corrK.length);
+    try { if(typeof reportError === 'function') reportError({
+      type: 'diag_storage_cleanup',
+      msg: 'cleanup: bc_*='+_bcRm+' cache_*='+_cacheRm+' corrupt='+_corrK.length,
+      bc: _bcRm, cache_: _cacheRm, corrupt: _corrK.length,
+    }); } catch(_){}
   }
 } catch(_){ /* localStorage 全体不可なら諦め */ }
 
@@ -416,17 +425,22 @@ try {
     idbMigrateFromLS().then(function(res){
       var migN = ((res && res.migrated)||[]).length;
       var errN = ((res && res.errors)||[]).length;
-      console.log('[idb] migrate done: migrated=' + migN + ' errors=' + errN);
+      var dedN = ((res && res.deduped)||[]).length;   // Epic 28g: LS 重複削除数
+      console.log('[idb] migrate done: migrated=' + migN + ' errors=' + errN + ' deduped=' + dedN);
       if(res && res.migrated && res.migrated.length){
         console.log('[idb]   migrated keys:', res.migrated.join(', '));
+      }
+      if(res && res.deduped && res.deduped.length){
+        console.log('[idb]   deduped (LS 重複削除):', res.deduped.join(', '));
       }
       // Epic 28f: 結果を reportError に保存 (スマホで DevTools 不可なユーザ向け)
       try {
         if(typeof reportError === 'function') reportError({
           type: 'diag_idb_migrate',
-          msg: 'idb migrate: migrated=' + migN + ' errors=' + errN + ' (avail=' + _idbAvail + ')',
+          msg: 'idb migrate: migrated=' + migN + ' errors=' + errN + ' deduped=' + dedN + ' (avail=' + _idbAvail + ')',
           idb_available: _idbAvail,
           migrated: (res && res.migrated) || [],
+          deduped: (res && res.deduped) || [],
           errors: (res && res.errors) || [],
         });
       } catch(_){}

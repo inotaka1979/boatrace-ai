@@ -112,12 +112,22 @@ function idbBytes() {
 //   結果: IDB に存在 → そちらを使う / IDB 無 LS あり → IDB に書き写して LS 削除
 //   呼び出し側は load → migrate → 必要なら in-memory に再代入。
 function idbMigrateFromLS() {
-  if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ['idb_unavailable'] });
+  if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ['idb_unavailable'], deduped: [] });
   const migrated = [];
   const errors = [];
+  const deduped = [];   // Epic 28g: 既に IDB にあって LS にも残ってた重複を削除した key
   const tasks = IDB_KEYS_LARGE.map(function (key) {
     return idbGet(key).then(function (existing) {
-      if (existing != null) return; // 既に IDB にある → LS は古いので削除のみ
+      if (existing != null) {
+        // Epic 28g: 既に IDB にあるなら LS の重複コピーを必ず削除
+        //   旧コードのコメントは「削除のみ」と言ってたが return だけで何もしていなかった (バグ)
+        let lsHas = false;
+        try { lsHas = (localStorage.getItem(key) != null); } catch (_) {}
+        if (lsHas) {
+          try { localStorage.removeItem(key); deduped.push(key); } catch (_) {}
+        }
+        return;
+      }
       let lsRaw = null;
       try { lsRaw = localStorage.getItem(key); } catch (_) {}
       if (lsRaw == null) return;
@@ -135,7 +145,7 @@ function idbMigrateFromLS() {
     });
   });
   return Promise.all(tasks).then(function () {
-    return { migrated: migrated, errors: errors };
+    return { migrated: migrated, errors: errors, deduped: deduped };
   });
 }
 
