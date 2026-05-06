@@ -2387,11 +2387,15 @@ function savePrediction(date,sid,rn,pred,result){
     var snapshot = null;
     if(result && result.isFinished){
       snapshot = {
-        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score}}),
+        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score, mark:m.mark}}),
         trifecta: (pred.trifecta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
         exacta: (pred.exacta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
         raceType: pred.raceType,
-        typeCls: pred.typeCls
+        typeCls: pred.typeCls,
+        typeLabel: pred.typeLabel,
+        confidence: pred.confidence,
+        confStars: pred.confStars,
+        scenarios: pred.scenarios
       };
     }
     var entry={
@@ -3028,12 +3032,22 @@ function openRace(sid,rn){
       for(var _hi=0;_hi<_h.length;_hi++){
         var _e = _h[_hi];
         if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
+          // 旧 snapshot は mark フィールドを保持しないため、現 pred の mark を boat 番号で merge
+          var _liveMarkByBoat = {};
+          (pred && pred.marks ? pred.marks : []).forEach(function(_m){ if(_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark; });
+          var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m){
+            return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || '' });
+          });
           pred = {
-            marks: _e.pred_snapshot.marks || pred.marks,
+            marks: _snapMarks,
             trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
             exacta: _e.pred_snapshot.exacta || pred.exacta,
             raceType: _e.pred_snapshot.raceType || pred.raceType,
-            typeCls: _e.pred_snapshot.typeCls || pred.typeCls
+            typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
+            typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
+            confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
+            confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
+            scenarios: _e.pred_snapshot.scenarios || pred.scenarios
           };
           break;
         }

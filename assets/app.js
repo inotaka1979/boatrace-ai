@@ -1159,9 +1159,9 @@ async function forceRefresh(){
     // 3) Open API + 自前 data/* を再取得
     var t = Date.now();
     var rawP  = await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
-    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
+    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); _noteTodayDataFromRaw(rawP,'programs'); }
     var rawPv = _filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
-    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
+    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
     // results: 自前 data/results/today.json を優先、fallback で Open API
     var rawR = null;
     try{
@@ -1179,6 +1179,7 @@ async function forceRefresh(){
     if(rawR){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
+      _noteTodayDataFromRaw(rawR,'results');
       if(programData) updateDBFromResults(resultData, programData);
       await learnFromResults();
       updateHistoryWithResults();
@@ -4838,11 +4839,15 @@ function savePrediction(date,sid,rn,pred,result){
     var snapshot = null;
     if(result && result.isFinished){
       snapshot = {
-        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score}}),
+        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score, mark:m.mark}}),
         trifecta: (pred.trifecta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
         exacta: (pred.exacta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
         raceType: pred.raceType,
-        typeCls: pred.typeCls
+        typeCls: pred.typeCls,
+        typeLabel: pred.typeLabel,
+        confidence: pred.confidence,
+        confStars: pred.confStars,
+        scenarios: pred.scenarios
       };
     }
     var entry={
@@ -5225,7 +5230,9 @@ async function loadAllData(){
   previewData = indexPreviews(rawPreviews);
   await _yieldToMain();   // PH-5
   if(rawPrograms && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);
+  if(rawPrograms && typeof _noteTodayDataFromRaw==='function') _noteTodayDataFromRaw(rawPrograms,'programs');
   if(rawPreviews && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPreviews.updated_at);
+  if(rawPreviews && typeof _noteTodayDataFromRaw==='function') _noteTodayDataFromRaw(rawPreviews,'previews');
   if(prog) prog.style.width='70%';
 
   // PE-8: 結果 — 自前 → Open API fallback（Critical: ヘッダーバー的中表示用）
@@ -5247,6 +5254,7 @@ async function loadAllData(){
   resultData=indexResults(rawResults);
   await _yieldToMain();   // PH-5
   if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);
+  if(rawResults&&typeof _noteTodayDataFromRaw==='function') _noteTodayDataFromRaw(rawResults,'results');
 
   // F5: 自前スマートスケジューラ出力 (races 配列形式) を merge
   try{
@@ -5892,12 +5900,22 @@ function openStadium(sid){
         for(var _hi=0;_hi<_h.length;_hi++){
           var _e = _h[_hi];
           if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
+            // 旧 snapshot は mark フィールドを保持しないため、現 pred の mark を boat 番号で merge
+            var _liveMarkByBoat = {};
+            (pred && pred.marks ? pred.marks : []).forEach(function(_m){ if(_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark; });
+            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m){
+              return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || '' });
+            });
             pred = {
-              marks: _e.pred_snapshot.marks || pred.marks,
+              marks: _snapMarks,
               trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
               exacta: _e.pred_snapshot.exacta || pred.exacta,
               raceType: _e.pred_snapshot.raceType || pred.raceType,
-              typeCls: _e.pred_snapshot.typeCls || pred.typeCls
+              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
+              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
+              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
+              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
+              scenarios: _e.pred_snapshot.scenarios || pred.scenarios
             };
             break;
           }
@@ -6004,12 +6022,22 @@ function openRace(sid,rn){
       for(var _hi=0;_hi<_h.length;_hi++){
         var _e = _h[_hi];
         if(_e.date===todayStr() && _e.stadium===sid && _e.race===rn && _e.pred_snapshot){
+          // 旧 snapshot は mark フィールドを保持しないため、現 pred の mark を boat 番号で merge
+          var _liveMarkByBoat = {};
+          (pred && pred.marks ? pred.marks : []).forEach(function(_m){ if(_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark; });
+          var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m){
+            return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || '' });
+          });
           pred = {
-            marks: _e.pred_snapshot.marks || pred.marks,
+            marks: _snapMarks,
             trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
             exacta: _e.pred_snapshot.exacta || pred.exacta,
             raceType: _e.pred_snapshot.raceType || pred.raceType,
-            typeCls: _e.pred_snapshot.typeCls || pred.typeCls
+            typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
+            typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
+            confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
+            confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
+            scenarios: _e.pred_snapshot.scenarios || pred.scenarios
           };
           break;
         }
@@ -7470,23 +7498,44 @@ document.addEventListener('visibilitychange', function(){
 // F2: 90秒間隔（旧 300秒）。data/* は CDN キャッシュ + cron 3 分更新なので軽量
 // F3: 取得した updated_at から最終更新時刻を追跡し、ヘッダーに「📡 X分前」を表示
 var _dataLatestUpdatedAt = 0;   // epoch ms
+// 自前 data/* の updated_at が GitHub Pages 反映遅延で昨日のままだと、
+// OpenAPI から今日のレースが取れていても表示が「待機中」のまま固定される問題への対策。
+// OpenAPI raw に含まれる race_date が今日の場合、その fetch 時刻を fallback として記録する。
+var _dataTodayConfirmedAt = 0;  // epoch ms (今日の race_date を確認した時刻)
 function _noteUpdatedAt(iso){
   if(!iso) return;
   var t = Date.parse(iso);
   if(Number.isFinite(t) && t > _dataLatestUpdatedAt) _dataLatestUpdatedAt = t;
 }
+function _noteTodayDataFromRaw(raw, key){
+  // OpenAPI raw（programs / previews / results）の先頭レコードの race_date を確認し、
+  // 今日 (JST) と一致すれば今日のデータが取れていると判定して fallback 時刻を更新
+  if(!raw) return;
+  var arr = key && raw[key];
+  if(!Array.isArray(arr) || !arr.length) return;
+  var rd = arr[0].race_date;
+  if(!rd) return;
+  // race_date は "20260506" or "2026-05-06" の両形式を許容
+  var s = String(rd).replace(/-/g,'');
+  if(s.length !== 8) return;
+  var dataIso = s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+  var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  if(dataIso === todayJst) _dataTodayConfirmedAt = Date.now();
+}
 function _renderFreshness(){
   var el = document.getElementById('dataFreshness');
   if(!el) return;
-  if(!_dataLatestUpdatedAt){ el.textContent=''; return; }
+  // updated_at と race_date 両方の最新を比較（GitHub Pages 反映遅延対策）
+  var latest = Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt);
+  if(!latest){ el.textContent=''; return; }
   // データが今日 (JST) のものでなければ「待機中」表示（cron が本日まだ走っていない等）
   var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  var dataDate = new Date(_dataLatestUpdatedAt+9*3600000).toISOString().slice(0,10);
+  var dataDate = new Date(latest+9*3600000).toISOString().slice(0,10);
   if(dataDate !== todayJst){
     el.innerHTML = '<span style="color:#BDBDBD">💤 本日データ取得待ち</span>';
     return;
   }
-  var sec = Math.max(0, Math.floor((Date.now() - _dataLatestUpdatedAt)/1000));
+  var sec = Math.max(0, Math.floor((Date.now() - latest)/1000));
   var label;
   if(sec < 60) label = sec + '秒前';
   else if(sec < 3600) label = Math.floor(sec/60) + '分前';
@@ -7501,13 +7550,14 @@ setManagedInterval(async function(){
   try{
     var t=Date.now();
     var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
-    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); }
+    if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); _noteTodayDataFromRaw(rawP,'programs'); }
     var rawPv=_filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
-    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); }
+    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
     var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
+      _noteTodayDataFromRaw(rawR,'results');
       if(programData)updateDBFromResults(resultData,programData);
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
