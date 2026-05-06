@@ -2701,8 +2701,10 @@ async function forceRefresh(){
       if(rR.ok){
         var rd = await rR.json();
         var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        // F4.1: スタブ (race_technique_number 全 null) の場合は OpenAPI にフォールバック
         if(rd && Array.isArray(rd.results) && rd.results.length > 0
-           && rd.results.some(function(r){return r.race_date===todayJst})){
+           && rd.results.some(function(r){return r.race_date===todayJst})
+           && rd.results.some(function(r){return r.race_technique_number!=null})){
           rawR = rd;
         }
       }
@@ -3140,6 +3142,9 @@ async function loadAllData(){
   if(prog) prog.style.width='70%';
 
   // PE-8: 結果 — 自前 → Open API fallback（Critical: ヘッダーバー的中表示用）
+  // F4.1 で data/results/today.json はスタブ運用となり、確定結果は OpenAPI と
+  // data/previews/today.json の merge から得る。ローカルが今日の日付でも
+  // race_technique_number が全て null（スタブ）なら OpenAPI にフォールバックする。
   if(msg) msg.textContent='結果を取得中...';
   var rawResults=null;
   try{
@@ -3149,7 +3154,8 @@ async function loadAllData(){
       if(resData.results&&resData.results.length>0){
         var resDate=resData.results[0].race_date;
         var todayRes=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-        if(resDate===todayRes){rawResults=resData;}
+        var hasRealFinish=resData.results.some(function(r){return r.race_technique_number!=null});
+        if(resDate===todayRes && hasRealFinish){rawResults=resData;}
       }
     }
   }catch(e){}
