@@ -124,7 +124,8 @@ git_push_if_changed() {
     local label="$1"
 
     # D-07: pathspec を data の対象サブディレクトリに限定
-    git add data/odds/ data/previews/ data/racedata/ data/schedule/ data/photos/ 2>>"$LOG_FILE" || true
+    # 2026-05-07 fix: results/ tide/ が抜けて未ステージ蓄積→rebase 詰まりの真因だったので追加
+    git add data/odds/ data/previews/ data/racedata/ data/schedule/ data/photos/ data/results/ data/tide/ 2>>"$LOG_FILE" || true
 
     if git diff --staged --quiet; then
         log "No changes — skip push"
