@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BoatRace AI 取扱説明書</title>
+<style>
+:root{
+  --bg:#F8F9FB; --card:#FFF; --border:#E1E4E8; --text:#1F2328;
+  --sub:#595959; --accent:#1976D2; --accent-bg:#E3F2FD;
+  --warn:#A56A00; --warn-bg:#FFF8E1; --danger:#C62828; --danger-bg:#FFEBEE;
+  --success:#2E7D32; --success-bg:#E8F5E9; --code-bg:#F4F6F8;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,sans-serif;
+  line-height:1.7; font-size:15px;
+}
+.container{max-width:980px; margin:0 auto; padding:24px 20px 80px}
+header.cover{
+  background:linear-gradient(135deg,#1565C0,#1976D2); color:#FFF;
+  border-radius:12px; padding:36px 28px; margin-bottom:32px;
+  box-shadow:0 4px 12px rgba(21,101,192,.25);
+}
+header.cover h1{margin:0 0 8px; font-size:28px; letter-spacing:.02em}
+header.cover .sub{opacity:.92; font-size:14px}
+header.cover .meta{margin-top:14px; font-size:12px; opacity:.85}
+nav.toc{
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:18px 22px; margin-bottom:32px;
+}
+nav.toc h2{margin:0 0 10px; font-size:16px; color:var(--accent)}
+nav.toc ol{margin:0; padding-left:20px}
+nav.toc li{margin:4px 0}
+nav.toc a{color:var(--text); text-decoration:none}
+nav.toc a:hover{color:var(--accent); text-decoration:underline}
+section{
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:24px 26px; margin-bottom:24px;
+}
+section h2{
+  margin:0 0 16px; padding-bottom:10px; border-bottom:2px solid var(--accent);
+  font-size:22px; color:var(--accent);
+}
+section h3{margin:24px 0 10px; font-size:17px; color:var(--text)}
+section h4{margin:18px 0 8px; font-size:15px; color:var(--sub)}
+p{margin:8px 0}
+ul,ol{margin:8px 0; padding-left:22px}
+li{margin:4px 0}
+.fig{
+  margin:18px 0; text-align:center;
+}
+.fig img{
+  max-width:340px; width:100%; height:auto; border:1px solid var(--border);
+  border-radius:14px; box-shadow:0 4px 12px rgba(0,0,0,.08); background:#FFF;
+}
+.fig figcaption{
+  margin-top:8px; font-size:12px; color:var(--sub);
+}
+.split{display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap}
+.split .fig{flex:0 0 240px; margin:0}
+.split .fig img{max-width:240px}
+.split .desc{flex:1 1 320px; min-width:280px}
+.callout{
+  border-left:4px solid var(--accent); background:var(--accent-bg);
+  padding:12px 16px; margin:16px 0; border-radius:0 8px 8px 0; font-size:14px;
+}
+.callout.warn{border-color:var(--warn); background:var(--warn-bg)}
+.callout.danger{border-color:var(--danger); background:var(--danger-bg)}
+.callout.tip{border-color:var(--success); background:var(--success-bg)}
+.callout strong{display:block; margin-bottom:4px}
+table{
+  width:100%; border-collapse:collapse; margin:14px 0; font-size:14px;
+  background:#FFF;
+}
+th,td{
+  border:1px solid var(--border); padding:8px 12px; text-align:left;
+  vertical-align:top;
+}
+th{background:#F4F6F8; font-weight:600}
+code, kbd{
+  background:var(--code-bg); padding:2px 6px; border-radius:4px;
+  font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px;
+}
+.badge{
+  display:inline-block; padding:2px 8px; border-radius:10px;
+  font-size:11px; font-weight:600; margin-right:4px; vertical-align:middle;
+}
+.badge.honmei{background:#FFF3E0; color:#E65100}
+.badge.middle{background:#E3F2FD; color:#1565C0}
+.badge.ana{background:#FFEBEE; color:#C62828}
+.legend-row{display:flex; gap:8px; align-items:center; margin:6px 0}
+footer{
+  text-align:center; color:var(--sub); font-size:12px; margin-top:32px;
+  padding-top:16px; border-top:1px solid var(--border);
+}
+@media (max-width:600px){
+  .container{padding:14px 12px 60px}
+  section{padding:18px 16px}
+  header.cover{padding:28px 20px}
+  header.cover h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="cover">
+  <h1>🛥 BoatRace AI 取扱説明書</h1>
+  <div class="sub">AI予想エンジン v2.0 / PWA — 競艇全24場の出走表・予想・買い目をワンタップ表示</div>
+  <div class="meta">最終更新: 2026-05-06 &nbsp;|&nbsp; 対象: iPhone / Android / PC ブラウザ</div>
+</header>
+
+<nav class="toc">
+  <h2>📖 目次</h2>
+  <ol>
+    <li><a href="#overview">アプリ概要</a></li>
+    <li><a href="#install">インストール (PWA)</a></li>
+    <li><a href="#top">トップ画面 — 開催場一覧</a></li>
+    <li><a href="#races">レース一覧画面</a></li>
+    <li><a href="#detail">レース詳細画面</a>
+      <ol>
+        <li><a href="#detail-lineup">出走表タブ</a></li>
+        <li><a href="#detail-ai">AI予想・買い目タブ</a></li>
+        <li><a href="#detail-odds">オッズタブ</a></li>
+      </ol>
+    </li>
+    <li><a href="#stats">成績トラッカー</a></li>
+    <li><a href="#backtest">戦略バックテスト</a></li>
+    <li><a href="#settings">設定画面</a></li>
+    <li><a href="#nav">ボトムナビ</a></li>
+    <li><a href="#tips">使いこなし Tips</a></li>
+    <li><a href="#notes">免責事項・注意事項</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================ -->
+<section id="overview">
+<h2>1. アプリ概要</h2>
+<p>
+  <strong>BoatRace AI</strong> は競艇全24場・全12レースの出走情報・オッズ・直前情報を
+  Boatrace Open API から自動取得し、ルールベース＋ロジスティック回帰のハイブリッド
+  AIエンジンで <strong>1着確率・買い目・期待値 (EV)</strong> を提案する PWA です。
+</p>
+<h3>主な機能</h3>
+<ul>
+  <li>全24場のリアルタイム本日成績表示（終了 / 開催中 / 次節）</li>
+  <li>各レース: 出走表 6艇 + 番組予想 + 直前予想 + 推奨買い目 (3連単 / 2連単)</li>
+  <li>レースタイプ自動判定: <span class="badge honmei">⚡本命</span> / <span class="badge middle">📊混戦</span> / <span class="badge ana">🔥穴</span></li>
+  <li>EV ベース買い目 (期待値≥1.15 のみ推奨) と Kelly 比率による資金配分</li>
+  <li>成績トラッカー: 日別 / 場別 / レースタイプ別の的中率と回収率</li>
+  <li>戦略バックテスト: 過去履歴に EV/Kelly 戦略を後付け適用して ROI 評価</li>
+  <li>Federated Learning オプトイン（GitHub Issues 経由でモデル改善に貢献）</li>
+</ul>
+<h3>動作環境</h3>
+<ul>
+  <li>iPhone Safari (iOS 14+) / Android Chrome / PC Chrome / Edge / Firefox</li>
+  <li>オフライン時は最後にキャッシュした内容が読めます (Service Worker)</li>
+  <li>データは全て端末内 (localStorage / IndexedDB) に保存。サーバ送信なし</li>
+</ul>
+</section>
+
+<!-- ============================================ -->
+<section id="install">
+<h2>2. インストール (PWA)</h2>
+<h3>iPhone (Safari)</h3>
+<ol>
+  <li>Safari でサイト URL を開く</li>
+  <li>下部の <kbd>共有ボタン (□↑)</kbd> をタップ</li>
+  <li><kbd>ホーム画面に追加</kbd> を選択 → 「追加」</li>
+  <li>ホーム画面のアイコンから起動 (Safari UI なしのフルスクリーン)</li>
+</ol>
+<h3>Android (Chrome)</h3>
+<ol>
+  <li>Chrome でサイト URL を開く</li>
+  <li>右上の <kbd>⋮</kbd> メニュー → <kbd>ホーム画面に追加</kbd></li>
+</ol>
+<div class="callout tip">
+  <strong>💡 PWA のメリット</strong>
+  オフラインで開ける / プッシュ通知 / アプリストア不要 / 自動更新
+  （新バージョン公開時に画面上部に通知が出ます）
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="top">
+<h2>3. トップ画面 — 開催場一覧</h2>
+<div class="split">
+  <figure class="fig">
+    <img src="images/01-top.png" alt="トップ画面">
+    <figcaption>図 1: トップ画面 (開催場グリッド)</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>表示要素</h4>
+    <ul>
+      <li><strong>ヘッダー</strong>: 日付 / 鮮度 (○○秒前) / <kbd>更新</kbd> ボタン</li>
+      <li><strong>本日成績サマリー</strong>: 判定済 / 3連単的中 / 的中率 / 選手DB件数</li>
+      <li><strong>24場グリッド</strong> (2列×12行)
+        <ul>
+          <li><span style="background:#1565C0;color:#FFF;padding:2px 8px;border-radius:4px;font-size:12px">青</span> = 本日開催 (12/12R 終了 など)</li>
+          <li><span style="background:#E0E0E0;padding:2px 8px;border-radius:4px;font-size:12px">グレー</span> = 次節 (本日休催)</li>
+          <li><span style="background:#1976D2;color:#FFF;padding:2px 8px;border-radius:4px;font-size:11px">G2</span> 等のグレード章典バッジ</li>
+        </ul>
+      </li>
+      <li><strong>ボトムナビ</strong>: トップ / 成績 / 検証 / 設定 / 更新</li>
+    </ul>
+    <h4>操作</h4>
+    <ul>
+      <li>場をタップ → レース一覧画面 (§4) へ遷移</li>
+      <li>右上の <kbd>更新</kbd> で全データを再取得</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="races">
+<h2>4. レース一覧画面</h2>
+<div class="split">
+  <figure class="fig">
+    <img src="images/02-races.png" alt="レース一覧画面">
+    <figcaption>図 2: 桐生 12レース表</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>表示要素</h4>
+    <p>選択した場の全12レースを縦スクロール一覧で表示します。</p>
+    <ul>
+      <li><strong>1列目 (R)</strong>: レース番号 / 締切時刻 / レースタイプアイコン / 番組 or 直前</li>
+      <li><strong>2〜7列目 (1〜6艇)</strong>: 各艇の選手名。AI が <strong>1着候補とした艇</strong>には ◎ と太字</li>
+      <li><strong>結果行</strong> (終了レース): <span style="color:#2E7D32;font-weight:700">的中</span> / <span style="color:#C62828;font-weight:700">×</span> と着順 1着・2着・3着</li>
+    </ul>
+    <h4>レースタイプの見方</h4>
+    <table>
+      <tr><th>アイコン</th><th>意味</th><th>判定条件 (3連単)</th></tr>
+      <tr><td><span class="badge honmei">⚡本命</span></td><td>1号艇圧倒的</td><td>1着確率 &gt; 40% かつ TOP2 合算 &gt; 55%</td></tr>
+      <tr><td><span class="badge middle">📊混戦</span></td><td>実力拮抗</td><td>本命にも穴にも該当しない場合</td></tr>
+      <tr><td><span class="badge ana">🔥穴</span></td><td>波乱含み</td><td>1着確率 &lt; 25% / 波高 7cm 以上 / 風速 5m 以上</td></tr>
+    </table>
+    <h4>操作</h4>
+    <ul>
+      <li>レース行をタップ → レース詳細画面 (§5)</li>
+      <li>左上 <kbd>← 場選択に戻る</kbd> でトップへ</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="detail">
+<h2>5. レース詳細画面</h2>
+<p>
+  詳細画面は <strong>3つのタブ</strong> で切り替え可能です。
+  デフォルトは「📋 出走表」が表示されます。
+</p>
+
+<h3 id="detail-lineup">5.1 出走表タブ 📋</h3>
+<div class="split">
+  <figure class="fig">
+    <img src="images/03-detail-lineup.png" alt="出走表タブ">
+    <figcaption>図 3: 出走表タブ (桐生 1R)</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>表示要素 (上から順)</h4>
+    <ul>
+      <li><strong>レース基本情報</strong>: 締切時刻 / 風向風速 / 気温 / 水温 / 波高 / コース変動有無</li>
+      <li><strong>レース結果</strong> (終了済): 1〜3着艇 / 3連単・2連単払戻金 / 的中表示</li>
+      <li><strong>出走表テーブル</strong> (6艇横並び)
+        <ul>
+          <li>艇番カラー (1赤2青3黄4緑5橙6紫)</li>
+          <li>級別 (A1/A2/B1/B2)</li>
+          <li>選手名 (タップで選手成績へ展開)</li>
+          <li>体重 / 年齢 / 所属支部</li>
+          <li>全国勝率 / 当地勝率 / 2連対率 / 3連対率</li>
+          <li>モーター 2連対率 / ボート 2連対率</li>
+          <li>F (フライング) / L (出遅れ) 数</li>
+        </ul>
+      </li>
+      <li><strong>展示情報</strong>: 展示タイム / ST / コース取り (進入予想)</li>
+    </ul>
+  </div>
+</div>
+
+<h3 id="detail-ai">5.2 AI予想・買い目タブ 🧠</h3>
+<div class="split">
+  <figure class="fig">
+    <img src="images/04-detail-ai.png" alt="AI予想・買い目タブ">
+    <figcaption>図 4: AI予想・買い目タブ</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>2段階の予想を併記</h4>
+    <ul>
+      <li><strong>番組予想</strong>: 出走表データ (選手成績・モーター等) のみで予測。展示前から表示</li>
+      <li><strong>直前予想</strong>: 展示走後の ST・展示タイム・スタート展示を加味して再計算
+        <ul>
+          <li>番組から大きく上昇した艇に <span style="color:#43A047">↑</span></li>
+          <li>下降は <span style="color:#E65100">↓</span></li>
+        </ul>
+      </li>
+    </ul>
+    <h4>マーク表記</h4>
+    <table>
+      <tr><th>記号</th><th>意味</th></tr>
+      <tr><td>◎</td><td>本命 (1着候補)</td></tr>
+      <tr><td>○</td><td>対抗</td></tr>
+      <tr><td>▲</td><td>単穴</td></tr>
+      <tr><td>△</td><td>連下</td></tr>
+    </table>
+    <h4>推奨買い目</h4>
+    <ul>
+      <li><strong>3連単</strong>: 設定された点数 (デフォルト10点) を確率順 or フォーメーション or BOX で出力</li>
+      <li><strong>2連単</strong>: 設定された点数 (デフォルト 5点) を同様に出力</li>
+      <li>各買い目に <strong>EV (期待値)</strong> を表示 — オッズ × 確率
+        <ul>
+          <li>EV ≥ 1.15 = 推奨ライン</li>
+          <li>EV ≥ 1.20 = 高 EV (オレンジバッジ)</li>
+        </ul>
+      </li>
+      <li>Kelly 比率に基づく <strong>推奨投資額</strong> も併記 (設定で調整可)</li>
+    </ul>
+  </div>
+</div>
+
+<h3 id="detail-odds">5.3 オッズタブ 💰</h3>
+<div class="split">
+  <figure class="fig">
+    <img src="images/05-detail-odds.png" alt="オッズタブ">
+    <figcaption>図 5: オッズタブ (3連単 + 2連単)</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>3連単オッズマトリクス</h4>
+    <ul>
+      <li>1着艇 × 2着艇 × 3着艇 のクロステーブル</li>
+      <li>セル色: 推奨買い目に含まれるオッズはハイライト</li>
+      <li>セル内: オッズ値 / 想定支持率(%)</li>
+    </ul>
+    <h4>2連単オッズ表</h4>
+    <ul>
+      <li>1着艇 × 2着艇 (6×6 グリッド)</li>
+      <li>セル色は 3連単と同じハイライト規則</li>
+    </ul>
+    <h4>更新</h4>
+    <ul>
+      <li><kbd>オッズ更新</kbd> ボタンで最新値に再取得 (約30分間隔で自動更新済)</li>
+      <li>古いデータの場合は「□分前」と鮮度表示</li>
+    </ul>
+    <div class="callout warn">
+      <strong>⚠ オッズの注意</strong>
+      Boatrace Open API は非公式かつ約30分間隔の更新です。
+      締切直前のリアルタイム値ではないため、購入前に必ず公式テレボートでも確認してください。
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="stats">
+<h2>6. 成績トラッカー</h2>
+<div class="split">
+  <figure class="fig">
+    <img src="images/06-stats.png" alt="成績トラッカー">
+    <figcaption>図 6: 成績トラッカー</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>本日サマリー (3 KPI)</h4>
+    <ul>
+      <li><strong>本日 判定済</strong>: 結果が確定したレース数</li>
+      <li><strong>3連単 的中</strong>: 推奨買い目が的中したレース数</li>
+      <li><strong>3連単 回収率</strong>: (払戻 ÷ 投資) ×100% — 100% で損益分岐</li>
+    </ul>
+    <h4>本日 券種別</h4>
+    <p>3連単 / 2連単別の的中数・投資・回収・回収率を表で表示</p>
+    <h4>本日 レースタイプ別</h4>
+    <p>⚡本命 / 📊混戦 / 🔥穴 別の的中率・回収率 — 自分の戦略の偏りが見える</p>
+    <h4>本日 場別 (回収率順)</h4>
+    <p>場ごとの的中率・回収率。回収率の高い場が一目で分かる</p>
+    <h4>過去履歴</h4>
+    <p>下にスクロールすると <strong>日別グラフ</strong> (Chart.js) と <strong>履歴テーブル</strong> が表示されます (60日保持)</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="backtest">
+<h2>7. 戦略バックテスト</h2>
+<div class="split">
+  <figure class="fig">
+    <img src="images/07-backtest.png" alt="バックテスト">
+    <figcaption>図 7: 戦略バックテスト</figcaption>
+  </figure>
+  <div class="desc">
+    <p>
+      過去のレース履歴に対して EV/Kelly 戦略を後付け適用し、
+      設定変更が ROI にどう効くかを評価できます。
+    </p>
+    <h4>パラメータ</h4>
+    <table>
+      <tr><th>項目</th><th>説明</th></tr>
+      <tr><td>期間</td><td>直近7日 / 14日 / 30日 / 全履歴 から選択</td></tr>
+      <tr><td>EV 最低閾値</td><td>1.05 / 1.10 / 1.15 (推奨) / 1.20 / 1.25 — 厳しいほど少点・的中率高め</td></tr>
+      <tr><td>Kelly 比率</td><td>0.25 (quarter) / 0.5 (half 推奨) / 1.0 (full) — 高いほどリスク高</td></tr>
+      <tr><td>資金 (円)</td><td>初期資金。Kelly 比率の計算ベース</td></tr>
+    </table>
+    <h4>出力</h4>
+    <ul>
+      <li>総投資額 / 総回収額 / 純損益 / ROI%</li>
+      <li>レースタイプ別 / 場別の内訳</li>
+      <li>資金推移グラフ</li>
+    </ul>
+    <div class="callout tip">
+      <strong>💡 使い方の例</strong>
+      EV 閾値を 1.10 → 1.20 に変えてみて回収率がどう変わるか比較。
+      自分の目に合う閾値を見つけたら設定画面の「EV 最低閾値」に同じ値を入れると本番にも反映されます。
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="settings">
+<h2>8. 設定画面</h2>
+<div class="split">
+  <figure class="fig">
+    <img src="images/08-settings.png" alt="設定画面">
+    <figcaption>図 8: 設定画面</figcaption>
+  </figure>
+  <div class="desc">
+    <h4>買い目設定</h4>
+    <table>
+      <tr><th>項目</th><th>選択肢</th><th>初期値</th></tr>
+      <tr><td>3連単 買い目点数</td><td>3 / 5 / 10 / 15 / 20 点</td><td>10 点</td></tr>
+      <tr><td>2連単 買い目点数</td><td>2 / 3 / 5 / 8 点</td><td>5 点</td></tr>
+      <tr><td>買い目方式</td><td>自動 / 確率順 / フォーメーション / BOX</td><td>自動</td></tr>
+    </table>
+    <h4>期待値 (EV) 戦略</h4>
+    <table>
+      <tr><th>項目</th><th>選択肢</th><th>説明</th></tr>
+      <tr><td>EV モード</td><td>OFF / EV 優先 / 厳格</td><td>従来ロジックか EV ベースか</td></tr>
+      <tr><td>EV 最低閾値</td><td>1.05〜1.25</td><td>これ未満の買い目は除外</td></tr>
+      <tr><td>Kelly 比率</td><td>0.25 / 0.5 / 1.0</td><td>0.5 (half-Kelly) 推奨</td></tr>
+      <tr><td>資金 (円)</td><td>任意整数</td><td>Kelly 計算用</td></tr>
+      <tr><td>KPI モード</td><td>balanced / aggressive / conservative</td><td>判定ロジックの保守度</td></tr>
+    </table>
+    <h4>表示・通知</h4>
+    <ul>
+      <li><strong>的中通知</strong>: 許可リクエスト / 拒否</li>
+      <li><strong>表示言語</strong>: 日本語 / English / 简体中文</li>
+    </ul>
+    <h4>FL 貢献 (実験)</h4>
+    <p>「学習結果を共有」を ON にすると DP noise を加えた重み更新を GitHub Issue に匿名 post し、
+       コミュニティモデル改善に貢献。OFF が初期値。</p>
+    <h4>データ管理</h4>
+    <table>
+      <tr><th>ボタン</th><th>動作</th></tr>
+      <tr><td>データキャッシュ クリア</td><td>API レスポンスキャッシュのみ削除</td></tr>
+      <tr><td>容量緊急解放</td><td>localStorage 5MB 接近時の緊急 trim</td></tr>
+      <tr><td>成績履歴 リセット</td><td>boatrace_history を全削除 (二段確認)</td></tr>
+      <tr><td>選手/場DB 再構築</td><td>racerDB / stadiumDB / pairwiseDB を削除して再取得</td></tr>
+      <tr><td>学習重み リセット</td><td>L2 重みを初期値に戻す</td></tr>
+      <tr><td>エラーログ</td><td>表示 / コピー / 削除</td></tr>
+      <tr><td>確率校正 (Platt) 再校正</td><td>履歴 200件以上で適用可能</td></tr>
+      <tr><td>履歴 CSV エクスポート</td><td>分析用 CSV ダウンロード</td></tr>
+      <tr><td>Forward-chain 評価</td><td>logloss / Brier / ECE を即時計算</td></tr>
+    </table>
+    <h4>ストレージ表示</h4>
+    <p>選手DB件数 / 場DB件数 / 予想履歴件数 / localStorage 使用量 などを下部に常時表示</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================ -->
+<section id="nav">
+<h2>9. ボトムナビ</h2>
+<div class="fig" style="text-align:center">
+  <img src="images/09-bottom-nav.png" alt="ボトムナビ" style="max-width:100%">
+  <figcaption>図 9: ボトムナビゲーション (5項目)</figcaption>
+</div>
+<table>
+  <tr><th>アイコン</th><th>名称</th><th>機能</th></tr>
+  <tr><td>🏠</td><td>トップ</td><td>開催場一覧 (§3) へ戻る</td></tr>
+  <tr><td>📊</td><td>成績</td><td>成績トラッカー (§6) を表示</td></tr>
+  <tr><td>🧪</td><td>検証</td><td>戦略バックテスト (§7) を表示</td></tr>
+  <tr><td>⚙️</td><td>設定</td><td>設定画面 (§8) を表示</td></tr>
+  <tr><td>🔄</td><td>更新</td><td>全データを強制再取得 (programs / previews / odds / results)</td></tr>
+</table>
+</section>
+
+<!-- ============================================ -->
+<section id="tips">
+<h2>10. 使いこなし Tips</h2>
+<h3>10.1 推奨ワークフロー (1日の流れ)</h3>
+<ol>
+  <li><strong>朝</strong>: アプリ起動 → トップで本日開催場を確認</li>
+  <li><strong>レース選び</strong>: <span class="badge honmei">⚡本命</span> 中心に絞る (回収率が安定)</li>
+  <li><strong>展示前</strong>: 「番組予想」をチェック、買い目とオッズ確認</li>
+  <li><strong>展示後 (締切 5〜10分前)</strong>: 「直前予想」に切替えて買い目変更を検討</li>
+  <li><strong>レース後</strong>: 結果は自動取得 → 成績トラッカーで日次回収率を確認</li>
+</ol>
+<h3>10.2 EV 重視 vs 確率重視</h3>
+<ul>
+  <li><strong>EV 重視 (推奨)</strong>: EV 最低閾値 1.15 以上のみ買う。買い目は少なくなるが期待値プラス</li>
+  <li><strong>確率重視</strong>: EV モード OFF。本命党向け。的中率は高いが回収率は売れすぎでマイナスになりやすい</li>
+</ul>
+<h3>10.3 自分の戦略に合うパラメータの探し方</h3>
+<ol>
+  <li>検証ページ (§7) で過去14日に対し EV 閾値を変えて ROI を計算</li>
+  <li>ROI が最大化される閾値を見つけたら設定 (§8) に反映</li>
+  <li>1〜2週間運用して成績ページ (§6) で実際の回収率を確認</li>
+</ol>
+<h3>10.4 学習を進める</h3>
+<p>
+  「予想履歴」が 200 件以上溜まると <strong>Platt scaling 確率校正</strong> が
+  自動で再校正可能になります (設定画面)。校正により AI の確率推定がより
+  実測に近づきます。
+</p>
+<h3>10.5 ホーム画面ショートカット (PWA)</h3>
+<p>
+  PWA インストール後、ホーム画面アイコンを長押し (iOS/Android) すると
+  <strong>成績</strong> と <strong>検証</strong> へのショートカットが出ます。
+</p>
+</section>
+
+<!-- ============================================ -->
+<section id="notes">
+<h2>11. 免責事項・注意事項</h2>
+<div class="callout danger">
+  <strong>⚠ 重要な免責</strong>
+  本アプリの予想は <strong>参考情報</strong> であり、的中を保証するものではありません。
+  公営競技は20歳以上の方のみが楽しめる娯楽です。投資は自己責任で、
+  生活に支障をきたさない範囲で行ってください。
+</div>
+<h3>データソースについて</h3>
+<ul>
+  <li>本アプリは <strong>Boatrace Open API</strong> (非公式・GitHub Pages 配信) からデータを取得しています</li>
+  <li>更新間隔は約30分。締切直前のリアルタイムオッズではありません</li>
+  <li>API 障害時はキャッシュ表示またはエラーメッセージが出ます</li>
+  <li>購入前は必ず <strong>公式テレボート</strong> で最新値を確認してください</li>
+</ul>
+<h3>プライバシーについて</h3>
+<ul>
+  <li>予想履歴・選手DB等は <strong>全て端末内</strong> (localStorage / IndexedDB) に保存</li>
+  <li>個人情報・購入履歴・現金情報は一切収集しません</li>
+  <li>FL 貢献を ON にした場合のみ、差分プライバシ加工した <strong>モデル重み更新</strong>のみが GitHub Issue 経由で送信されます (匿名)</li>
+</ul>
+<h3>サポート / フィードバック</h3>
+<ul>
+  <li>不具合報告: GitHub Issues (リポジトリ <code>inotaka1979/boatrace-ai</code>)</li>
+  <li>エラーログ: 設定画面の「エラーログ → コピー」で診断情報を取得可能</li>
+</ul>
+</section>
+
+<footer>
+  BoatRace AI v2.0 — Boatrace Open API 使用 (非公式)<br>
+  © 2026 inotaka1979 &nbsp;|&nbsp; <a href="https://github.com/inotaka1979/boatrace-ai">GitHub</a>
+</footer>
+
+</div>
+</body>
+</html>
