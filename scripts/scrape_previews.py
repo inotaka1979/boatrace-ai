@@ -36,6 +36,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 OUTPUT = "data/previews/today.json"
 SCRAPE_STATE = "data/previews/.scrape_state.json"  # スクレイプ状態追跡 (gitignore推奨)
+PROGRAMS_CACHE = "data/previews/.programs_cache.json"  # OpenAPI 障害時のフォールバック
 CONCURRENCY = 5          # 同時リクエスト数
 INTERVAL = 0.3           # リクエスト間最小間隔(秒)
 REQUEST_TIMEOUT = 15     # 個別リクエストタイムアウト(秒)
@@ -63,9 +64,37 @@ log = logging.getLogger("smart_scraper")
 # Phase 1: プログラムAPI → 締切時刻マップ
 # ---------------------------------------------------------------------------
 async def fetch_programs(session: aiohttp.ClientSession):
-    """Open APIから本日の番組データ (締切時刻含む) を取得"""
+    """Open APIから本日の番組データ (締切時刻含む) を取得し、成功時はキャッシュも更新"""
     async with session.get(PROGRAMS_URL, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
         data = await resp.json()
+    # 成功時はキャッシュを更新（DNS 障害等で次回 fetch が失敗した時のフォールバック）
+    try:
+        atomic_write_json(PROGRAMS_CACHE, data)
+    except Exception as e:
+        log.warning("programs cache write failed: %s", e)
+    return data
+
+
+def _load_programs_cache():
+    """fetch_programs 失敗時のフォールバック: ディスクキャッシュから programs を読込。
+    キャッシュが今日 (JST) のデータでなければ None を返す。
+    """
+    if not os.path.exists(PROGRAMS_CACHE):
+        return None
+    try:
+        with open(PROGRAMS_CACHE, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        log.warning("programs cache read failed: %s", e)
+        return None
+    today_jst = datetime.now(JST).strftime("%Y-%m-%d")
+    programs = data.get("programs", [])
+    if not programs:
+        return None
+    cached_date = (programs[0].get("race_date") or "")
+    if cached_date != today_jst:
+        log.info("programs cache is stale (%s != %s)", cached_date, today_jst)
+        return None
     return data
 
 
@@ -152,9 +181,10 @@ def select_target_races(closing_map, existing_data, now=None):
                 targets.append((sid, rno, RaceAction.FETCH_EXHIBITION, 100 + minutes_to_close))
 
         # F-CATCHUP: 締切から15分以上経過したが is_finished が False のレースを救済
-        # ダウンタイム後の back-fill 用。最大 6 時間前まで。優先度は低め（200+経過分）
+        # ダウンタイム後の back-fill 用。最大 25 時間前まで（当日全レース + 余裕）。
+        # 旧値 -360 (6h) は半日 DNS 障害から回復した際に午前のレース結果を取りこぼしていた。
         elif minutes_to_close < -WINDOW_AFTER_CLOSE:
-            if not is_finished and minutes_to_close >= -360:
+            if not is_finished and minutes_to_close >= -1500:
                 targets.append((sid, rno, RaceAction.FETCH_RESULT, 200 + (-minutes_to_close)))
 
     # 優先度順にソート
@@ -514,11 +544,18 @@ async def async_main():
 
     # Phase 1: 番組データ取得 → 締切時刻マップ
     async with aiohttp.ClientSession() as session:
+        prog = None
         try:
             prog = await fetch_programs(session)
         except Exception as e:
             log.error("Failed to fetch programs: %s", e)
-            return
+            # OpenAPI 障害時はディスクキャッシュにフォールバック → DNS が復旧する間も
+            # 午前/午後のレースの結果取得を継続できる
+            prog = _load_programs_cache()
+            if prog:
+                log.info("using programs cache from disk (OpenAPI unreachable)")
+            else:
+                return
 
     closing_map, date_str, programs = parse_closing_times(prog)
     if not closing_map:

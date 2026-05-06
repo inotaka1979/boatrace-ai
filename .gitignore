@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 /tmp/
 .scrape_state.json
+.programs_cache.json
 # PA-8: 作業残骸 / バックアップは追跡しない
 .icon_backup/
 *.bak
