@@ -518,14 +518,12 @@ function learnSeriesAndPairwiseFromResults(resultsJson){
       var race = races[rn];
       if(!race || !race.results) continue;
       var sortedRes = race.results.slice().sort(function(a,b){return a.place-b.place});
-      var ridsInRace = sortedRes.map(function(r){return r.racer_number || 0;});
 
-      sortedRes.forEach(function(r, idx){
+      // 節間追跡（個人別 — racerDB 在籍者のみ）
+      sortedRes.forEach(function(r){
         var rid = r.racer_number || 0;
         if(!rid || !racerDB[rid]) return;
         var rdb = racerDB[rid];
-
-        // 節間追跡（場ごとに最大 7 日分保存、当日重複排除）
         if(!rdb.seriesProgress) rdb.seriesProgress = {};
         if(!rdb.seriesProgress[String(sid)]) rdb.seriesProgress[String(sid)] = [];
         var prog = rdb.seriesProgress[String(sid)];
@@ -540,22 +538,31 @@ function learnSeriesAndPairwiseFromResults(resultsJson){
         }
         // 7 日以上前を削除
         if(prog.length > 7) rdb.seriesProgress[String(sid)] = prog.slice(-7);
+      });
 
-        // 対戦相性（pair-wise: 場の同レース内）
-        ridsInRace.forEach(function(oid){
-          if(!oid || oid === rid) return;
-          var key = (rid < oid) ? rid+'-'+oid : oid+'-'+rid;
+      // 対戦相性（pairwise: 場の同レース内、j>i ループで 1 ペア 1 回）
+      // 旧版は外/内の両方向で同ペアを 2 回カウントしていた（races/head2head 共に倍化）。
+      // 失格艇 (place が 1〜6 の整数でない) は除外して誤クレジット防止。
+      for(var ii=0; ii<sortedRes.length; ii++){
+        var rA = sortedRes[ii];
+        var ridA = rA && rA.racer_number || 0;
+        var pA = rA && rA.place;
+        if(!ridA || !(pA >= 1 && pA <= 6)) continue;
+        for(var jj=ii+1; jj<sortedRes.length; jj++){
+          var rB = sortedRes[jj];
+          var ridB = rB && rB.racer_number || 0;
+          var pB = rB && rB.place;
+          if(!ridB || ridB === ridA || !(pB >= 1 && pB <= 6)) continue;
+          var key = (ridA < ridB) ? (ridA+'-'+ridB) : (ridB+'-'+ridA);
           if(!pairwiseDB[key]) pairwiseDB[key] = { races: 0, head2head: {} };
           var pr = pairwiseDB[key];
           pr.races++;
-          // 着順比較で勝者カウント（自分の着が相手より上なら +1）
-          var myPlace = r.place;
-          var oppRes = sortedRes.find(function(x){return x.racer_number===oid;});
-          if(!oppRes) return;
-          var winner = (myPlace < oppRes.place) ? rid : oid;
-          pr.head2head[String(winner)] = (pr.head2head[String(winner)] || 0) + 1;
-        });
-      });
+          if(pA !== pB){
+            var winner = (pA < pB) ? ridA : ridB;
+            pr.head2head[String(winner)] = (pr.head2head[String(winner)] || 0) + 1;
+          }
+        }
+      }
     }
   }
   // 保存
@@ -4093,9 +4100,10 @@ function clearHistory(){
 }
 
 function rebuildDB(){
-  if(_confirmDestructive('選手/場DBを再構築しますか?')){
+  if(_confirmDestructive('選手/場/対戦DBを再構築しますか?')){
     localStorage.removeItem('boatrace_racerDB');
     localStorage.removeItem('boatrace_stadiumDB');
+    localStorage.removeItem('boatrace_pairwiseDB');
     location.reload();
   }
 }

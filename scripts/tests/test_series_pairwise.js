@@ -127,5 +127,92 @@ t('対戦データ不足 (<5) は 0', () => {
   assert.strictEqual(r.hits, 0);
 });
 
+console.log('[learnSeriesAndPairwiseFromResults]');
+t('1 レース 1 ペア 1 カウント (重複加算なし)', () => {
+  // クリーン
+  Object.keys(ctx.pairwiseDB).forEach(k => delete ctx.pairwiseDB[k]);
+  ctx.racerDB[100] = { courseStats: {} };
+  ctx.racerDB[200] = { courseStats: {} };
+  ctx.racerDB[300] = { courseStats: {} };
+  const results = {
+    '12': {
+      '1': {
+        results: [
+          { racer_number: 100, place: 1 },
+          { racer_number: 200, place: 2 },
+          { racer_number: 300, place: 3 },
+        ]
+      }
+    }
+  };
+  ctx.learnSeriesAndPairwiseFromResults(results);
+  assert.strictEqual(ctx.pairwiseDB['100-200'].races, 1, '100-200 は 1 戦');
+  assert.strictEqual(ctx.pairwiseDB['100-300'].races, 1, '100-300 は 1 戦');
+  assert.strictEqual(ctx.pairwiseDB['200-300'].races, 1, '200-300 は 1 戦');
+  assert.strictEqual(ctx.pairwiseDB['100-200'].head2head['100'], 1, '100 が 200 に勝利');
+  assert.strictEqual(ctx.pairwiseDB['100-300'].head2head['100'], 1, '100 が 300 に勝利');
+  assert.strictEqual(ctx.pairwiseDB['200-300'].head2head['200'], 1, '200 が 300 に勝利');
+});
+
+t('racerDB 未登録選手のペアも対称にカウントされる', () => {
+  Object.keys(ctx.pairwiseDB).forEach(k => delete ctx.pairwiseDB[k]);
+  // 100 のみ racerDB 登録、200 と 300 は未登録
+  delete ctx.racerDB[200];
+  delete ctx.racerDB[300];
+  ctx.racerDB[100] = { courseStats: {} };
+  const results = {
+    '12': {
+      '1': {
+        results: [
+          { racer_number: 100, place: 1 },
+          { racer_number: 200, place: 2 },
+          { racer_number: 300, place: 3 },
+        ]
+      }
+    }
+  };
+  ctx.learnSeriesAndPairwiseFromResults(results);
+  // 全ペアが 1 戦であるべき (旧バグでは 100 の絡む 2 ペアが 1, 200-300 が 0 になっていた)
+  assert.strictEqual(ctx.pairwiseDB['100-200'].races, 1);
+  assert.strictEqual(ctx.pairwiseDB['100-300'].races, 1);
+  assert.strictEqual(ctx.pairwiseDB['200-300'].races, 1);
+});
+
+t('失格艇 (place が範囲外) は除外', () => {
+  Object.keys(ctx.pairwiseDB).forEach(k => delete ctx.pairwiseDB[k]);
+  ctx.racerDB[100] = { courseStats: {} };
+  ctx.racerDB[200] = { courseStats: {} };
+  const results = {
+    '12': {
+      '1': {
+        results: [
+          { racer_number: 100, place: 1 },
+          { racer_number: 200, place: null },  // DSQ 想定
+        ]
+      }
+    }
+  };
+  ctx.learnSeriesAndPairwiseFromResults(results);
+  // 失格艇は除外されるのでペア記録は作られない
+  assert.strictEqual(ctx.pairwiseDB['100-200'], undefined);
+});
+
+t('複数レースで累積', () => {
+  Object.keys(ctx.pairwiseDB).forEach(k => delete ctx.pairwiseDB[k]);
+  ctx.racerDB[100] = { courseStats: {} };
+  ctx.racerDB[200] = { courseStats: {} };
+  const results = {
+    '12': {
+      '1': { results: [{racer_number:100, place:1}, {racer_number:200, place:2}] },
+      '2': { results: [{racer_number:100, place:2}, {racer_number:200, place:1}] },
+      '3': { results: [{racer_number:100, place:1}, {racer_number:200, place:2}] },
+    }
+  };
+  ctx.learnSeriesAndPairwiseFromResults(results);
+  assert.strictEqual(ctx.pairwiseDB['100-200'].races, 3, '3 戦');
+  assert.strictEqual(ctx.pairwiseDB['100-200'].head2head['100'], 2, '100 が 2 勝');
+  assert.strictEqual(ctx.pairwiseDB['100-200'].head2head['200'], 1, '200 が 1 勝');
+});
+
 console.log(`\n=== Result: ${pass} passed, ${fail} failed ===`);
 process.exit(fail);

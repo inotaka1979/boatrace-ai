@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=45" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=45" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=46" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=46" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -466,8 +466,8 @@ button.action-btn:active{background:#F0F0F0}
   <!-- P0-4: 詳細画面の Tabs 化 — 縦スクロール 10画面超 → 3タブで認知負荷を低減 -->
   <div class="detail-tabs" role="tablist" aria-label="レース詳細セクション">
     <button class="detail-tab-btn active" data-detail-tab="lineup" role="tab" aria-selected="true" data-action="showDetailTab" data-arg-tab="lineup">📋 出走表</button>
-    <button class="detail-tab-btn" data-detail-tab="ai" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="ai">🧠 AI根拠</button>
-    <button class="detail-tab-btn" data-detail-tab="odds" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="odds">💰 オッズ・買い目</button>
+    <button class="detail-tab-btn" data-detail-tab="ai" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="ai">🧠 AI予想・買い目</button>
+    <button class="detail-tab-btn" data-detail-tab="odds" role="tab" aria-selected="false" data-action="showDetailTab" data-arg-tab="odds">💰 オッズ</button>
   </div>
   <section class="detail-tab-section active" data-detail-section="lineup" role="tabpanel">
     <div id="detailWeather"></div>
@@ -678,7 +678,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=45" defer></script>
-<script src="assets/app-rest.min.js?v=45" defer></script>
+<script src="assets/app-critical.min.js?v=46" defer></script>
+<script src="assets/app-rest.min.js?v=46" defer></script>
 </body>
 </html>
