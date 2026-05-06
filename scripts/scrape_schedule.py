@@ -1,30 +1,50 @@
 #!/usr/bin/env python3
 """
 BoatRace Oracle - 月間開催日程取得スクリプト
-月1回（月初）に実行される
+月1回（月初）に実行される。
 
 処理フロー:
-1. 当月と翌月のスケジュールページを取得
-2. 各場の開催日程・グレード・レース名を抽出
-3. data/schedule/current.json に出力
+1. 当月と翌月の monthlyschedule HTML を取得 (boatrace.jp)
+2. 場ごとの開催日付配列 (YYYY-MM-DD) を抽出
+3. data/schedule/current.json に出力 + data/schedule/next_open.json に派生
+
+出力形式 (current.json):
+  {
+    "updated_at": "...",
+    "months": [
+      {
+        "year_month": "2026-05",
+        "events": [
+          {"stadium": 1, "grade": "一般", "title": "...",
+           "dates": ["2026-05-02", "2026-05-03", ...]},
+          ...
+        ]
+      }
+    ],
+    "stadium_dates": {"1": ["2026-05-02", ...], ...}  # 全場の開催日 union
+  }
+
+出力形式 (next_open.json):
+  {"updated_at": "...", "next_open": {"3": "2026-05-13", ...}}
 """
 
 import json
 import os
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date as DateCls
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from io_utils import atomic_write_json  # P2 D-01
-from time_utils import utc_iso_seconds, first_of_next_month  # P2 D-02 / D-06
-from http_utils import fetch_text  # PC-1
+from io_utils import atomic_write_json
+from time_utils import utc_iso_seconds, first_of_next_month
+from http_utils import fetch_text
 
 from bs4 import BeautifulSoup
 
 JST = timezone(timedelta(hours=9))
 SCHEDULE_URL = "https://www.boatrace.jp/owpc/pc/race/monthlyschedule?ym={ym}"
 OUTPUT_FILE = "data/schedule/current.json"
+NEXT_OPEN_FILE = "data/schedule/next_open.json"
 
 STADIUMS = {
     1: "桐生", 2: "戸田", 3: "江戸川", 4: "平和島", 5: "多摩川",
@@ -39,101 +59,231 @@ GRADE_MAP = {
     "is-gradeColorG1": "G1",
     "is-gradeColorG2": "G2",
     "is-gradeColorG3": "G3",
+    "is-gradeColorIppan": "一般",
+    "is-gradeColorLady": "女子",
 }
 
 
-def scrape_month(year_month: str) -> list[dict]:
-    """指定月（YYYYMM）の全場開催イベントを取得する。
+def _build_date_axis(year: int, month: int, n_cols: int) -> list[str]:
+    """ヘッダ行 (n_cols 列) に対応する YYYY-MM-DD 配列を構築。
+
+    monthlyschedule は当月の前月末週から始まり翌月頭週まで含む。
+    n_cols = 39 (場名 col を除いた値) などになる。
+    第 1 列の日付 = 当月 1 日が含まれる週の月曜日。
+    """
+    first_of_month = DateCls(year, month, 1)
+    # 月曜=0, 日曜=6
+    start = first_of_month - timedelta(days=first_of_month.weekday())
+    return [(start + timedelta(days=i)).isoformat() for i in range(n_cols)]
+
+
+def scrape_month(year_month: str) -> dict:
+    """指定月のスケジュールから (events, stadium_dates) を抽出。
 
     Args:
-        year_month: "202605" 等 6 桁文字列
+        year_month: "202605" 等 6 桁
 
     Returns:
-        各イベント dict のリスト。失敗時は空リスト。
+        {"events": [...], "stadium_dates": {sid_str: [date, ...]}}
     """
     url = SCHEDULE_URL.format(ym=year_month)
+    year = int(year_month[:4])
+    month = int(year_month[4:6])
+    today_iso = datetime.now(JST).date().isoformat()
     try:
-        # PC-1: http_utils.fetch_text に統一（retry / 共通 UA）
         html = fetch_text(url)
-        soup = BeautifulSoup(html, "lxml")
-        events = []
+        soup = BeautifulSoup(html, "html.parser")
+        tables = soup.select("table.is-spritedNone1")
+        events: list[dict] = []
+        # sid -> set of date strings
+        per_stadium: dict[str, set[str]] = {}
 
-        # スケジュールテーブルの各セルを解析
-        rows = soup.select("table.is-calendar tr")
-        for row in rows:
-            cells = row.select("td")
-            for cell in cells:
-                # グレード判定
-                grade = "一般"
-                for cls_name, g in GRADE_MAP.items():
-                    if cls_name in (cell.get("class") or []):
-                        grade = g
-                        break
+        for table in tables:
+            rows = table.select("tr")
+            if not rows:
+                continue
+            # ヘッダ行から列数推定 (場名 col を除く)
+            header_cells = rows[0].select("th, td")
+            n_date_cols = len(header_cells) - 1
+            if n_date_cols <= 0:
+                continue
+            date_axis = _build_date_axis(year, month, n_date_cols)
 
-                # イベント名とリンクの取得
-                links = cell.select("a")
-                for link in links:
-                    title = link.get_text(strip=True)
-                    href = link.get("href", "")
-                    if not title or not href:
-                        continue
+            for row in rows[1:]:
+                # 1 列目は場の <th> with anchor jcd
+                first = row.select_one("th, td")
+                if not first:
+                    continue
+                a = first.select_one("a[href*='jcd=']")
+                if not a:
+                    continue
+                href = a.get("href", "")
+                try:
+                    jcd_str = href.split("jcd=")[1].split("&")[0]
+                    sid = int(jcd_str)
+                except (ValueError, IndexError):
+                    continue
+                if sid not in STADIUMS:
+                    continue
 
-                    # 場番号の推定（URLのjcdパラメータから）
-                    stadium = 0
-                    if "jcd=" in href:
-                        try:
-                            jcd_str = href.split("jcd=")[1].split("&")[0]
-                            stadium = int(jcd_str)
-                        except (ValueError, IndexError):
-                            pass
+                # 残りの cell を colspan で展開
+                date_cells = row.select("td")
+                idx = 0
+                for cell in date_cells:
+                    span = int(cell.get("colspan") or 1)
+                    cls_list = cell.get("class") or []
+                    grade = None
+                    for cls_name, g in GRADE_MAP.items():
+                        if cls_name in cls_list:
+                            grade = g
+                            break
+                    if grade is not None:
+                        # 期間内の日付を全て登録
+                        seg_dates = []
+                        for k in range(span):
+                            di = idx + k
+                            if 0 <= di < len(date_axis):
+                                seg_dates.append(date_axis[di])
+                        if seg_dates:
+                            title = cell.get_text(" ", strip=True)
+                            events.append({
+                                "stadium": sid,
+                                "stadium_name": STADIUMS[sid],
+                                "grade": grade,
+                                "title": title,
+                                "dates": seg_dates,
+                            })
+                            per_stadium.setdefault(str(sid), set()).update(seg_dates)
+                    idx += span
 
-                    if stadium > 0 and title:
-                        events.append({
-                            "stadium": stadium,
-                            "stadium_name": STADIUMS.get(stadium, f"場{stadium}"),
-                            "grade": grade,
-                            "title": title,
-                        })
-
-        return events
+        # set -> sorted list
+        per_stadium_sorted = {sid: sorted(d) for sid, d in per_stadium.items()}
+        return {"events": events, "stadium_dates": per_stadium_sorted}
     except Exception as e:
-        print(f"  スケジュール解析失敗: {e}", file=sys.stderr)
-        return []
+        print(f"  スケジュール解析失敗 ({year_month}): {e}", file=sys.stderr)
+        return {"events": [], "stadium_dates": {}}
+
+
+def _merge_stadium_dates(*per_stadium_dicts) -> dict[str, list[str]]:
+    out: dict[str, set[str]] = {}
+    for d in per_stadium_dicts:
+        for sid, dates in d.items():
+            out.setdefault(sid, set()).update(dates)
+    return {sid: sorted(d) for sid, d in out.items()}
+
+
+def _compute_next_open(stadium_dates: dict[str, list[str]],
+                       today_iso: str) -> dict[str, str]:
+    """各場の「今日以降で最初の開催日」を返す。
+
+    当日開催中の場は今日の日付になる（24場とも next_open に含まれ得る）。
+    対象外の場は欠落。
+    """
+    out: dict[str, str] = {}
+    for sid, dates in stadium_dates.items():
+        for d in dates:
+            if d >= today_iso:
+                out[sid] = d
+                break
+    return out
+
+
+def _is_current_fresh(max_age_days: int = 14) -> bool:
+    """current.json が存在し、updated_at が max_age_days 以内なら True。"""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
+    if not os.path.exists(p):
+        return False
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        upd = d.get("updated_at", "")
+        if not upd:
+            return False
+        # ISO 8601 解析（Z 付きも考慮）
+        ts = datetime.fromisoformat(upd.replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - ts
+        return age <= timedelta(days=max_age_days) and bool(d.get("stadium_dates"))
+    except Exception:
+        return False
+
+
+def _refresh_next_open_only() -> int:
+    """current.json から next_open.json だけ再計算する（HTTP fetch なし）。"""
+    today_iso = datetime.now(JST).date().isoformat()
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    stadium_dates = d.get("stadium_dates", {})
+    next_open = _compute_next_open(stadium_dates, today_iso)
+    next_output = {
+        "updated_at": utc_iso_seconds(),
+        "today": today_iso,
+        "next_open": next_open,
+    }
+    atomic_write_json(NEXT_OPEN_FILE, next_output, indent=2)
+    print(f"next_open.json 更新: {len(next_open)}場 (current.json は再利用)")
+    return len(next_open)
 
 
 def main():
+    # --quick: HTTP fetch を避けて next_open.json だけ更新（毎日呼んで OK）
+    quick = "--quick" in sys.argv
+
+    if quick or _is_current_fresh():
+        if not os.path.exists(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
+        ):
+            print("current.json 未生成 — フル取得に切替え")
+        else:
+            _refresh_next_open_only()
+            return
+
     now = datetime.now(JST)
+    today_iso = now.date().isoformat()
     months_data = []
+    per_stadium_all: list[dict] = []
 
     # 当月
     ym1 = now.strftime("%Y%m")
     print(f"当月取得: {ym1}")
-    events1 = scrape_month(ym1)
+    res1 = scrape_month(ym1)
     months_data.append({
         "year_month": now.strftime("%Y-%m"),
-        "events": events1,
+        "events": res1["events"],
     })
+    per_stadium_all.append(res1["stadium_dates"])
     time.sleep(3)
 
-    # 翌月 (D-06: 月末でも正しく動作する関数を利用)
+    # 翌月
     next_month = first_of_next_month(now)
     ym2 = next_month.strftime("%Y%m")
     print(f"翌月取得: {ym2}")
-    events2 = scrape_month(ym2)
+    res2 = scrape_month(ym2)
     months_data.append({
         "year_month": next_month.strftime("%Y-%m"),
-        "events": events2,
+        "events": res2["events"],
     })
+    per_stadium_all.append(res2["stadium_dates"])
+
+    stadium_dates = _merge_stadium_dates(*per_stadium_all)
+    next_open = _compute_next_open(stadium_dates, today_iso)
 
     output = {
-        "updated_at": utc_iso_seconds(),  # D-02
+        "updated_at": utc_iso_seconds(),
         "months": months_data,
+        "stadium_dates": stadium_dates,
     }
+    atomic_write_json(OUTPUT_FILE, output, indent=2)
 
-    atomic_write_json(OUTPUT_FILE, output, indent=2)  # D-01
+    next_output = {
+        "updated_at": utc_iso_seconds(),
+        "today": today_iso,
+        "next_open": next_open,
+    }
+    atomic_write_json(NEXT_OPEN_FILE, next_output, indent=2)
 
     total_events = sum(len(m["events"]) for m in months_data)
-    print(f"完了: {total_events}イベントを保存")
+    print(f"完了: {total_events}イベント / 次回開催 {len(next_open)}場 を保存")
 
 
 if __name__ == "__main__":

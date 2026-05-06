@@ -69,6 +69,33 @@ def load_programs() -> list[dict]:
     return data.get("programs", [])
 
 
+def load_next_open() -> dict[str, str]:
+    """data/schedule/next_open.json の next_open 辞書を返す。無ければ空。"""
+    p = ROOT / "data" / "schedule" / "next_open.json"
+    if not p.exists():
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f).get("next_open", {})
+    except Exception as e:
+        print(f"  WARN: next_open.json load failed: {e}")
+        return {}
+
+
+def _format_next_date(iso: str, today_iso: str) -> str:
+    """ISO 日付を「5/13(火)」形式に。今日同日は「本日」。"""
+    if not iso:
+        return ""
+    try:
+        d = datetime.strptime(iso, "%Y-%m-%d").date()
+    except ValueError:
+        return ""
+    if iso == today_iso:
+        return "本日開催"
+    weekdays = "月火水木金土日"
+    return f"{d.month}/{d.day}({weekdays[d.weekday()]})"
+
+
 def render_grid(programs: list[dict]) -> str:
     """stadium-card 24 個の HTML を生成。"""
     by_sid: dict[int, list[dict]] = {}
@@ -76,6 +103,9 @@ def render_grid(programs: list[dict]) -> str:
         sid = p.get("race_stadium_number")
         if sid:
             by_sid.setdefault(sid, []).append(p)
+
+    next_open = load_next_open()
+    today_iso = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
 
     # PI-fix: inline onclick を復活（iOS standalone PWA で event delegation の click
     #   bubbling が効かない事例があるため）。data-sid も併存させて JS 側 delegation
@@ -108,13 +138,21 @@ def render_grid(programs: list[dict]) -> str:
                 f"</div>"
             )
         else:
+            iso = next_open.get(str(sid), "")
+            label = _format_next_date(iso, today_iso)
+            aria_extra = f"（次回開催 {label}）" if label else "（本日非開催）"
+            date_html = (
+                f'<span class="stadium-next-date">{label}</span>' if label else ""
+            )
             cards.append(
                 f'<div class="stadium-card inactive-stadium" '
                 f'data-hydrated="true" '
-                f'aria-label="{name} 次節（本日非開催）" '
+                f'data-next-open="{iso}" '
+                f'aria-label="{name} 次節{aria_extra}" '
                 f'aria-disabled="true">'
                 f'<span class="stadium-name">{name}</span>'
                 f'<span class="stadium-status">次節</span>'
+                f'{date_html}'
                 f"</div>"
             )
 

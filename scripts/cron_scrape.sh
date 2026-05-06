@@ -36,8 +36,8 @@ export TZ="Asia/Tokyo"
 
 # --- 引数チェック ---
 MODE="${1:-all}"
-if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" && "$MODE" != "photos" && "$MODE" != "results" ]]; then
-    echo "Usage: $0 {odds|previews|all|tide|racedata|photos}" >&2
+if [[ "$MODE" != "odds" && "$MODE" != "previews" && "$MODE" != "all" && "$MODE" != "tide" && "$MODE" != "racedata" && "$MODE" != "photos" && "$MODE" != "results" && "$MODE" != "schedule" ]]; then
+    echo "Usage: $0 {odds|previews|all|tide|racedata|photos|results|schedule}" >&2
     exit 1
 fi
 
@@ -215,6 +215,12 @@ case "$MODE" in
         ;;
     racedata)
         run_scrape "scrape_racedata.py" "racedata" || overall=$?
+        # next_open.json を当日基準で再計算（current.json は再利用、HTTP fetch なし）
+        if python3 scripts/scrape_schedule.py --quick >> "$LOG_FILE" 2>&1; then
+            log "scrape_schedule --quick: ok"
+        else
+            log "WARN: scrape_schedule --quick failed"
+        fi
         # PE-11: racedata 取得後に top page を pre-render（LCP 即時化）
         if cd "$REPO_DIR" && python3 scripts/prerender_top.py >> "$LOG_FILE" 2>&1; then
             log "prerender_top: ok"
@@ -222,6 +228,17 @@ case "$MODE" in
             log "WARN: prerender_top failed"
         fi
         git_push_locked "racedata+prerender" || overall=$?
+        ;;
+    schedule)
+        # 月次のフル fetch（boatrace.jp HTML スクレイプ、~10s）
+        # current.json + next_open.json の両方を更新
+        run_scrape "scrape_schedule.py" "schedule" || overall=$?
+        if cd "$REPO_DIR" && python3 scripts/prerender_top.py >> "$LOG_FILE" 2>&1; then
+            log "prerender_top: ok"
+        else
+            log "WARN: prerender_top failed"
+        fi
+        git_push_locked "schedule+prerender" || overall=$?
         ;;
     photos)
         # 全選手の写真リフレッシュ（月初想定、~10-15 分）。

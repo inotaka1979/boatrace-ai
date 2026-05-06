@@ -5293,6 +5293,8 @@ async function loadAllData(){
   schedule(function(){ loadDeferredData(rawPrograms, rawPreviews).catch(function(e){
     console.warn('[PE-8] deferred load failed:', e);
   }); });
+  // 次節カードに「次回開催日」を後付け表示（軽量 fetch、失敗無視）
+  schedule(function(){ _loadNextOpen(); });
 
   }catch(e){
     console.error('loadAllData error:',e);
@@ -5836,13 +5838,48 @@ function renderStadiums(){
         +'<span class="stadium-day">'+nextRaceInfo+'</span>'
         +'</div>';
     } else {
-      html += '<div class="stadium-card inactive-stadium">'
+      var iso = (typeof _nextOpenMap === 'object' && _nextOpenMap) ? (_nextOpenMap[sid]||'') : '';
+      var dateLabel = _formatNextOpen(iso);
+      var dateHtml = dateLabel ? '<span class="stadium-next-date">'+dateLabel+'</span>' : '';
+      html += '<div class="stadium-card inactive-stadium"'
+        + (iso?' data-next-open="'+iso+'"':'')
+        + '>'
         +'<span class="stadium-name">'+name+'</span>'
         +'<span class="stadium-status">次節</span>'
+        +dateHtml
         +'</div>';
     }
   }
   list.innerHTML = html;   // PH-2: 単一 reflow
+}
+
+// 次回開催日表示: ISO 'YYYY-MM-DD' → '5/13(火)' or '本日開催'
+//   不正値・空値は空文字を返す（呼び出し側で表示制御）
+function _formatNextOpen(iso){
+  if(!iso || typeof iso !== 'string') return '';
+  var m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return '';
+  var d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  if(isNaN(d.getTime())) return '';
+  var todayIso = (typeof todayStr === 'function') ? todayStr() : '';
+  if(iso === todayIso) return '本日開催';
+  var wd = '日月火水木金土'[d.getDay()];
+  return d.getMonth()+1 + '/' + d.getDate() + '(' + wd + ')';
+}
+
+// 次回開催日マップ (sid → 'YYYY-MM-DD')
+var _nextOpenMap = {};
+async function _loadNextOpen(){
+  try {
+    var r = await fetch('data/schedule/next_open.json', { cache:'no-cache' });
+    if(!r.ok) return;
+    var j = await r.json();
+    _nextOpenMap = (j && j.next_open) ? j.next_open : {};
+    // 既に renderStadiums 済みならカードを再描画
+    if(typeof renderStadiums === 'function' && document.getElementById('stadiumList')){
+      try { renderStadiums(); } catch(_){}
+    }
+  } catch(_){}
 }
 
 // ===============================================
