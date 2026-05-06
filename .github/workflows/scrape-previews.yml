@@ -1,8 +1,12 @@
 name: Scrape Previews
-# NOTE: cron schedule disabled — RPi5ローカルcronに移行済み (2026-04-06)
-# フォールバック用に workflow_dispatch のみ残す
+# Pi primary (3 分粒度の cron_scrape.sh) + GHA backup (15 分粒度) の二重化。
+# Pi が落ちても OpenAPI fallback (~30 分) より早く finished/exhibition を反映する。
+# 競合: 両者の commit & push は git pull --rebase + retry で吸収。
 on:
   workflow_dispatch:
+  schedule:
+    # JST 08:00–22:00 を 15 分間隔でカバー（UTC 23 から翌日 13 までの 15 時間）
+    - cron: '5,20,35,50 23,0-13 * * *'
 
 # PA-4: 既定権限を最小化
 permissions:
