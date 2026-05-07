@@ -4746,7 +4746,9 @@ function generateBetsV2(marks,method,count3,count2){
 // 削除しても、修正後の _backfillTodayPredictions が今日の正規 entry を
 // 再構築するので最終状態は正しい。
 function _migrateDropStaleTodayHistory(){
-  var key = 'boatrace_history_migrated_v20';
+  // 2026-05-07: v20→v21 — savePrediction の race_date 検証漏れで「entry.date=今日 /
+  // actual=昨日の確定結果」の汚染が再発したため再度ワンショット掃除を走らせる
+  var key = 'boatrace_history_migrated_v21';
   try { if(localStorage.getItem(key)) return; } catch(e){ return; }
   var today = todayStr();
   var hist = safeParse('boatrace_history', []);
@@ -4758,7 +4760,7 @@ function _migrateDropStaleTodayHistory(){
   });
   if(hist.length !== before){
     safeSet('boatrace_history', hist);
-    console.warn('[migration v20] dropped '+(before-hist.length)+' stale today entries');
+    console.warn('[migration v21] dropped '+(before-hist.length)+' stale today entries');
   }
   try { localStorage.setItem(key, '1'); } catch(e){}
 }
@@ -4876,15 +4878,23 @@ function savePrediction(date,sid,rn,pred,result){
       actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false
     };
     if(result&&result.isFinished&&result.results){
-      var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
-      entry.actual=sorted.map(function(r){return r.racer_boat_number});
-      checkHit(entry);
-      if(result.refund){
-        // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
-        if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
-          entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
-        if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
-          entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+      // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
+      // actual=昨日」の汚染が発生していた。result.race_date が date 引数と一致しない
+      // 場合は result を無視して予想だけ保存する（actual を null のまま残す）
+      var rdate = (result.race_date||'').replace(/-/g,'');
+      if(!rdate || rdate === date){
+        var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
+        entry.actual=sorted.map(function(r){return r.racer_boat_number});
+        checkHit(entry);
+        if(result.refund){
+          // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
+          if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+            entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
+          if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
+            entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+        }
+      } else {
+        console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
       }
     }
     history.push(entry);
@@ -4909,6 +4919,10 @@ function updateHistoryWithResults(){
       if(!resultData||!resultData[String(h.stadium)]||!resultData[String(h.stadium)][String(h.race)]) return;
       var res=resultData[String(h.stadium)][String(h.race)];
       if(!res.isFinished||!res.results||res.results.length===0) return;
+
+      // 2026-05-07 fix: race_date 不一致なら触らない（前日結果の汚染防止）
+      var rdate = (res.race_date||'').replace(/-/g,'');
+      if(rdate && rdate !== h.date) return;
 
       // F6: 既に actual がある場合でも payout が欠けていれば遡及補完
       if(!h.actual){

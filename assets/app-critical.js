@@ -2979,7 +2979,9 @@ function saveDB(){
 }
 
 function _migrateDropStaleTodayHistory(){
-  var key = 'boatrace_history_migrated_v20';
+  // 2026-05-07: v20→v21 — savePrediction の race_date 検証漏れで「entry.date=今日 /
+  // actual=昨日の確定結果」の汚染が再発したため再度ワンショット掃除を走らせる
+  var key = 'boatrace_history_migrated_v21';
   try { if(localStorage.getItem(key)) return; } catch(e){ return; }
   var today = todayStr();
   var hist = safeParse('boatrace_history', []);
@@ -2991,7 +2993,7 @@ function _migrateDropStaleTodayHistory(){
   });
   if(hist.length !== before){
     safeSet('boatrace_history', hist);
-    console.warn('[migration v20] dropped '+(before-hist.length)+' stale today entries');
+    console.warn('[migration v21] dropped '+(before-hist.length)+' stale today entries');
   }
   try { localStorage.setItem(key, '1'); } catch(e){}
 }

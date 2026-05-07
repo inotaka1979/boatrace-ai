@@ -2422,15 +2422,23 @@ function savePrediction(date,sid,rn,pred,result){
       actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false
     };
     if(result&&result.isFinished&&result.results){
-      var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
-      entry.actual=sorted.map(function(r){return r.racer_boat_number});
-      checkHit(entry);
-      if(result.refund){
-        // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
-        if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
-          entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
-        if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
-          entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+      // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
+      // actual=昨日」の汚染が発生していた。result.race_date が date 引数と一致しない
+      // 場合は result を無視して予想だけ保存する（actual を null のまま残す）
+      var rdate = (result.race_date||'').replace(/-/g,'');
+      if(!rdate || rdate === date){
+        var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
+        entry.actual=sorted.map(function(r){return r.racer_boat_number});
+        checkHit(entry);
+        if(result.refund){
+          // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
+          if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+            entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
+          if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
+            entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+        }
+      } else {
+        console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
       }
     }
     history.push(entry);
@@ -2455,6 +2463,10 @@ function updateHistoryWithResults(){
       if(!resultData||!resultData[String(h.stadium)]||!resultData[String(h.stadium)][String(h.race)]) return;
       var res=resultData[String(h.stadium)][String(h.race)];
       if(!res.isFinished||!res.results||res.results.length===0) return;
+
+      // 2026-05-07 fix: race_date 不一致なら触らない（前日結果の汚染防止）
+      var rdate = (res.race_date||'').replace(/-/g,'');
+      if(rdate && rdate !== h.date) return;
 
       // F6: 既に actual がある場合でも payout が欠けていれば遡及補完
       if(!h.actual){

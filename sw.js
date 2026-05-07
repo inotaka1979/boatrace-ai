@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-v47';   // 次節カードに次回開催日表示 (5/13(火) 形式)
+const VERSION = 'br-oracle-v48';   // savePrediction race_date 検証 + history v21 マイグレーション
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
