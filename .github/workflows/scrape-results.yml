@@ -1,13 +1,11 @@
 name: Scrape Results
-# 2026-05-07: Pi 撤去で cron を復活。5 分間隔（odds/previews と offset +2）。
-# data/results/today.json を boatraceopenapi.github.io から取得し更新する。
-# scrape_previews.py の smart scheduler も results を統合するが、こちらが
-# 全レース分を網羅的に書き出す primary。
+# 2026-05-07: Cloudflare Worker (boatrace-scrape-trigger) が primary。
+# こちらの cron は Cloudflare 障害時の安全網（30 分間隔）。
 on:
   workflow_dispatch:
   schedule:
-    # JST 10:00–22:00 を 5 分間隔でカバー（UTC 1–13、odds:00 / previews:01 と offset +2）
-    - cron: '2-59/5 1-13 * * *'
+    # JST 10:10–22:40 を 30 分間隔（:10/40、他と offset で push 衝突回避）
+    - cron: '10,40 1-13 * * *'
 
 # PA-4: 既定権限を最小化
 permissions:
