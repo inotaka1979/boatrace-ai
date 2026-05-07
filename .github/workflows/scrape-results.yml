@@ -1,9 +1,13 @@
 name: Scrape Results
-# NOTE: cron schedule disabled — RPi5ローカル cron の smart-scheduler が
-# 結果も取得して data/previews/today.json に統合するため (X4 catch-up)
-# このワークフローはフォールバックとして workflow_dispatch のみ残す
+# 2026-05-07: Pi 撤去で cron を復活。5 分間隔（odds/previews と offset +2）。
+# data/results/today.json を boatraceopenapi.github.io から取得し更新する。
+# scrape_previews.py の smart scheduler も results を統合するが、こちらが
+# 全レース分を網羅的に書き出す primary。
 on:
   workflow_dispatch:
+  schedule:
+    # JST 10:00–22:00 を 5 分間隔でカバー（UTC 1–13、odds:00 / previews:01 と offset +2）
+    - cron: '2-59/5 1-13 * * *'
 
 # PA-4: 既定権限を最小化
 permissions:

@@ -1,25 +1,23 @@
-name: Scrape Odds
-# 2026-05-07: Pi 撤去で GHA を primary 化。5 分間隔（cron 遅延込で実効 5–15 分）。
-# previews/results と push 競合を避けるため :00 起点に offset、各 5 分間隔。
+name: Scrape Tide
+# 2026-05-07: Pi 撤去で新設。1 日 1 回 JST 08:00 に潮汐データを取得。
+# JMA (気象庁) の海水場潮汐情報を 7 場分まとめて data/tide/today.json に書き出す。
 on:
   workflow_dispatch:
-  # PA-4: repository_dispatch は撤去（外部トリガ経路を縮小、必要時は workflow_dispatch で代替）
   schedule:
-    # JST 08:00–22:00 を 5 分間隔でカバー（odds は :00 起点、:00/05/10/.../55）
-    - cron: '*/5 23,0-13 * * *'
+    - cron: '0 23 * * *'   # JST 08:00 (= UTC 23:00 前日)
 
 # PA-4: 既定権限を最小化
 permissions:
   contents: read
 
 concurrency:
-  group: scrape-odds
+  group: scrape-tide
   cancel-in-progress: true
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -30,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
-      - run: python scripts/scrape_odds_fast.py
+      - run: python scripts/scrape_tide.py
       - name: Commit & Push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,6 +38,6 @@ jobs:
           git pull --rebase origin main || true
           git add data/
           git diff --staged --quiet && exit 0
-          git commit -m "odds: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "tide: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)
