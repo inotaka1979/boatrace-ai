@@ -3350,7 +3350,11 @@ function _formatNextOpen(iso){
   if(!m) return '';
   var d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
   if(isNaN(d.getTime())) return '';
-  var todayIso = (typeof todayStr === 'function') ? todayStr() : '';
+  // FIX: todayStr() は 'YYYYMMDD' 形式（dash 無し）を返すため、
+  //   そのまま 'YYYY-MM-DD' な iso と lex 比較すると `-` (45) < `0` (48) で
+  //   すべての iso が past 扱いになる。ここでは ISO 形式 (YYYY-MM-DD) に揃える。
+  var t = (typeof todayStr === 'function') ? todayStr() : '';
+  var todayIso = (t && /^\d{8}$/.test(t)) ? (t.slice(0,4)+'-'+t.slice(4,6)+'-'+t.slice(6,8)) : '';
   // FIX: データ更新遅延時の保険。next_open.json が古いと過去日が混入するため
   //   今日より前の ISO は表示しない（空文字を返す）。
   if(todayIso && iso < todayIso) return '';
