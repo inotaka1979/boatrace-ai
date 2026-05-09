@@ -32,6 +32,12 @@ jobs:
       - name: Scrape schedule (monthly)
         if: github.event.schedule == '0 0 1 * *' || github.event_name == 'workflow_dispatch'
         run: python scripts/scrape_schedule.py
+      # FIX: RPi5 cron が止まっていても next_open.json が今日基準で更新されるよう、
+      # 月次フル fetch でないときは --quick で日次再計算する。
+      # current.json が無い場合は scrape_schedule.py 側でフル fetch にフォールバック。
+      - name: Refresh next_open.json (daily quick)
+        if: github.event.schedule != '0 0 1 * *'
+        run: python scripts/scrape_schedule.py --quick
       - name: PE-11 Pre-render top page (LCP 即時化)
         run: python scripts/prerender_top.py
       - name: Commit & Push

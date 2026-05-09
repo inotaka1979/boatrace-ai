@@ -3351,6 +3351,9 @@ function _formatNextOpen(iso){
   var d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
   if(isNaN(d.getTime())) return '';
   var todayIso = (typeof todayStr === 'function') ? todayStr() : '';
+  // FIX: データ更新遅延時の保険。next_open.json が古いと過去日が混入するため
+  //   今日より前の ISO は表示しない（空文字を返す）。
+  if(todayIso && iso < todayIso) return '';
   if(iso === todayIso) return '本日開催';
   var wd = '日月火水木金土'[d.getDay()];
   return d.getMonth()+1 + '/' + d.getDate() + '(' + wd + ')';
