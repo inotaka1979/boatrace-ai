@@ -1169,9 +1169,11 @@ async function forceRefresh(){
       if(rR.ok){
         var rd = await rR.json();
         var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        // FIX: race_date は "YYYYMMDD" or "YYYY-MM-DD" の両形式があるため正規化して比較
+        var todayJstNoDash = todayJst.replace(/-/g,'');
         // F4.1: スタブ (race_technique_number 全 null) の場合は OpenAPI にフォールバック
         if(rd && Array.isArray(rd.results) && rd.results.length > 0
-           && rd.results.some(function(r){return r.race_date===todayJst})
+           && rd.results.some(function(r){return String(r.race_date||'').replace(/-/g,'')===todayJstNoDash})
            && rd.results.some(function(r){return r.race_technique_number!=null})){
           rawR = rd;
         }
@@ -5271,8 +5273,11 @@ async function loadAllData(){
       if(resData.results&&resData.results.length>0){
         var resDate=resData.results[0].race_date;
         var todayRes=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+        // FIX: race_date は "YYYYMMDD" or "YYYY-MM-DD" の両形式があるため正規化して比較
+        var resDateNoDash=String(resDate||'').replace(/-/g,'');
+        var todayResNoDash=todayRes.replace(/-/g,'');
         var hasRealFinish=resData.results.some(function(r){return r.race_technique_number!=null});
-        if(resDate===todayRes && hasRealFinish){rawResults=resData;}
+        if(resDateNoDash===todayResNoDash && hasRealFinish){rawResults=resData;}
       }
     }
   }catch(e){}

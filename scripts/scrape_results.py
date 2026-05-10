@@ -7,7 +7,7 @@ Open API互換のJSON形式で出力する。
 import json, os, re, sys, time, datetime, logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from time_utils import utc_iso_seconds  # PC-10 / D-02
+from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / FIX: JST aware
 from http_utils import fetch_text, fetch_json  # PC-1: HTTP 共通化
 from io_utils import atomic_write_json, quality_header  # P0-8 / P1-B4
 
@@ -41,7 +41,7 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
     result = {
         "race_stadium_number": stadium,
         "race_number": race_num,
-        "race_date": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "race_date": jst_now().strftime("%Y-%m-%d"),  # FIX: GHA UTC 起動時に前日になるバグ回避
         "race_technique_number": None,
         "boats": [],
         "payouts": {
@@ -192,7 +192,7 @@ def main() -> None:
             date_str = p.get("race_date", "").replace("-", "")
 
     if not date_str:
-        date_str = datetime.datetime.now().strftime("%Y%m%d")
+        date_str = jst_now().strftime("%Y%m%d")  # FIX: GHA UTC 起動時に前日になるバグ回避
 
     log.info("Date: %s, %d races", date_str, len(races))
 

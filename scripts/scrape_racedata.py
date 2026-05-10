@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
-from time_utils import utc_iso_seconds  # P2 D-02
+from time_utils import utc_iso_seconds, jst_now  # P2 D-02 / FIX: date_str fallback
 from http_utils import fetch_text, fetch_json, DEFAULT_HEADERS  # PC-1
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
@@ -223,6 +223,12 @@ def main() -> None:
         for b in p.get("boats", []):
             if b.get("racer_number"):
                 racer_numbers.add(b["racer_number"])
+
+    # FIX: programs に race_date が無いケース (API 仕様変更等) で URL の hd= が空になり
+    #   silent に空 racedata を吐くのを防ぐ。JST 当日にフォールバックして警告。
+    if not date_str:
+        date_str = jst_now().strftime("%Y%m%d")
+        print(f"WARN: race_date 抽出失敗 — JST 当日 ({date_str}) にフォールバック")
 
     print(f"Date: {date_str}, {len(stadiums)} stadiums, {len(racer_numbers)} racers")
 

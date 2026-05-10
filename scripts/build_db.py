@@ -34,6 +34,7 @@ from io import BytesIO
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / P1-C4
+from io_utils import atomic_write_json  # FIX: 5MB+ DB の途中切れ破損防止
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 OUTPUT_RACER = "data/db/racerDB.json"
@@ -372,10 +373,9 @@ def main() -> None:
     racer_out = {"updated_at": now, "racers": racers}
     stadium_out = {"updated_at": now, "stadiums": stadiums}
 
-    with open(OUTPUT_RACER, "w", encoding="utf-8") as f:
-        json.dump(racer_out, f, ensure_ascii=False)
-    with open(OUTPUT_STADIUM, "w", encoding="utf-8") as f:
-        json.dump(stadium_out, f, ensure_ascii=False)
+    # FIX: 5MB+ の racerDB.json を途中切れで破損させないよう atomic 書込
+    atomic_write_json(OUTPUT_RACER, racer_out)
+    atomic_write_json(OUTPUT_STADIUM, stadium_out)
 
     print(f"=== 完了: {len(racers)}選手, {len(stadiums)}場 ===")
 

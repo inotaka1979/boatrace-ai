@@ -303,6 +303,30 @@ async function main() {
     }
   } catch(_){}
 
+  // FIX: SW VERSION と index.html の `?v=N` クエリの sync チェック。
+  //   両者が乖離すると、SW v(N+1) が install されても script タグは古い `?v=N` を
+  //   要求するため HTTP cache の旧バンドルが serve され続ける。
+  try {
+    const swSrc = await readFile(swPath, 'utf8');
+    const htmlSrc = await readFile(indexPath, 'utf8');
+    const swVerMatch = swSrc.match(/VERSION\s*=\s*['"]br-oracle-v(\d+)['"]/);
+    const htmlVers = [...htmlSrc.matchAll(/assets\/app[\w-]*\.min\.js\?v=(\d+)/g)].map(m => m[1]);
+    if (swVerMatch && htmlVers.length) {
+      const swVer = swVerMatch[1];
+      const mismatched = htmlVers.filter(v => v !== swVer);
+      if (mismatched.length) {
+        console.error(`[version] SW VERSION v${swVer} と index.html ?v=${[...new Set(htmlVers)].join(',')} が不整合`);
+        console.error('  対処: sw.js の VERSION と index.html の ?v=N (preload + script src 計 4 箇所) を揃える');
+        process.exit(1);
+      }
+      console.log(`[version OK] SW v${swVer} ↔ index.html ?v=${swVer}`);
+    } else {
+      console.warn('[version] SW VERSION or index.html ?v= 抽出失敗 — 手動確認');
+    }
+  } catch (e) {
+    console.warn('[version] check skipped:', e.message);
+  }
+
   // 3) Hash report
   console.log('');
   console.log('[hash] index.html    SHA-256:', (await sha256(indexPath)).slice(0, 16) + '...');

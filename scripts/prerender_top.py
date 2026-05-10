@@ -190,8 +190,13 @@ def main() -> None:
     if before == after:
         print("  no-op (already up-to-date)")
         return
-    with open(INDEX, "w", encoding="utf-8") as f:
+    # FIX: GitHub Pages serve 中の partial-write 防止のため atomic rename。
+    tmp = str(INDEX) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(after)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, INDEX)
     print(f"  index.html updated ({len(snippet)} chars injected)")
 
 
