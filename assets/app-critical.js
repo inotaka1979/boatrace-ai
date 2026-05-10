@@ -3610,9 +3610,13 @@ function _setupServiceWorker(){
   navigator.serviceWorker.addEventListener('controllerchange', function(){
     // PI-fix: iOS standalone で SW skipWaiting した場合も自動 reload して
     //   新 JS に切替（古い JS を引きずるのを防ぐ）。1 セッション 1 回だけ。
+    // FIX: 初回 SW install + clients.claim() でも controllerchange が発火するため、
+    //   user 操作（更新トースト tap → SKIP_WAITING）起点の場合のみ reload する。
+    //   これで初回訪問者の余計な reload と、Lighthouse / VRT テストの誤動作を防ぐ。
     if(_swReloadDone) return;
+    if(!_userTriggeredSwUpdate) return;
     _swReloadDone = true;
-    console.log('[SW] new controller, reloading');
+    console.log('[SW] new controller (user-triggered), reloading');
     location.reload();
   });
   navigator.serviceWorker.addEventListener('message', function(e){

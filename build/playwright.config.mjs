@@ -34,6 +34,10 @@ export default defineConfig({
     //   英語に切替えて 「更新」 → 「Refresh」 になり VRT snapshot が diff る。
     locale: 'ja-JP',
     timezoneId: 'Asia/Tokyo',
+    // FIX: SW を block。init 時の controllerchange で location.reload() が走り、
+    //   テストの DOM 操作（page.classList.add('active')）が消える問題を回避。
+    //   テスト対象は app の DOM レイアウトであり SW の挙動は別 layer の責務。
+    serviceWorkers: 'block',
   },
   projects: [
     {
