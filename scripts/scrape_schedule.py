@@ -207,12 +207,20 @@ def _is_current_fresh(max_age_days: int = 14) -> bool:
         return False
 
 
-def _refresh_next_open_only() -> int:
-    """current.json から next_open.json だけ再計算する（HTTP fetch なし）。"""
+def _refresh_next_open_only() -> int | None:
+    """current.json から next_open.json だけ再計算する（HTTP fetch なし）。
+
+    FIX: current.json が無い / 読み取り失敗時は None を返し、呼び出し側がフル
+    fetch にフォールバック。以前は FileNotFoundError で crash していた。
+    """
     today_iso = datetime.now(JST).date().isoformat()
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
-    with open(p, encoding="utf-8") as f:
-        d = json.load(f)
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"current.json 読込失敗 ({e.__class__.__name__}) — フル取得に切替え")
+        return None
     stadium_dates = d.get("stadium_dates", {})
     next_open = _compute_next_open(stadium_dates, today_iso)
     next_output = {
@@ -230,12 +238,9 @@ def main():
     quick = "--quick" in sys.argv
 
     if quick or _is_current_fresh():
-        if not os.path.exists(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
-        ):
-            print("current.json 未生成 — フル取得に切替え")
-        else:
-            _refresh_next_open_only()
+        # FIX: TOCTOU を避けるため exists() チェックを撤去し、
+        #   _refresh_next_open_only() 内部の try/except でハンドル。None なら full fetch。
+        if _refresh_next_open_only() is not None:
             return
 
     now = datetime.now(JST)

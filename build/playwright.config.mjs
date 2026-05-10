@@ -29,6 +29,11 @@ export default defineConfig({
     // (python http.server) と非互換 → subresource (app-critical.min.js 等) が
     // HTTPS upgrade されて TLS handshake で 400。bypassCSP でテスト時のみ無効化。
     bypassCSP: true,
+    // FIX: 本番 PWA は iPhone 日本語環境想定 → locale + tz を固定。
+    //   未指定だと CI runner の en-US が navigator.language で読まれ、i18n が
+    //   英語に切替えて 「更新」 → 「Refresh」 になり VRT snapshot が diff る。
+    locale: 'ja-JP',
+    timezoneId: 'Asia/Tokyo',
   },
   projects: [
     {
