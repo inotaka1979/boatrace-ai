@@ -217,7 +217,7 @@ async def async_main():
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     log.info("Fetching programs...")
     async with aiohttp.ClientSession() as session:
-        async with session.get(PROGRAMS_URL, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as r:
+        async with session.get(PROGRAMS_URL, headers={"User-Agent": USER_AGENTS[0]}, timeout=aiohttp.ClientTimeout(total=15)) as r:
             prog = await r.json()
     programs = prog.get("programs", [])
     if not programs: log.info("No programs"); return
