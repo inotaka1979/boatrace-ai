@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-v51';   // 買い目オッズ表示書式統一 + 最新 raceOdds 優先 lookup
+const VERSION = 'br-oracle-v52';   // オッズ stale 警告 (updated_at ベース) を全画面に追加
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [

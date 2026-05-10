@@ -3126,6 +3126,19 @@ function openRace(sid,rn){
       +'<span class="weather-item">水温: '+wtemp+'℃</span>'
       +'</div>';
   }
+  // FIX: オッズデータの実スクレイプ経過を詳細画面トップに警告表示
+  //   "0秒前" は GitHub Pages からの fetch 時刻であり、cron が止まると
+  //   JSON 内のオッズは何時間も古い可能性がある（ユーザの混乱の主因）
+  if(oddsData && oddsData.updated_at){
+    var _ot = Date.parse(oddsData.updated_at);
+    if(!isNaN(_ot)){
+      var _osm = Math.round((Date.now()-_ot)/60000);
+      if(_osm >= 30){
+        var _hh = _osm >= 60 ? Math.floor(_osm/60)+'時間'+(_osm%60)+'分' : _osm+'分';
+        weatherHtml = '<div style="background:#FFEBEE;border:2px solid #D32F2F;border-radius:8px;padding:10px;margin:8px 0;color:#D32F2F;font-weight:700;font-size:13px;text-align:center">⚠ オッズが '+_hh+'前のスナップショットです<br><span style="font-size:11px;font-weight:400">レース直前の市場と乖離している可能性があります</span></div>' + weatherHtml;
+      }
+    }
+  }
   document.getElementById('detailWeather').innerHTML=weatherHtml;
 
   // Result
@@ -3818,12 +3831,30 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   }
 
   // 3f. Odds refresh + auto-refresh timer + PAT settings link
+  // FIX: JSON 内 updated_at からの経過 (=実スクレイプ経過) を表示。
+  //   cron が止まると fetch 自体は成功しても表示オッズが何時間も古いため必須。
+  var staleStr = '';
+  var staleColor = 'var(--text-dim)';
+  if(oddsData && oddsData.updated_at){
+    var t = Date.parse(oddsData.updated_at);
+    if(!isNaN(t)){
+      var sm = Math.round((Date.now()-t)/60000);
+      if(sm >= 60){
+        staleStr = '⚠ オッズデータ '+Math.floor(sm/60)+'時間'+(sm%60)+'分前 — 古い可能性あり';
+        staleColor = '#D32F2F';
+      } else if(sm >= 30){
+        staleStr = '⚠ オッズデータ '+sm+'分前 — 古い可能性あり';
+        staleColor = '#D32F2F';
+      } else {
+        staleStr = 'オッズデータ '+sm+'分前更新';
+      }
+    }
+  }
   html+='<div class="odds-section" style="text-align:center">';
   html+='<button class="odds-refresh-btn" data-action="refreshOdds">オッズ更新</button>';
   html+=' <span class="odds-stale" id="oddsStaleMsg2"></span>';
-  if(oddsLastFetched){
-    var elapsed=Math.round((Date.now()-oddsLastFetched)/60000);
-    html+=' <span class="fs-9 c-dim">'+elapsed+'分前更新</span>';
+  if(staleStr){
+    html+=' <span style="font-size:11px;color:'+staleColor+';font-weight:'+(staleColor==='#D32F2F'?'700':'400')+';display:block;margin-top:4px">'+staleStr+'</span>';
   }
   html+='<div style="font-size:9px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
   html+='</div>';
@@ -4384,16 +4415,35 @@ function stopOddsAutoRefresh(){
 function updateOddsUI(){
   var msg=document.getElementById('oddsStaleMsg');
   if(!msg) return;
-  if(!oddsLastFetched){
-    msg.textContent='';
+  // FIX: oddsLastFetched は GitHub Pages からの fetch 時刻であり、
+  //   JSON 内部の updated_at (実際のスクレイプ時刻) と区別する必要がある。
+  //   cron が止まると fetch は成功しても JSON は何時間も古いオッズになるため、
+  //   updated_at からの経過時間で stale を判定する。
+  var staleMin = null;
+  if(oddsData && oddsData.updated_at){
+    var t = Date.parse(oddsData.updated_at);
+    if(!isNaN(t)) staleMin = Math.round((Date.now()-t)/60000);
+  }
+  if(staleMin == null){
+    if(!oddsLastFetched){ msg.textContent=''; return; }
+    var fetchedMin=Math.round((Date.now()-oddsLastFetched)/60000);
+    msg.textContent='('+fetchedMin+'分前)';
+    msg.style.color = '';
     return;
   }
-  var elapsed=Math.round((Date.now()-oddsLastFetched)/60000);
-  if(elapsed>15){
-    msg.textContent='('+elapsed+'分前 - 古い可能性あり)';
-  } else if(elapsed>0){
-    msg.textContent='('+elapsed+'分前)';
+  if(staleMin >= 30){
+    // 30分以上古いオッズはレース直前の市場と大きく乖離する可能性あり
+    var hh = staleMin >= 60 ? Math.floor(staleMin/60)+'時間'+(staleMin%60)+'分' : staleMin+'分';
+    msg.textContent='⚠ オッズが '+hh+'前 — 古い可能性あり';
+    msg.style.color = '#D32F2F';
+    msg.style.fontWeight = '700';
+  } else if(staleMin > 0){
+    msg.textContent='('+staleMin+'分前)';
+    msg.style.color = '';
+    msg.style.fontWeight = '';
   } else {
     msg.textContent='(最新)';
+    msg.style.color = '';
+    msg.style.fontWeight = '';
   }
 }
