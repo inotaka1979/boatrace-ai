@@ -1,0 +1,60 @@
+name: Deploy Cloudflare Worker
+
+# cloudflare-worker/ 配下が変更されたら、wrangler-action 経由で
+# Cloudflare Workers (boatrace-scrape-trigger) を自動デプロイする。
+#
+# 必要な repo secrets:
+#   CLOUDFLARE_API_TOKEN  — User API Token (Account > Workers Scripts: Edit)
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare Account ID (ダッシュボード右下に表示)
+#
+# 動作確認:
+#   1. cloudflare-worker/worker.js を編集して push
+#   2. Actions タブで "Deploy Cloudflare Worker" が緑になる
+#   3. curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health で確認
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false   # in-flight deploy は完走させる (途中キャンセルでロールバック扱い)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-worker
+          # secrets (GITHUB_TOKEN / TRIGGER_SECRET) は dashboard 設定を保持
+          command: deploy
+
+      - name: Verify deploy
+        run: |
+          # health check (Cloudflare のグローバル展開を 5 秒待機)
+          sleep 5
+          status=$(curl -sS -o /tmp/health -w "%{http_code}" \
+            https://boatrace-scrape-trigger.inotaka1979.workers.dev/health || echo "000")
+          if [ "$status" = "200" ]; then
+            echo "✅ Worker is live"
+            cat /tmp/health
+          else
+            echo "❌ health check failed: HTTP $status"
+            cat /tmp/health || true
+            exit 1
+          fi

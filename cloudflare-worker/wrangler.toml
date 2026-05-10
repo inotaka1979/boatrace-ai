@@ -1,0 +1,15 @@
+# wrangler.toml — Cloudflare Worker 設定 (GitHub Actions 自動デプロイ用)
+#
+# 既存の Worker (boatrace-scrape-trigger) と同じ name を指定し、
+# GitHub Actions の wrangler-action からこの設定で deploy する。
+#
+# 重要: secrets (GITHUB_TOKEN / TRIGGER_SECRET) は wrangler.toml では
+#       管理しません。Cloudflare ダッシュボードで設定したものが保持されます。
+
+name = "boatrace-scrape-trigger"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+# 3 分毎に scheduled() が走る (既存設定と同じ)
+[triggers]
+crons = ["*/3 * * * *"]
