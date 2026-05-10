@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-v49';   // _formatNextOpen todayIso 比較フォーマット修正 + schedule 日次更新
+const VERSION = 'br-oracle-v50';   // 穴予想常時表示 + betCountAna 設定 + 買い目点数 1-12 反映用
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
