@@ -4532,31 +4532,64 @@ function _kickOffLiveOddsRefresh(sid, rn){
     oddsData.updated_at = new Date().toISOString();
     oddsLastFetched = Date.now();
 
-    // 現詳細画面が同じレースなら再描画
-    if(currentStadium == sid && currentRace == rn && typeof openRace === 'function'){
-      openRace(sid, rn);
+    // FIX: 全画面 openRace 再描画 (= predictRace 再実行) は重く
+    //   展示 / 展示後予想が flicker するため、auto refresh では DOM を触らない。
+    //   silent merge のみ — 次の openRace (タブ切替 / 別レース閲覧後復帰) で
+    //   新しいオッズが反映される。即時反映したいユーザは下部の
+    //   「オッズ更新」ボタン (refreshOdds, full re-render) を使用。
+    //   stale 警告バナーだけは updateOddsUI で消す (DOM 軽量更新)。
+    if(currentStadium == sid && currentRace == rn){
+      try { if(typeof updateOddsUI === 'function') updateOddsUI(); } catch(_){}
     }
   }).catch(function(){
     _liveOddsInflight[key] = false;
   });
 }
 
-function refreshOdds(){
+async function refreshOdds(){
   var btn=document.getElementById('oddsRefreshBtn');
   if(btn){btn.disabled=true;btn.textContent='取得中...';}
 
-  fetch('data/odds/today.json?t='+Date.now())
-    .then(function(r){if(r.ok) return r.json();throw new Error('fetch error')})
-    .then(function(d){
-      oddsData=d;
-      oddsLastFetched=Date.now();
-      if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
-      updateOddsUI();
-      if(currentStadium&&currentRace) openRace(currentStadium,currentRace);
-      setTimeout(function(){if(btn) btn.textContent='🔄 オッズ更新'},2000);
-    }).catch(function(){
-      if(btn){btn.textContent='🔄 オッズ更新';btn.disabled=false;}
-    });
+  try {
+    // Step 1: GH Pages の最新 JSON を fetch (cron が動いていれば 5 分鮮度)
+    var r = await fetch('data/odds/today.json?t='+Date.now());
+    if(r.ok){
+      oddsData = await r.json();
+      oddsLastFetched = Date.now();
+    }
+
+    // Step 2: GH Pages のオッズが古い (>5min) かつ詳細画面表示中なら、
+    //   Cloudflare Worker 経由で boatrace.jp から実時間オッズを fetch
+    var staleMin = null;
+    if(oddsData && oddsData.updated_at){
+      var t = Date.parse(oddsData.updated_at);
+      if(!isNaN(t)) staleMin = (Date.now() - t) / 60000;
+    }
+    if(currentStadium && currentRace && (staleMin == null || staleMin >= 5)){
+      if(btn) btn.textContent='実時間取得中...';
+      var live = await _fetchLiveOddsForRace(currentStadium, currentRace);
+      if(live){
+        if(!oddsData) oddsData = { updated_at: new Date().toISOString(), odds: [] };
+        if(!Array.isArray(oddsData.odds)) oddsData.odds = [];
+        var idx = -1;
+        for(var i=0;i<oddsData.odds.length;i++){
+          if(oddsData.odds[i].stadium === parseInt(currentStadium) && oddsData.odds[i].race === parseInt(currentRace)){ idx = i; break; }
+        }
+        if(idx >= 0) oddsData.odds[idx] = Object.assign({}, oddsData.odds[idx], live);
+        else oddsData.odds.push(live);
+        oddsData.updated_at = new Date().toISOString();
+        oddsLastFetched = Date.now();
+      }
+    }
+
+    if(btn){btn.textContent='✅ 更新完了';btn.disabled=false;}
+    updateOddsUI();
+    // 全 DOM 再描画は manual button のみ実施 (auto-refresh では行わない)
+    if(currentStadium && currentRace) openRace(currentStadium, currentRace);
+    setTimeout(function(){if(btn) btn.textContent='🔄 オッズ更新'},2000);
+  } catch(err){
+    if(btn){btn.textContent='🔄 オッズ更新';btn.disabled=false;}
+  }
 }
 
 function startOddsAutoRefresh(){
