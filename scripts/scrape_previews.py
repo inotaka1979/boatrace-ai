@@ -516,7 +516,12 @@ async def scrape_race(session, limiter, sid, rno, date_str, action):
 
 
 async def scrape_batch(targets, date_str):
-    """対象レースを並列スクレイプ"""
+    """対象レースを並列スクレイプ。
+
+    2026-05-10: scrape_odds_fast.py と同じ silent failure を撲滅。
+    asyncio.gather(*, return_exceptions=True) と per-task try/except で、
+    1 レースの未捕捉例外が batch 全体を死亡させないようにする。
+    """
     semaphore = asyncio.Semaphore(CONCURRENCY)
     limiter = RateLimiter(INTERVAL)
     results = {}
@@ -524,12 +529,18 @@ async def scrape_batch(targets, date_str):
     async with aiohttp.ClientSession() as session:
 
         async def _task(sid, rno, action):
-            async with semaphore:
-                data = await scrape_race(session, limiter, sid, rno, date_str, action)
-                results[(sid, rno)] = data
+            try:
+                async with semaphore:
+                    data = await scrape_race(session, limiter, sid, rno, date_str, action)
+                    results[(sid, rno)] = data
+            except Exception as e:   # noqa: BLE001
+                # 単一レースの予期せぬ例外で gather 全体を死なせない
+                log.warning("scrape_race(%s, %s, %s) crashed: %s: %s",
+                            sid, rno, action, type(e).__name__, e)
+                results[(sid, rno)] = None
 
         tasks = [_task(sid, rno, action) for sid, rno, action, _ in targets]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     return results
 
