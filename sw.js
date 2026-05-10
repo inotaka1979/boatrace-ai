@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-v52';   // オッズ stale 警告 (updated_at ベース) を全画面に追加
+const VERSION = 'br-oracle-v53';   // Cloudflare Worker 経由で boatrace.jp 直接 fetch (実時間オッズ)
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [

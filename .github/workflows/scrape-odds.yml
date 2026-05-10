@@ -1,11 +1,14 @@
 name: Scrape Odds
 # 2026-05-07: Cloudflare Worker (boatrace-scrape-trigger) が primary。
-# こちらの cron は Cloudflare 障害時の安全網（30 分間隔）。
+# こちらの cron は Cloudflare 障害時の安全網。
+# 2026-05-10: Cloudflare 障害時に 4.5h データが固まった事故を受け、
+#             fallback を 30 分 → 5 分間隔に短縮。
 on:
   workflow_dispatch:
   schedule:
-    # JST 08:00–22:00 を 30 分間隔のフォールバック（:00/30）
-    - cron: '0,30 23,0-13 * * *'
+    # JST 08:00–22:00 を 5 分間隔のフォールバック
+    # GH Actions cron は遅延しがちなので 5 分でも実効 10-15 分鮮度
+    - cron: '*/5 23,0-13 * * *'
 
 # PA-4: 既定権限を最小化
 permissions:

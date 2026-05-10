@@ -3711,6 +3711,23 @@ function openRace(sid,rn){
   document.getElementById('detailOdds').innerHTML=renderOddsSection(sid,rn,raceOdds,pred,race);
 
   showPage('detail');
+
+  // FIX: GH Pages のオッズが古い時 (>5min)、Cloudflare Worker 経由で
+  //   boatrace.jp から実時間オッズを取得して oddsData に上書き＆再描画。
+  //   throttle / inflight ガードで重複呼出を抑止。
+  try {
+    var _shouldLive = false;
+    if(!oddsData || !oddsData.updated_at){
+      _shouldLive = true;
+    } else {
+      var _t = Date.parse(oddsData.updated_at);
+      if(!isNaN(_t)){
+        var _ageMin = (Date.now() - _t) / 60000;
+        if(_ageMin >= 5) _shouldLive = true;
+      }
+    }
+    if(_shouldLive) _kickOffLiveOddsRefresh(sid, rn);
+  } catch(_){}
 }
 
 function renderOddsSection(sid,rn,raceOdds,pred,race){
@@ -4372,6 +4389,156 @@ async function refreshThisRace(){
     console.warn('refreshThisRace error:',e);
     if(btn){btn.textContent='🔄 このレースを更新';btn.disabled=false;}
   }
+}
+
+function _parseWinHtml(html){
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var tbl = doc.querySelector('table.is-w495');
+    if(!tbl) return null;
+    var odds = {};
+    tbl.querySelectorAll('tbody tr').forEach(function(row){
+      var tds = row.querySelectorAll('td');
+      if(tds.length >= 3){
+        var boat = tds[0].textContent.trim();
+        var val = tds[2].textContent.trim();
+        if(val.indexOf('-')>=0 && val.indexOf('.')>=0) val = val.split('-')[0];
+        var v = parseFloat(val);
+        if(v > 0) odds[boat] = v;
+      }
+    });
+    return Object.keys(odds).length ? odds : null;
+  } catch(e){ return null; }
+}
+
+function _parseExactaHtml(html){
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var tables = doc.querySelectorAll('table');
+    var target = null;
+    for(var i=0;i<tables.length;i++){ if(tables[i].querySelector('td.oddsPoint')){ target = tables[i]; break; } }
+    if(!target) return null;
+    var odds = {};
+    target.querySelectorAll('tbody tr').forEach(function(row){
+      var cells = []; for(var c=0;c<row.children.length;c++){ if(row.children[c].tagName === 'TD') cells.push(row.children[c]); }
+      if(cells.length !== 12) return;
+      for(var col=0; col<6; col++){
+        var base = col * 2;
+        var ni = parseInt(cells[base].textContent.trim());
+        var cv = cells[base+1];
+        if(!cv.classList.contains('oddsPoint')) continue;
+        var v = parseFloat(cv.textContent.trim());
+        var ichi = col + 1;
+        if(ichi>=1 && ichi<=6 && ni>=1 && ni<=6 && ichi!==ni && v>0){
+          odds[ichi+'-'+ni] = v;
+        }
+      }
+    });
+    return Object.keys(odds).length ? odds : null;
+  } catch(e){ return null; }
+}
+
+function _parseTrifectaHtml(html){
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var tables = doc.querySelectorAll('table');
+    var target = null;
+    for(var i=0;i<tables.length;i++){ if(tables[i].querySelector('td.oddsPoint')){ target = tables[i]; break; } }
+    if(!target) return null;
+    var odds = {};
+    var currentSeconds = [null,null,null,null,null,null];
+    target.querySelectorAll('tbody tr').forEach(function(row){
+      var cells = []; for(var c=0;c<row.children.length;c++){ if(row.children[c].tagName === 'TD') cells.push(row.children[c]); }
+      var n = cells.length;
+      var stride, offsetSan, offsetOdds, updateSecond;
+      if(n === 18){ stride = 3; offsetSan = 1; offsetOdds = 2; updateSecond = true; }
+      else if(n === 12){ stride = 2; offsetSan = 0; offsetOdds = 1; updateSecond = false; }
+      else return;
+      for(var col=0; col<6; col++){
+        var base = col * stride;
+        if(base + offsetOdds >= n) break;
+        if(updateSecond){
+          var ni0 = parseInt(cells[base].textContent.trim());
+          currentSeconds[col] = isNaN(ni0) ? null : ni0;
+        }
+        var san = parseInt(cells[base + offsetSan].textContent.trim());
+        var cv = cells[base + offsetOdds];
+        if(!cv.classList.contains('oddsPoint')) continue;
+        var v = parseFloat(cv.textContent.trim());
+        var ichi = col + 1;
+        var ni = currentSeconds[col];
+        if(ni == null || isNaN(san)) continue;
+        if(ichi>=1 && ichi<=6 && ni>=1 && ni<=6 && san>=1 && san<=6
+           && ichi!==ni && ichi!==san && ni!==san && v>0){
+          odds[ichi+'-'+ni+'-'+san] = v;
+        }
+      }
+    });
+    return Object.keys(odds).length ? odds : null;
+  } catch(e){ return null; }
+}
+
+function _todayYyyymmddJST(){
+  var d = new Date(Date.now() + 9*3600*1000);
+  return d.getUTCFullYear() + ('0'+(d.getUTCMonth()+1)).slice(-2) + ('0'+d.getUTCDate()).slice(-2);
+}
+
+async function _fetchLiveOddsForRace(sid, rn){
+  var hd = _todayYyyymmddJST();
+  var u = function(type){ return _LIVE_ODDS_WORKER+'/odds-proxy?type='+type+'&sid='+sid+'&rno='+rn+'&hd='+hd; };
+  try {
+    var [winHtml, exaHtml, triHtml] = await Promise.all([
+      fetch(u('win')).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){return null;}),
+      fetch(u('exacta')).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){return null;}),
+      fetch(u('trifecta')).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){return null;}),
+    ]);
+    var result = { stadium: parseInt(sid), race: parseInt(rn) };
+    if(winHtml){ var w = _parseWinHtml(winHtml); if(w) result.win = w; }
+    if(exaHtml){ var e = _parseExactaHtml(exaHtml); if(e) result.exacta = e; }
+    if(triHtml){ var t = _parseTrifectaHtml(triHtml); if(t) result.trifecta = t; }
+    if(!result.win && !result.exacta && !result.trifecta) return null;
+    return result;
+  } catch(err){
+    return null;
+  }
+}
+
+function _kickOffLiveOddsRefresh(sid, rn){
+  var key = sid + '-' + rn;
+  var now = Date.now();
+  // throttle 30s 同レース
+  if(_liveOddsLastFetched[key] && now - _liveOddsLastFetched[key] < 30000) return;
+  if(_liveOddsInflight[key]) return;
+  _liveOddsInflight[key] = true;
+
+  _fetchLiveOddsForRace(sid, rn).then(function(live){
+    _liveOddsInflight[key] = false;
+    if(!live) return;
+    _liveOddsLastFetched[key] = Date.now();
+
+    // oddsData にマージ
+    if(!oddsData) oddsData = { updated_at: new Date().toISOString(), odds: [] };
+    if(!Array.isArray(oddsData.odds)) oddsData.odds = [];
+    var idx = -1;
+    for(var i=0;i<oddsData.odds.length;i++){
+      if(oddsData.odds[i].stadium === parseInt(sid) && oddsData.odds[i].race === parseInt(rn)){ idx = i; break; }
+    }
+    if(idx >= 0){
+      oddsData.odds[idx] = Object.assign({}, oddsData.odds[idx], live);
+    } else {
+      oddsData.odds.push(live);
+    }
+    // この race の updated_at を新しく
+    oddsData.updated_at = new Date().toISOString();
+    oddsLastFetched = Date.now();
+
+    // 現詳細画面が同じレースなら再描画
+    if(currentStadium == sid && currentRace == rn && typeof openRace === 'function'){
+      openRace(sid, rn);
+    }
+  }).catch(function(){
+    _liveOddsInflight[key] = false;
+  });
 }
 
 function refreshOdds(){

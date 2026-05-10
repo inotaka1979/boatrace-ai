@@ -22,7 +22,7 @@
      詳細: docs/CSP_MIGRATION_ROADMAP.md -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  connect-src 'self' https://boatraceopenapi.github.io https://inotaka1979.github.io;
+  connect-src 'self' https://boatraceopenapi.github.io https://inotaka1979.github.io https://boatrace-scrape-trigger.inotaka1979.workers.dev;
   script-src 'self' https://cdnjs.cloudflare.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=52" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=52" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=53" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=53" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -689,7 +689,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=52" defer></script>
-<script src="assets/app-rest.min.js?v=52" defer></script>
+<script src="assets/app-critical.min.js?v=53" defer></script>
+<script src="assets/app-rest.min.js?v=53" defer></script>
 </body>
 </html>

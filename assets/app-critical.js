@@ -2494,6 +2494,33 @@ var _chartLoadingPromise = null;
 // Odds Refresh (P0-S02: PAT撤去 — クライアントから dispatch しない)
 // オッズは Raspberry Pi 上の cron が約3分間隔で自動更新する
 // ===============================================
+// =============================================================================
+// LIVE ODDS via Cloudflare Worker — 「常に最新」を保証する保険ルート
+//
+// GH Actions / scrape_odds_fast.py が止まっても、PWA が直接 Worker 経由で
+// boatrace.jp から実時間オッズを取得する。
+//
+// アーキテクチャ:
+//   PWA → Worker.workers.dev/odds-proxy?type=...&sid=...&rno=...&hd=...
+//   Worker → boatrace.jp/owpc/pc/race/{oddstf|odds2tf|odds3t} (CORS pass-through)
+//   PWA で DOMParser でパース → oddsData にマージ → 詳細画面再描画
+// =============================================================================
+var _LIVE_ODDS_WORKER = 'https://boatrace-scrape-trigger.inotaka1979.workers.dev';
+var _liveOddsLastFetched = {};   // {"22-5": ms timestamp} — throttle (30s 同レース)
+var _liveOddsInflight = {};      // 重複 fetch 抑止
+
+/* MOVED: function _parseWinHtml */
+
+/* MOVED: function _parseExactaHtml */
+
+/* MOVED: function _parseTrifectaHtml */
+
+/* MOVED: function _todayYyyymmddJST */
+
+/* MOVED: function _fetchLiveOddsForRace */
+
+/* MOVED: function _kickOffLiveOddsRefresh */
+
 /* MOVED: function refreshOdds */
 
 /* MOVED: function startOddsAutoRefresh */
