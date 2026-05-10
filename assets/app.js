@@ -682,10 +682,13 @@ var _stackingGamma = 0.0;
 //       根拠: CLAUDE.md 修正履歴の Review 系 / X1 EV/Kelly 改善設計を参照
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
+  // FIX: 旧しきい値 (top1>0.40, top2>0.55, top1<0.25) ではボートレース 1コース
+  //   優位性により大半が本命判定 → 穴/混戦が極端に少なくユーザに偏り。
+  //   30/49/21 程度の分布になるように再調整。
   RACE_TYPE: Object.freeze({
-    HONMEI_TOP1_MIN: 0.40,        // top1 これ以上で本命候補
-    HONMEI_TOP2_MIN: 0.55,        // 本命は top1+top2 ≥ 0.55 を満たす必要
-    ANA_TOP1_MAX: 0.25,           // top1 これ未満は穴候補
+    HONMEI_TOP1_MIN: 0.50,        // top1 これ以上で本命候補（旧 0.40）
+    HONMEI_TOP2_MIN: 0.65,        // 本命は top1+top2 ≥ 0.65 を満たす必要（旧 0.55）
+    ANA_TOP1_MAX: 0.32,           // top1 これ未満は穴候補（旧 0.25）
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
@@ -4643,6 +4646,36 @@ function buildExactaProbDist(marks){
   return dist;
 }
 
+/**
+ * 高 EV 穴買い目を抽出（レースタイプ非依存、全レースで詳細画面に表示）
+ * 条件: オッズ ≥ minOdds かつ EV ≥ minEV、上位 N 件を EV 降順で返す
+ * @param {Array} marks - sorted marks (each {boat, prob})
+ * @param {Object} oddsMap - { "1-2-3": odds, ... }
+ * @param {Object} opts - { minOdds:50, minEV:1.0, topN:3 }
+ * @returns {Array} [{combo, prob, odds, ev}, ...] EV 降順
+ */
+function _pickAnaCandidates(marks, oddsMap, opts){
+  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') return [];
+  var o = opts || {};
+  var minOdds = o.minOdds != null ? o.minOdds : 50;
+  var minEV = o.minEV != null ? o.minEV : 1.0;
+  var topN = o.topN != null ? o.topN : 3;
+  var dist = buildTrifectaProbDist(marks);
+  var picks = [];
+  for(var combo in dist){
+    if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
+    var odds = oddsMap[combo];
+    if(odds == null || odds < minOdds) continue;
+    var prob = dist[combo];
+    if(prob <= 0) continue;
+    var ev = prob * odds;
+    if(ev < minEV) continue;
+    picks.push({combo: combo, prob: prob, odds: odds, ev: ev});
+  }
+  picks.sort(function(a,b){ return b.ev - a.ev; });
+  return picks.slice(0, topN);
+}
+
 // ===============================================
 // BET GENERATION V2 (PRESERVED)
 // ===============================================
@@ -6636,6 +6669,26 @@ function openRace(sid,rn){
       predHtml+='</div>';
       predHtml+='<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
     }
+
+    // 🔥 穴狙い: レースタイプ非依存、オッズ50倍以上 & EV>=1.0 の高 EV 穴買い目を上位3点表示
+    var anaSrc = activePred || progPred;
+    if(anaSrc && anaSrc.marks && raceOdds && raceOdds.trifecta){
+      var anaPicks = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:50, minEV:1.0, topN:3});
+      if(anaPicks.length > 0){
+        predHtml+='<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
+        predHtml+='<div class="bet-label" style="color:#FF5722">🔥 穴狙い (高EV) <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ50倍+ かつ EV≥1.0</span></div>';
+        predHtml+='<div class="bet-combos">';
+        anaPicks.forEach(function(p){
+          predHtml+='<span class="bet-chip">'+p.combo
+            +' <span class="fs-9 c-dim">'+(p.prob*100).toFixed(2)+'%</span>'
+            +'<span class="odds-val"> '+p.odds.toFixed(1)+'倍</span>'
+            +'<span style="font-size:9px;color:#FF5722;font-weight:700;margin-left:4px">EV '+p.ev.toFixed(2)+'</span>'
+            +'</span>';
+        });
+        predHtml+='</div></div>';
+      }
+    }
+
     predHtml+='</div>';
   }
   // P2-3: pairwise matchup 表示（pairwiseDB に十分なデータがある対戦のみ TOP3）
