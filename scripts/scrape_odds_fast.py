@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""scrape_odds_fast.py — asyncio版 高速オッズ取得"""
+"""scrape_odds_fast.py — asyncio版 高速オッズ取得
 
-import asyncio, json, os, sys, time, logging
+2026-05-10: 堅牢化
+  - asyncio.gather(return_exceptions=True) で 1 task 失敗が全体を巻き込むのを防止
+  - HTTP 429/5xx を指数バックオフで retry (boatrace.jp の rate limit 対応)
+  - 成功/失敗カウントをログに明示、reliability_score を出力 JSON に記録
+  - 全レース失敗時のみ exit 1 (workflow を red に)、部分成功は exit 0
+"""
+
+import asyncio, json, os, sys, time, logging, random
 import aiohttp
 from bs4 import BeautifulSoup
 
@@ -11,11 +18,19 @@ from time_utils import utc_iso_seconds  # P2 D-02 / D-10
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+# 2026-05-10: User-Agent rotation で boatrace.jp 側の単純な UA ブロックを回避
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+]
 OUTPUT = "data/odds/today.json"
 PREVIEWS = "data/previews/today.json"
 CONCURRENCY = 5
 INTERVAL = 0.3
+# 2026-05-10: 指数バックオフ retry でレート制限への耐性を向上
+MAX_RETRIES = 4   # 旧 2 → 4 (合計 5 attempts)
+RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("odds")
@@ -29,15 +44,32 @@ class RateLimiter:
             if w > 0: await asyncio.sleep(w)
             self._last = time.monotonic()
 
-async def fetch(session, limiter, url, retries=2):
+async def fetch(session, limiter, url, retries=MAX_RETRIES):
+    """boatrace.jp HTML を取得。429/5xx は指数バックオフで retry、最終失敗時は None。"""
+    last_status = None
     for attempt in range(retries + 1):
         try:
             await limiter.acquire()
-            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                if r.status == 200: return await r.text()
+            ua = USER_AGENTS[attempt % len(USER_AGENTS)]
+            headers = {"User-Agent": ua}
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                last_status = r.status
+                if r.status == 200:
+                    return await r.text()
+                if r.status not in RETRY_STATUSES:
+                    # 4xx (404 等) は retry しても無駄なので即座に諦める
+                    log.debug("non-retryable %s for %s", r.status, url)
+                    return None
+                # 429/5xx は retry 対象
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            if attempt == retries: log.warning("Failed %s: %s", url, e)
-            else: await asyncio.sleep(1)
+            last_status = f"exc:{type(e).__name__}"
+            if attempt == retries:
+                log.warning("fetch failed %s: %s", url, e)
+        # 指数バックオフ + jitter (0,1,2,4,8s + ±20%)
+        if attempt < retries:
+            delay = (2 ** attempt) * (0.8 + 0.4 * random.random())
+            await asyncio.sleep(delay)
+    log.warning("fetch exhausted retries (last_status=%s): %s", last_status, url)
     return None
 
 def parse_win(html):
@@ -204,29 +236,54 @@ async def async_main():
         except (json.JSONDecodeError, OSError) as e:
             log.warning("existing odds load failed (%s) — start from empty", e)
     sem = asyncio.Semaphore(CONCURRENCY); limiter = RateLimiter(INTERVAL); results = {}
+    # 2026-05-10: 1 task 失敗が gather を中断して全体を巻き込むのを防ぐ
     async with aiohttp.ClientSession() as session:
         async def task(s, r):
-            async with sem: results[(s, r)] = await scrape_race(session, limiter, s, r, date_str)
+            try:
+                async with sem:
+                    results[(s, r)] = await scrape_race(session, limiter, s, r, date_str)
+            except Exception as e:   # noqa: BLE001
+                # 単一レースの予期せぬ例外で gather 全体を死なせない
+                log.warning("scrape_race(%s, %s) crashed: %s: %s", s, r, type(e).__name__, e)
+                results[(s, r)] = {"stadium": s, "race": r, "_error": str(e)}
         t0 = time.monotonic()
-        await asyncio.gather(*[task(s, r) for s, r in active])
+        # return_exceptions=True で 1 タスクの未捕捉例外が gather を破壊しない
+        await asyncio.gather(*[task(s, r) for s, r in active], return_exceptions=True)
         elapsed = time.monotonic() - t0
     # D-03: スクレイプ失敗（win も exacta も無し）の場合は既存値を保持し、
     #        プレースホルダ {stadium,race} で上書きしない
     updated = 0
+    failed = 0
     for key, data in results.items():
         # F7: trifecta も判定対象に追加
         if data.get("win") or data.get("exacta") or data.get("trifecta"):
             existing[key] = data
             updated += 1
+        else:
+            failed += 1
     for s, r in sorted(races):
         if (s, r) not in existing:
             existing[(s, r)] = {"stadium": s, "race": r}
-    # D-01: atomic write
+    # 2026-05-10: reliability_score を出力 JSON に記録（PWA 側で stale 判定に活用可能）
+    reliability = (updated / len(active)) if active else 0.0
+    # D-01: atomic write — 失敗 race も含めて updated_at を更新（PWA に "scrape は走った" を伝える）
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
+        "scrape_stats": {
+            "total": len(active),
+            "updated": updated,
+            "failed": failed,
+            "reliability": round(reliability, 3),
+            "elapsed_sec": round(elapsed, 1),
+        },
         "odds": [existing[k] for k in sorted(existing.keys())],
     })
-    log.info("Done! %d scraped, %d updated in %.1fs", len(active), updated, elapsed)
+    log.info("Done! %d/%d scraped (%d failed, reliability=%.1f%%) in %.1fs",
+             updated, len(active), failed, reliability * 100, elapsed)
+    # 2026-05-10: 全レース失敗のときだけ workflow を red に (Actions 監視で気付ける)
+    if active and updated == 0:
+        log.error("ALL races failed — likely rate limited / boatrace.jp issue")
+        sys.exit(1)
 
 def main(): asyncio.run(async_main())
 if __name__ == "__main__": main()
