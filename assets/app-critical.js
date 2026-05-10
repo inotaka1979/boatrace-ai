@@ -685,10 +685,13 @@ var _stackingGamma = 0.0;
 //       根拠: CLAUDE.md 修正履歴の Review 系 / X1 EV/Kelly 改善設計を参照
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
+  // FIX: 旧しきい値 (top1>0.40, top2>0.55, top1<0.25) ではボートレース 1コース
+  //   優位性により大半が本命判定 → 穴/混戦が極端に少なくユーザに偏り。
+  //   30/49/21 程度の分布になるように再調整。
   RACE_TYPE: Object.freeze({
-    HONMEI_TOP1_MIN: 0.40,        // top1 これ以上で本命候補
-    HONMEI_TOP2_MIN: 0.55,        // 本命は top1+top2 ≥ 0.55 を満たす必要
-    ANA_TOP1_MAX: 0.25,           // top1 これ未満は穴候補
+    HONMEI_TOP1_MIN: 0.50,        // top1 これ以上で本命候補（旧 0.40）
+    HONMEI_TOP2_MIN: 0.65,        // 本命は top1+top2 ≥ 0.65 を満たす必要（旧 0.55）
+    ANA_TOP1_MAX: 0.32,           // top1 これ未満は穴候補（旧 0.25）
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
@@ -2233,6 +2236,16 @@ var _workerHeavyLoaded = false;
  */
 /* MOVED: function buildTrifectaProbDist */
 /* MOVED: function buildExactaProbDist */
+
+/**
+ * 高 EV 穴買い目を抽出（レースタイプ非依存、全レースで詳細画面に表示）
+ * 条件: オッズ ≥ minOdds かつ EV ≥ minEV、上位 N 件を EV 降順で返す
+ * @param {Array} marks - sorted marks (each {boat, prob})
+ * @param {Object} oddsMap - { "1-2-3": odds, ... }
+ * @param {Object} opts - { minOdds:50, minEV:1.0, topN:3 }
+ * @returns {Array} [{combo, prob, odds, ev}, ...] EV 降順
+ */
+/* MOVED: function _pickAnaCandidates */
 
 // ===============================================
 // BET GENERATION V2 (PRESERVED)
