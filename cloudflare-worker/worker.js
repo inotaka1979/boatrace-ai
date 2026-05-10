@@ -97,7 +97,7 @@ export default {
   },
 
   // -----------------------------------------------------------------------
-  // HTTP entry point — ヘルスチェック / 手動 trigger
+  // HTTP entry point — ヘルスチェック / 手動 trigger / odds 実時間プロキシ
   // -----------------------------------------------------------------------
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -121,6 +121,84 @@ export default {
         return new Response(`dispatched ${wf}\n`);
       } catch (e) {
         return new Response(`error: ${e.message}\n`, { status: 500 });
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // /odds-proxy — boatrace.jp odds HTML を CORS 越しに PWA へ pass-through
+    //
+    // 用途: GH Actions / scrape_odds_fast.py が止まっても、PWA が直接
+    //       実時間オッズを取得できるようにする保険。
+    //
+    //   GET /odds-proxy?type=trifecta&sid=22&rno=5&hd=20260510
+    //
+    //   type: 'win' | 'exacta' | 'trifecta'
+    //   sid:  1-24 stadium id
+    //   rno:  1-12 race number
+    //   hd:   YYYYMMDD
+    //
+    // レスポンス: HTML 本文 + CORS allow-origin: *
+    //             (PWA 側で DOMParser でパース)
+    //
+    // edge cache: 15s で boatrace.jp への負荷を抑制
+    // ---------------------------------------------------------------------
+    if (url.pathname === '/odds-proxy') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'access-control-allow-origin': '*',
+            'access-control-allow-methods': 'GET, OPTIONS',
+            'access-control-max-age': '86400',
+          },
+        });
+      }
+      const type = url.searchParams.get('type') || '';
+      const sid  = url.searchParams.get('sid') || '';
+      const rno  = url.searchParams.get('rno') || '';
+      const hd   = url.searchParams.get('hd')  || '';
+      const endpoints = { win: 'oddstf', exacta: 'odds2tf', trifecta: 'odds3t' };
+      if (!endpoints[type] || !/^\d+$/.test(sid) || !/^\d+$/.test(rno) || !/^\d{8}$/.test(hd)) {
+        return new Response('bad params', {
+          status: 400,
+          headers: { 'access-control-allow-origin': '*' },
+        });
+      }
+      const sidNum = parseInt(sid);
+      if (sidNum < 1 || sidNum > 24) {
+        return new Response('bad sid', {
+          status: 400,
+          headers: { 'access-control-allow-origin': '*' },
+        });
+      }
+      const jcd = String(sidNum).padStart(2, '0');
+      const upstream = `https://www.boatrace.jp/owpc/pc/race/${endpoints[type]}?rno=${parseInt(rno)}&jcd=${jcd}&hd=${hd}`;
+      try {
+        const res = await fetch(upstream, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 boatrace-scrape-trigger',
+          },
+          cf: { cacheTtl: 15, cacheEverything: true },
+        });
+        if (!res.ok) {
+          return new Response(`upstream ${res.status}`, {
+            status: 502,
+            headers: { 'access-control-allow-origin': '*' },
+          });
+        }
+        const html = await res.text();
+        return new Response(html, {
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'access-control-allow-origin': '*',
+            'cache-control': 'public, max-age=15',
+          },
+        });
+      } catch (e) {
+        return new Response(`error: ${e.message}`, {
+          status: 502,
+          headers: { 'access-control-allow-origin': '*' },
+        });
       }
     }
 
