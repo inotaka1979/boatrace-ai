@@ -5998,6 +5998,10 @@ function openStadium(sid){
 
   var raceNums=Object.keys(stadium).sort(function(a,b){return parseInt(a)-parseInt(b)});
 
+  // FIX: history を 1 回だけ read して loop 内で reuse (per-race lookup は配列走査)
+  var _historyForLoop = (typeof safeParse === 'function') ? safeParse('boatrace_history', []) : [];
+  var _todayForLoop = (typeof todayStr === 'function') ? todayStr() : '';
+
   var html='<table class="race-table">';
   html+='<thead><tr>';
   html+='<th class="race-col">R</th>';
@@ -6091,7 +6095,21 @@ function openStadium(sid){
       var res=resultData[sid][rn];
       var places=res.results.slice().sort(function(a,b){return a.place-b.place}).slice(0,3);
       var actualCombo=places[0].racer_boat_number+'-'+places[1].racer_boat_number+'-'+places[2].racer_boat_number;
-      var hit=pred.trifecta.some(function(t){return t.combo===actualCombo});
+      // FIX: 保存済 history entry の trifecta_bets を優先 lookup。
+      //   live pred.trifecta は 設定変更 / DB 更新で picks が変動するため、
+      //   成績タブのサマリ (entry.trifecta_hit ベース) と数値が乖離する。
+      //   保存済 entry が無い or actual 未確定なら live にフォールバック。
+      var hit;
+      var _saved = null;
+      for(var _hi=0;_hi<_historyForLoop.length;_hi++){
+        var _e = _historyForLoop[_hi];
+        if(_e.date===_todayForLoop && _e.stadium===sid && _e.race===rn){ _saved = _e; break; }
+      }
+      if(_saved && Array.isArray(_saved.trifecta_bets)){
+        hit = _saved.trifecta_bets.indexOf(actualCombo) >= 0;
+      } else {
+        hit = pred.trifecta.some(function(t){return t.combo===actualCombo});
+      }
       html+='<tr data-action="openRace" data-arg-sid="'+sid+'" data-arg-rn="'+rn+'" style="background:'+(hit?'#E8F5E9':'#FFEBEE')+'">';
       html+='<td class="race-result-cell '+(hit?'hit':'miss')+'">'+(hit?'的中':'×')+'</td>';
       for(var bn2=1;bn2<=6;bn2++){
