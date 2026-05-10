@@ -4539,7 +4539,24 @@ function _kickOffLiveOddsRefresh(sid, rn){
     //   「オッズ更新」ボタン (refreshOdds, full re-render) を使用。
     //   stale 警告バナーだけは updateOddsUI で消す (DOM 軽量更新)。
     if(currentStadium == sid && currentRace == rn){
-      try { if(typeof updateOddsUI === 'function') updateOddsUI(); } catch(_){}
+      try {
+        if(typeof updateOddsUI === 'function') updateOddsUI();
+        // FIX: 起動時の stale banner (詳細画面トップ赤バナー) を live fetch 成功後に消す
+        var _dw = document.getElementById('detailWeather');
+        if(_dw){
+          var _staleBanner = _dw.querySelector('div[style*="#D32F2F"]');
+          if(_staleBanner) _staleBanner.remove();
+        }
+        // FIX: 3連単オッズテーブル (detailOdds) も最新値で部分再描画
+        //   renderOddsSection は predictRace 不要 (pred 引数未使用) → 軽量
+        //   展示・予想 (detailPrediction) は触らない → flicker なし
+        var _race = programData && programData[sid] && programData[sid][rn] ? programData[sid][rn] : null;
+        var _raceOdds = (typeof getOddsForRace === 'function') ? getOddsForRace(sid, rn) : null;
+        var _detailOdds = document.getElementById('detailOdds');
+        if(_detailOdds && typeof renderOddsSection === 'function' && _raceOdds){
+          _detailOdds.innerHTML = renderOddsSection(sid, rn, _raceOdds, null, _race);
+        }
+      } catch(_){}
     }
   }).catch(function(){
     _liveOddsInflight[key] = false;
