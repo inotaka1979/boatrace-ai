@@ -7,6 +7,17 @@
 import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  // FIX: WebKit (iOS Safari) は Playwright の bypassCSP: true を完全には尊重せず、
+  //   CSP `upgrade-insecure-requests` が subresource を HTTPS に upgrade してしまう。
+  //   HTTP テストサーバ (python http.server) では HTTPS handshake が失敗 → JS が
+  //   load 不能 → window.openStadium 等が undefined になり全テスト timeout。
+  //   route で index.html レスポンスから当該ディレクティブを strip してテスト用に修正。
+  await page.route('**/index.html', async (route) => {
+    const response = await route.fetch();
+    let body = await response.text();
+    body = body.replace(/upgrade-insecure-requests;?\s*/g, '');
+    await route.fulfill({ response, body });
+  });
   // window.onerror で捕捉できる前の例外も拾えるよう、page.on('pageerror') を仕込む
   page.on('pageerror', (err) => {
     console.error('[pageerror]', err.message);

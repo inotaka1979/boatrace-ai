@@ -72,13 +72,12 @@ jobs:
           path: build/playwright-report
           retention-days: 7
 
-  # VRT: Chromium snapshot — 5 画面の見た目退行を検出
-  # FIX: snapshot baseline が JS-load 状態と乖離しているため advisory 化。
-  #   update-snapshots ジョブで baseline を再生成 → continue-on-error 削除の流れ。
+  # VRT: Chromium snapshot — 10 画面の見た目退行を検出
+  # update-snapshots で baseline を JS-load 状態に再生成済 (8846047) のため
+  # advisory 解除。今後は退行を CI が確実に block する。
   vrt:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
