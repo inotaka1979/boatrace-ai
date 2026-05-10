@@ -2242,25 +2242,33 @@ function buildExactaProbDist(marks){
 }
 
 function _pickAnaCandidates(marks, oddsMap, opts){
-  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') return [];
+  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') {
+    return { primary: [], fallback: [] };
+  }
   var o = opts || {};
-  var minOdds = o.minOdds != null ? o.minOdds : 50;
+  var minOdds = o.minOdds != null ? o.minOdds : 30;
   var minEV = o.minEV != null ? o.minEV : 1.0;
+  var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
   var topN = o.topN != null ? o.topN : 3;
   var dist = buildTrifectaProbDist(marks);
-  var picks = [];
+  var primary = [], loose = [];
   for(var combo in dist){
     if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
     var odds = oddsMap[combo];
-    if(odds == null || odds < minOdds) continue;
+    if(odds == null) continue;
     var prob = dist[combo];
     if(prob <= 0) continue;
     var ev = prob * odds;
-    if(ev < minEV) continue;
-    picks.push({combo: combo, prob: prob, odds: odds, ev: ev});
+    var pick = {combo: combo, prob: prob, odds: odds, ev: ev};
+    if(odds >= minOdds && ev >= minEV) primary.push(pick);
+    if(odds >= minOddsLoose) loose.push(pick);
   }
-  picks.sort(function(a,b){ return b.ev - a.ev; });
-  return picks.slice(0, topN);
+  primary.sort(function(a,b){ return b.ev - a.ev; });
+  loose.sort(function(a,b){ return b.ev - a.ev; });
+  return {
+    primary: primary.slice(0, topN),
+    fallback: loose.slice(0, topN),
+  };
 }
 
 function generateBetsV2(marks,method,count3,count2){
@@ -3611,26 +3619,64 @@ function openRace(sid,rn){
       predHtml+='<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
     }
 
-    // 🔥 穴狙い: レースタイプ非依存、オッズ50倍以上 & EV>=1.0 の高 EV 穴買い目を上位 N 点表示
-    //   N は settings.betCountAna（1〜6、既定3）
+    // 🔥 穴予想: レースタイプ非依存、常に表示
+    //   primary: オッズ30倍+ かつ EV>=1.0（高 EV 推奨）
+    //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN（EV<1 でも提示）
+    //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
     var anaSrc = activePred || progPred;
-    if(anaSrc && anaSrc.marks && raceOdds && raceOdds.trifecta){
+    if(anaSrc && anaSrc.marks){
       var anaTopN = parseInt(settings.betCountAna)||3;
       if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
-      var anaPicks = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:50, minEV:1.0, topN:anaTopN});
-      if(anaPicks.length > 0){
-        predHtml+='<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
-        predHtml+='<div class="bet-label" style="color:#FF5722">🔥 穴狙い (高EV) <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ50倍+ かつ EV≥1.0</span></div>';
-        predHtml+='<div class="bet-combos">';
-        anaPicks.forEach(function(p){
-          predHtml+='<span class="bet-chip">'+p.combo
-            +' <span class="fs-9 c-dim">'+(p.prob*100).toFixed(2)+'%</span>'
-            +'<span class="odds-val"> '+p.odds.toFixed(1)+'倍</span>'
-            +'<span style="font-size:9px;color:#FF5722;font-weight:700;margin-left:4px">EV '+p.ev.toFixed(2)+'</span>'
-            +'</span>';
-        });
-        predHtml+='</div></div>';
+      var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length>0);
+      var anaHtmlBlock = '';
+      if(hasAnaOdds){
+        var anaRes = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN});
+        var picks = anaRes.primary.length>0 ? anaRes.primary : anaRes.fallback;
+        var isPrimary = anaRes.primary.length>0;
+        if(picks.length > 0){
+          var subTitle = isPrimary
+            ? 'オッズ30倍+ かつ EV≥1.0'
+            : '高 EV 候補なし — 高オッズ TOP'+picks.length+' を参考表示';
+          anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
+          anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">'+subTitle+'</span></div>';
+          anaHtmlBlock += '<div class="bet-combos">';
+          picks.forEach(function(p){
+            var evColor = p.ev>=1.0 ? '#FF5722' : '#999';
+            anaHtmlBlock += '<span class="bet-chip">'+p.combo
+              +' <span class="fs-9 c-dim">'+(p.prob*100).toFixed(2)+'%</span>'
+              +'<span class="odds-val"> '+p.odds.toFixed(1)+'倍</span>'
+              +'<span style="font-size:9px;color:'+evColor+';font-weight:700;margin-left:4px">EV '+p.ev.toFixed(2)+'</span>'
+              +'</span>';
+          });
+          anaHtmlBlock += '</div></div>';
+        }
+      } else if(anaSrc.marks.length>=3){
+        // オッズ未取得: AI 確率分布の中で「1コース絡み以外」の上位 N を 穴候補として提示
+        var dist = buildTrifectaProbDist(anaSrc.marks);
+        var top1Boat = anaSrc.marks[0].boat;
+        var anaCands = [];
+        for(var k in dist){
+          if(!Object.prototype.hasOwnProperty.call(dist,k)) continue;
+          if(k.split('-')[0] === String(top1Boat)) continue; // 1着が1番人気以外
+          anaCands.push({combo:k, prob:dist[k]});
+        }
+        anaCands.sort(function(a,b){return b.prob-a.prob});
+        anaCands = anaCands.slice(0, anaTopN);
+        if(anaCands.length>0){
+          anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
+          anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ未取得 — AI 穴コンビ候補</span></div>';
+          anaHtmlBlock += '<div class="bet-combos">';
+          anaCands.forEach(function(p){
+            anaHtmlBlock += '<span class="bet-chip">'+p.combo
+              +' <span class="fs-9 c-dim">'+(p.prob*100).toFixed(2)+'%</span>'
+              +'</span>';
+          });
+          anaHtmlBlock += '</div>';
+          anaHtmlBlock += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※オッズ取得後に EV 評価へ自動更新</div>';
+          anaHtmlBlock += '</div>';
+        }
       }
+      predHtml += anaHtmlBlock;
     }
 
     predHtml+='</div>';
