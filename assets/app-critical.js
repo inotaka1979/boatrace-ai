@@ -2239,11 +2239,13 @@ var _workerHeavyLoaded = false;
 
 /**
  * 高 EV 穴買い目を抽出（レースタイプ非依存、全レースで詳細画面に表示）
- * 条件: オッズ ≥ minOdds かつ EV ≥ minEV、上位 N 件を EV 降順で返す
+ * 主候補: オッズ ≥ minOdds かつ EV ≥ minEV
+ * フォールバック: 主候補が無いときは オッズ ≥ minOddsLoose の中から EV 降順で topN
+ *                （EV<1 でも候補を出して「穴予想0件」を回避）
  * @param {Array} marks - sorted marks (each {boat, prob})
  * @param {Object} oddsMap - { "1-2-3": odds, ... }
- * @param {Object} opts - { minOdds:50, minEV:1.0, topN:3 }
- * @returns {Array} [{combo, prob, odds, ev}, ...] EV 降順
+ * @param {Object} opts - { minOdds:30, minEV:1.0, minOddsLoose:15, topN:3 }
+ * @returns {{primary:Array, fallback:Array}} EV 降順
  */
 /* MOVED: function _pickAnaCandidates */
 
