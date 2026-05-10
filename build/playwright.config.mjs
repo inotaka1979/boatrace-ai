@@ -25,6 +25,10 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:8181',
     trace: 'on-first-retry',
     viewport: { width: 390, height: 844 }, // iPhone 13 mini 相当
+    // FIX: index.html の CSP `upgrade-insecure-requests` が HTTP テストサーバ
+    // (python http.server) と非互換 → subresource (app-critical.min.js 等) が
+    // HTTPS upgrade されて TLS handshake で 400。bypassCSP でテスト時のみ無効化。
+    bypassCSP: true,
   },
   projects: [
     {
