@@ -161,4 +161,16 @@ jobs:
           fi
           git commit -m "vrt: regenerate snapshots ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git push "$REMOTE" HEAD:${{ github.ref_name }}
+          # FIX: cron previews commits との race condition で push が rejected される
+          # ことが多いため、失敗時は pull --rebase で取込んでから再 push する。
+          # 他 scraper workflow と同じパターン。
+          for i in 1 2 3; do
+            if git push "$REMOTE" HEAD:${{ github.ref_name }}; then
+              echo "push succeeded (attempt $i)"
+              exit 0
+            fi
+            echo "push rejected (attempt $i) — pulling and retrying..."
+            git pull --rebase "$REMOTE" ${{ github.ref_name }} || exit 1
+          done
+          echo "push failed after 3 attempts"
+          exit 1
