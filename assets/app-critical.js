@@ -725,7 +725,7 @@ var currentStadium=null,currentRace=null;
 // PF-2: _validateLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
 // PF-2: _bootParseLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
-var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
+var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betCountAna:3, betMethod:'auto'});
 var racerDB=_bootParseLS('boatrace_racerDB', {});
 var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
 // X2: 場別正規化用統計（モーター / 展示タイム）

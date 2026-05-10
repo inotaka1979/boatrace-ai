@@ -722,7 +722,7 @@ var currentStadium=null,currentRace=null;
 // PF-2: _validateLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
 // PF-2: _bootParseLS は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
-var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betMethod:'auto'});
+var settings=_bootParseLS('boatrace_settings', {betCount3:10, betCount2:5, betCountAna:3, betMethod:'auto'});
 var racerDB=_bootParseLS('boatrace_racerDB', {});
 var stadiumDB=_bootParseLS('boatrace_stadiumDB', {});
 // X2: 場別正規化用統計（モーター / 展示タイム）
@@ -6670,10 +6670,13 @@ function openRace(sid,rn){
       predHtml+='<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
     }
 
-    // 🔥 穴狙い: レースタイプ非依存、オッズ50倍以上 & EV>=1.0 の高 EV 穴買い目を上位3点表示
+    // 🔥 穴狙い: レースタイプ非依存、オッズ50倍以上 & EV>=1.0 の高 EV 穴買い目を上位 N 点表示
+    //   N は settings.betCountAna（1〜6、既定3）
     var anaSrc = activePred || progPred;
     if(anaSrc && anaSrc.marks && raceOdds && raceOdds.trifecta){
-      var anaPicks = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:50, minEV:1.0, topN:3});
+      var anaTopN = parseInt(settings.betCountAna)||3;
+      if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
+      var anaPicks = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:50, minEV:1.0, topN:anaTopN});
       if(anaPicks.length > 0){
         predHtml+='<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
         predHtml+='<div class="bet-label" style="color:#FF5722">🔥 穴狙い (高EV) <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ50倍+ かつ EV≥1.0</span></div>';
@@ -7096,6 +7099,8 @@ function renderStatsChart(){
 function loadSettings(){
   document.getElementById('setBetCount3').value=settings.betCount3||10;
   document.getElementById('setBetCount2').value=settings.betCount2||5;
+  var ba = document.getElementById('setBetCountAna');
+  if(ba) ba.value=settings.betCountAna||3;
   document.getElementById('setBetMethod').value=settings.betMethod||'auto';
   // X1: EV モード関連の初期化
   var ev = document.getElementById('setEvMode');
