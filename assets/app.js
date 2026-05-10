@@ -6640,10 +6640,14 @@ function openRace(sid,rn){
       // 直前予想の買い目
       predHtml+='<div class="bet-label">3連単推奨 <span class="bet-method">['+escText(activePred.methodLabel||'')+']</span></div><div class="bet-combos">';
       activePred.trifecta.forEach(function(t){
-        var odds3=t.odds || (raceOdds&&raceOdds.trifecta?raceOdds.trifecta[t.combo]:null);
-        var ev3 = t.ev != null ? t.ev : (odds3?calcEV(t.prob,odds3):null);
+        // FIX: 表示時は常に raceOdds (最新 API) を優先 lookup、
+        //   t.odds は predict 時の snapshot で stale になりうるため fallback のみに
+        var liveOdds = (raceOdds && raceOdds.trifecta) ? raceOdds.trifecta[t.combo] : null;
+        var odds3 = (liveOdds != null) ? liveOdds : (t.odds != null ? t.odds : null);
+        var ev3 = (odds3 != null) ? calcEV(t.prob, odds3) : (t.ev != null ? t.ev : null);
         var evHtml=evBadge(ev3);
-        var oddsStr=odds3?'<span class="odds-val"> '+odds3+'倍</span>':'';
+        // FIX: 表示書式を .toFixed(1) に統一（穴予想 / オッズテーブルと整合）
+        var oddsStr = (odds3 != null) ? '<span class="odds-val"> '+Number(odds3).toFixed(1)+'倍</span>' : '';
         // X1: EV モードの場合、Kelly 配分（円）を表示
         var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥'+t.stakeYen.toLocaleString()+'</span>' : '';
         predHtml+='<span class="bet-chip">'+t.combo+' <span class="fs-9 c-dim">'+(t.prob*100).toFixed(1)+'%</span>'+oddsStr+evHtml+stakeStr+'</span>';
