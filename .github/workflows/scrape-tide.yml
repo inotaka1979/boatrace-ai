@@ -33,11 +33,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
           git pull --rebase origin main || true
           git add data/
-          git diff --staged --quiet && exit 0
-          git commit -m "tide: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)
+          # REDESIGN.md Phase 1: silent success 撲滅
+          if git diff --staged --quiet; then
+            echo "::notice::no data changes to commit"
+          else
+            git commit -m "tide: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+            git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)
+          fi
