@@ -127,7 +127,7 @@ jobs:
           NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
           TITLE="[STALE] ${TARGET} データ古い (${NOW_JST})"
           BODY=$(cat <<EOF
-          ## データ鮮度 SLO 違反
+          @inotaka1979 ← データ鮮度 SLO 違反
 
           - target: \`${TARGET}\`
           - threshold: ${MAX_AGE_MIN} min
@@ -155,5 +155,6 @@ jobs:
             --title "$TITLE" \
             --label "$LABEL" \
             --label "stale-data" \
+            --assignee inotaka1979 \
             --body "$BODY" \
             --repo "${GITHUB_REPOSITORY}"
