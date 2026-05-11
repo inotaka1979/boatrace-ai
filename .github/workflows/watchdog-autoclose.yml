@@ -114,7 +114,7 @@ jobs:
           NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
           for N in $NUMBERS; do
             echo "::notice::closing #$N (recovered)"
-            BODY="✅ データ鮮度が閾値以内に回復しました (${NOW_JST})。
+            BODY="@inotaka1979 ✅ データ鮮度が閾値以内に回復しました (${NOW_JST})。
             \`\`\`
             ${MSG}
             \`\`\`
