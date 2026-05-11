@@ -1,0 +1,124 @@
+name: Watchdog Autoclose
+
+# Phase 0c of REDESIGN.md
+# stale-data の Issue を、データ鮮度が回復したら自動 close する。
+# 通知疲労 (open issue が溜まる) を防ぐ + 復旧の事実を時系列で残す。
+#
+# 動作:
+#   1. open な stale-data:{target} ラベル付き issue を列挙
+#   2. 各 target について現在の鮮度を再評価
+#   3. fresh に戻っていれば close + 復旧コメント
+#   4. fail-closed: gh API が失敗した場合は何もしない (safe-by-default)
+
+on:
+  schedule:
+    # watchdog (UTC 0-12) と同じ race hours、ただし 2 分オフセット
+    # 22:00 以降に残った open issue は翌朝 09:02 の最初の autoclose で
+    # 鮮度回復確認後に close される
+    - cron: '2-57/5 0-12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: data-freshness-autoclose
+  cancel-in-progress: false
+
+jobs:
+  autoclose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: odds
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/odds/today.json
+            max_age_min: 30
+          - name: previews
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/previews/today.json
+            max_age_min: 60
+          - name: results
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
+            max_age_min: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: List open stale issues for ${{ matrix.target.name }}
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          LABEL="stale-data:${{ matrix.target.name }}"
+          if ! ISSUES=$(gh issue list \
+                          --label "$LABEL" \
+                          --state open \
+                          --limit 5 \
+                          --json number \
+                          --repo "${GITHUB_REPOSITORY}" 2>&1); then
+            echo "::warning::gh issue list failed: $ISSUES"
+            echo "numbers=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NUMS=$(echo "$ISSUES" | python3 -c "import sys,json; print(' '.join(str(x['number']) for x in json.load(sys.stdin)))")
+          echo "numbers=$NUMS" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck freshness
+        id: recheck
+        if: steps.list.outputs.numbers != ''
+        run: |
+          set -uo pipefail
+          OUT="/tmp/recheck.json"
+          if ! curl -sS --fail --max-time 5 --retry 3 --retry-delay 2 \
+               -H "Cache-Control: no-cache" \
+               "${{ matrix.target.url }}" -o "$OUT"; then
+            echo "fresh=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          OUTPUT=$(python3 scripts/check_freshness.py \
+                     "$OUT" \
+                     --max-age-min "${{ matrix.target.max_age_min }}" \
+                     --strict 2>&1)
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          {
+            echo "msg<<__EOF__"
+            echo "$OUTPUT"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$RC" -eq 0 ]; then
+            echo "fresh=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "fresh=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Close issues if recovered
+        if: steps.recheck.outputs.fresh == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBERS: ${{ steps.list.outputs.numbers }}
+          MSG: ${{ steps.recheck.outputs.msg }}
+        run: |
+          set -uo pipefail
+          NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          for N in $NUMBERS; do
+            echo "::notice::closing #$N (recovered)"
+            BODY="@inotaka1979 ✅ データ鮮度が閾値以内に回復しました (${NOW_JST})。
+            \`\`\`
+            ${MSG}
+            \`\`\`
+            watchdog-autoclose.yml により自動 close。"
+            gh issue comment "$N" --body "$BODY" --repo "${GITHUB_REPOSITORY}" || true
+            gh issue close "$N" --reason completed --repo "${GITHUB_REPOSITORY}" || true
+          done
