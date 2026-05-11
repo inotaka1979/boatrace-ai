@@ -41,7 +41,7 @@ jobs:
           NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
           TITLE="[DRILL] 通知到達確認 ${NOW_JST}"
           BODY=$(cat <<EOF
-          ## 通知到達ドリル
+          @inotaka1979 ← 通知到達ドリル
 
           このメッセージが **iPhone GitHub アプリの push 通知** として
           届いたら、本ドリルは成功です。
@@ -58,6 +58,7 @@ jobs:
 
           - iPhone の集中モード / 通知サマリー設定
           - GitHub app の本リポジトリ Watch 設定 (All Activity)
+          - GitHub app の通知トグル (ダイレクトメンション + アサイン) が ON か
           - iOS バッテリー最適化
 
           を確認してください。本ドリルが本物の障害通知 (label: stale-data)
@@ -70,5 +71,6 @@ jobs:
           gh issue create \
             --title "$TITLE" \
             --label "drill" \
+            --assignee inotaka1979 \
             --body "$BODY" \
             --repo "${GITHUB_REPOSITORY}"
