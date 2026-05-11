@@ -35,9 +35,13 @@ step "Python unit tests (io_utils / time_utils)" \
 step "Python unit tests (http_utils)" \
      "python3 -m unittest scripts.tests.test_http_utils -v"
 
+# 1c) REDESIGN Phase 0a: check_freshness ユニットテスト
+step "Python unit tests (check_freshness)" \
+     "python3 -m unittest scripts.tests.test_check_freshness -v"
+
 # 2) Python シンタックスチェック（main は実行しない）
 step "Python parse check" \
-     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py scripts/http_utils.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
+     "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py scripts/http_utils.py scripts/check_freshness.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"
 
 # 3) Bash テスト
 step "Shell tests (cron_scrape / cron_monitor)" \
