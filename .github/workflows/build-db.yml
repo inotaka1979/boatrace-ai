@@ -24,7 +24,7 @@ jobs:
         with:
           # PA-4: チェックアウト時にトークンを .git/config に残さない
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
