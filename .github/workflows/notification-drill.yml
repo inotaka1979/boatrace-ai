@@ -1,0 +1,74 @@
+name: Notification Drill
+
+# Phase -1 of REDESIGN.md
+# 月次で擬似障害 Issue を作成し、iPhone GitHub アプリへの通知が
+# 実際に届くことを user 自身が確認できるようにする。
+# 「届いた気になる」運用を防ぐための実機検証経路。
+#
+# user 側手順:
+#   1. iPhone GitHub app の通知設定で本リポジトリを Watch (All Activity)
+#   2. drill issue が立ったら通知音 / バナー / バッジが届くか確認
+#   3. issue にコメント "received hh:mm" でログ
+#   4. 確認後 issue を close
+#
+# drill 結果は docs/RUNBOOK.md に追記して経時記録。
+
+on:
+  schedule:
+    # 毎月 1 日 23:30 UTC (JST 08:30) — 朝の通知体感が最も実運用に近い時間帯
+    - cron: '30 23 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: notification-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create drill issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOW_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          TITLE="[DRILL] 通知到達確認 ${NOW_JST}"
+          BODY=$(cat <<EOF
+          ## 通知到達ドリル
+
+          このメッセージが **iPhone GitHub アプリの push 通知** として
+          届いたら、本ドリルは成功です。
+
+          - 起票: ${NOW_UTC}
+          - 種類: 月次通知ドリル (notification-drill.yml)
+
+          ### user 確認手順
+          1. このコメント欄に "received HH:MM" と記入 (受信時刻)
+          2. 通知音 / バナーが正常に届いたか確認
+          3. このまま **close** してください
+
+          通知が来なかった場合は、
+
+          - iPhone の集中モード / 通知サマリー設定
+          - GitHub app の本リポジトリ Watch 設定 (All Activity)
+          - iOS バッテリー最適化
+
+          を確認してください。本ドリルが本物の障害通知 (label: stale-data)
+          を見逃さないための保険です。
+
+          ---
+          詳細: \`docs/REDESIGN.md\` §3 設計原則 7
+          EOF
+          )
+          gh issue create \
+            --title "$TITLE" \
+            --label "drill" \
+            --body "$BODY" \
+            --repo "${GITHUB_REPOSITORY}"
