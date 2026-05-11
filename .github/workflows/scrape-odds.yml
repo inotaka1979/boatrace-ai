@@ -37,11 +37,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
           git pull --rebase origin main || true
           git add data/
-          git diff --staged --quiet && exit 0
-          git commit -m "odds: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)
+          # REDESIGN.md Phase 1: silent success 撲滅
+          # 旧: `git diff --staged --quiet && exit 0` (commit 0 行で workflow 緑)
+          # 新: 変更なしを許容するが exit せず、後段の freshness check に判定を委ねる
+          if git diff --staged --quiet; then
+            echo "::notice::no data changes to commit (freshness check will validate)"
+          else
+            git commit -m "odds: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+            git push "$REMOTE" HEAD:main || (git pull --rebase origin main && git push "$REMOTE" HEAD:main)
+          fi
+      # REDESIGN.md Phase 1: scrape 直後の鮮度検証 (strict)
+      # 「プロセスが exit 0 = 成功」ではなく「データが新しい = 成功」へ契約を変更
+      # always() で scrape 失敗時も実行、stale なら workflow を赤くして検知
+      - name: Verify data freshness
+        if: always()
+        run: |
+          python3 scripts/check_freshness.py \
+            data/odds/today.json \
+            --max-age-min 30 \
+            --strict
