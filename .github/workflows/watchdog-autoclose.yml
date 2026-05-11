@@ -12,8 +12,10 @@ name: Watchdog Autoclose
 
 on:
   schedule:
-    # watchdog より少し遅い 5 分間隔 (重複実行を避けるためオフセット)
-    - cron: '2-57/5 * * * *'
+    # watchdog (UTC 0-12) と同じ race hours、ただし 2 分オフセット
+    # 22:00 以降に残った open issue は翌朝 09:02 の最初の autoclose で
+    # 鮮度回復確認後に close される
+    - cron: '2-57/5 0-12 * * *'
   workflow_dispatch:
 
 permissions:
