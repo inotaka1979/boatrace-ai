@@ -1,0 +1,160 @@
+name: Data Freshness Watchdog
+
+# Phase 0b of REDESIGN.md
+# 配信 (GitHub Pages) 側の data/*/today.json を 5 分間隔で external 取得し、
+# updated_at が閾値超過なら GitHub Issue を起票して iPhone 通知へ。
+#
+# 設計原則:
+#   - 観測はデータ層 (Pages 配信されたファイル) に置く、ジョブ層 (workflow 成否) に置かない
+#   - 重複 Issue 抑止: 同 label の open issue 既存ならスキップ
+#   - fail-closed: `gh issue list` 自体が失敗したら create もしない (通知 spam 防止)
+#   - 監視対象毎の閾値を独立管理 (odds = 15min, previews = 60min, ...)
+#
+# レース時間外 (例: 深夜) に検知して false positive を出さないよう、
+# 閾値は「レース日中に異常値となるが、夜間の自然な間隔は許容」する値に設定。
+
+on:
+  schedule:
+    # 5 分間隔。race hours のみ稼働して夜間誤検知を避ける。
+    # UTC 00:00-12:55 = JST 09:00-21:55
+    # scrape-odds は JST 08:00-22:00 稼働なので、最初の 1 時間は
+    # scrape が初回 commit を済ませる grace 期間として watchdog を止める。
+    - cron: '*/5 0-12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: data-freshness-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # name: label の suffix にも使う識別子
+          # url:  raw.githubusercontent.com 経由で Pages CDN を bypass し、最新を見る
+          # max_age_min: 閾値 (分)。レース日中に逸脱する値を設定
+          - name: odds
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/odds/today.json
+            max_age_min: 30
+          - name: previews
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/previews/today.json
+            max_age_min: 60
+          - name: results
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
+            max_age_min: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch published JSON
+        id: fetch
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/watchdog
+          OUT="/tmp/watchdog/${{ matrix.target.name }}.json"
+          # 5 回までリトライ、各回 5s タイムアウト
+          if ! curl -sS --fail --max-time 5 --retry 4 --retry-delay 2 \
+               -H "Cache-Control: no-cache" \
+               "${{ matrix.target.url }}" -o "$OUT"; then
+            echo "fetch_failed=true" >> "$GITHUB_OUTPUT"
+            exit 0  # fetch 失敗自体は通知しない (raw.githubusercontent.com 障害は別問題)
+          fi
+          echo "fetch_failed=false" >> "$GITHUB_OUTPUT"
+          echo "out=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Check freshness (strict)
+        id: check
+        if: steps.fetch.outputs.fetch_failed == 'false'
+        run: |
+          set +e
+          OUTPUT=$(python3 scripts/check_freshness.py \
+                     "${{ steps.fetch.outputs.out }}" \
+                     --max-age-min "${{ matrix.target.max_age_min }}" \
+                     --strict 2>&1)
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          # 改行を含む可能性に対応 (GitHub Actions の output 制約)
+          {
+            echo "msg<<__EOF__"
+            echo "$OUTPUT"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::watchdog rc=$RC msg=$OUTPUT"
+
+      - name: Open issue if stale (with dedup + fail-closed)
+        if: steps.check.outputs.rc == '2' || steps.check.outputs.rc == '3' || steps.check.outputs.rc == '4'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target.name }}
+          MAX_AGE_MIN: ${{ matrix.target.max_age_min }}
+          MSG: ${{ steps.check.outputs.msg }}
+        run: |
+          set -euo pipefail
+          LABEL="stale-data:${TARGET}"
+
+          # fail-closed: 既存 open issue 検索が失敗したら create しない
+          if ! EXISTING=$(gh issue list \
+                            --label "$LABEL" \
+                            --state open \
+                            --limit 1 \
+                            --json number,title \
+                            --repo "${GITHUB_REPOSITORY}" 2>&1); then
+            echo "::warning::gh issue list failed, skipping create to avoid spam: $EXISTING"
+            exit 0
+          fi
+
+          COUNT=$(echo "$EXISTING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          if [ "$COUNT" -gt 0 ]; then
+            EXISTING_NUM=$(echo "$EXISTING" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['number'])")
+            echo "::notice::stale issue already open: #${EXISTING_NUM}, skipping create"
+            exit 0
+          fi
+
+          NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          TITLE="[STALE] ${TARGET} データ古い (${NOW_JST})"
+          BODY=$(cat <<EOF
+          @inotaka1979 ← データ鮮度 SLO 違反
+
+          - target: \`${TARGET}\`
+          - threshold: ${MAX_AGE_MIN} min
+          - detected: ${NOW_JST}
+          - source: \`${TARGET}.yml\` → \`data/${TARGET}/today.json\`
+
+          ### watchdog log
+
+          \`\`\`
+          ${MSG}
+          \`\`\`
+
+          ### 想定原因
+          1. **scraper workflow が silent fail している** → Actions タブで \`scrape-${TARGET}\` の最新 run を確認
+          2. **外部 API (boatraceopenapi.github.io) が落ちている** → 他 scraper も同時 stale なら高確率
+          3. **Cloudflare Worker 経路の異常** → \`deploy-worker\` の最新 run を確認
+
+          ### 復旧後
+          - データ鮮度が閾値以内に回復すると、本 Issue は \`watchdog-autoclose.yml\` で自動 close されます (Phase 0c)
+          - 手動で close しても問題ありません
+          EOF
+          )
+
+          gh issue create \
+            --title "$TITLE" \
+            --label "$LABEL" \
+            --label "stale-data" \
+            --assignee inotaka1979 \
+            --body "$BODY" \
+            --repo "${GITHUB_REPOSITORY}"
