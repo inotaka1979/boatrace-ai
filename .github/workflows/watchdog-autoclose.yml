@@ -44,7 +44,7 @@ jobs:
             url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
             max_age_min: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
