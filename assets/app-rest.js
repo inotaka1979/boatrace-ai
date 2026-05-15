@@ -3572,11 +3572,20 @@ function openRace(sid,rn){
       }
     }
   } else {
-    // 直前情報なし
-    predHtml+='<div style="text-align:center;padding:16px;color:#999">';
-    predHtml+='<div style="font-size:24px;margin-bottom:8px">⏳</div>';
-    predHtml+='<div style="font-size:12px">展示航走後に更新されます</div>';
-    predHtml+='<div style="font-size:10px;color:#BBB;margin-top:4px">レース開始約30分前に直前情報が配信されます</div>';
+    // 直前情報なし — 状態を明示分岐（2026-05-16 改修）
+    //   1) レース終了済 → 「展示データ未取得」と明示（スクレイプ漏れ）
+    //   2) レース前 → 「番組予想は上に表示されています」と誘導
+    var _finished = !!(result && result.isFinished);
+    predHtml+='<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
+    if(_finished){
+      predHtml+='<div style="font-size:20px;margin-bottom:6px">📋</div>';
+      predHtml+='<div style="font-size:13px;font-weight:700;color:#C62828">展示データ未取得のレースです</div>';
+      predHtml+='<div style="font-size:11px;color:#888;margin-top:4px">展示窓時刻にスクレイプが届かず、直前予想は生成されませんでした<br>上の<b>番組予想</b>と<b>レース結果</b>をご確認ください</div>';
+    } else {
+      predHtml+='<div style="font-size:20px;margin-bottom:6px">⏳</div>';
+      predHtml+='<div style="font-size:13px;font-weight:700">展示航走の反映待ち</div>';
+      predHtml+='<div style="font-size:11px;color:#888;margin-top:4px">レース開始約 15 分前の展示で更新されます<br>それまでは上の<b>番組予想</b>をご参照ください</div>';
+    }
     predHtml+='</div>';
   }
   predHtml+='</div>';
