@@ -29,14 +29,29 @@ vm.runInContext(bundleMatch[0], ctx);
 let pass = 0, fail = 0;
 function t(name, ok){ if(ok){ console.log('  PASS:', name); pass++; } else { console.log('  FAIL:', name); fail++; } }
 
+// 2026-05-16: Math.random を mulberry32 で deterministic seed 化、
+//   CI で稀に発生する事後平均テストの flake を撲滅。
+//   元の Thompson sampling アルゴリズム自体は変更しない。
+(function seedRandom(){
+  let s = 0xC0FFEE;
+  function mulberry32(){
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  Math.random = mulberry32;
+})();
+
 console.log('[banditSelect / banditUpdate]');
 const variants = [
   { id: 'A', alpha: 1, beta: 1 },
   { id: 'B', alpha: 1, beta: 1 },
 ];
 
-// 偏った報酬を 200 試行投入: A=hit率 80%, B=hit率 20%
-for(let i = 0; i < 200; i++){
+// 偏った報酬を 400 試行投入: A=hit率 80%, B=hit率 20%
+// (試行数を 200→400 に倍増、deterministic seed と合わせて安定化)
+for(let i = 0; i < 400; i++){
   const chosen = ctx.banditSelect(variants);
   const reward = (chosen.id === 'A')
     ? (Math.random() < 0.8 ? 1 : 0)
@@ -45,7 +60,7 @@ for(let i = 0; i < 200; i++){
 }
 
 const means = ctx.banditMeans(variants);
-t('200 試行後、A が ranking 1位', means[0].id === 'A');
+t('400 試行後、A が ranking 1位', means[0].id === 'A');
 t('A の事後平均 > 0.6', means[0].mean > 0.6);
 t('B の事後平均 < 0.4', means.find(x=>x.id==='B').mean < 0.4);
 t('A は B より多く選ばれる',
