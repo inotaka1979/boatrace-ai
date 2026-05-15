@@ -12,6 +12,7 @@ GitHub Actionsから1日2回実行される
 
 import json, os, sys, time, datetime, re
 from urllib.request import urlopen, Request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -160,37 +161,100 @@ def scrape_beforeinfo(jcd: str, rno: int, date_str: str) -> dict[int, list[str]]
         print(f"  Error scraping beforeinfo: {e}")
         return {}
 
-def download_photo(racer_number: int | str, attempts: int = 2) -> bool:
-    """選手写真を data/photos/{番号}.jpg にダウンロード。
-
-    既存ファイルが >500B あればスキップ（プレースホルダ画像対策で size 検証）。
-    timeout 20s × attempts 回までリトライ。成功 True / 失敗 False。
-    """
+def _is_cached(racer_number: int | str) -> bool:
+    """選手写真が既にローカルにある（>500B）か。"""
     path = f"{PHOTO_DIR}/{racer_number}.jpg"
-    if os.path.exists(path) and os.path.getsize(path) > 500:
-        return True
+    return os.path.exists(path) and os.path.getsize(path) > 500
+
+
+def _download_one_photo(racer_number: int | str, timeout: int = 10) -> tuple[int | str, bool, str | None]:
+    """1 選手分の写真を fetch。重複 cache check 含む。リトライ無し（高速失敗）。"""
+    path = f"{PHOTO_DIR}/{racer_number}.jpg"
+    if _is_cached(racer_number):
+        return racer_number, True, None
     url = PHOTO_URL.format(racer_number)
-    last_err = None
-    for i in range(attempts):
-        try:
-            req = Request(url, headers=HEADERS)
-            with urlopen(req, timeout=20) as r:
-                if r.status == 200:
-                    data = r.read()
-                    if len(data) > 500:
-                        os.makedirs(PHOTO_DIR, exist_ok=True)
-                        with open(path, "wb") as f:
-                            f.write(data)
-                        time.sleep(0.3)
-                        return True
-                    last_err = f"too small ({len(data)}b)"
-                else:
-                    last_err = f"status {r.status}"
-        except Exception as e:
-            last_err = str(e)[:60]
+    try:
+        req = Request(url, headers=HEADERS)
+        with urlopen(req, timeout=timeout) as r:
+            if r.status != 200:
+                return racer_number, False, f"status {r.status}"
+            data = r.read()
+            if len(data) <= 500:
+                return racer_number, False, f"too small ({len(data)}b)"
+            os.makedirs(PHOTO_DIR, exist_ok=True)
+            tmp = path + ".part"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+            return racer_number, True, None
+    except Exception as e:
+        return racer_number, False, str(e)[:60]
+
+
+def download_photo(racer_number: int | str, attempts: int = 2) -> bool:
+    """逐次版 (互換用)。新規コードからは download_photos_parallel を使用。"""
+    if _is_cached(racer_number):
+        return True
+    for _ in range(attempts):
+        _, ok, _ = _download_one_photo(racer_number, timeout=20)
+        if ok:
+            return True
         time.sleep(0.5)
-    print(f"[photo] download fail ({url}): {last_err}")
     return False
+
+
+def download_photos_parallel(racer_numbers, max_workers: int = 8, max_per_run: int = 400, budget_sec: int = 600) -> None:
+    """選手写真を未取得分のみ並列ダウンロード。
+
+    30 分 timeout に確実に収まるよう以下のガードを実装:
+      1. cache hit (>500B) は即 skip — 通常ほとんどの選手は既に取得済
+      2. 未取得選手のみを max_per_run 件まで並列ダウンロード
+      3. 全体で budget_sec 秒経過したら中断 (次回 run で続き取得)
+      4. workers=8 並列、timeout=10s/req で失敗は即諦め
+    """
+    if not racer_numbers:
+        return
+    missing = [rn for rn in sorted(racer_numbers) if not _is_cached(rn)]
+    cached = len(racer_numbers) - len(missing)
+    if not missing:
+        print(f"  Photos: {cached}/{len(racer_numbers)} cached, no downloads needed")
+        return
+    to_download = missing[:max_per_run]
+    deferred = len(missing) - len(to_download)
+    print(
+        f"  Photos: {cached} cached / {len(missing)} missing -> downloading "
+        f"{len(to_download)} (parallel x{max_workers}, budget {budget_sec}s)"
+        + (f", deferring {deferred} to next run" if deferred else "")
+    )
+    started = time.monotonic()
+    ok_count = 0
+    fail_count = 0
+    timeouts = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_download_one_photo, rn): rn for rn in to_download}
+        for fut in as_completed(futures):
+            if time.monotonic() - started > budget_sec:
+                # 残タスクは cancel(完了済以外)、次回 run に持ち越し
+                for f in futures:
+                    if not f.done():
+                        f.cancel()
+                timeouts = sum(1 for f in futures if not f.done())
+                print(f"  Photos: budget {budget_sec}s exceeded, cancelling {timeouts} remaining")
+                break
+            try:
+                _, ok, err = fut.result()
+                if ok:
+                    ok_count += 1
+                else:
+                    fail_count += 1
+                    if fail_count <= 5:  # 最初の数件だけログ
+                        print(f"  Photo fail rn={futures[fut]}: {err}")
+            except Exception as e:
+                fail_count += 1
+                if fail_count <= 5:
+                    print(f"  Photo exception rn={futures[fut]}: {e}")
+    elapsed = time.monotonic() - started
+    print(f"  Photos done: ok={ok_count} fail={fail_count} cancelled={timeouts} in {elapsed:.1f}s")
 
 def main() -> None:
     """エントリーポイント: 本日の出走表 / 直前情報 / 写真を取得し OUTPUT_RACEDATA に出力。"""
@@ -253,9 +317,11 @@ def main() -> None:
                 "boats": boats
             })
 
-    print(f"Downloading photos for {len(racer_numbers)} racers...")
-    for rn in sorted(racer_numbers):
-        download_photo(rn)
+    # FIX (2026-05-16): 旧版は 1,636 選手 × (0.5s sleep + 0.3s sleep + timeout 20s × 2 attempts)
+    # = 約 50 分かかり 30 分 timeout を超過 → racedata が 9 日間更新されない事故。
+    # 未取得分のみ並列 8 で取得し、上限 400 件 / budget 600s でハードガード。
+    print(f"Downloading photos for {len(racer_numbers)} racers (parallel)...")
+    download_photos_parallel(racer_numbers, max_workers=8, max_per_run=400, budget_sec=600)
 
     # D-08: 写真削除に try/except、削除失敗は warn にとどめて続行
     if os.path.exists(PHOTO_DIR):
