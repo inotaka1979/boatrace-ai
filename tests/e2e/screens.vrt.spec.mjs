@@ -68,8 +68,14 @@ test('nav: 5ボタン bottom navigation', async ({ page }) => {
 });
 
 test('api health banner: 障害時表示 (P0-7)', async ({ page }) => {
-  // _setApiHealth のエラーを避けるため直接 DOM 操作で表示状態を作る
+  // 2026-05-16: _renderApiHealthBanner が loadAllData 完了時に発火し、
+  //   テストが直前に設定した display:block を再度 display:none に戻すレース。
+  //   networkidle を待って初期 fetch を完了させ、_renderApiHealthBanner を
+  //   no-op に置換してから DOM 状態を作る。
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.evaluate(() => {
+    // 後続の renderer 呼出で display が戻されないようにスタブ化
+    try { globalThis._renderApiHealthBanner = function(){}; } catch (_) {}
     const b = document.getElementById('apiHealthBanner');
     if (b) {
       b.style.display = 'block';
