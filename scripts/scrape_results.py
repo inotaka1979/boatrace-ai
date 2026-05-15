@@ -5,6 +5,7 @@ Open API互換のJSON形式で出力する。
 """
 
 import json, os, re, sys, time, datetime, logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / FIX: JST aware
@@ -20,10 +21,34 @@ PROG_API = "https://boatraceopenapi.github.io/programs/v2/today.json"
 INTERVAL = 3
 OUTPUT = "data/results/today.json"
 
+# 2026-05-16: 全 run が 30 分 timeout で cancel される問題対処
+#   並列 4 + per-request timeout 8s + retries 1 + 全体予算 1200s で hard guard。
+#   元の 3s INTERVAL は parallel 化で per-worker rate ≒ 1.3req/s に保たれ politeness 維持。
+FETCH_TIMEOUT = 8
+FETCH_RETRIES = 1
+PARALLEL_WORKERS = 4
+WALL_BUDGET_SEC = 1200
+
 
 def fetch(url: str) -> str:
-    """URL から HTML を取得（http_utils.fetch_text の thin wrapper）。"""
-    return fetch_text(url, timeout=20)
+    """URL から HTML を取得（http_utils.fetch_text の thin wrapper）。
+
+    2026-05-16: timeout 20s → FETCH_TIMEOUT(8s) / retries DEFAULT(2) → FETCH_RETRIES(1)
+    で高速失敗化、GHA 30 分 timeout 内に確実に収まるよう調整。
+    """
+    return fetch_text(url, timeout=FETCH_TIMEOUT, retries=FETCH_RETRIES)
+
+
+def _fetch_one_race(args: tuple[int, int, str]) -> tuple[int, int, dict | None, str | None]:
+    """並列ワーカー: 1 レース分の HTML を fetch & parse。例外は文字列で返す。"""
+    sid, rn, date_str = args
+    jcd = f"{sid:02d}"
+    url = f"{BASE_URL}?rno={rn}&jcd={jcd}&hd={date_str}"
+    try:
+        html = fetch(url)
+        return sid, rn, parse_raceresult(html, sid, rn), None
+    except Exception as e:
+        return sid, rn, None, str(e)[:80]
 
 
 def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
@@ -194,21 +219,43 @@ def main() -> None:
     if not date_str:
         date_str = jst_now().strftime("%Y%m%d")  # FIX: GHA UTC 起動時に前日になるバグ回避
 
-    log.info("Date: %s, %d races", date_str, len(races))
+    log.info("Date: %s, %d races (parallel x%d, budget %ds)", date_str, len(races), PARALLEL_WORKERS, WALL_BUDGET_SEC)
 
-    all_results = []
-    for sid, rn in sorted(races):
-        jcd = f"{sid:02d}"
-        url = f"{BASE_URL}?rno={rn}&jcd={jcd}&hd={date_str}"
-        try:
-            html = fetch(url)
-            race_result = parse_raceresult(html, sid, rn)
-            all_results.append(race_result)
-            status = "finished" if race_result["race_technique_number"] else "not yet"
-            log.info("  Stadium %d Race %d: %s", sid, rn, status)
-        except Exception as e:
-            log.warning("  Stadium %d Race %d: %s", sid, rn, e)
-        time.sleep(INTERVAL)
+    # 2026-05-16: 全 run が 30m timeout で cancel される問題を解消するため並列化
+    #   - workers=4 で per-worker rate を抑制し politeness 維持
+    #   - WALL_BUDGET_SEC 経過で残タスク cancel → 部分結果を atomic_write_json
+    #   - 旧 INTERVAL 3s sleep は廃止 (並列ワーカーが自然に分散)
+    work = [(sid, rn, date_str) for sid, rn in sorted(races)]
+    all_results: list[dict] = []
+    fail_count = 0
+    cancelled = 0
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as ex:
+        futures = {ex.submit(_fetch_one_race, w): w for w in work}
+        for fut in as_completed(futures):
+            elapsed = time.monotonic() - started
+            if elapsed > WALL_BUDGET_SEC:
+                cancelled = sum(1 for f in futures if not f.done())
+                for f in futures:
+                    if not f.done():
+                        f.cancel()
+                log.warning("Budget %ds exceeded at %.1fs, cancelling %d remaining", WALL_BUDGET_SEC, elapsed, cancelled)
+                break
+            try:
+                sid, rn, race_result, err = fut.result()
+                if race_result is not None:
+                    all_results.append(race_result)
+                    status = "finished" if race_result["race_technique_number"] else "not yet"
+                    log.info("  Stadium %d Race %d: %s", sid, rn, status)
+                else:
+                    fail_count += 1
+                    log.warning("  Stadium %d Race %d: %s", sid, rn, err)
+            except Exception as e:
+                fail_count += 1
+                log.warning("  worker exception: %s", e)
+    elapsed = time.monotonic() - started
+    log.info("Fetched %d/%d races in %.1fs (fail=%d, cancelled=%d)",
+             len(all_results), len(races), elapsed, fail_count, cancelled)
 
     # P1-B4: 部分失敗を含めた信頼度スコア（finished/total）
     finished_n = len([r for r in all_results if r.get('race_technique_number')])

@@ -1,6 +1,9 @@
 name: Scrape Results
 # 2026-05-07: Cloudflare Worker (boatrace-scrape-trigger) が primary。
 # こちらの cron は Cloudflare 障害時の安全網（30 分間隔）。
+# 2026-05-16: 全 run が 30 分 timeout で cancel される問題対処
+#   scrape_results.py 側で並列 4 + 全体予算 1200s + 部分書込を実装、
+#   workflow timeout を 25 分に下げて scrape 内予算と整合。
 on:
   workflow_dispatch:
   schedule:
@@ -18,7 +21,7 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
