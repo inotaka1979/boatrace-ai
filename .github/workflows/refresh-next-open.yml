@@ -1,13 +1,20 @@
-name: Refresh Next Open (daily quick)
+name: Refresh Next Open + Prerender (frequent)
 
-# scrape-racedata.yml が 30 分 timeout で慢性的に失敗するため、
-# next_open.json の日次更新だけを軽量 workflow として分離。
-# current.json (月次フル fetch 結果) を再利用するため HTTP fetch ゼロ、
-# 数秒で完了する。
+# scrape-racedata.yml が 30 分 timeout で慢性的に失敗していた歴史から、
+# next_open.json の日次更新 + index.html prerender だけを軽量 workflow として分離。
+# OpenAPI programs と current.json (月次フル fetch 結果) を使用、数秒で完了。
+#
+# 2026-05-16: index.html prerender を同梱。scrape-racedata が timeout で固まると
+#   index.html の <!-- PRERENDER:STADIUMS --> が 9 日間古いまま残り、
+#   「場が昨日のまま」のユーザ視認障害になっていた問題への対処。
+#   日替わり境界・場切替頻度を考慮して JST 5 時刻に増やす。
 on:
   schedule:
-    - cron: '15 0 * * *'   # JST 09:15（毎日朝、レース開始前）
-    - cron: '15 12 * * *'  # JST 21:15（夜、翌日反映）
+    - cron: '15 0 * * *'    # JST 09:15（朝、レース開始前）
+    - cron: '0 1 * * *'     # JST 10:00（場切替後）
+    - cron: '0 4 * * *'     # JST 13:00（昼）
+    - cron: '0 8 * * *'     # JST 17:00（夕方）
+    - cron: '15 12 * * *'   # JST 21:15（夜、翌日反映）
   workflow_dispatch:
 
 permissions:
@@ -33,18 +40,20 @@ jobs:
       - run: pip install -r scripts/requirements.txt
       - name: Refresh next_open.json
         run: python scripts/scrape_schedule.py --quick
+      - name: Prerender index.html (PE-11)
+        run: python scripts/prerender_top.py
       - name: Commit & Push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/schedule/next_open.json
+          git add data/schedule/next_open.json index.html
           if git diff --staged --quiet; then
             echo "No changes."
             exit 0
           fi
-          git commit -m "next_open: refresh ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git commit -m "next_open + prerender: refresh ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           for i in 1 2 3; do
             if git push "$REMOTE" HEAD:main; then
