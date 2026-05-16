@@ -5438,8 +5438,20 @@ function _applyLiveDataMerge(liveData){
     }
     if(lr.finished&&lr.result&&lr.result.places&&resultData){
       if(!resultData[sid]) resultData[sid]={};
-      if(!resultData[sid][rn]||!resultData[sid][rn].isFinished){
+      // 2026-05-16: 既存 resultData に「前日 race_date 付き finished entry」が
+      //   居る場合 (Open API fallback が前日結果を返したケース) でも、本日の
+      //   live previews 結果で **上書きする**。既存 race_date が今日でなければ
+      //   stale と判定し overwrite。これが無いと _backfillTodayPredictions が
+      //   `rdate !== today` で全 skip し、本日 history が 0 件のままになる。
+      var _existing = resultData[sid][rn];
+      var _existingDate = (_existing && _existing.race_date || '').replace(/-/g,'');
+      var _todayNoDash = todayDate.replace(/-/g,'');
+      var _shouldOverwrite = !_existing
+        || !_existing.isFinished
+        || (_existingDate && _existingDate !== _todayNoDash);
+      if(_shouldOverwrite){
         resultData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,
+          race_date:todayDate,  // ← backfill が rdate===today を確認できるよう明示
           race_technique_number:lr.result.technique||null,isFinished:true,
           results:lr.result.places.map(function(p){return{place:p.place,racer_boat_number:p.boat,racer_place_number:p.place}}),
           refund:lr.result.payouts||{}};
