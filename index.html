@@ -58,11 +58,11 @@
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
 <<<<<<< HEAD
-<link rel="preload" href="assets/app-critical.min.js?v=a1a97d52" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=a1a97d52" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=7eda8872" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=7eda8872" as="script">
 =======
-<link rel="preload" href="assets/app-critical.min.js?v=25a25cf9" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=25a25cf9" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=7eda8872" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=7eda8872" as="script">
 >>>>>>> fa4b9a6 (fix(stats): clearHistory 後の画面再描画漏れを修正 (B14) — location.reload() で完全リフレッシュ)
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
@@ -726,11 +726,11 @@ button.action-btn:active{background:#F0F0F0}
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
 <<<<<<< HEAD
-<script src="assets/app-critical.min.js?v=a1a97d52" defer></script>
-<script src="assets/app-rest.min.js?v=a1a97d52" defer></script>
+<script src="assets/app-critical.min.js?v=7eda8872" defer></script>
+<script src="assets/app-rest.min.js?v=7eda8872" defer></script>
 =======
-<script src="assets/app-critical.min.js?v=25a25cf9" defer></script>
-<script src="assets/app-rest.min.js?v=25a25cf9" defer></script>
+<script src="assets/app-critical.min.js?v=7eda8872" defer></script>
+<script src="assets/app-rest.min.js?v=7eda8872" defer></script>
 >>>>>>> fa4b9a6 (fix(stats): clearHistory 後の画面再描画漏れを修正 (B14) — location.reload() で完全リフレッシュ)
 </body>
 </html>

@@ -25,7 +25,7 @@
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
 <<<<<<< HEAD
-const VERSION = 'br-oracle-a1a97d52';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
+const VERSION = 'br-oracle-7eda8872';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 =======
 const VERSION = 'br-oracle-25a25cf9';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 >>>>>>> fa4b9a6 (fix(stats): clearHistory 後の画面再描画漏れを修正 (B14) — location.reload() で完全リフレッシュ)
