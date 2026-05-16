@@ -2,11 +2,8 @@ name: Scrape Tide
 # 2026-05-07: Pi 撤去で新設。1 日 1 回 JST 08:00 に潮汐データを取得。
 # JMA (気象庁) の海水場潮汐情報を 7 場分まとめて data/tide/today.json に書き出す。
 on:
+  # 2026-05-16 Path B: scrape-all.yml に統合、本ワークフローは緊急時の手動 dispatch のみ
   workflow_dispatch:
-  schedule:
-    - cron: '0 23 * * *'   # JST 08:00 (= UTC 23:00 前日)
-
-# PA-4: 既定権限を最小化
 permissions:
   contents: read
 

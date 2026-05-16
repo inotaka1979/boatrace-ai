@@ -1,0 +1,171 @@
+name: Data Freshness Monitor (unified)
+
+# Path B (2026-05-16): watchdog.yml + watchdog-autoclose.yml を 1 本に統合。
+# 単一 cron pass で「stale なら issue 起票 / fresh なら open issue を close」の
+# 両方向を完結させ、オフセット cron による race window を排除する。
+#
+# 設計原則 (旧 watchdog.yml から継承):
+#   - 観測はデータ層 (Pages 配信) に置く、ジョブ層に置かない
+#   - 重複 Issue 抑止: 同 label の open issue 既存ならスキップ
+#   - fail-closed: gh issue list 失敗時は create も close もしない (spam 防止)
+
+on:
+  schedule:
+    # JST 09:00-21:55 (race hours)。深夜の false positive 回避。
+    - cron: '*/5 0-12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: data-freshness-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: odds
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/odds/today.json
+            max_age_min: 30
+          - name: previews
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/previews/today.json
+            max_age_min: 60
+          - name: results
+            url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
+            max_age_min: 360
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Fetch + check freshness
+        id: check
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/monitor
+          OUT="/tmp/monitor/${{ matrix.target.name }}.json"
+          if ! curl -sS --fail --max-time 5 --retry 4 --retry-delay 2 \
+               -H "Cache-Control: no-cache" \
+               "${{ matrix.target.url }}" -o "$OUT"; then
+            echo "result=fetch_failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          OUTPUT=$(python3 scripts/check_freshness.py \
+                     "$OUT" \
+                     --max-age-min "${{ matrix.target.max_age_min }}" \
+                     --strict 2>&1)
+          RC=$?
+          set -e
+          {
+            echo "msg<<__EOF__"
+            echo "$OUTPUT"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$RC" -eq 0 ]; then
+            echo "result=fresh" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=stale" >> "$GITHUB_OUTPUT"
+          fi
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+
+      # Stale 方向: issue を起票 (重複抑止 + fail-closed)
+      - name: Open issue if stale
+        if: steps.check.outputs.result == 'stale'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target.name }}
+          MAX_AGE_MIN: ${{ matrix.target.max_age_min }}
+          MSG: ${{ steps.check.outputs.msg }}
+        run: |
+          set -euo pipefail
+          LABEL="stale-data:${TARGET}"
+          if ! EXISTING=$(gh issue list \
+                            --label "$LABEL" \
+                            --state open \
+                            --limit 1 \
+                            --json number \
+                            --repo "${GITHUB_REPOSITORY}" 2>&1); then
+            echo "::warning::gh issue list failed: $EXISTING"
+            exit 0
+          fi
+          COUNT=$(echo "$EXISTING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::notice::open stale issue already exists for $TARGET, skipping"
+            exit 0
+          fi
+          NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          TITLE="[STALE] ${TARGET} データ古い (${NOW_JST})"
+          BODY=$(cat <<EOF
+          @inotaka1979 ← データ鮮度 SLO 違反
+
+          - target: \`${TARGET}\`
+          - threshold: ${MAX_AGE_MIN} min
+          - detected: ${NOW_JST}
+
+          ### log
+          \`\`\`
+          ${MSG}
+          \`\`\`
+
+          ### 想定原因
+          1. scrape-all workflow が silent fail → Actions タブを確認
+          2. 外部 API (boatraceopenapi.github.io) 障害 → 他 target も同時 stale か確認
+          3. auto-rollback.yml が古い commit に戻していないか確認
+
+          ### 自動復旧
+          - 鮮度が回復すると本 Issue は同 workflow (data-freshness-monitor) で自動 close されます
+          EOF
+          )
+          gh issue create \
+            --title "$TITLE" \
+            --label "$LABEL" \
+            --label "stale-data" \
+            --assignee inotaka1979 \
+            --body "$BODY" \
+            --repo "${GITHUB_REPOSITORY}"
+
+      # Fresh 方向: 既存 open issue があれば autoclose
+      - name: Close stale issues if recovered
+        if: steps.check.outputs.result == 'fresh'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target.name }}
+          MSG: ${{ steps.check.outputs.msg }}
+        run: |
+          set -uo pipefail
+          LABEL="stale-data:${TARGET}"
+          if ! ISSUES=$(gh issue list \
+                          --label "$LABEL" \
+                          --state open \
+                          --limit 5 \
+                          --json number \
+                          --repo "${GITHUB_REPOSITORY}" 2>&1); then
+            echo "::warning::gh issue list failed: $ISSUES"
+            exit 0
+          fi
+          NUMS=$(echo "$ISSUES" | python3 -c "import sys,json; print(' '.join(str(x['number']) for x in json.load(sys.stdin)))")
+          if [ -z "$NUMS" ]; then
+            exit 0
+          fi
+          NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          for N in $NUMS; do
+            echo "::notice::closing #$N ($TARGET recovered)"
+            COMMENT="@inotaka1979 ✅ データ鮮度が回復しました (${NOW_JST})。
+            \`\`\`
+            ${MSG}
+            \`\`\`
+            data-freshness-monitor により自動 close。"
+            gh issue comment "$N" --body "$COMMENT" --repo "${GITHUB_REPOSITORY}" || true
+            gh issue close "$N" --reason completed --repo "${GITHUB_REPOSITORY}" || true
+          done

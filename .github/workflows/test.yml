@@ -26,6 +26,13 @@ jobs:
           node-version: '20'
       - name: Run all tests
         run: bash scripts/tests/run_all.sh
+      # Path B (2026-05-16): code-split 静的アナライザを CI ゲート化。
+      # critical bundle が rest bundle の関数を typeof guard 無しに呼ぶと
+      # PJ Phase の iOS PWA silent halt が再発する。build --check で違反を CI で必ず検出。
+      - name: Install build deps
+        run: cd build && npm install --no-audit --no-fund
+      - name: Code-split dependency lint (PJ Phase regression guard)
+        run: cd build && node build.mjs --check
 
   # P1-Q5: Python 型チェックゲート（PC-4 で型ヒント追加済み、CI で検証する）
   typecheck:

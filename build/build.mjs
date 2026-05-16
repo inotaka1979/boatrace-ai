@@ -303,28 +303,51 @@ async function main() {
     }
   } catch(_){}
 
-  // FIX: SW VERSION と index.html の `?v=N` クエリの sync チェック。
-  //   両者が乖離すると、SW v(N+1) が install されても script タグは古い `?v=N` を
-  //   要求するため HTTP cache の旧バンドルが serve され続ける。
+  // Path B (2026-05-16): SW VERSION と index.html の `?v=` を **自動同期**。
+  //   旧運用: 手動で sw.js + index.html 4 箇所を bump → 漏れると stale 化
+  //   新運用: ビルド成果物 (app-critical.min.js + app-rest.min.js) の sha256 短縮を
+  //          VERSION 兼 `?v=` に注入。コンテンツが変われば VERSION も必ず変わる。
   try {
+    const criticalBuf = await readFile(resolve(ROOT, 'assets/app-critical.min.js'));
+    const restBuf = await readFile(resolve(ROOT, 'assets/app-rest.min.js'));
+    const combined = Buffer.concat([criticalBuf, restBuf]);
+    const newVer = createHash('sha256').update(combined).digest('hex').slice(0, 8);
+
+    // sw.js の VERSION を上書き
     const swSrc = await readFile(swPath, 'utf8');
-    const htmlSrc = await readFile(indexPath, 'utf8');
-    const swVerMatch = swSrc.match(/VERSION\s*=\s*['"]br-oracle-v(\d+)['"]/);
-    const htmlVers = [...htmlSrc.matchAll(/assets\/app[\w-]*\.min\.js\?v=(\d+)/g)].map(m => m[1]);
-    if (swVerMatch && htmlVers.length) {
-      const swVer = swVerMatch[1];
-      const mismatched = htmlVers.filter(v => v !== swVer);
-      if (mismatched.length) {
-        console.error(`[version] SW VERSION v${swVer} と index.html ?v=${[...new Set(htmlVers)].join(',')} が不整合`);
-        console.error('  対処: sw.js の VERSION と index.html の ?v=N (preload + script src 計 4 箇所) を揃える');
+    const swNew = swSrc.replace(
+      /(const VERSION\s*=\s*['"])br-oracle-[\w]+(['"])/,
+      `$1br-oracle-${newVer}$2`
+    );
+    if (swNew !== swSrc) {
+      if (CHECK_MODE) {
+        console.error('[version FAIL] sw.js VERSION 自動同期が必要 — ローカルで cd build && node build.mjs を実行してから commit してください');
         process.exit(1);
       }
-      console.log(`[version OK] SW v${swVer} ↔ index.html ?v=${swVer}`);
+      await writeFile(swPath, swNew, 'utf8');
+      console.log(`[write] sw.js VERSION → br-oracle-${newVer}`);
     } else {
-      console.warn('[version] SW VERSION or index.html ?v= 抽出失敗 — 手動確認');
+      console.log(`[version OK] sw.js VERSION = br-oracle-${newVer}`);
+    }
+
+    // index.html の ?v=... (preload + script src 計 4 箇所) を上書き
+    const htmlSrc = await readFile(indexPath, 'utf8');
+    const htmlNew = htmlSrc.replace(
+      /(assets\/app[\w-]*\.min\.js\?v=)[\w]+/g,
+      `$1${newVer}`
+    );
+    if (htmlNew !== htmlSrc) {
+      if (CHECK_MODE) {
+        console.error('[version FAIL] index.html ?v= 自動同期が必要 — ローカルで cd build && node build.mjs を実行してから commit してください');
+        process.exit(1);
+      }
+      await writeFile(indexPath, htmlNew, 'utf8');
+      console.log(`[write] index.html ?v=${newVer}`);
+    } else {
+      console.log(`[version OK] index.html ?v=${newVer}`);
     }
   } catch (e) {
-    console.warn('[version] check skipped:', e.message);
+    console.warn('[version] auto-sync skipped:', e.message);
   }
 
   // 3) Hash report

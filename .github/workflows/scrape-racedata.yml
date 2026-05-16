@@ -1,10 +1,10 @@
 name: Scrape Race Data
 on:
-  schedule:
-    - cron: '30 0 * * *'   # JST 09:30（レース開始前）
-    - cron: '0 3 * * *'    # JST 12:00（昼更新）
-    - cron: '0 0 1 * *'    # 毎月1日（スケジュール取得）
+  # 2026-05-16 Path B: scrape-all.yml に統合、本ワークフローは緊急時の手動 dispatch のみ
   workflow_dispatch:
+  schedule:
+    # 月次フル fetch のみ残す (scrape_schedule.py を呼ぶため)
+    - cron: '0 0 1 * *'    # 毎月1日 JST 09:00
 
 # PA-4: 既定権限を最小化
 permissions:

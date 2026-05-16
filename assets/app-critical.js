@@ -4,6 +4,39 @@
 // rest bundle は別 <script defer> で並列 load される (index.html 参照)
 
 'use strict';   // PC-5: strict モードで暗黙のグローバル代入 / 8進リテラル / with 等を禁止
+
+// Path B Kill Switch (2026-05-16): URL に ?reset=1 が付いていたら
+//   SW unregister + caches.delete + localStorage clear (?reset=full) を実行し
+//   クエリ無し URL に redirect する。これによりユーザが「アプリをリセット」
+//   リンクを踏むだけで JS halt 状態からも自己復旧できる。
+(function killSwitchBoot(){
+  try {
+    var p = (typeof location !== 'undefined') ? new URLSearchParams(location.search) : null;
+    if (!p || !p.has('reset')) return;
+    var fullReset = (p.get('reset') === 'full');
+    var jobs = [];
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(regs){
+        return Promise.all(regs.map(function(r){ try { return r.unregister(); } catch(_){ return null; } }));
+      }).catch(function(){}));
+    }
+    if (typeof caches !== 'undefined' && caches.keys) {
+      jobs.push(caches.keys().then(function(keys){
+        return Promise.all(keys.map(function(k){ try { return caches.delete(k); } catch(_){ return null; } }));
+      }).catch(function(){}));
+    }
+    if (fullReset) {
+      try { localStorage.clear(); } catch(_){}
+      try { sessionStorage.clear(); } catch(_){}
+    }
+    Promise.all(jobs).finally(function(){
+      // クエリ除去して再読込
+      var clean = location.pathname + location.hash;
+      location.replace(clean);
+    });
+  } catch(_){}
+})();
+
 // ===============================================
 // CONSTANTS (PRESERVED)
 // ===============================================

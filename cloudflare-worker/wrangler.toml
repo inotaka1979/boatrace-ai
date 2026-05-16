@@ -1,15 +1,14 @@
 # wrangler.toml — Cloudflare Worker 設定 (GitHub Actions 自動デプロイ用)
 #
-# 既存の Worker (boatrace-scrape-trigger) と同じ name を指定し、
-# GitHub Actions の wrangler-action からこの設定で deploy する。
-#
-# 重要: secrets (GITHUB_TOKEN / TRIGGER_SECRET) は wrangler.toml では
-#       管理しません。Cloudflare ダッシュボードで設定したものが保持されます。
+# 2026-05-16 Path B 簡素化:
+#   - scheduled() を撤去し GITHUB_TOKEN 依存を根絶
+#   - cron トリガも不要 (scrape は GHA cron が単独で担当)
+#   - Worker は /odds-proxy + /health の HTTP プロキシのみ
 
 name = "boatrace-scrape-trigger"
 main = "worker.js"
 compatibility_date = "2024-12-01"
 
-# 3 分毎に scheduled() が走る (既存設定と同じ)
-[triggers]
-crons = ["*/3 * * * *"]
+# cron 撤去 (Path B): scrape スケジュールは GHA cron で完結
+# [triggers]
+# crons = ["*/3 * * * *"]

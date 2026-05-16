@@ -1,0 +1,120 @@
+name: Auto Rollback on Stale Data
+
+# Path B (2026-05-16): silent failure 防止の最後の砦。
+# 30 分ごとに data/*/today.json の updated_at を check し、
+# 「2 時間以上 stale かつ 4 時間前は fresh だった」場合 HEAD を revert。
+# これにより stale データが本番に長時間 live し続ける事故を自動修復。
+#
+# 動作:
+#   - data/odds/today.json と data/previews/today.json が共に stale (>2h) で
+#   - HEAD~10 などの過去 commit では fresh (<2h ago) だった場合
+#   - HEAD を git revert する (push)
+#   - watchdog がさらに古いと判断したら Issue を作成
+
+on:
+  workflow_dispatch:
+  schedule:
+    # JST 08:00–22:55 を 30 分間隔
+    - cron: '*/30 23,0-13 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-rollback
+  cancel-in-progress: false   # rollback 完走させる
+
+jobs:
+  rollback-if-stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 30   # rollback 候補を探すため過去 commit を持つ
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Check freshness and decide rollback
+        id: decide
+        run: |
+          set -e
+          python3 <<'PY'
+          import datetime, json, os, subprocess
+
+          UTC = datetime.timezone.utc
+
+          def age_min(path):
+              if not os.path.exists(path):
+                  return None
+              try:
+                  d = json.load(open(path))
+                  ts = d.get('updated_at')
+                  if not ts:
+                      return None
+                  t = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                  now = datetime.datetime.now(UTC)
+                  return (now - t).total_seconds() / 60.0
+              except Exception as e:
+                  print(f'  parse err {path}: {e}')
+                  return None
+
+          targets = ['data/odds/today.json', 'data/previews/today.json']
+          ages = {p: age_min(p) for p in targets}
+          for p, a in ages.items():
+              print(f'  {p}: age={a:.1f}min' if a is not None else f'  {p}: missing')
+
+          all_stale = all(a is not None and a > 120 for a in ages.values())
+          if not all_stale:
+              print('::notice::data still fresh enough, no rollback needed')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('rollback=false\n')
+              raise SystemExit(0)
+
+          # 直近 10 commit を遡って、当時 fresh だった revision を探す
+          # 簡易判定: HEAD~N をチェックアウトせず、git show で updated_at を抽出
+          for n in range(1, 11):
+              try:
+                  out = subprocess.run(
+                      ['git', 'show', f'HEAD~{n}:data/odds/today.json'],
+                      capture_output=True, text=True, check=True
+                  ).stdout
+                  d = json.loads(out)
+                  ts = d.get('updated_at')
+                  if not ts:
+                      continue
+                  t = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                  now = datetime.datetime.now(UTC)
+                  past_age = (now - t).total_seconds() / 60.0
+                  # 4 時間以内に fresh だった commit が見つかれば、それ以降が悪い
+                  if past_age < 240:
+                      print(f'::warning::HEAD~{n} was fresh ({past_age:.1f}min). Will revert {n} commit(s).')
+                      with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                          f.write('rollback=true\n')
+                          f.write(f'revert_count={n}\n')
+                      raise SystemExit(0)
+              except subprocess.CalledProcessError:
+                  break
+              except (json.JSONDecodeError, ValueError):
+                  continue
+          print('::notice::no recent fresh commit found within 10 — no rollback')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('rollback=false\n')
+          PY
+      - name: Execute revert
+        if: steps.decide.outputs.rollback == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVERT_COUNT: ${{ steps.decide.outputs.revert_count }}
+        run: |
+          set -euo pipefail
+          git config user.name "Auto-Rollback"
+          git config user.email "actions@users.noreply.github.com"
+          # 直近 N commit を一括 revert (mainline = HEAD)
+          git revert --no-edit -n HEAD~${REVERT_COUNT}..HEAD
+          git commit -m "auto-rollback: revert last ${REVERT_COUNT} commit(s) due to stale data $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git push "$REMOTE" HEAD:main
