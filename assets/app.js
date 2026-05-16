@@ -4798,10 +4798,19 @@ function _pickAnaCandidates(marks, oddsMap, opts){
   var minEV = o.minEV != null ? o.minEV : 1.0;
   var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
   var topN = o.topN != null ? o.topN : 3;
+  // B13 (2026-05-16): 推奨買い目との重複を排除するための除外 set。
+  //   ユーザ報告「推奨と穴予想が同じになる」現象は、prob×odds が両方とも高い
+  //   combo (例 1-2-3 odds=35) が両方のリストに出ることが原因。
+  //   exclude に含まれる combo は primary/fallback どちらにも入れない。
+  var excludeSet = {};
+  if(Array.isArray(o.excludeCombos)){
+    o.excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
+  }
   var dist = buildTrifectaProbDist(marks);
   var primary = [], loose = [];
   for(var combo in dist){
     if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
+    if(excludeSet[combo]) continue;   // B13: 推奨と重複したら穴からは除外
     var odds = oddsMap[combo];
     if(odds == null) continue;
     var prob = dist[combo];
@@ -6861,14 +6870,30 @@ function openRace(sid,rn){
     //   primary: オッズ30倍+ かつ EV>=1.0（高 EV 推奨）
     //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN（EV<1 でも提示）
     //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
+    //   B13 (2026-05-16): 推奨買い目に含まれる combo は穴からは除外し重複表示を防止
     var anaSrc = activePred || progPred;
     if(anaSrc && anaSrc.marks){
       var anaTopN = parseInt(settings.betCountAna)||3;
       if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
       var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length>0);
+      // B13: 推奨買い目の combo 一覧を抽出 (excludeCombos に渡す)
+      var _recommendedCombos = [];
+      if(activePred && Array.isArray(activePred.trifecta)){
+        _recommendedCombos = activePred.trifecta.map(function(t){return t.combo});
+      } else if(progPred && progPred.marks){
+        // 番組予想 fallback: 上で組み立てた progBets から取得
+        try {
+          var _pm = (typeof progBets !== 'undefined' && progBets && progBets.trifecta)
+                  ? progBets.trifecta : [];
+          _recommendedCombos = _pm.map(function(t){return t.combo});
+        } catch(_){ _recommendedCombos = []; }
+      }
       var anaHtmlBlock = '';
       if(hasAnaOdds){
-        var anaRes = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN});
+        var anaRes = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {
+          minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN,
+          excludeCombos: _recommendedCombos,   // B13
+        });
         var picks = anaRes.primary.length>0 ? anaRes.primary : anaRes.fallback;
         var isPrimary = anaRes.primary.length>0;
         if(picks.length > 0){
@@ -6890,12 +6915,16 @@ function openRace(sid,rn){
         }
       } else if(anaSrc.marks.length>=3){
         // オッズ未取得: AI 確率分布の中で「1コース絡み以外」の上位 N を 穴候補として提示
+        // B13: 推奨買い目との重複を除外
         var dist = buildTrifectaProbDist(anaSrc.marks);
         var top1Boat = anaSrc.marks[0].boat;
+        var _recoSet = {};
+        _recommendedCombos.forEach(function(c){ if(c) _recoSet[String(c)] = true; });
         var anaCands = [];
         for(var k in dist){
           if(!Object.prototype.hasOwnProperty.call(dist,k)) continue;
           if(k.split('-')[0] === String(top1Boat)) continue; // 1着が1番人気以外
+          if(_recoSet[k]) continue;   // B13: 推奨と重複する combo は除外
           anaCands.push({combo:k, prob:dist[k]});
         }
         anaCands.sort(function(a,b){return b.prob-a.prob});
