@@ -113,8 +113,15 @@ jobs:
           set -euo pipefail
           git config user.name "Auto-Rollback"
           git config user.email "actions@users.noreply.github.com"
-          # 直近 N commit を一括 revert (mainline = HEAD)
-          git revert --no-edit -n HEAD~${REVERT_COUNT}..HEAD
-          git commit -m "auto-rollback: revert last ${REVERT_COUNT} commit(s) due to stale data $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # 2026-05-16: 旧版は `git revert HEAD~N..HEAD` で source code 含む
+          #   全変更を巻き戻し、PR で merge された fix も誤って revert する
+          #   リスクがあった。data/ 配下のファイルだけを過去 revision に戻し、
+          #   それ以外の commit (workflow / index.html / scripts) は touch しない。
+          git checkout "HEAD~${REVERT_COUNT}" -- data/
+          if git diff --staged --quiet; then
+            echo "::notice::no data/ changes to roll back"
+            exit 0
+          fi
+          git commit -m "auto-rollback: restore data/ to HEAD~${REVERT_COUNT} due to stale data $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           git push "$REMOTE" HEAD:main

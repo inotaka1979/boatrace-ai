@@ -106,8 +106,12 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         tasks.append(("odds", _scrape_odds))
         tasks.append(("previews", _scrape_previews))
 
-    # results: race hours の 30 分境界 ± 2 分（gap を許容）
-    if 10 <= h <= 22 and (m < 5 or 28 <= m <= 32):
+    # results: race hours の 30 分境界周辺（gap を広く許容）
+    # 2026-05-16: 旧条件 (m<5 or 28<=m<=32) は GHA cron 遅延 5-15min と相性悪く、
+    #   実質 1 日 1-2 回しか走らない (data/results/today.json が 2026-05-11 で
+    #   5 日間停止していた)。窓を広げて 1 日 10+ 回に。concurrency:scrape-all で
+    #   並列実行は防止されるため頻度を上げても safe。
+    if 10 <= h <= 22 and (m < 10 or 25 <= m <= 35):
         tasks.append(("results", _scrape_results))
 
     # racedata + schedule: JST 09:30, 12:00 のみ
