@@ -2792,6 +2792,23 @@ setManagedInterval(async function(){
         _noteUpdatedAt(pd.updated_at);
       }
     }catch(e){}
+    // B12 (2026-05-16): 日中に新たに終了したレースを history に backfill。
+    //   旧仕様は _backfillTodayPredictions を初回 load + 「更新」ボタン押下時のみ
+    //   実行していたため、ユーザがアプリを開きっぱなしだと成績トラッカーが
+    //   「本日 判定済 = 0」または「昨日のまま」になる問題があった。
+    //   90秒毎の auto refresh で新規 finished race を毎回 backfill し、
+    //   成績タブが active なら即時再描画する。
+    if(typeof _backfillTodayPredictions === 'function' && programData && resultData){
+      try {
+        await _backfillTodayPredictions();
+        if(typeof updateHistoryWithResults === 'function') updateHistoryWithResults();
+        var statsPage = document.getElementById('pageStats');
+        if(statsPage && statsPage.classList.contains('active') && typeof renderStats === 'function'){
+          renderStats();
+          if(typeof renderStatsChart === 'function') renderStatsChart();
+        }
+      } catch(e){ console.warn('auto-backfill error:', e); }
+    }
     _renderFreshness();
   }catch(e){console.warn('Auto refresh error:',e)}
 }, 90000);   // F2: 90 秒
