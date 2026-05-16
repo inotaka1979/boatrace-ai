@@ -181,7 +181,27 @@ function safeParse(key, fallback) {
   }
 }
 
+// Epic 28h: 大型キー (racerDB / stadiumDB / pairwiseDB / motorStats / exhibitionStats) は
+//   safeSet 内で IDB に直接ルーティングする。
+//   従来は LS に書いた後、起動時 idbMigrateFromLS が「IDB に既存 → LS 重複」を毎回削除し
+//   diag に `deduped=3` を残していた (~745KB を毎セッション再生成する loop)。
+//   これらは idb_store.js の IDB_KEYS_LARGE と同期させること。
+const _IDB_KEYS_LARGE_SET = {
+  boatrace_racerDB: 1,
+  boatrace_stadiumDB: 1,
+  boatrace_pairwiseDB: 1,
+  boatrace_motorStats: 1,
+  boatrace_exhibitionStats: 1,
+};
+
 function safeSet(key, value) {
+  // Epic 28h: 大型キーは IDB へ。IDB 未対応環境では下の LS 経路にフォールバック。
+  if (_IDB_KEYS_LARGE_SET[key] && typeof globalThis.idbPut === 'function') {
+    try { globalThis.idbPut(key, value); } catch (_) {}
+    // 旧 LS コピーが残っていれば除去（migration とのレース防止 / 再起動後 deduped を発生させない）
+    try { localStorage.removeItem(key); } catch (_) {}
+    return true;
+  }
   const s = (typeof value === 'string') ? value : JSON.stringify(value);
   try {
     localStorage.setItem(key, s);
