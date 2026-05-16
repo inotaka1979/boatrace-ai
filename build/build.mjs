@@ -190,7 +190,7 @@ async function main() {
   //   Epic 28x で診断ロジック / IDB migration polling / TOP10 等の保険コード追加で +1KB
   //   今後 i18n テーブルを別 module bundle にして lazy load する余地あり。
   const BUDGETS = [
-    { path: 'assets/app-critical.min.js', max: 80000,  level: 'fail' },
+    { path: 'assets/app-critical.min.js', max: 85000,  level: 'fail' },
     { path: 'assets/app-rest.min.js',     max: 125000, level: 'warn' },
     { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
   ];

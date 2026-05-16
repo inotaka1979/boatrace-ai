@@ -376,6 +376,16 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
 // P0-6: スキーマバージョン migration を最優先で実行（safeParse 利用前）
 try { if(typeof _runMigrations === 'function') _runMigrations(); } catch(_){}
 
+// Path B B11 (2026-05-16): ストレージ自動クリーンアップ強化。
+//   旧 Epic 28 は bc_* / cache_* のみ削除し、boatrace_history や racerDB の
+//   肥大は手動 (緊急クリーンアップボタン) でしか解消できず、ユーザが「いっぱい」
+//   状態で放置するケースが多発。本ブロックでは:
+//     1. >3MB で bc_* / cache_* / corrupt / diag 削除 (旧 Epic 28 範囲)
+//     2. >3.5MB で history を直近 500 件に自動 trim (旧仕様 1000 から削減)
+//     3. >4MB で racerDB を直近 30 日アクティブ選手のみに圧縮
+//     4. >4.5MB で stadiumDB も同様
+//   いずれも保持優先順位: 設定 > 学習重み > 履歴 > DB > キャッシュ
+//   完了後 boatrace_errors に diag_storage_autoclean を残す。
 // Epic 28: localStorage 緊急クリーンアップ — 起動時に容量超過チェック
 //   2MB 超で全 bc_* を強制削除（時間 cutoff 無関係）
 //   旧仕様 (Epic 28a 4MB + 10分 expire) は programs (~1MB) が新規 fetch 直後でも
@@ -433,6 +443,96 @@ try {
       msg: 'cleanup: bc_*='+_bcRm+' cache_*='+_cacheRm+' corrupt='+_corrK.length,
       bc: _bcRm, cache_: _cacheRm, corrupt: _corrK.length,
     }); } catch(_){}
+  }
+
+  // Path B B11: 階層的自動クリーンアップ (bc_*/cache_* 削除後にまだ大きい場合)
+  // localStorage 再計測
+  var _lsAfter = 0;
+  for(var _k2 in localStorage) _lsAfter += ((localStorage.getItem(_k2)||'').length * 2);
+  var _trimmed = { history: 0, racer: 0, stadium: 0 };
+
+  // Tier 2: >3.5MB なら history を 500 件に trim
+  if(_lsAfter > 3.5 * 1024 * 1024){
+    try {
+      var _hraw = localStorage.getItem('boatrace_history');
+      if(_hraw){
+        var _h = JSON.parse(_hraw);
+        if(Array.isArray(_h) && _h.length > 500){
+          _trimmed.history = _h.length - 500;
+          localStorage.setItem('boatrace_history', JSON.stringify(_h.slice(-500)));
+        }
+      }
+    } catch(_){}
+    _lsAfter = 0;
+    for(var _k3 in localStorage) _lsAfter += ((localStorage.getItem(_k3)||'').length * 2);
+  }
+
+  // Tier 3: >4MB なら racerDB を 30 日以内にアクティブな選手のみに圧縮
+  if(_lsAfter > 4 * 1024 * 1024){
+    try {
+      var _rraw = localStorage.getItem('boatrace_racerDB');
+      if(_rraw){
+        var _rdb = JSON.parse(_rraw);
+        var _cutoff = new Date(Date.now()-30*86400000);
+        var _cutoffStr = _cutoff.getFullYear()+('0'+(_cutoff.getMonth()+1)).slice(-2)+('0'+_cutoff.getDate()).slice(-2);
+        var _kept = {};
+        for(var _rid in _rdb){
+          if((_rdb[_rid].lastUpdated||'') >= _cutoffStr){ _kept[_rid] = _rdb[_rid]; }
+          else { _trimmed.racer++; }
+        }
+        localStorage.setItem('boatrace_racerDB', JSON.stringify(_kept));
+      }
+    } catch(_){}
+    _lsAfter = 0;
+    for(var _k4 in localStorage) _lsAfter += ((localStorage.getItem(_k4)||'').length * 2);
+  }
+
+  // Tier 4: >4.5MB なら stadiumDB も同様に
+  if(_lsAfter > 4.5 * 1024 * 1024){
+    try {
+      var _sraw = localStorage.getItem('boatrace_stadiumDB');
+      if(_sraw){
+        var _sdb = JSON.parse(_sraw);
+        var _scutoff = new Date(Date.now()-30*86400000);
+        var _scutoffStr = _scutoff.getFullYear()+('0'+(_scutoff.getMonth()+1)).slice(-2)+('0'+_scutoff.getDate()).slice(-2);
+        var _skept = {};
+        for(var _sid2 in _sdb){
+          if((_sdb[_sid2].lastUpdated||'') >= _scutoffStr){ _skept[_sid2] = _sdb[_sid2]; }
+          else { _trimmed.stadium++; }
+        }
+        localStorage.setItem('boatrace_stadiumDB', JSON.stringify(_skept));
+      }
+    } catch(_){}
+  }
+
+  if(_trimmed.history > 0 || _trimmed.racer > 0 || _trimmed.stadium > 0){
+    console.warn('[storage] auto-trim done: history='+_trimmed.history+' racer='+_trimmed.racer+' stadium='+_trimmed.stadium);
+    try { if(typeof reportError === 'function') reportError({
+      type: 'diag_storage_autoclean',
+      msg: 'auto-trim: history='+_trimmed.history+' racer='+_trimmed.racer+' stadium='+_trimmed.stadium,
+      trimmed: _trimmed,
+    }); } catch(_){}
+    // ユーザに toast (loadSettings が後で実行されるので、保存時点で済)
+    try {
+      var _ts = document.createElement('div');
+      _ts.id = 'storage_autoclean_toast';
+      _ts.setAttribute('role', 'status');
+      _ts.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1976D2;color:#fff;padding:10px 16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);z-index:9999;font-size:12px;max-width:90%;text-align:center';
+      var _msg = 'ストレージ自動クリーンアップ:';
+      if(_trimmed.history > 0) _msg += ' 古い履歴 '+_trimmed.history+' 件';
+      if(_trimmed.racer > 0) _msg += ' / 選手 '+_trimmed.racer+' 件';
+      if(_trimmed.stadium > 0) _msg += ' / 場 '+_trimmed.stadium+' 件';
+      _msg += ' を削除しました';
+      _ts.textContent = _msg;
+      // DOM 構築前に呼ばれるので、DOMContentLoaded を待ってから挿入
+      var _show = function(){
+        if(!document.body) return setTimeout(_show, 100);
+        document.body.appendChild(_ts);
+        setTimeout(function(){ try { _ts.remove(); } catch(_){} }, 6000);
+      };
+      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _show, {once:true});
+      else _show();
+    } catch(_){}
   }
 } catch(_){ /* localStorage 全体不可なら諦め */ }
 
