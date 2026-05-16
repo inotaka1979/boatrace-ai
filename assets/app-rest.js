@@ -4288,9 +4288,25 @@ function _confirmDestructive(actionLabel){
 }
 
 function clearHistory(){
+  // B14 (2026-05-16): 旧仕様は LS 削除のみで再描画せず、画面に古い render が残り
+  //   「削除されない」とユーザが誤認していた。rebuildDB と同様に location.reload()
+  //   で完全リフレッシュ。また migration flag / corrupt backup も同時掃除し、
+  //   完全クリーン状態から再起動する。
   if(_confirmDestructive('成績履歴を全て削除しますか?')){
-    localStorage.removeItem('boatrace_history');
-    alert('履歴を削除しました');
+    try { localStorage.removeItem('boatrace_history'); } catch(_){}
+    // 関連 key も掃除
+    try { localStorage.removeItem('boatrace_history_migrated_v21'); } catch(_){}
+    try {
+      // corrupt backup の掃除
+      var _toRm = [];
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf('boatrace_history__corrupt_') >= 0) _toRm.push(k);
+      }
+      _toRm.forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+    } catch(_){}
+    alert('履歴を削除しました。画面を再読込します。');
+    location.reload();
   }
 }
 
