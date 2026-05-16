@@ -434,19 +434,25 @@ try {
         top10: _top10.map(function(it){ return { key: it.k, kb: parseFloat((it.b/1024).toFixed(1)) }; }),
       });
     } catch(_){}
-    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing bc_* / cache_* / corrupt');
+    console.warn('[storage] usage='+(_lsBytes/1024/1024).toFixed(2)+'MB — force-clearing bc_* / cache_* / br_* / corrupt');
     // Epic 28g: bc_* に加え cache_* (boatrace 以外のアプリが書いた汎用 cache キー) も削除
     //   ユーザログで cache_915902876 (439KB) cache_593280445 (436KB) 等が判明
-    var _bcRm = 0, _cacheRm = 0;
-    var _bcK = [], _cacheK = [];
+    // Epic 28i: br_prog / br_res / br_prev (~2.1MB 観測) も削除対象に追加。
+    //   現コードベースには存在しないキー (git 全履歴 0 ヒット) で、同一 origin 上の
+    //   別プロジェクト由来の孤児データと推定。安全に一掃可能。
+    var _bcRm = 0, _cacheRm = 0, _brRm = 0;
+    var _bcK = [], _cacheK = [], _brK = [];
     for(var _i=0;_i<localStorage.length;_i++){
       var _kk = localStorage.key(_i);
       if(!_kk) continue;
       if(_kk.indexOf('bc_')===0) _bcK.push(_kk);
       else if(_kk.indexOf('cache_')===0) _cacheK.push(_kk);
+      // br_ で始まり boatrace_ ではないキー (= 旧版 / 別アプリ由来の孤児)
+      else if(_kk.indexOf('br_')===0 && _kk.indexOf('boatrace_')!==0) _brK.push(_kk);
     }
     _bcK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _bcRm++; } catch(_){} });
     _cacheK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _cacheRm++; } catch(_){} });
+    _brK.forEach(function(_kk){ try { localStorage.removeItem(_kk); _brRm++; } catch(_){} });
     // diag / 破損キー も一掃
     try { localStorage.removeItem('boatrace_diag'); }catch(_){}
     var _corrK = [];
@@ -455,11 +461,11 @@ try {
       if(_ck && _ck.indexOf('__corrupt_') > 0) _corrK.push(_ck);
     }
     _corrK.forEach(function(_kk){ try{ localStorage.removeItem(_kk); }catch(__){} });
-    console.warn('[storage] force-clear done: bc_*='+_bcRm+' cache_*='+_cacheRm+' corrupt='+_corrK.length);
+    console.warn('[storage] force-clear done: bc_*='+_bcRm+' cache_*='+_cacheRm+' br_*='+_brRm+' corrupt='+_corrK.length);
     try { if(typeof reportError === 'function') reportError({
       type: 'diag_storage_cleanup',
-      msg: 'cleanup: bc_*='+_bcRm+' cache_*='+_cacheRm+' corrupt='+_corrK.length,
-      bc: _bcRm, cache_: _cacheRm, corrupt: _corrK.length,
+      msg: 'cleanup: bc_*='+_bcRm+' cache_*='+_cacheRm+' br_*='+_brRm+' corrupt='+_corrK.length,
+      bc: _bcRm, cache_: _cacheRm, br_: _brRm, corrupt: _corrK.length,
     }); } catch(_){}
   }
 
@@ -469,18 +475,45 @@ try {
   for(var _k2 in localStorage) _lsAfter += ((localStorage.getItem(_k2)||'').length * 2);
   var _trimmed = { history: 0, racer: 0, stadium: 0 };
 
-  // Tier 2: >3.5MB なら history を 500 件に trim
-  if(_lsAfter > 3.5 * 1024 * 1024){
+  // Tier 2: >2.5MB なら history を 500 件に trim (Epic 28i: 3.5MB → 2.5MB に閾値引下げ)
+  //   旧 3.5MB だと br_* 等の外部キーが居れば history が 1.7MB に達しても発動しなかった。
+  //   2.5MB に下げて history 単体で trigger できるように。
+  if(_lsAfter > 2.5 * 1024 * 1024){
+    // Epic 28i: なぜ trim されたか / されなかったか診断を残す
+    var _trimReason = 'unknown';
+    var _histLen = -1;
     try {
       var _hraw = localStorage.getItem('boatrace_history');
-      if(_hraw){
+      if(!_hraw){
+        _trimReason = 'no_history_key';
+      } else {
         var _h = JSON.parse(_hraw);
-        if(Array.isArray(_h) && _h.length > 500){
-          _trimmed.history = _h.length - 500;
-          localStorage.setItem('boatrace_history', JSON.stringify(_h.slice(-500)));
+        if(!Array.isArray(_h)){
+          _trimReason = 'not_array';
+        } else {
+          _histLen = _h.length;
+          if(_h.length > 500){
+            _trimmed.history = _h.length - 500;
+            localStorage.setItem('boatrace_history', JSON.stringify(_h.slice(-500)));
+            _trimReason = 'trimmed';
+          } else {
+            _trimReason = 'len_under_500';
+          }
         }
       }
-    } catch(_){}
+    } catch(e){
+      _trimReason = 'parse_error: ' + ((e&&e.message)||'unknown');
+    }
+    // 閾値に達したのに trim されなかったケースを可視化
+    if(_trimmed.history === 0){
+      try { if(typeof reportError === 'function') reportError({
+        type: 'diag_trim_skipped',
+        msg: 'history trim skipped at '+(_lsAfter/1024/1024).toFixed(2)+'MB: '+_trimReason,
+        ls_mb: parseFloat((_lsAfter/1024/1024).toFixed(2)),
+        history_len: _histLen,
+        reason: _trimReason,
+      }); } catch(_){}
+    }
     _lsAfter = 0;
     for(var _k3 in localStorage) _lsAfter += ((localStorage.getItem(_k3)||'').length * 2);
   }
