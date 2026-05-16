@@ -7629,20 +7629,36 @@ function _loadErrorLog(){
 function showErrorLog(){
   var buf=_loadErrorLog();
   if(!buf.length){ alert('エラーログは空です'); return; }
-  // Epic 28f: diag 系 (storage TOP10 / IDB migrate / worker error 詳細) を整形して表示
-  var lines=buf.slice(-30).map(function(e){
+  // B15 (2026-05-17): diag_* (診断ログ) を default 非表示にして「エラーが出ている」
+  //   誤認を防ぐ。真のエラー (error/reject/warn/worker_error) のみを目立たせ、
+  //   診断ログ数は footer に内訳表示。詳細は「コピー」ボタンで JSON 全文を取得可能。
+  var errs = [], diags = [];
+  buf.forEach(function(e){
+    var t = e.type || '';
+    if(t.indexOf('diag_') === 0) diags.push(e);
+    else errs.push(e);
+  });
+  if(errs.length === 0){
+    var diagSummary = {};
+    diags.forEach(function(d){ var t=d.type||'?'; diagSummary[t]=(diagSummary[t]||0)+1; });
+    var summaryStr = Object.keys(diagSummary).map(function(k){return k+'='+diagSummary[k];}).join(', ');
+    alert('✅ エラーはありません。\n\n（診断ログ '+diags.length+' 件: '+summaryStr+'）\n'
+        + '※ 診断ログはアプリ正常動作の点検記録です。気になる場合は「コピー」で全文確認できます。');
+    return;
+  }
+  var lines = errs.slice(-30).map(function(e){
     var head = '['+(e.iso||new Date(e.ts).toISOString()).slice(11,19)+'] '+(e.type||'?')+': '+(e.msg||'');
     if(e.src) head += ' @ '+e.src+':'+(e.line||0);
-    if(e.type === 'diag_storage_top10' && Array.isArray(e.top10)){
-      head += '\n  ' + e.top10.map(function(t){return t.kb+'KB '+t.key;}).join('\n  ');
-    } else if(e.type === 'diag_idb_migrate'){
-      head += ' migrated=['+(e.migrated||[]).join(',')+'] errors=['+(e.errors||[]).join(',')+']';
-    } else if(e.type === 'worker_error'){
+    if(e.type === 'worker_error'){
       head += ' target='+(e.target||'(none)')+' eventType='+(e.eventType||'?');
     }
     return head;
   });
-  alert('直近 '+lines.length+' 件 / 全 '+buf.length+' 件:\n\n'+lines.join('\n'));
+  var footer = '';
+  if(diags.length > 0){
+    footer = '\n\n[+'+diags.length+' 件の診断ログ (正常動作の記録) を非表示。詳細は「コピー」ボタンで確認可]';
+  }
+  alert('⚠ エラー '+errs.length+' 件 (直近 '+lines.length+' 件表示):\n\n'+lines.join('\n')+footer);
 }
 function copyErrorLog(){
   var buf=_loadErrorLog();
