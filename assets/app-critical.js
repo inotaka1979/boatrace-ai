@@ -260,7 +260,25 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
       return fallback;
     }
   }
+  var _IDB_KEYS_LARGE_SET = {
+    boatrace_racerDB: 1,
+    boatrace_stadiumDB: 1,
+    boatrace_pairwiseDB: 1,
+    boatrace_motorStats: 1,
+    boatrace_exhibitionStats: 1
+  };
   function safeSet(key, value) {
+    if (_IDB_KEYS_LARGE_SET[key] && typeof globalThis.idbPut === "function") {
+      try {
+        globalThis.idbPut(key, value);
+      } catch (_) {
+      }
+      try {
+        localStorage.removeItem(key);
+      } catch (_) {
+      }
+      return true;
+    }
     const s = typeof value === "string" ? value : JSON.stringify(value);
     try {
       localStorage.setItem(key, s);
@@ -577,13 +595,31 @@ try {
           errors: (res && res.errors) || [],
         });
       } catch(_){}
-      return Promise.all([ idbGet('boatrace_racerDB'), idbGet('boatrace_stadiumDB') ]);
+      return Promise.all([
+        idbGet('boatrace_racerDB'),
+        idbGet('boatrace_stadiumDB'),
+        idbGet('boatrace_pairwiseDB'),
+        idbGet('boatrace_motorStats'),
+        idbGet('boatrace_exhibitionStats'),
+      ]);
     }).then(function(arr){
       if(arr[0] && typeof arr[0] === 'object' && Object.keys(arr[0]).length > 0){
         try { racerDB = arr[0]; console.log('[idb] reloaded racerDB ('+Object.keys(arr[0]).length+' racers)'); } catch(_){}
       }
       if(arr[1] && typeof arr[1] === 'object' && Object.keys(arr[1]).length > 0){
         try { stadiumDB = arr[1]; console.log('[idb] reloaded stadiumDB ('+Object.keys(arr[1]).length+' stadiums)'); } catch(_){}
+      }
+      // Epic 28h: 残り 3 キーも IDB からメモリへ再ロード。
+      //   safeSet が IDB ルーティングに変わったため、_bootParseLS は空 {} を返し
+      //   in-memory に蓄積データが反映されない (= 学習リセット) のを防ぐ。
+      if(arr[2] && typeof arr[2] === 'object' && Object.keys(arr[2]).length > 0){
+        try { pairwiseDB = arr[2]; console.log('[idb] reloaded pairwiseDB ('+Object.keys(arr[2]).length+' pairs)'); } catch(_){}
+      }
+      if(arr[3] && typeof arr[3] === 'object' && Object.keys(arr[3]).length > 0){
+        try { stadiumMotorStats = arr[3]; console.log('[idb] reloaded motorStats ('+Object.keys(arr[3]).length+' stadiums)'); } catch(_){}
+      }
+      if(arr[4] && typeof arr[4] === 'object' && Object.keys(arr[4]).length > 0){
+        try { stadiumExhibitionStats = arr[4]; console.log('[idb] reloaded exhibitionStats ('+Object.keys(arr[4]).length+' stadiums)'); } catch(_){}
       }
     }).catch(function(e){
       var msg = (e && e.message) || 'unknown';
@@ -603,12 +639,23 @@ try {
 // =====================================================================
 (function(){
   var DIAG_MAX = 100;
+  // Epic 28h: byte cap — 旧仕様は entry 数 100 のみで bounded、touchstart 等の
+  //   ペイロードが大きいイベントが連発すると 27KB まで膨張していた
+  //   (boatrace_diag が LS 全体の 1% を浪費)。古い entry から捨てて 10KB 以下に保つ。
+  var DIAG_BYTES_MAX = 10 * 1024;
   var ring = [];
   function pushDiag(o){
     o.t = Date.now();
     ring.push(o);
     if(ring.length > DIAG_MAX) ring.shift();
-    try { localStorage.setItem('boatrace_diag', JSON.stringify(ring)); }catch(_){}
+    try {
+      var s = JSON.stringify(ring);
+      while(ring.length > 1 && s.length > DIAG_BYTES_MAX){
+        ring.shift();
+        s = JSON.stringify(ring);
+      }
+      localStorage.setItem('boatrace_diag', s);
+    } catch(_){}
   }
   function targetInfo(t){
     if(!t || !t.tagName) return '<none>';
