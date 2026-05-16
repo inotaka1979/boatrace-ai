@@ -16,6 +16,17 @@ on:
         description: '全 scraper を強制実行'
         required: false
         default: 'false'
+  # 2026-05-16: push トリガを限定追加。cron 登録遅延中の初回起動を強制し、
+  #   かつ scrape_all.py / scrape-all.yml 自体の変更時にも即時テスト可能。
+  #   path filter で data/ などの自動 commit では発火しないようにする。
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/scrape_all.py'
+      - 'scripts/scrape_previews.py'
+      - 'scripts/scrape_odds_fast.py'
+      - 'scripts/scrape_results.py'
+      - '.github/workflows/scrape-all.yml'
   schedule:
     # JST 08:00–22:55 を 5 分間隔 (奇数分も含めるためデュアル cron)
     #   UTC 23,0-13 = JST 08-22
