@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import logging
 import os
 import subprocess
@@ -86,8 +87,52 @@ def _scrape_tide() -> int:
     return _run_subprocess("scrape_tide.py", timeout_sec=300)
 
 
+def _prerender_top() -> int:
+    return _run_subprocess("prerender_top.py", timeout_sec=120)
+
+
+def _is_fresh_today(path: str, now_jst: datetime.datetime) -> bool:
+    """data/<scope>/today.json が今日 (JST) のデータかを判定する。
+
+    True なら fetch 不要、False なら要更新。判定ロジック:
+      - file 不在 → False (要更新)
+      - JSON parse 失敗 / updated_at 欠落 → False (要更新)
+      - updated_at が today (JST) より前 → False (要更新)
+      - 上記以外 → True (fresh)
+
+    2026-05-17: GHA cron の遅延 (15-30 分) で時刻ベースの起動条件を
+    すり抜ける問題への根本対策。時刻窓を広げ、内側で「今日のデータか」を
+    冪等チェックすることで、毎 tick で「足りなければ取る / 足りていれば skip」
+    が成立する。
+    """
+    full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
+    if not os.path.exists(full):
+        return False
+    try:
+        with open(full, encoding="utf-8") as f:
+            data = json.load(f)
+        ts = data.get("updated_at") or data.get("generated_at")
+        if not ts:
+            return False
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
+        dt = datetime.datetime.fromisoformat(ts).astimezone(JST)
+        return dt.date() == now_jst.date()
+    except Exception as e:
+        log.warning("  freshness check failed for %s: %s", path, e)
+        return False
+
+
 def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Callable[[], int]]]:
-    """JST 現在時刻から実行 task list を決定。"""
+    """JST 現在時刻から実行 task list を決定。
+
+    2026-05-17 改善方針 (人手不要の自己回復):
+      - odds / previews: race hours は毎 tick 取得 (リアルタイム性が必要)
+      - results: 30 分窓広め (cron 遅延耐性)
+      - racedata / schedule / tide: 時刻窓は広く取り、内側で「今日のデータか」
+        を冪等にチェック。Open API 公開遅延や GHA cron 遅延があっても
+        次の tick で必ず取得される。
+    """
     tasks: list[tuple[str, Callable[[], int]]] = []
     h, m = now.hour, now.minute
 
@@ -99,6 +144,7 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
             ("odds", _scrape_odds),
             ("previews", _scrape_previews),
             ("results", _scrape_results),
+            ("prerender", _prerender_top),
         ]
 
     # 共通: race hours (JST 08-22) は odds + previews を毎 tick
@@ -114,16 +160,31 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     if 10 <= h <= 22 and (m < 10 or 25 <= m <= 35):
         tasks.append(("results", _scrape_results))
 
-    # racedata + schedule: JST 09:30, 12:00 のみ
-    if (h == 9 and 28 <= m <= 35) or (h == 12 and m < 5):
+    # racedata + schedule: race hours 全体で「今日のデータでなければ取る」
+    # 旧条件 (h==9 and 28<=m<=35) は GHA cron 遅延で実質 SKIP され続け
+    # data/racedata/today.json が 10 日間更新されない事故に。
+    # _is_fresh_today() の冪等ガードがあるので race hours 全域に広げても
+    # 実 fetch は 1 日 1-2 回。Open API 公開が朝遅れても夕方の tick で復旧。
+    racedata_window = (h == 8 and m >= 30) or (9 <= h <= 22)
+    if racedata_window and not _is_fresh_today("data/racedata/today.json", now):
         tasks.append(("racedata", _scrape_racedata))
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
-
-    # tide: JST 08:00 のみ
-    if h == 8 and m < 5:
-        tasks.append(("tide", _scrape_tide))
-        # tide 取得時に next_open も refresh しておく (低コスト)
+        # racedata 更新時はトップページ HTML も再生成 (prerender)
+        tasks.append(("prerender", _prerender_top))
+    elif racedata_window and not _is_fresh_today("data/schedule/next_open.json", now):
+        # racedata は fresh だが next_open.json は古い場合 (前日跨ぎ等) に
+        # 安価な schedule --quick だけ単独実行。next_open は prerender に
+        # 反映されるため prerender も併走させる。
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
+        tasks.append(("prerender", _prerender_top))
+
+    # tide: JST 07:30-09:30 で「今日のデータでなければ取る」
+    tide_window = (h == 7 and m >= 30) or h == 8 or (h == 9 and m < 30)
+    if tide_window and not _is_fresh_today("data/tide/today.json", now):
+        tasks.append(("tide", _scrape_tide))
+        # tide 取得時に next_open も refresh (低コスト、未取得なら埋める)
+        if not any(name == "schedule(quick)" for name, _ in tasks):
+            tasks.append(("schedule(quick)", _scrape_schedule_quick))
 
     return tasks
 
@@ -147,6 +208,7 @@ def main() -> int:
             "racedata": _scrape_racedata,
             "schedule": _scrape_schedule_quick,
             "tide": _scrape_tide,
+            "prerender": _prerender_top,
         }
         if args.only not in m:
             log.error("unknown --only: %s", args.only)
