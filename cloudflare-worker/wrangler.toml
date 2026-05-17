@@ -10,9 +10,15 @@ name = "boatrace-scrape-trigger"
 main = "worker.js"
 compatibility_date = "2024-12-01"
 
-# 5 分間隔。JST 時刻判定は scheduled() 内で実施 (8-22 JST = UTC 23-13)
+# D1a (2026-05-17): 24/7 動作。レース時間帯は 5 分間隔、深夜帯は 30 分間隔。
+#   JST 08:00-22:55 (UTC 23,0-13)        → 5 分間隔
+#   JST 23:00-07:55 (UTC 14-22)          → 30 分間隔
+#   合計 KV writes/日 ≒ 316 × 3 種 = 948 (無料枠 1000/日 95% 内)
 [triggers]
-crons = ["*/5 * * * *"]
+crons = [
+  "*/5 23,0-13 * * *",       # JST 8-22: 5 分毎
+  "*/30 14-22 * * *",        # JST 23-07: 30 分毎
+]
 
 # Path C: KV namespace for scraped data
 [[kv_namespaces]]

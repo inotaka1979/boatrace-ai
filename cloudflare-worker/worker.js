@@ -470,12 +470,8 @@ async function serveFromKV(env, kind) {
 
 export default {
   async scheduled(event, env, ctx) {
-    const utcH = new Date(event.scheduledTime).getUTCHours();
-    const inRaceHours = utcH === 23 || (utcH >= 0 && utcH <= 13);
-    if (!inRaceHours) {
-      console.log('outside race hours, skip refresh');
-      return;
-    }
+    // D1a (2026-05-17): 24/7 動作。cron 側で頻度を分岐するので時間外スキップは不要。
+    //   JST 08-22: 5 分間隔, JST 23-07: 30 分間隔 (wrangler.toml triggers 参照)
     if (!env.BOATRACE_KV) {
       console.error('BOATRACE_KV binding missing');
       return;
