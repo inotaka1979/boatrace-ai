@@ -454,11 +454,17 @@ async function refreshAll(env) {
 }
 
 async function serveFromKV(env, kind) {
+  // D9 (2026-05-17): wrapped.updated_at をレスポンス先頭に merge する。
+  //   旧版は data 部だけ返していたため、PWA 側の鮮度診断が j.updated_at を
+  //   null と判定し「取得失敗」と表示される事故 (実際はデータ正常) が発生。
+  //   既存配列フィールド (previews/programs/results) には触れないので
+  //   既存 caller との互換は維持される。
   try {
     const raw = await env.BOATRACE_KV.get(KV_KEYS[kind]);
     if (raw) {
       const wrapped = JSON.parse(raw);
-      return jsonResponse(wrapped.data, { cacheControl: 'public, max-age=30' });
+      const merged = { updated_at: wrapped.updated_at, ...wrapped.data };
+      return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
     }
   } catch (e) {
     console.error('KV read failed:', e);
@@ -466,7 +472,8 @@ async function serveFromKV(env, kind) {
   try {
     const data = await fetchUpstream(UPSTREAM[kind]);
     if (env.BOATRACE_KV) kvWrite(env, KV_KEYS[kind], data).catch(()=>{});
-    return jsonResponse(data, { cacheControl: 'public, max-age=30' });
+    const merged = { updated_at: new Date().toISOString(), ...data };
+    return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
   } catch (e) {
     return jsonResponse({ error: String(e) }, { status: 502, cacheControl: 'no-store' });
   }
