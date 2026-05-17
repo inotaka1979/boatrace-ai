@@ -147,6 +147,16 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
             ("prerender", _prerender_top),
         ]
 
+    # racedata stale 時の優先実行: GHA job timeout (25 min) と odds の timeout
+    # 5 min が重なると racedata (~15 min) が完走できない事故が発生。
+    # stale な racedata は 1 日 1 回しか走らないので先に取り、その後 odds 等を走らせる。
+    racedata_window = (h == 8 and m >= 30) or (9 <= h <= 22)
+    racedata_stale = racedata_window and not _is_fresh_today("data/racedata/today.json", now)
+    if racedata_stale:
+        tasks.append(("racedata", _scrape_racedata))
+        tasks.append(("schedule(quick)", _scrape_schedule_quick))
+        tasks.append(("prerender", _prerender_top))
+
     # 共通: race hours (JST 08-22) は odds + previews を毎 tick
     if 8 <= h <= 22:
         tasks.append(("odds", _scrape_odds))
@@ -160,21 +170,13 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     if 10 <= h <= 22 and (m < 10 or 25 <= m <= 35):
         tasks.append(("results", _scrape_results))
 
-    # racedata + schedule: race hours 全体で「今日のデータでなければ取る」
-    # 旧条件 (h==9 and 28<=m<=35) は GHA cron 遅延で実質 SKIP され続け
-    # data/racedata/today.json が 10 日間更新されない事故に。
-    # _is_fresh_today() の冪等ガードがあるので race hours 全域に広げても
-    # 実 fetch は 1 日 1-2 回。Open API 公開が朝遅れても夕方の tick で復旧。
-    racedata_window = (h == 8 and m >= 30) or (9 <= h <= 22)
-    if racedata_window and not _is_fresh_today("data/racedata/today.json", now):
-        tasks.append(("racedata", _scrape_racedata))
-        tasks.append(("schedule(quick)", _scrape_schedule_quick))
-        # racedata 更新時はトップページ HTML も再生成 (prerender)
-        tasks.append(("prerender", _prerender_top))
-    elif racedata_window and not _is_fresh_today("data/schedule/next_open.json", now):
-        # racedata は fresh だが next_open.json は古い場合 (前日跨ぎ等) に
-        # 安価な schedule --quick だけ単独実行。next_open は prerender に
-        # 反映されるため prerender も併走させる。
+    # racedata fresh だが next_open.json は古い場合 (前日跨ぎ等) の単独 refresh。
+    # racedata stale 時は上の優先 block で既に処理済み。
+    if (
+        racedata_window
+        and not racedata_stale
+        and not _is_fresh_today("data/schedule/next_open.json", now)
+    ):
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
         tasks.append(("prerender", _prerender_top))
 
