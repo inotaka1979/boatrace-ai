@@ -18,6 +18,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write   # B18: stale 検知時に scrape-all を workflow_dispatch で自動起動
 
 concurrency:
   group: data-freshness-monitor
@@ -78,6 +79,19 @@ jobs:
             echo "result=stale" >> "$GITHUB_OUTPUT"
           fi
           echo "rc=$RC" >> "$GITHUB_OUTPUT"
+
+      # B18 (2026-05-17): stale 検知時に scrape-all を自動起動 (GHA cron 遅延の自己修復)
+      # odds / previews のみ対象、results は試合終了後にしか出ないので除外。
+      # 1回 dispatch すれば次の scrape で fresh になるはず、issue 起票より先に走らせる。
+      - name: Auto-dispatch scrape-all if stale
+        if: steps.check.outputs.result == 'stale' && (matrix.target.name == 'odds' || matrix.target.name == 'previews')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "::notice::${{ matrix.target.name }} stale -> dispatching scrape-all.yml"
+          gh workflow run scrape-all.yml --ref main --repo "${GITHUB_REPOSITORY}" || \
+            echo "::warning::scrape-all dispatch failed (may already be queued)"
 
       # Stale 方向: issue を起票 (重複抑止 + fail-closed)
       - name: Open issue if stale
