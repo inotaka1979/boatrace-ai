@@ -3565,10 +3565,15 @@ function openRace(sid,rn){
       var probPct=Math.round(m.prob*100);
       var change=diff?diff.changes.find(function(c){return c.boat===m.boat}):null;
       var diffStr='';
-      if(change&&change.rankDiff>0){
-        diffStr=' <span style="color:#43A047;font-size:11px;font-weight:700">↑+'+Math.round(change.probDiff*100)+'%</span>';
-      } else if(change&&change.rankDiff<0){
-        diffStr=' <span style="color:#E53935;font-size:11px;font-weight:700">↓'+Math.round(change.probDiff*100)+'%</span>';
+      if(change&&change.rankDiff!==0){
+        // B19 (2026-05-17): 旧コードは ↑+{val}% 固定だったため probDiff<0 で「↑+-3%」
+        //   のような "+-" 表記バグが発生。↑↓ は順位変動 (rankDiff)、符号は
+        //   確率変動 (probDiff) の符号に従う形に分離。
+        var p=Math.round(change.probDiff*100);
+        var pSign=p>0?'+':(p<0?'':'');   // 負値は Math.round が自動で "-" を付ける
+        var arrow=change.rankDiff>0?'↑':'↓';
+        var color=change.rankDiff>0?'#43A047':'#E53935';
+        diffStr=' <span style="color:'+color+';font-size:11px;font-weight:700">'+arrow+pSign+p+'%</span>';
       }
       predHtml+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
       predHtml+='<span style="font-weight:700;width:20px">'+m.mark+'</span>';
