@@ -217,6 +217,8 @@ function runBacktestEngine(history, opt){
   var dailyROI = {};
   var maxDD = 0, currentLoss = 0, balance = 0;
   var byType = { honmei: {n:0, hits:0, payout:0}, middle: {n:0, hits:0, payout:0}, ana: {n:0, hits:0, payout:0} };
+  // B17 (2026-05-17): 場別集計を追加。回収率順で表示可能なよう sid -> 集計の dict を構築
+  var byStadium = {};
 
   ledger.sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
   ledger.forEach(function(h){
@@ -234,6 +236,19 @@ function runBacktestEngine(history, opt){
       byType[rt].n++;
       if(h.trifecta_hit) byType[rt].hits++;
       byType[rt].payout += (h.payout3 || 0);
+    }
+    // B17: 場別集計
+    var sid = parseInt(h.stadium);
+    if(sid && sid >= 1 && sid <= 24){
+      if(!byStadium[sid]) byStadium[sid] = { sid: sid, name: (typeof STADIUMS==='object' && STADIUMS[sid]) || ('場'+sid),
+                                              n: 0, hits3: 0, hits2: 0, stake: 0, payout: 0, payout3: 0 };
+      var ss = byStadium[sid];
+      ss.n++;
+      ss.stake += stake;
+      ss.payout += payout;
+      ss.payout3 += (h.payout3 || 0);
+      if(h.trifecta_hit) ss.hits3++;
+      if(h.exacta_hit) ss.hits2++;
     }
     var net = payout - stake;
     balance += net;
@@ -281,6 +296,7 @@ function runBacktestEngine(history, opt){
     maxDrawdown: maxDD,
     sharpe: sharpe,
     byType: byType,
+    byStadium: byStadium,   // B17: 場別集計
     dailyROI: dailyROI,
     period: periodDays,
     // PB-10: calibration metrics
@@ -404,6 +420,34 @@ function runBacktest(){
        + '<br>※ EV/Kelly モードの精密再現には当時オッズの履歴アーカイブが必要（X7+α で実装予定）。'
        + '</div>';
     dh += '</div></div>';
+
+    // B17 (2026-05-17): 場別集計テーブル
+    var stadArr = [];
+    for(var ssid in r.byStadium) stadArr.push(r.byStadium[ssid]);
+    if(stadArr.length > 0){
+      stadArr.forEach(function(ss){
+        ss.roi = ss.stake > 0 ? ss.payout / ss.stake : 0;
+        ss.hitRate3 = ss.n > 0 ? ss.hits3 / ss.n : 0;
+      });
+      stadArr.sort(function(a,b){ return b.roi - a.roi; });
+      dh += '<div class="card"><div class="p-12">';
+      dh += '<div class="card-title">場別 (回収率順)</div>';
+      dh += '<table class="text-w-full-12"><thead><tr><th>場</th><th>R数</th><th>3連的中</th><th>投資</th><th>払戻</th><th>回収率</th></tr></thead><tbody>';
+      stadArr.forEach(function(ss){
+        var roiPct = (ss.roi * 100).toFixed(0);
+        var roiClass = ss.roi >= 1.0 ? 'recovery-positive' : (ss.roi >= 0.8 ? '' : 'recovery-negative');
+        dh += '<tr><td><b>'+escText(ss.name)+'</b></td>'
+            + '<td class="ta-r">'+ss.n+'</td>'
+            + '<td class="ta-r">'+ss.hits3+' ('+(ss.hitRate3*100).toFixed(0)+'%)</td>'
+            + '<td class="ta-r">¥'+ss.stake.toLocaleString()+'</td>'
+            + '<td class="ta-r">¥'+ss.payout.toLocaleString()+'</td>'
+            + '<td class="ta-r '+roiClass+'">'+roiPct+'%</td></tr>';
+      });
+      dh += '</tbody></table>';
+      dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">※ 期間中に予想履歴がある場のみ表示、回収率の高い順にソート</div>';
+      dh += '</div></div>';
+    }
+
     detailsDiv.innerHTML = dh;
   }, 50);
 }
