@@ -7775,10 +7775,17 @@ function _renderDataSourcesPanel(){
   }
   Promise.all(sources.map(function(s){
     return fetch(s.url, { cache:'no-store' })
-      .then(function(r){ return r.json(); })
-      .then(function(j){
-        // updated_at は data 直下 OR data.data 経由 (Worker wrap) のどちらか
-        var ua = j.updated_at || (j.data && j.data.updated_at);
+      .then(function(r){
+        // D9 (2026-05-17): Last-Modified を fallback として保持。
+        //   openapi (boatraceopenapi.github.io) は JSON に updated_at が無く、
+        //   GitHub Pages の Last-Modified ヘッダが事実上の鮮度指標。
+        var lm = r.headers.get('Last-Modified');
+        return r.json().then(function(j){ return { j: j, lastModified: lm }; });
+      })
+      .then(function(o){
+        var j = o.j;
+        // updated_at: 1) JSON top-level, 2) Worker wrap, 3) HTTP Last-Modified
+        var ua = j.updated_at || (j.data && j.data.updated_at) || o.lastModified;
         return { label: s.label, ts: ua, ok: true };
       })
       .catch(function(e){ return { label: s.label, ts: null, ok: false, err: String(e).slice(0,40) }; });
