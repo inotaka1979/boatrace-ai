@@ -4268,7 +4268,14 @@ function loadSettings(){
     + 'Platt 校正: '+plattStatus+' ('+plattAge+', n='+(_plattCoeffs.n||0)+')<br>'
     + (withProbs.length >= TUNING.PREDICTION.PLATT_MIN_SAMPLES
         ? '<span class="c-success">✓ 自動再校正条件を満たしています</span>'
-        : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>');
+        : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>')
+    + '<br><br><b>📡 データソース</b> <span style="font-size:10px;color:var(--text-dim)">(各経路の鮮度を診断)</span>'
+    + '<div id="dataSourcesPanel" style="font-size:11px;margin-top:6px">読込中...</div>';
+
+  // D2a (2026-05-17): 各データソースの updated_at を並列 fetch し鮮度可視化
+  if(typeof _renderDataSourcesPanel === 'function'){
+    _renderDataSourcesPanel();
+  }
 
   // PE-3 + PF-9: 自動再校正 — サンプル充足 & 7 日以上経過なら静かに Worker で再校正
   var ageMs = Date.now() - (_plattCoeffs.fittedAt || 0);
@@ -4279,6 +4286,52 @@ function loadSettings(){
       }
     });
   }
+}
+
+function _renderDataSourcesPanel(){
+  var panel = document.getElementById('dataSourcesPanel');
+  if(!panel) return;
+  var sources = [
+    { key: 'worker_previews',   label: 'Worker /api/previews',    url: WORKER_BASE + '/api/previews?_=' + Date.now() },
+    { key: 'worker_programs',   label: 'Worker /api/programs',    url: WORKER_BASE + '/api/programs?_=' + Date.now() },
+    { key: 'worker_results',    label: 'Worker /api/results',     url: WORKER_BASE + '/api/results?_=' + Date.now() },
+    { key: 'openapi_previews',  label: 'openapi previews',        url: 'https://boatraceopenapi.github.io/previews/v2/today.json?_=' + Date.now() },
+    { key: 'local_previews',    label: 'ローカル data/previews',  url: 'data/previews/today.json?_=' + Date.now() },
+  ];
+  function ageStr(ts){
+    if(!ts) return '取得失敗';
+    var d = new Date(ts);
+    if(isNaN(d.getTime())) return '時刻不正';
+    var min = Math.floor((Date.now() - d.getTime()) / 60000);
+    var color = min <= 10 ? '#2E7D32' : (min <= 30 ? '#E65100' : '#C62828');
+    var icon  = min <= 10 ? '🟢' : (min <= 30 ? '🟠' : '🔴');
+    var hh = String(d.getHours()).padStart(2,'0');
+    var mm = String(d.getMinutes()).padStart(2,'0');
+    return '<span style="color:'+color+'">'+icon+' '+hh+':'+mm+' ('+min+'分前)</span>';
+  }
+  Promise.all(sources.map(function(s){
+    return fetch(s.url, { cache:'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        // updated_at は data 直下 OR data.data 経由 (Worker wrap) のどちらか
+        var ua = j.updated_at || (j.data && j.data.updated_at);
+        return { label: s.label, ts: ua, ok: true };
+      })
+      .catch(function(e){ return { label: s.label, ts: null, ok: false, err: String(e).slice(0,40) }; });
+  })).then(function(rows){
+    var html = '<div style="display:grid;grid-template-columns:auto auto;gap:4px 12px">';
+    rows.forEach(function(r){
+      html += '<div style="font-family:monospace">'+escText(r.label)+':</div>';
+      html += '<div>'+ageStr(r.ts)+'</div>';
+    });
+    html += '</div>';
+    html += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+         + '🟢 ≤10分 / 🟠 ≤30分 / 🔴 >30分。Worker 経路が緑なら GHA / openapi 障害でも動作中。'
+         + '</div>';
+    panel.innerHTML = html;
+  }).catch(function(){
+    panel.innerHTML = '<span style="color:#C62828">鮮度取得失敗</span>';
+  });
 }
 
 function exportHistoryCSV(){

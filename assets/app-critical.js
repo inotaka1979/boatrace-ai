@@ -2677,6 +2677,10 @@ var _chartLoadingPromise = null;
 // ===============================================
 /* MOVED: function loadSettings */
 
+// D2a (2026-05-17): データソースの鮮度を並列 fetch して可視化
+//   設定画面 → dataSourcesPanel に書込
+/* MOVED: function _renderDataSourcesPanel */
+
 // PE-3: 履歴を CSV エクスポート（バックテスト解析用）
 /* MOVED: function exportHistoryCSV */
 
