@@ -2335,39 +2335,74 @@ function _renderApiHealthBanner(){
 //   対策: サイズ上限 (BC_MAX_BYTES=100KB) を設け、超過レスポンスは bc_* 非保存。
 //        SW (sw.js) のキャッシュ戦略が大きい response の fallback を担うため重複不要。
 var BC_MAX_BYTES = 100 * 1024;
-function fetchWithFallback(url){
-  // キャッシュキーはクエリパラメータを除いたベースURL
-  var baseUrl=url.split('?')[0];
+// Path C (2026-05-17): Cloudflare Worker を一次データソースに。
+// 3 段 fallback: Worker /api → openapi 直接 → localStorage cache
+var WORKER_BASE = 'https://boatrace-scrape-trigger.inotaka1979.workers.dev';
+// openapi URL を Worker URL に map (programs/previews/results)
+function _mapToWorkerUrl(openapiUrl){
+  if(openapiUrl.indexOf('/programs/v2/today.json') >= 0) return WORKER_BASE + '/api/programs';
+  if(openapiUrl.indexOf('/previews/v2/today.json') >= 0) return WORKER_BASE + '/api/previews';
+  if(openapiUrl.indexOf('/results/v2/today.json') >= 0)  return WORKER_BASE + '/api/results';
+  return null;   // Worker でカバーされない URL (過去日付 等) は openapi 直
+}
+
+function _fetchOne(url, timeoutMs){
   var controller=new AbortController();
-  var tid=setTimeout(function(){controller.abort()},15000);
+  var tid=setTimeout(function(){controller.abort()},timeoutMs||10000);
   return fetch(url,{signal:controller.signal,cache:'no-store'})
-    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
+    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()});
+}
+
+function fetchWithFallback(url){
+  var baseUrl=url.split('?')[0];
+  var workerUrl=_mapToWorkerUrl(baseUrl);
+  // Tier 1: Worker /api/* (Cloudflare KV、~ 5 分鮮度、GHA 独立)
+  var primary = workerUrl
+    ? _fetchOne(workerUrl + '?_=' + Date.now(), 8000)
+    : Promise.reject(new Error('no-worker-mapping'));
+  return primary
     .then(function(d){
-      // Epic 28b: 大きいレスポンスは bc_* に保存しない（SW cache に任せる）
+      _setApiHealth(baseUrl, 'ok');
       try{
         var serialized = JSON.stringify({data:d,time:Date.now()});
         if(serialized.length <= BC_MAX_BYTES){
           localStorage.setItem(cacheKey(baseUrl), serialized);
         }
       }catch(e){}
-      _setApiHealth(baseUrl, 'ok'); // P0-7
       return d;
     })
-    .catch(function(e){
-      clearTimeout(tid);
-      console.warn('API error:',baseUrl,e.message);
-      try{
-        var c=localStorage.getItem(cacheKey(baseUrl));
-        if(c){
-          var o=JSON.parse(c);
-          if(Date.now()-o.time<600000){
-            _setApiHealth(baseUrl, 'cached'); // P0-7: キャッシュ fallback 使用中
-            return o.data;
-          }
-        }
-      }catch(ex){}
-      _setApiHealth(baseUrl, 'fail'); // P0-7: 完全失敗（cache 無し or 期限切れ）
-      return null;
+    .catch(function(workerErr){
+      // Tier 2: openapi 直接 (Worker 失敗時)
+      if(workerErr && workerErr.message !== 'no-worker-mapping'){
+        console.warn('[fetch] worker miss, falling back to openapi:', workerErr.message);
+      }
+      return _fetchOne(url, 15000)
+        .then(function(d){
+          try{
+            var serialized = JSON.stringify({data:d,time:Date.now()});
+            if(serialized.length <= BC_MAX_BYTES){
+              localStorage.setItem(cacheKey(baseUrl), serialized);
+            }
+          }catch(e){}
+          _setApiHealth(baseUrl, 'ok');
+          return d;
+        })
+        .catch(function(e){
+          console.warn('API error:',baseUrl,e.message);
+          // Tier 3: localStorage cache (10 min まで)
+          try{
+            var c=localStorage.getItem(cacheKey(baseUrl));
+            if(c){
+              var o=JSON.parse(c);
+              if(Date.now()-o.time<600000){
+                _setApiHealth(baseUrl, 'cached');
+                return o.data;
+              }
+            }
+          }catch(ex){}
+          _setApiHealth(baseUrl, 'fail');
+          return null;
+        });
     });
 }
 
