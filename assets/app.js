@@ -1409,11 +1409,12 @@ async function forceRefresh(){
       if(o.ok){ var od=await o.json(); oddsData=od; oddsLastFetched=Date.now(); _noteUpdatedAt(od.updated_at); }
     }catch(e){}
     // 自前 previews を merge（finished/result の最新化）
+    // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
     try{
       var p = await fetch('data/previews/today.json?t='+t, {cache:'no-store'});
       if(p.ok){
         var pd = await p.json();
-        if(pd && Array.isArray(pd.races)) _applyLiveDataMerge(pd);
+        if(_shouldApplyLocalMerge(pd)) _applyLiveDataMerge(pd);
         _noteUpdatedAt(pd.updated_at);
       }
     }catch(e){}
@@ -5525,6 +5526,23 @@ function _filterStalePreviews(raw){
   return { previews: filtered, updated_at: raw.updated_at };
 }
 
+// D4a (2026-05-17): local data/previews/today.json の merge を条件付きに。
+//   Path C で Worker /api/previews が 5 分鮮度になり、scrape_all は 30 分間隔
+//   archive 役に格下げ (D3a)。local が 20 分以上古い場合 Worker の方が新しいので
+//   merge を skip し、データ精度を保つ。merge 自体は非破壊だが余計な書込を回避。
+function _shouldApplyLocalMerge(localData){
+  if(!localData || !Array.isArray(localData.races)) return false;
+  if(!localData.updated_at) return true;   // 時刻不明 → 安全側 (merge する)
+  var ts = Date.parse(localData.updated_at);
+  if(isNaN(ts)) return true;
+  var ageMin = (Date.now() - ts) / 60000;
+  if(ageMin > 20){
+    try { console.log('[merge] skip stale local data ('+ageMin.toFixed(0)+'min old, Worker should be newer)'); } catch(_){}
+    return false;
+  }
+  return true;
+}
+
 function _applyLiveDataMerge(liveData){
   if(!liveData||!liveData.races||!liveData.races.length) return 0;
   var liveDate=liveData.updated_at?new Date(new Date(liveData.updated_at).getTime()+9*3600000).toISOString().slice(0,10):'';
@@ -5645,13 +5663,16 @@ async function loadAllData(){
   if(rawResults&&typeof _noteTodayDataFromRaw==='function') _noteTodayDataFromRaw(rawResults,'results');
 
   // F5: 自前スマートスケジューラ出力 (races 配列形式) を merge
+  // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
   try{
     var localPv=await fetch('data/previews/today.json?t='+Date.now());
     if(localPv.ok){
       var localData=await localPv.json();
-      if(localData&&Array.isArray(localData.races)){
+      if(_shouldApplyLocalMerge(localData)){
         await _yieldToMain();   // PH-5
         _applyLiveDataMerge(localData);
+        if(typeof _noteUpdatedAt==='function') _noteUpdatedAt(localData.updated_at);
+      } else if(localData && localData.updated_at){
         if(typeof _noteUpdatedAt==='function') _noteUpdatedAt(localData.updated_at);
       }
     }
@@ -8492,12 +8513,13 @@ setManagedInterval(async function(){
       var o=await fetch('data/odds/today.json?t='+t);
       if(o.ok){ var od=await o.json(); oddsData=od; _noteUpdatedAt(od.updated_at); }
     }catch(e){}
-    // F5: 自前 previews（cron 3分更新）を merge して finished/result を反映
+    // F5: 自前 previews を merge して finished/result を反映
+    // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
     try{
       var p=await fetch('data/previews/today.json?t='+t);
       if(p.ok){
         var pd=await p.json();
-        if(pd&&Array.isArray(pd.races)) _applyLiveDataMerge(pd);
+        if(_shouldApplyLocalMerge(pd)) _applyLiveDataMerge(pd);
         _noteUpdatedAt(pd.updated_at);
       }
     }catch(e){}
