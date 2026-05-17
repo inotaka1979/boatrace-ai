@@ -1,13 +1,15 @@
-name: Scrape All (unified)
+name: Scrape All (unified - archive role)
 
-# Path B (2026-05-16): 5 つに分散していた scrape workflow を 1 本に統合
-#   scripts/scrape_all.py が JST 時刻で実行 scraper を分岐
-#   - 常時 (8-22 JST): odds + previews
-#   - 30 分境界: results
-#   - 09:30, 12:00 JST: racedata + schedule
-#   - 08:00 JST: tide + schedule
-# 単一 commit / 単一 push で race condition を根絶。
-# Cloudflare Worker の workflow_dispatch 依存は撤去済 (PAT 不要)。
+# Path C / D3a (2026-05-17): 役割の明確化。
+#   旧: Worker と並走しデータ供給 (5 分間隔)
+#   新: アーカイブ専用 (30 分間隔)。リアルタイムデータは Cloudflare Worker /api/* が担当。
+#       本 workflow は GitHub Pages の data/*.json を履歴保管・障害時 fallback として維持。
+#
+#   スクリプト構成 (scrape_all.py 内の JST 時刻分岐):
+#   - 常時 (8-22 JST):    odds + previews (アーカイブ)
+#   - 30 分境界:           results
+#   - 09:30, 12:00 JST:    racedata + schedule
+#   - 08:00 JST:           tide + schedule
 
 on:
   workflow_dispatch:
@@ -16,9 +18,7 @@ on:
         description: '全 scraper を強制実行'
         required: false
         default: 'false'
-  # 2026-05-16: push トリガを限定追加。cron 登録遅延中の初回起動を強制し、
-  #   かつ scrape_all.py / scrape-all.yml 自体の変更時にも即時テスト可能。
-  #   path filter で data/ などの自動 commit では発火しないようにする。
+  # path filter: scrape_*.py / scrape-all.yml 変更時のみ発火 (data/ commit では発火しない)
   push:
     branches: [main]
     paths:
@@ -28,10 +28,9 @@ on:
       - 'scripts/scrape_results.py'
       - '.github/workflows/scrape-all.yml'
   schedule:
-    # JST 08:00–22:55 を 5 分間隔 (奇数分も含めるためデュアル cron)
-    #   UTC 23,0-13 = JST 08-22
-    - cron: '*/5 23,0-13 * * *'
-    - cron: '2-59/5 23,0-13 * * *'
+    # D3a (2026-05-17): 5 分→30 分間隔。Worker が主データ供給、本 cron はアーカイブ。
+    #   UTC 23,0-13 = JST 08-22 (15 hours)、30 分毎 = 30 commits/日
+    - cron: '0,30 23,0-13 * * *'
 
 permissions:
   contents: read
