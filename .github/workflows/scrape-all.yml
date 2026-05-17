@@ -37,7 +37,13 @@ permissions:
 
 concurrency:
   group: scrape-all
-  cancel-in-progress: true
+  # D7-v3 (2026-05-17): cancel-in-progress を false に。理由:
+  #   racedata fetch (~30 min) 中に次の cron (30 分間隔) が発火すると
+  #   旧 run が cancel され、commit step が走らず racedata がコミットされない。
+  #   結果として 11 日連続で racedata が更新されない事故。
+  #   queue にすれば 1 つ目が完走 → commit → 2 つ目は freshness gate で
+  #   skip して 5-6 min で完了 → 自然に追いつく。
+  cancel-in-progress: false
 
 jobs:
   scrape:
