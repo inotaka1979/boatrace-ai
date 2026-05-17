@@ -191,6 +191,43 @@ function buildExactaProbDist(marks){
   return dist;
 }
 
+// B14 (2026-05-17): main app.js の _pickAnaCandidates と同等。worker 経由 backfill
+//   でも bets.ana が attach されるよう同コードを持ち込む。
+function _pickAnaCandidates(marks, oddsMap, opts){
+  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') {
+    return { primary: [], fallback: [] };
+  }
+  var o = opts || {};
+  var minOdds = o.minOdds != null ? o.minOdds : 30;
+  var minEV = o.minEV != null ? o.minEV : 1.0;
+  var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
+  var topN = o.topN != null ? o.topN : 3;
+  var excludeSet = {};
+  if(Array.isArray(o.excludeCombos)){
+    o.excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
+  }
+  var dist = buildTrifectaProbDist(marks);
+  var primary = [], loose = [];
+  for(var combo in dist){
+    if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
+    if(excludeSet[combo]) continue;
+    var odds = oddsMap[combo];
+    if(odds == null) continue;
+    var prob = dist[combo];
+    if(prob <= 0) continue;
+    var ev = prob * odds;
+    var pick = {combo: combo, prob: prob, odds: odds, ev: ev};
+    if(odds >= minOdds && ev >= minEV) primary.push(pick);
+    if(odds >= minOddsLoose) loose.push(pick);
+  }
+  primary.sort(function(a,b){ return b.ev - a.ev; });
+  loose.sort(function(a,b){ return b.ev - a.ev; });
+  return {
+    primary: primary.slice(0, topN),
+    fallback: loose.slice(0, topN),
+  };
+}
+
 function buildTrifectaProbDist(marks){
   var p = marks.map(function(m){return m.prob||0;});
   var dist = {};
@@ -867,6 +904,37 @@ function predictRace(sid,raceNum){
   var conf=Math.round(topProb*100);
   bets.confidence=conf;
   bets.confStars=conf>=40?5:conf>=30?4:conf>=22?3:conf>=15?2:1;
+
+  // B14 (2026-05-17): 詳細画面で表示される 🔥穴予想 を bets.ana に組込み履歴追跡。
+  bets.ana = (function(){
+    var anaTopN = parseInt(settings.betCountAna)||3;
+    if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
+    var excludeCombos = (bets.trifecta||[]).map(function(t){return t.combo;});
+    if(raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length>0){
+      var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
+        minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN,
+        excludeCombos: excludeCombos,
+      });
+      var picks = anaRes.primary.length>0 ? anaRes.primary : anaRes.fallback;
+      return picks.map(function(p){return p.combo;});
+    }
+    if(marks && marks.length>=3){
+      var dist = buildTrifectaProbDist(marks);
+      var top1Boat = marks[0].boat;
+      var excludeSet = {};
+      excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
+      var cands = [];
+      for(var k in dist){
+        if(!Object.prototype.hasOwnProperty.call(dist,k)) continue;
+        if(k.split('-')[0] === String(top1Boat)) continue;
+        if(excludeSet[k]) continue;
+        cands.push({combo:k, prob:dist[k]});
+      }
+      cands.sort(function(a,b){return b.prob-a.prob});
+      return cands.slice(0, anaTopN).map(function(c){return c.combo;});
+    }
+    return [];
+  })();
 
   return bets;
 }

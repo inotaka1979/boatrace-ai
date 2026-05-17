@@ -43,6 +43,10 @@ step "Python unit tests (check_freshness)" \
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"
 
+# 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
+step "JS tests (ana_bets / checkHit / ana_hit)" \
+     "node scripts/tests/test_ana_tracking.js"
+
 # 2) Python シンタックスチェック（main は実行しない）
 step "Python parse check" \
      "for f in scripts/scrape_odds_fast.py scripts/scrape_previews.py scripts/scrape_racedata.py scripts/scrape_schedule.py scripts/scrape_tide.py scripts/io_utils.py scripts/time_utils.py scripts/http_utils.py scripts/check_freshness.py; do python3 -c 'import ast; ast.parse(open(\"'\"\$f\"'\").read())' || exit 1; done"

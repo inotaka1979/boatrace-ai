@@ -4699,6 +4699,40 @@ function predictRace(sid,raceNum){
   bets.confidence=conf;
   bets.confStars=conf>=40?5:conf>=30?4:conf>=22?3:conf>=15?2:1;
 
+  // B14 (2026-05-17): 詳細画面で表示される 🔥穴予想 (高EV chip) を bets.ana に
+  //   組込んで savePrediction で履歴追跡できるようにする。EV>=1.0 が無ければ
+  //   AI 確率分布の top N (1コース絡み以外) を fallback で入れる。
+  bets.ana = (function(){
+    var anaTopN = parseInt(settings.betCountAna)||3;
+    if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
+    var excludeCombos = (bets.trifecta||[]).map(function(t){return t.combo;});
+    if(raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length>0){
+      var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
+        minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN,
+        excludeCombos: excludeCombos,
+      });
+      var picks = anaRes.primary.length>0 ? anaRes.primary : anaRes.fallback;
+      return picks.map(function(p){return p.combo;});
+    }
+    // オッズ未取得: AI 確率分布の上位（1着が1番人気でないもの）を穴候補に
+    if(marks && marks.length>=3){
+      var dist = buildTrifectaProbDist(marks);
+      var top1Boat = marks[0].boat;
+      var excludeSet = {};
+      excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
+      var cands = [];
+      for(var k in dist){
+        if(!Object.prototype.hasOwnProperty.call(dist,k)) continue;
+        if(k.split('-')[0] === String(top1Boat)) continue;
+        if(excludeSet[k]) continue;
+        cands.push({combo:k, prob:dist[k]});
+      }
+      cands.sort(function(a,b){return b.prob-a.prob});
+      return cands.slice(0, anaTopN).map(function(c){return c.combo;});
+    }
+    return [];
+  })();
+
   return bets;
 }
 
@@ -5227,9 +5261,12 @@ function savePrediction(date,sid,rn,pred,result){
       })(),
       trifecta_bets:pred.trifecta.map(function(t){return t.combo}),
       exacta_bets:pred.exacta.map(function(t){return t.combo}),
+      // B14 (2026-05-17): 🔥穴予想 (高EV chip) を履歴追跡。pred.ana が無い
+      //   古い predictor 経由でも壊さないよう Array.isArray でガード。
+      ana_bets: Array.isArray(pred.ana) ? pred.ana.slice() : [],
       raceType:pred.raceType,
       pred_snapshot:snapshot,
-      actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false
+      actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false,ana_hit:false
     };
     if(result&&result.isFinished&&result.results){
       // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
@@ -5246,6 +5283,9 @@ function savePrediction(date,sid,rn,pred,result){
             entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
           if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
             entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+          // B14: 穴予想の的中は同じ 3連単 refund を流用 (同じ着順 → 同じ payout)
+          if(entry.ana_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+            entry.ana_payout = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
         }
       } else {
         console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
@@ -5263,6 +5303,8 @@ function checkHit(entry){
   entry.trifecta_hit=entry.trifecta_bets&&entry.trifecta_bets.indexOf(a3)>=0;
   var a2=entry.actual[0]+'-'+entry.actual[1];
   entry.exacta_hit=entry.exacta_bets&&entry.exacta_bets.indexOf(a2)>=0;
+  // B14: 穴予想の的中判定（3連単 actual と ana_bets の一致）
+  entry.ana_hit = !!(entry.ana_bets && entry.ana_bets.indexOf(a3)>=0);
 }
 
 function updateHistoryWithResults(){
@@ -5294,6 +5336,12 @@ function updateHistoryWithResults(){
            res.refund.exacta && res.refund.exacta[0]){
           h.payout2 = res.refund.exacta[0].payout || res.refund.exacta[0].amount || 0;
           if(h.payout2) updated=true;
+        }
+        // B14: 穴予想の payout 遡及補完
+        if(h.ana_hit && (!h.ana_payout || h.ana_payout===0) &&
+           res.refund.trifecta && res.refund.trifecta[0]){
+          h.ana_payout = res.refund.trifecta[0].payout || res.refund.trifecta[0].amount || 0;
+          if(h.ana_payout) updated=true;
         }
       }
     });
@@ -7360,6 +7408,8 @@ function calcTodayStats(){
 
   var tri={hits:0, invest:0, payout:0};
   var exa={hits:0, invest:0, payout:0};
+  // B14 (2026-05-17): 🔥穴予想 を独立追跡（ana_bets.length で R 別投資額算出）
+  var ana={hits:0, invest:0, payout:0, races:0};
   var typeStats={honmei:{total:0,hit3:0,payout3:0,invest:0}, middle:{total:0,hit3:0,payout3:0,invest:0}, ana:{total:0,hit3:0,payout3:0,invest:0}};
   var stadiumStats={};
   // F18: 的中フラグはあるが payout が 0 / 未取得のレースを検出
@@ -7384,6 +7434,15 @@ function calcTodayStats(){
         warnings.exa_zero.push((STADIUMS[parseInt(h.stadium)]||('場'+h.stadium))+' '+h.race+'R');
       }
     }
+    // B14: 🔥穴予想 集計 (ana_bets が登録されている race のみカウント)
+    if(Array.isArray(h.ana_bets) && h.ana_bets.length > 0){
+      ana.races++;
+      ana.invest += h.ana_bets.length * unitBet;
+      if(h.ana_hit){
+        ana.hits++;
+        ana.payout += (h.ana_payout||0);
+      }
+    }
 
     var t=h.raceType||'middle';
     if(!typeStats[t]) typeStats[t]={total:0,hit3:0,payout3:0,invest:0};
@@ -7403,7 +7462,7 @@ function calcTodayStats(){
   });
 
   return {
-    today:today, total:verified.length, tri:tri, exa:exa,
+    today:today, total:verified.length, tri:tri, exa:exa, ana:ana,
     typeStats:typeStats, stadiumStats:stadiumStats,
     warnings:warnings,
     unitBet:unitBet, betCount3:betCount3, betCount2:betCount2,
@@ -7457,6 +7516,12 @@ function renderStats(){
   var exaHitRate=s.total>0?(s.exa.hits/s.total*100).toFixed(0):'-';
   recHtml+='<tr><td><b>3連単</b></td><td>'+s.tri.hits+' ('+triHitRate+'%)</td><td>¥'+s.tri.invest.toLocaleString()+'</td><td>¥'+s.tri.payout.toLocaleString()+'</td><td class="'+_rateColor(triR)+'">'+triR+'%</td></tr>';
   recHtml+='<tr><td><b>2連単</b></td><td>'+s.exa.hits+' ('+exaHitRate+'%)</td><td>¥'+s.exa.invest.toLocaleString()+'</td><td>¥'+s.exa.payout.toLocaleString()+'</td><td class="'+_rateColor(exaR)+'">'+exaR+'%</td></tr>';
+  // B14: 🔥穴予想 行（ana_bets が登録された R のみカウント、推奨買い目とは独立）
+  if(s.ana && s.ana.races > 0){
+    var anaR = s.ana.invest>0?Math.round(s.ana.payout/s.ana.invest*100):0;
+    var anaHitRate = s.ana.races>0?(s.ana.hits/s.ana.races*100).toFixed(0):'-';
+    recHtml+='<tr><td><b style="color:#FF5722">🔥穴予想</b><br><span style="font-size:9px;color:var(--text-dim)">対象 '+s.ana.races+'R</span></td><td>'+s.ana.hits+' ('+anaHitRate+'%)</td><td>¥'+s.ana.invest.toLocaleString()+'</td><td>¥'+s.ana.payout.toLocaleString()+'</td><td class="'+_rateColor(anaR)+'">'+anaR+'%</td></tr>';
+  }
   // 合計行
   var totInv=s.tri.invest+s.exa.invest;
   var totPay=s.tri.payout+s.exa.payout;
