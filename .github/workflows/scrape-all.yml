@@ -42,9 +42,9 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    # D7 (2026-05-17): racedata stale 復旧時は ~15 min かかるため 25 → 35 min。
-    #   通常運用 (racedata fresh) では tasks: odds + previews のみで 5-6 min。
-    timeout-minutes: 35
+    # D7 (2026-05-17): racedata stale 復旧時は GHA 上で 25-30 min + odds 5 min
+    #   + buffer で 50 min が必要。通常運用 (racedata fresh) は 5-6 min。
+    timeout-minutes: 50
     permissions:
       contents: write
     steps:

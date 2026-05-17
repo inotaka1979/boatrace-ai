@@ -296,12 +296,40 @@ def main() -> None:
 
     print(f"Date: {date_str}, {len(stadiums)} stadiums, {len(racer_numbers)} racers")
 
-    all_data = []
+    # 2026-05-17 (D7): timeout / network 障害でも進捗が失われないよう、
+    #   stadium 完了ごとに atomic write。partial=True フラグで未完了を明示し、
+    #   呼出側 (_is_fresh_today + scrape_all) は partial=True を stale と
+    #   扱って次の tick で残りを補完できる。今日の date_str (race_date) を
+    #   持つ既存ファイルがあれば再開、無ければ新規。
+    existing_done_keys = set()
+    all_data: list[dict] = []
+    try:
+        if os.path.exists(OUTPUT_RACEDATA):
+            with open(OUTPUT_RACEDATA, encoding="utf-8") as f:
+                prev = json.load(f)
+            # 同じ race_date なら継続、別日付なら破棄
+            if prev.get("race_date") == date_str and isinstance(prev.get("racedata"), list):
+                for entry in prev["racedata"]:
+                    all_data.append(entry)
+                    existing_done_keys.add((entry.get("stadium"), entry.get("race")))
+                if existing_done_keys:
+                    print(f"  Resume: {len(existing_done_keys)} races already scraped today")
+    except Exception as e:
+        print(f"  WARN: resume load failed ({e}) — starting fresh")
+        all_data = []
+        existing_done_keys = set()
+
     for sid, race_nums in sorted(stadiums.items()):
         jcd = f"{sid:02d}"
-        print(f"  Stadium {sid}...")
 
-        for rn in sorted(race_nums):
+        # 既に取得済 race をスキップ
+        pending = [rn for rn in sorted(race_nums) if (sid, rn) not in existing_done_keys]
+        if not pending:
+            print(f"  Stadium {sid}: all {len(race_nums)} races already done, skip")
+            continue
+        print(f"  Stadium {sid}: scraping {len(pending)}/{len(race_nums)} races")
+
+        for rn in pending:
             boats = scrape_racelist(jcd, rn, date_str)
             time.sleep(INTERVAL)
 
@@ -316,6 +344,14 @@ def main() -> None:
                 "race": rn,
                 "boats": boats
             })
+
+        # Stadium 完了ごとに partial として保存 (timeout / network 障害耐性)
+        atomic_write_json(OUTPUT_RACEDATA, {
+            "updated_at": utc_iso_seconds(),
+            "race_date": date_str,
+            "partial": True,
+            "racedata": all_data,
+        })
 
     # FIX (2026-05-16): 旧版は 1,636 選手 × (0.5s sleep + 0.3s sleep + timeout 20s × 2 attempts)
     # = 約 50 分かかり 30 分 timeout を超過 → racedata が 9 日間更新されない事故。
@@ -337,8 +373,11 @@ def main() -> None:
             except OSError as e:
                 print(f"  WARN: photo cleanup failed {fname}: {e}")
 
+    # D7: 全 stadium 完了で partial=False を立てて最終確定
     result = {
         "updated_at": utc_iso_seconds(),  # D-02
+        "race_date": date_str,
+        "partial": False,
         "racedata": all_data,
     }
     atomic_write_json(OUTPUT_RACEDATA, result)  # D-01

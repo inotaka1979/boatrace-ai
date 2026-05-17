@@ -76,7 +76,10 @@ def _scrape_results() -> int:
 
 
 def _scrape_racedata() -> int:
-    return _run_subprocess("scrape_racedata.py", timeout_sec=1500)
+    # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
+    #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
+    #   2400s (40 min) に拡張。実 fetch は通常 25-30 min で完了。
+    return _run_subprocess("scrape_racedata.py", timeout_sec=2400)
 
 
 def _scrape_schedule_quick() -> int:
@@ -92,18 +95,19 @@ def _prerender_top() -> int:
 
 
 def _is_fresh_today(path: str, now_jst: datetime.datetime) -> bool:
-    """data/<scope>/today.json が今日 (JST) のデータかを判定する。
+    """data/<scope>/today.json が今日 (JST) の完了データかを判定する。
 
     True なら fetch 不要、False なら要更新。判定ロジック:
       - file 不在 → False (要更新)
       - JSON parse 失敗 / updated_at 欠落 → False (要更新)
       - updated_at が today (JST) より前 → False (要更新)
+      - partial=True (途中保存) → False (残り stadium 補完が必要)
       - 上記以外 → True (fresh)
 
     2026-05-17: GHA cron の遅延 (15-30 分) で時刻ベースの起動条件を
     すり抜ける問題への根本対策。時刻窓を広げ、内側で「今日のデータか」を
     冪等チェックすることで、毎 tick で「足りなければ取る / 足りていれば skip」
-    が成立する。
+    が成立する。さらに partial=True で stadium 単位の途中保存もサポート。
     """
     full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
     if not os.path.exists(full):
@@ -111,6 +115,10 @@ def _is_fresh_today(path: str, now_jst: datetime.datetime) -> bool:
     try:
         with open(full, encoding="utf-8") as f:
             data = json.load(f)
+        # partial=True は scrape_racedata.py が stadium 単位で書いた
+        # 途中保存。残り stadium の補完が必要なので fresh とは扱わない。
+        if data.get("partial") is True:
+            return False
         ts = data.get("updated_at") or data.get("generated_at")
         if not ts:
             return False

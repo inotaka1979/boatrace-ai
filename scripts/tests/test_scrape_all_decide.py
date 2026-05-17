@@ -80,6 +80,15 @@ class TestIsFreshToday(unittest.TestCase):
         now_morning = datetime.datetime(2026, 5, 17, 9, 0, tzinfo=JST)
         self.assertTrue(scrape_all._is_fresh_today(self.path, now_morning))
 
+    def test_partial_true_returns_false(self):
+        # 今日付の partial=True は途中保存なので fresh と扱わない
+        self._write({"updated_at": "2026-05-17T05:00:00Z", "partial": True})
+        self.assertFalse(scrape_all._is_fresh_today(self.path, self.now))
+
+    def test_partial_false_returns_true(self):
+        self._write({"updated_at": "2026-05-17T05:00:00Z", "partial": False})
+        self.assertTrue(scrape_all._is_fresh_today(self.path, self.now))
+
 
 class TestDecideTasksTimingMatrix(unittest.TestCase):
     """時刻 × データ鮮度の matrix で task list の正当性を検証。"""
