@@ -6485,7 +6485,14 @@ function openStadium(sid){
 
     if(hasResult&&pred){
       var res=resultData[sid][rn];
-      var places=res.results.slice().sort(function(a,b){return a.place-b.place}).slice(0,3);
+      // D8 (2026-05-17): res.results に null entry や <3 件のケースを防御。
+      //   isFinished=true でも result が部分的なケースで places[2] undefined →
+      //   openStadium silent halt → 場が開けなくなる事故 (蒲郡 / 若松等で実機発生)
+      var _rawResults = (res && Array.isArray(res.results)) ? res.results : [];
+      var places=_rawResults.filter(function(x){ return x && Number.isFinite(x.place) && x.racer_boat_number; })
+                            .sort(function(a,b){return a.place-b.place})
+                            .slice(0,3);
+      if(places.length < 3) return;   // 結果不完全: result 行 skip (pred 行は既に出力済)
       var actualCombo=places[0].racer_boat_number+'-'+places[1].racer_boat_number+'-'+places[2].racer_boat_number;
       // FIX: 保存済 history entry の trifecta_bets を優先 lookup。
       //   live pred.trifecta は 設定変更 / DB 更新で picks が変動するため、
@@ -6506,7 +6513,7 @@ function openStadium(sid){
       html+='<td class="race-result-cell '+(hit?'hit':'miss')+'">'+(hit?'的中':'×')+'</td>';
       for(var bn2=1;bn2<=6;bn2++){
         var placeNum=null;
-        places.forEach(function(p,pi){if(p.racer_boat_number===bn2) placeNum=pi+1});
+        places.forEach(function(p,pi){if(p && p.racer_boat_number===bn2) placeNum=pi+1});
         html+='<td class="race-result-cell">'+(placeNum?placeNum+'着':'')+'</td>';
       }
       html+='</tr>';
@@ -6646,7 +6653,8 @@ function openRace(sid,rn){
   var boatsHtml='';
   if(race&&race.boats&&Array.isArray(race.boats)){
     var boatMap={};
-    race.boats.forEach(function(bt){boatMap[bt.racer_boat_number]=bt});
+    // D8 (2026-05-17): D6 と同様の null guard。race.boats に null entry 混入時の防御
+    race.boats.forEach(function(bt){ if(bt && bt.racer_boat_number) boatMap[bt.racer_boat_number]=bt; });
     var pvMap={};
     if(preview&&preview.boats){
       for(var pi=1;pi<=6;pi++){if(preview.boats[String(pi)]) pvMap[pi]=preview.boats[String(pi)]}
@@ -7245,8 +7253,9 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   // Build boat name map
   var boatNames={};
   if(race&&race.boats){
+    // D8 (2026-05-17): D6 と同様の null guard
     race.boats.forEach(function(bt){
-      boatNames[bt.racer_boat_number]=familyName(bt.racer_name);
+      if(bt && bt.racer_boat_number) boatNames[bt.racer_boat_number]=familyName(bt.racer_name);
     });
   }
 

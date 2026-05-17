@@ -3276,7 +3276,8 @@ function openRace(sid,rn){
   var boatsHtml='';
   if(race&&race.boats&&Array.isArray(race.boats)){
     var boatMap={};
-    race.boats.forEach(function(bt){boatMap[bt.racer_boat_number]=bt});
+    // D8 (2026-05-17): D6 と同様の null guard。race.boats に null entry 混入時の防御
+    race.boats.forEach(function(bt){ if(bt && bt.racer_boat_number) boatMap[bt.racer_boat_number]=bt; });
     var pvMap={};
     if(preview&&preview.boats){
       for(var pi=1;pi<=6;pi++){if(preview.boats[String(pi)]) pvMap[pi]=preview.boats[String(pi)]}
@@ -3872,8 +3873,9 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   // Build boat name map
   var boatNames={};
   if(race&&race.boats){
+    // D8 (2026-05-17): D6 と同様の null guard
     race.boats.forEach(function(bt){
-      boatNames[bt.racer_boat_number]=familyName(bt.racer_name);
+      if(bt && bt.racer_boat_number) boatNames[bt.racer_boat_number]=familyName(bt.racer_name);
     });
   }
 
