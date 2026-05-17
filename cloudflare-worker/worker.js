@@ -195,16 +195,20 @@ function isInExhibitionWindow(closedAtStr, nowMs) {
   return nowMs >= startMs && nowMs <= endMs;
 }
 
-// レース終了後ウィンドウ判定: 締切後 N 分 〜 締切 + 2 時間 (結果取得目的)
+// レース終了後ウィンドウ判定: 締切後 N 分 〜 締切 + 6 時間 (D5a: 2h→6h 拡張)
 // 締切時刻直後にレース開始 → 数分でレース終了 → 結果ページ生成
+// D5a: window を 6h に拡張することで、深夜終了 SG/G1 ナイターで openapi mirror
+//   の反映が遅れたケースも翌朝までスクレイプ補完可能。
+//   既に openapi が finished のレースは scrapeTargets から除外されるので過剰
+//   スクレイプは発生しない。
 function isInResultWindow(closedAtStr, nowMs) {
   if (!closedAtStr) return false;
   const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(closedAtStr);
   if (!m) return false;
   const closeJstMs = Date.UTC(+m[1], +m[2]-1, +m[3], +m[4]-9, +m[5], +m[6]);
-  // 締切 +3分（レース開始〜終了）〜 +120分（結果スクレイプ猶予）
+  // 締切 +3分（レース開始〜終了）〜 +360分（6h、深夜帯 openapi 遅延吸収）
   const startMs = closeJstMs + 3 * 60_000;
-  const endMs   = closeJstMs + 120 * 60_000;
+  const endMs   = closeJstMs + 360 * 60_000;
   return nowMs >= startMs && nowMs <= endMs;
 }
 
