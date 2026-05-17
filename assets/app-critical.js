@@ -1132,6 +1132,13 @@ window.addEventListener('unhandledrejection', function(e){
   var reason = e.reason; var msg=''; var stack='';
   try{ msg = (reason && reason.message) ? reason.message : String(reason); }catch(_){}
   try{ stack = (reason && reason.stack) ? String(reason.stack).slice(0,800) : ''; }catch(_){}
+  // D6 (2026-05-17): SW update の transient エラーは無害なので filter。
+  //   GitHub Pages のネットワーク blip / deploy 中の 5xx で発生し、次の自動 update
+  //   で必ず回復する。エラーログを汚すだけなので報告しない。
+  if(/ServiceWorker.*fetching the script|unknown error/i.test(msg)) {
+    try { console.warn('[SW] transient update error filtered:', msg); } catch(_){}
+    return;
+  }
   reportError({type:'reject', msg:msg, stack:stack});
 });
 
@@ -3852,7 +3859,10 @@ function openStadium(sid){
 
     if(race.boats&&Array.isArray(race.boats)){
       var boatMap={};
-      race.boats.forEach(function(bt){boatMap[bt.racer_boat_number]=bt});
+      // D6 (2026-05-17): race.boats に null / 不完全エントリが混入する可能性に
+      //   防御。openStadium は critical bundle で常に呼ばれるので壊れると
+      //   場が開けなくなる。エラーログで実機発生確認済 (2026-05-17 04:57)。
+      race.boats.forEach(function(bt){ if(bt && bt.racer_boat_number) boatMap[bt.racer_boat_number]=bt; });
       var activePredMarks=dispPred?dispPred.marks:(progPred?progPred.marks:null);
       for(var bn=1;bn<=6;bn++){
         var bt=boatMap[bn];
@@ -3942,11 +3952,25 @@ function _setupServiceWorker(){
   if(!('serviceWorker' in navigator)) return;
   // updateViaCache:'none' で sw.js 自体を HTTP cache から外し、
   //   iOS が古い VERSION を見続ける事故を防ぐ
+  // D6 (2026-05-17): reg.update() の rejection を catch してエラーログを汚さない。
+  //   "Failed to update a ServiceWorker ... unknown error" は GitHub Pages 一時障害や
+  //   ネットワーク blip で発生する transient エラーで、アプリ動作には影響しない。
+  //   未捕捉だと boatrace_errors に reject 型で記録されてユーザを混乱させる。
+  function _safeSwUpdate(reg){
+    try {
+      var p = reg.update();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function(err){
+          try { console.warn('[SW] update transient error:', err && err.message); } catch(_){}
+        });
+      }
+    } catch(e){ try { console.warn('[SW] update threw:', e && e.message); } catch(_){} }
+  }
   navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'})
     .then(function(reg){
       console.log('[SW] registered scope=', reg.scope);
-      _runIdleTask(function(){ reg.update(); }, 100);
-      setInterval(function(){ reg.update(); }, 1800000);
+      _runIdleTask(function(){ _safeSwUpdate(reg); }, 100);
+      setInterval(function(){ _safeSwUpdate(reg); }, 1800000);
       // Epic 18 (P2-7): URL ?coi=1 が opt-in されている場合のみ COI reload を実施
       try {
         var _coiOptIn = (new URLSearchParams(location.search)).get('coi') === '1';
