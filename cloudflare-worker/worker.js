@@ -195,6 +195,161 @@ function isInExhibitionWindow(closedAtStr, nowMs) {
   return nowMs >= startMs && nowMs <= endMs;
 }
 
+// レース終了後ウィンドウ判定: 締切後 N 分 〜 締切 + 2 時間 (結果取得目的)
+// 締切時刻直後にレース開始 → 数分でレース終了 → 結果ページ生成
+function isInResultWindow(closedAtStr, nowMs) {
+  if (!closedAtStr) return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(closedAtStr);
+  if (!m) return false;
+  const closeJstMs = Date.UTC(+m[1], +m[2]-1, +m[3], +m[4]-9, +m[5], +m[6]);
+  // 締切 +3分（レース開始〜終了）〜 +120分（結果スクレイプ猶予）
+  const startMs = closeJstMs + 3 * 60_000;
+  const endMs   = closeJstMs + 120 * 60_000;
+  return nowMs >= startMs && nowMs <= endMs;
+}
+
+// 全角数字 → 半角数字 ("１" → 1)
+function toHalfWidthInt(s) {
+  if (s == null) return NaN;
+  const half = String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  return parseInt(half);
+}
+
+// boatrace.jp /owpc/pc/race/raceresult ページを直接 scrape して結果取得
+//   着順構造: 各順位が独立 <tbody> (1 tbody=1 tr)、tds[0]=着順 (全角数字),
+//             tds[1]=艇番, tds[2]=選手名, tds[3]=タイム
+//   払戻構造: <tbody> 内に複数 <tr>、ヘッダ <th> でジャンル ("3連単" 等)、tds[0]=combo, tds[1]=金額
+function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
+  const out = {
+    race_stadium_number: stadium,
+    race_number: raceNum,
+    race_date: raceDate,
+    race_technique_number: null,
+    boats: [],
+    payouts: { trifecta:[], trio:[], exacta:[], quinella:[], quinella_place:[], win:[], place:[] },
+  };
+  // 全 tbody を抽出して、各 tbody 内の最初の tr で 着順 + 艇番 が取れるなら採用
+  const tbodyRe = /<tbody[^>]*>([\s\S]*?)<\/tbody>/g;
+  const tbodies = [];
+  let tm;
+  while ((tm = tbodyRe.exec(html)) !== null) tbodies.push(tm[1]);
+
+  const placesSeen = new Set();
+  for (const tbody of tbodies) {
+    const trM = /<tr[^>]*>([\s\S]*?)<\/tr>/.exec(tbody);
+    if (!trM) continue;
+    const tr = trM[1];
+    const tdRe = /<td[^>]*>([\s\S]*?)<\/td>/g;
+    const tds = [];
+    let mm;
+    while ((mm = tdRe.exec(tr)) !== null) tds.push(stripTags(mm[1]));
+    if (tds.length < 2) continue;
+    const place = toHalfWidthInt(tds[0]);
+    const boatNum = toHalfWidthInt(tds[1]);
+    if (!(place >= 1 && place <= 6) || !(boatNum >= 1 && boatNum <= 6)) continue;
+    if (placesSeen.has(place)) continue;   // 同 place 重複防止
+    placesSeen.add(place);
+    let name = tds.length > 2 ? tds[2] : '';
+    // selOr 内 span にレーサー番号 "4199" 等が含まれる場合があるので除去
+    name = name.replace(/\s*\d{4,5}\s*/, '').trim();
+    out.boats.push({
+      racer_boat_number: boatNum,
+      racer_place_number: place,
+      racer_course_number: boatNum,   // course は raceresult からは取得困難
+      racer_name: name,
+      racer_start_timing: null,
+      racer_number: null,
+    });
+    if (placesSeen.size >= 6) break;
+  }
+  if (out.boats.length > 0) out.race_technique_number = 1;
+
+  // 払戻テーブル: tbody 内の <tr> で <th> + <td>×2 を含むもの
+  for (const tbody of tbodies) {
+    if (tbody.indexOf('払戻') < 0 && tbody.indexOf('配当') < 0
+        && tbody.indexOf('連単') < 0 && tbody.indexOf('単勝') < 0) continue;
+    const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+    let trM;
+    while ((trM = trRe.exec(tbody)) !== null) {
+      const tr = trM[1];
+      const thM = /<th[^>]*>([\s\S]*?)<\/th>/.exec(tr);
+      if (!thM) continue;
+      const label = stripTags(thM[1]);
+      const tdRe = /<td[^>]*>([\s\S]*?)<\/td>/g;
+      const tds = [];
+      let mm;
+      while ((mm = tdRe.exec(tr)) !== null) tds.push(stripTags(mm[1]));
+      if (tds.length < 2) continue;
+      const combo = tds[0];
+      const amountTxt = tds[1].replace(/[,円¥\s&;yen]/g, '');
+      const amountM = /\d+/.exec(amountTxt);
+      if (!amountM) continue;
+      const amount = parseInt(amountM[0]);
+      const entry = { combination: combo, amount: amount };
+      if (label.indexOf('3連単') >= 0) out.payouts.trifecta.push(entry);
+      else if (label.indexOf('3連複') >= 0) out.payouts.trio.push(entry);
+      else if (label.indexOf('2連単') >= 0) out.payouts.exacta.push(entry);
+      else if (label.indexOf('2連複') >= 0) out.payouts.quinella.push(entry);
+      else if (label.indexOf('拡連複') >= 0) out.payouts.quinella_place.push(entry);
+      else if (label.indexOf('単勝') >= 0) out.payouts.win.push(entry);
+      else if (label.indexOf('複勝') >= 0) out.payouts.place.push(entry);
+    }
+  }
+  return out;
+}
+
+async function scrapeRaceresult(sid, rno, hd, raceDate) {
+  const jcd = String(sid).padStart(2, '0');
+  const url = `https://www.boatrace.jp/owpc/pc/race/raceresult?rno=${rno}&jcd=${jcd}&hd=${hd}`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 boatrace-scrape-worker/1.2' },
+    cf: { cacheTtl: 30, cacheEverything: true },
+  });
+  if (!res.ok) throw new Error(`raceresult ${res.status}: stadium=${sid} race=${rno}`);
+  const html = await res.text();
+  return parseRaceresultHTML(html, sid, rno, raceDate);
+}
+
+// 終了済かつ openapi が race_technique_number=null のレースを scrape
+async function mergeBoatraceJpResults(programs, results, nowMs) {
+  const scrapeTargets = [];
+  for (const p of (programs.programs || [])) {
+    const sid = p.race_stadium_number, rno = p.race_number;
+    if (!isInResultWindow(p.race_closed_at, nowMs)) continue;
+    const hd = String(p.race_date || '').replace(/-/g, '');
+    if (!hd) continue;
+    // 該当 result entry を確認
+    const r = (results.results || []).find(x =>
+      x.race_stadium_number === sid && x.race_number === rno
+    );
+    // race_technique_number が無い (=未確定) で window 内 → スクレイプ対象
+    const finished = r && r.race_technique_number != null;
+    if (finished) continue;
+    scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r });
+  }
+  // 締切が新しい順 (すぐ終わったレースは結果ページが既に存在する可能性高)
+  scrapeTargets.sort((a, b) => (a.rPtr?.race_closed_at < b.rPtr?.race_closed_at ? 1 : -1));
+  const picks = scrapeTargets.slice(0, MAX_HTML_SCRAPES_PER_RUN);
+  let mergedCount = 0;
+  const settled = await Promise.allSettled(
+    picks.map(t => scrapeRaceresult(t.sid, t.rno, t.hd, t.raceDate).then(parsed => ({ t, parsed })))
+  );
+  for (const r of settled) {
+    if (r.status !== 'fulfilled' || !r.value.parsed) continue;
+    const { t, parsed } = r.value;
+    if (parsed.race_technique_number == null) continue;   // 結果ページがまだ無い
+    if (t.rPtr) {
+      // 上流 results 配列内のエントリをマージで上書き
+      Object.assign(t.rPtr, parsed);
+    } else {
+      // results 配列に追加
+      (results.results || (results.results = [])).push(parsed);
+    }
+    mergedCount++;
+  }
+  return { targets: scrapeTargets.length, scraped: picks.length, merged: mergedCount };
+}
+
 // 展示窓内かつ openapi が boats 空のレースを抽出し、boatrace.jp 直スクレイプ
 async function mergeBoatraceJpExhibition(programs, previews, nowMs) {
   const scrapeTargets = [];
@@ -265,13 +420,23 @@ async function refreshAll(env) {
   try { results  = await fetchUpstream(UPSTREAM.results);  out.results  = { ok: true }; }
   catch (e) { out.results  = { ok: false, error: String(e).slice(0,200) }; }
 
+  const nowMs = Date.now();
   // boatrace.jp 直スクレイプで展示データを補完
   if (previews && programs) {
     try {
-      const mergeStats = await mergeBoatraceJpExhibition(programs, previews, Date.now());
+      const mergeStats = await mergeBoatraceJpExhibition(programs, previews, nowMs);
       out.exhibition_scrape = mergeStats;
     } catch (e) {
       out.exhibition_scrape = { error: String(e).slice(0,200) };
+    }
+  }
+  // C6: boatrace.jp 直スクレイプで結果データを補完
+  if (results && programs) {
+    try {
+      const mergeStats = await mergeBoatraceJpResults(programs, results, nowMs);
+      out.result_scrape = mergeStats;
+    } catch (e) {
+      out.result_scrape = { error: String(e).slice(0,200) };
     }
   }
 
