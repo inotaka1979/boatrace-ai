@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""統合 scraper エントリポイント — Path B (2026-05-16)
+"""統合 scraper エントリポイント — Path B (2026-05-16, ping 2026-05-17T00:58Z)
 
 11 個に分散していた scrape workflow を 1 本に統合するためのオーケストレータ。
 JST 現在時刻に応じて実行する scraper を決定し、sequential に呼び出す。
