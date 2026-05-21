@@ -119,6 +119,7 @@ async function main() {
     { marker: 'I18N',         src: 'utils/i18n.js' },       // Epic 16
     { marker: 'DP_GRADIENT',  src: 'utils/dp_gradient.js' },// Epic 21
     { marker: 'CAPABILITIES', src: 'capabilities.js' },     // Clearwing Phase 1
+    { marker: 'DISCOVERY_OPENAPI', src: 'discovery/openapi_client.js' }, // Clearwing Phase 2b
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [
