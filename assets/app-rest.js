@@ -375,27 +375,6 @@ function boatBadge(num){return'<span class="boat-badge" style="background:'+BOAT
 
 function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
 
-function _renderApiHealthBanner(){
-  var banner = document.getElementById('apiHealthBanner');
-  var msg = document.getElementById('apiHealthMsg');
-  if(!banner || !msg) return;
-  var fails = [];
-  var caches = [];
-  for(var k in _apiHealth){
-    if(_apiHealth[k]==='fail') fails.push(k);
-    else if(_apiHealth[k]==='cached') caches.push(k);
-  }
-  if(fails.length === 0 && caches.length === 0){
-    banner.style.display = 'none';
-    return;
-  }
-  var parts = [];
-  if(fails.length) parts.push('API取得失敗: ' + fails.join('/'));
-  if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
-  msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
-  banner.style.display = 'block';
-}
-
 function runBacktest(){
   var resultDiv = document.getElementById('btResult');
   var detailsDiv = document.getElementById('btDetails');

@@ -121,6 +121,8 @@ async function main() {
     { marker: 'CAPABILITIES', src: 'capabilities.js' },     // Clearwing Phase 1
     { marker: 'DISCOVERY_OPENAPI', src: 'discovery/openapi_client.js' }, // Clearwing Phase 2b
     { marker: 'ANALYSIS_BACKTEST', src: 'analysis/backtest.js' },        // Clearwing Phase 2c
+    { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
+    { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [

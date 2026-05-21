@@ -220,15 +220,103 @@
 // ===============================================
 // CONSTANTS (PRESERVED)
 // ===============================================
-var STADIUMS={1:"桐生",2:"戸田",3:"江戸川",4:"平和島",5:"多摩川",6:"浜名湖",7:"蒲郡",8:"常滑",9:"津",10:"三国",11:"びわこ",12:"住之江",13:"尼崎",14:"鳴門",15:"丸亀",16:"児島",17:"宮島",18:"徳山",19:"下関",20:"若松",21:"芦屋",22:"福岡",23:"唐津",24:"大村"};
-var CLASS_NAME={1:"A1",2:"A2",3:"B1",4:"B2"};
-var CLASS_COLOR={1:"#FF2244",2:"#FF6644",3:"#2288FF",4:"#888888"};
-var BOAT_COLORS={1:"#FFFFFF",2:"#000000",3:"#FF1122",4:"#2255FF",5:"#FFD700",6:"#22CC44"};
-var BOAT_TEXT={1:"#000000",2:"#FFFFFF",3:"#FFFFFF",4:"#FFFFFF",5:"#000000",6:"#FFFFFF"};
+// 競艇ドメインの静的データテーブル (STADIUMS / CLASS_NAME / BOAT_COLORS / BOAT_TEXT /
+//   TECHNIQUE / WIND_DIR / GRADE_CLASS / CLASS_COLOR) は src/context/domain_constants.js
+//   に移動 (Clearwing Phase 2e)。BUILD:CONTEXT_DOMAIN bundle 経由で globalThis に公開。
+/* BUILD:CONTEXT_DOMAIN:START */
+"use strict";
+(() => {
+  // ../src/context/domain_constants.js
+  var STADIUMS = Object.freeze({
+    1: "\u6850\u751F",
+    2: "\u6238\u7530",
+    3: "\u6C5F\u6238\u5DDD",
+    4: "\u5E73\u548C\u5CF6",
+    5: "\u591A\u6469\u5DDD",
+    6: "\u6D5C\u540D\u6E56",
+    7: "\u84B2\u90E1",
+    8: "\u5E38\u6ED1",
+    9: "\u6D25",
+    10: "\u4E09\u56FD",
+    11: "\u3073\u308F\u3053",
+    12: "\u4F4F\u4E4B\u6C5F",
+    13: "\u5C3C\u5D0E",
+    14: "\u9CF4\u9580",
+    15: "\u4E38\u4E80",
+    16: "\u5150\u5CF6",
+    17: "\u5BAE\u5CF6",
+    18: "\u5FB3\u5C71",
+    19: "\u4E0B\u95A2",
+    20: "\u82E5\u677E",
+    21: "\u82A6\u5C4B",
+    22: "\u798F\u5CA1",
+    23: "\u5510\u6D25",
+    24: "\u5927\u6751"
+  });
+  var CLASS_NAME = Object.freeze({ 1: "A1", 2: "A2", 3: "B1", 4: "B2" });
+  var CLASS_COLOR = Object.freeze({ 1: "#FF2244", 2: "#FF6644", 3: "#2288FF", 4: "#888888" });
+  var BOAT_COLORS = Object.freeze({
+    1: "#FFFFFF",
+    2: "#000000",
+    3: "#FF1122",
+    4: "#2255FF",
+    5: "#FFD700",
+    6: "#22CC44"
+  });
+  var BOAT_TEXT = Object.freeze({
+    1: "#000000",
+    2: "#FFFFFF",
+    3: "#FFFFFF",
+    4: "#FFFFFF",
+    5: "#000000",
+    6: "#FFFFFF"
+  });
+  var TECHNIQUE = Object.freeze({
+    1: "\u9003\u3052",
+    2: "\u5DEE\u3057",
+    3: "\u307E\u304F\u308A",
+    4: "\u307E\u304F\u308A\u5DEE\u3057",
+    5: "\u629C\u304D",
+    6: "\u6075\u307E\u308C"
+  });
+  var WIND_DIR = Object.freeze({
+    1: "N",
+    2: "NNE",
+    3: "NE",
+    4: "ENE",
+    5: "E",
+    6: "ESE",
+    7: "SE",
+    8: "SSE",
+    9: "S",
+    10: "SSW",
+    11: "SW",
+    12: "WSW",
+    13: "W",
+    14: "WNW",
+    15: "NW",
+    16: "NNW",
+    17: "\u7121\u98A8"
+  });
+  var GRADE_CLASS = Object.freeze({
+    1: Object.freeze({ name: "SG", cls: "grade-sg" }),
+    2: Object.freeze({ name: "G1", cls: "grade-g1" }),
+    3: Object.freeze({ name: "G2", cls: "grade-g2" }),
+    4: Object.freeze({ name: "G3", cls: "grade-g3" }),
+    5: Object.freeze({ name: "\u4E00\u822C", cls: "grade-general" })
+  });
+  globalThis.STADIUMS = STADIUMS;
+  globalThis.CLASS_NAME = CLASS_NAME;
+  globalThis.CLASS_COLOR = CLASS_COLOR;
+  globalThis.BOAT_COLORS = BOAT_COLORS;
+  globalThis.BOAT_TEXT = BOAT_TEXT;
+  globalThis.TECHNIQUE = TECHNIQUE;
+  globalThis.WIND_DIR = WIND_DIR;
+  globalThis.GRADE_CLASS = GRADE_CLASS;
+})();
+
+/* BUILD:CONTEXT_DOMAIN:END */
 var COURSE_WIN_RATE={1:0.55,2:0.14,3:0.12,4:0.11,5:0.06,6:0.02};
-var TECHNIQUE={1:"逃げ",2:"差し",3:"まくり",4:"まくり差し",5:"抜き",6:"恵まれ"};
-var WIND_DIR={1:"N",2:"NNE",3:"NE",4:"ENE",5:"E",6:"ESE",7:"SE",8:"SSE",9:"S",10:"SSW",11:"SW",12:"WSW",13:"W",14:"WNW",15:"NW",16:"NNW",17:"無風"};
-var GRADE_CLASS={1:{name:"SG",cls:"grade-sg"},2:{name:"G1",cls:"grade-g1"},3:{name:"G2",cls:"grade-g2"},4:{name:"G3",cls:"grade-g3"},5:{name:"一般",cls:"grade-general"}};
 var API_BASE='https://boatraceopenapi.github.io';
 // F19: RPi serve_data 機能撤去（GitHub Pages 配信のみで運用）
 // var LOCAL_RPI_URL=...; は削除済
@@ -2711,27 +2799,61 @@ function pf(v){return parseFloat(v)||0}
 
 /* BUILD:DISCOVERY_OPENAPI:END */
 
-// _renderApiHealthBanner は DOM に触れる reporting 層関数（Phase 2d で reporting に移動予定）
-function _renderApiHealthBanner(){
-  var banner = document.getElementById('apiHealthBanner');
-  var msg = document.getElementById('apiHealthMsg');
-  if(!banner || !msg) return;
-  var fails = [];
-  var caches = [];
-  for(var k in _apiHealth){
-    if(_apiHealth[k]==='fail') fails.push(k);
-    else if(_apiHealth[k]==='cached') caches.push(k);
+/* BUILD:REPORTING_STATUS_BANNER:START */
+"use strict";
+(() => {
+  // ../src/reporting/status_banner.js
+  function _renderApiHealthBanner() {
+    const banner = document.getElementById("apiHealthBanner");
+    const msg = document.getElementById("apiHealthMsg");
+    if (!banner || !msg) return;
+    const health = globalThis._apiHealth || {};
+    const fails = [];
+    const cached = [];
+    for (const k in health) {
+      if (health[k] === "fail") fails.push(k);
+      else if (health[k] === "cached") cached.push(k);
+    }
+    if (fails.length === 0 && cached.length === 0) {
+      banner.style.display = "none";
+      return;
+    }
+    const parts = [];
+    if (fails.length) parts.push("API\u53D6\u5F97\u5931\u6557: " + fails.join("/"));
+    if (cached.length) parts.push("\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D: " + cached.join("/"));
+    msg.textContent = parts.join(" / ") + " \u2014 \u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059";
+    banner.style.display = "block";
   }
-  if(fails.length === 0 && caches.length === 0){
-    banner.style.display = 'none';
-    return;
+  function _renderFreshness() {
+    const el = document.getElementById("dataFreshness");
+    if (!el) return;
+    const latest = Math.max(
+      globalThis._dataLatestUpdatedAt || 0,
+      globalThis._dataTodayConfirmedAt || 0
+    );
+    if (!latest) {
+      el.textContent = "";
+      return;
+    }
+    const todayJst = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
+    const dataDate = new Date(latest + 9 * 36e5).toISOString().slice(0, 10);
+    if (dataDate !== todayJst) {
+      el.innerHTML = '<span style="color:#BDBDBD">\u{1F4A4} \u672C\u65E5\u30C7\u30FC\u30BF\u53D6\u5F97\u5F85\u3061</span>';
+      return;
+    }
+    const sec = Math.max(0, Math.floor((Date.now() - latest) / 1e3));
+    let label;
+    if (sec < 60) label = sec + "\u79D2\u524D";
+    else if (sec < 3600) label = Math.floor(sec / 60) + "\u5206\u524D";
+    else label = Math.floor(sec / 3600) + "\u6642\u9593\u524D";
+    const color = sec < 180 ? "#A5D6A7" : sec < 600 ? "#FFCC80" : "#FF8A80";
+    el.innerHTML = '<span style="color:' + color + '">\u{1F4E1} ' + label + "</span>";
   }
-  var parts = [];
-  if(fails.length) parts.push('API取得失敗: ' + fails.join('/'));
-  if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
-  msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
-  banner.style.display = 'block';
-}
+  globalThis._renderApiHealthBanner = _renderApiHealthBanner;
+  globalThis._renderFreshness = _renderFreshness;
+})();
+
+/* BUILD:REPORTING_STATUS_BANNER:END */
 
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
@@ -8750,28 +8872,8 @@ function _noteTodayDataFromRaw(raw, key){
   var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   if(dataIso === todayJst) _dataTodayConfirmedAt = Date.now();
 }
-function _renderFreshness(){
-  var el = document.getElementById('dataFreshness');
-  if(!el) return;
-  // updated_at と race_date 両方の最新を比較（GitHub Pages 反映遅延対策）
-  var latest = Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt);
-  if(!latest){ el.textContent=''; return; }
-  // データが今日 (JST) のものでなければ「待機中」表示（cron が本日まだ走っていない等）
-  var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  var dataDate = new Date(latest+9*3600000).toISOString().slice(0,10);
-  if(dataDate !== todayJst){
-    el.innerHTML = '<span style="color:#BDBDBD">💤 本日データ取得待ち</span>';
-    return;
-  }
-  var sec = Math.max(0, Math.floor((Date.now() - latest)/1000));
-  var label;
-  if(sec < 60) label = sec + '秒前';
-  else if(sec < 3600) label = Math.floor(sec/60) + '分前';
-  else label = Math.floor(sec/3600) + '時間前';
-  // PE-2: header 背景 (#1A3A5C) で AA 適合な明色で表示
-  var color = sec < 180 ? '#A5D6A7' : sec < 600 ? '#FFCC80' : '#FF8A80';
-  el.innerHTML = '<span style="color:'+color+'">📡 '+label+'</span>';
-}
+// _renderFreshness は src/reporting/status_banner.js に移動 (Phase 2d)
+// → BUILD:REPORTING_STATUS_BANNER bundle 経由で globalThis に export 済
 setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
 
 setManagedInterval(async function(){
