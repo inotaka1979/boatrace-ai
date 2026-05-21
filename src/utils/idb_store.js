@@ -26,7 +26,10 @@ const IDB_KEYS_LARGE = ['boatrace_racerDB', 'boatrace_stadiumDB', 'boatrace_pair
                         'boatrace_motorStats', 'boatrace_exhibitionStats'];
 
 let _idbInstance = null;
-let _idbAvailable = (typeof indexedDB !== 'undefined');
+// Clearwing Phase 1: capabilities が先に bundle される（順序保証は build.mjs の modules 配列）
+let _idbAvailable = (globalThis.capabilities && typeof globalThis.capabilities.has === 'function')
+  ? globalThis.capabilities.has('indexed_db')
+  : (typeof indexedDB !== 'undefined');
 
 function _openIDB() {
   if (_idbInstance) return Promise.resolve(_idbInstance);

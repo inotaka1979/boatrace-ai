@@ -37,6 +37,191 @@
   } catch(_){}
 })();
 
+/* BUILD:CAPABILITIES:START */
+"use strict";
+(() => {
+  // ../src/capabilities.js
+  var Capabilities = class {
+    constructor() {
+      this._sync = /* @__PURE__ */ new Map();
+      this._async = /* @__PURE__ */ new Map();
+    }
+    // ─────────────────────────────────────────────
+    // 同期検出（起動時 1 回）
+    // ─────────────────────────────────────────────
+    detectSync() {
+      this._set(
+        "abort_timeout",
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      );
+      this._set(
+        "service_worker",
+        typeof navigator !== "undefined" && "serviceWorker" in navigator
+      );
+      this._set(
+        "indexed_db",
+        typeof indexedDB !== "undefined"
+      );
+      this._set(
+        "cache_api",
+        typeof caches !== "undefined"
+      );
+      this._set("local_storage", (() => {
+        try {
+          if (typeof localStorage === "undefined") return false;
+          const k = "__br_cap_probe__";
+          localStorage.setItem(k, "1");
+          localStorage.removeItem(k);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      })());
+      this._set(
+        "scheduler_post_task",
+        typeof scheduler !== "undefined" && typeof scheduler.postTask === "function"
+      );
+      this._set(
+        "scheduler_yield",
+        typeof scheduler !== "undefined" && typeof scheduler.yield === "function"
+      );
+      this._set(
+        "request_idle_callback",
+        typeof requestIdleCallback === "function"
+      );
+      this._set(
+        "document",
+        typeof document !== "undefined" && typeof document.querySelectorAll === "function"
+      );
+      this._set(
+        "notification",
+        typeof Notification !== "undefined"
+      );
+      this._set(
+        "chart",
+        typeof Chart !== "undefined"
+      );
+      this._set(
+        "worker",
+        typeof Worker !== "undefined"
+      );
+      this._set(
+        "shared_array_buffer",
+        typeof window !== "undefined" && window.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined"
+      );
+      this._set(
+        "cross_origin_isolated",
+        typeof window !== "undefined" && window.crossOriginIsolated === true
+      );
+      this._set("online", this._detectOnline());
+      if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        try {
+          window.addEventListener("online", () => this._set("online", true));
+          window.addEventListener("offline", () => this._set("online", false));
+        } catch (_) {
+        }
+      }
+    }
+    _set(name, value) {
+      this._sync.set(name, value === true);
+    }
+    _detectOnline() {
+      if (typeof navigator === "undefined") return true;
+      if (typeof navigator.onLine !== "boolean") return true;
+      return navigator.onLine;
+    }
+    // ─────────────────────────────────────────────
+    // 公開 API
+    // ─────────────────────────────────────────────
+    has(name) {
+      if (this._sync.has(name)) return this._sync.get(name) === true;
+      if (this._async.has(name)) return this._async.get(name) === true;
+      return false;
+    }
+    // 動的に状態が変わる capability の再検出（chart 動的 import 後 等）
+    refresh(name) {
+      if (name === "chart") this._set("chart", typeof Chart !== "undefined");
+      else if (name === "online") this._set("online", this._detectOnline());
+      else this.detectSync();
+    }
+    list() {
+      return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
+    }
+    // ─────────────────────────────────────────────
+    // Async probes（on-demand、結果キャッシュ）
+    // ─────────────────────────────────────────────
+    //   - 'openapi_fresh': boatraceopenapi の HEAD レスポンスから更新時刻判定
+    //   - 'exhibition_data': 個別レースの preview 取得試行（呼出側で sid/rno を渡す形に拡張可能）
+    //
+    // Phase 1 では openapi_fresh のみ実装、他は API としてのみ用意。
+    async probe(name, opts) {
+      if (this._async.has(name)) return this._async.get(name);
+      let result = false;
+      try {
+        if (name === "openapi_fresh") result = await this._probeOpenapiFresh(opts);
+      } catch (_) {
+        result = false;
+      }
+      this._async.set(name, result === true);
+      return this._async.get(name);
+    }
+    async _probeOpenapiFresh(opts) {
+      if (typeof fetch !== "function") return false;
+      const url = opts && opts.url || "https://boatraceopenapi.github.io/programs/v2/today.json";
+      const ttlMs = opts && opts.ttlMs || 30 * 60 * 1e3;
+      const r = await fetch(url, {
+        method: "HEAD",
+        signal: this.makeTimeoutSignal(3e3),
+        cache: "no-store"
+      });
+      if (!r.ok) return false;
+      const lm = r.headers.get("last-modified");
+      if (!lm) return false;
+      const age = Date.now() - new Date(lm).getTime();
+      return Number.isFinite(age) && age >= 0 && age < ttlMs;
+    }
+    // ─────────────────────────────────────────────
+    // ヘルパ: 互換性のあるタイムアウト signal を返す
+    //   has('abort_timeout') が true なら AbortSignal.timeout(ms)
+    //   false なら AbortController + setTimeout の polyfill
+    // 主に iOS Safari 旧版での fetch timeout 互換を確保するため。
+    // ─────────────────────────────────────────────
+    makeTimeoutSignal(ms) {
+      if (this.has("abort_timeout")) {
+        return AbortSignal.timeout(ms);
+      }
+      const c = new AbortController();
+      const ctxScheduler = typeof setTimeout === "function" ? setTimeout : null;
+      if (ctxScheduler) ctxScheduler(() => {
+        try {
+          c.abort();
+        } catch (_) {
+        }
+      }, ms);
+      return c.signal;
+    }
+    // ─────────────────────────────────────────────
+    // ヘルパ: 利用可能な「アイドル時実行」関数を返す
+    //   scheduler.postTask({priority:'background'}) > requestIdleCallback > setTimeout
+    // ─────────────────────────────────────────────
+    runIdle(fn, opts) {
+      if (this.has("scheduler_post_task")) {
+        return scheduler.postTask(fn, { priority: "background", ...opts || {} });
+      }
+      if (this.has("request_idle_callback")) {
+        return requestIdleCallback(fn, { timeout: opts && opts.timeout || 3e3 });
+      }
+      return setTimeout(fn, opts && opts.delay || 0);
+    }
+  };
+  var capabilities = new Capabilities();
+  capabilities.detectSync();
+  globalThis.capabilities = capabilities;
+  globalThis.Capabilities = Capabilities;
+})();
+
+/* BUILD:CAPABILITIES:END */
+
 // ===============================================
 // CONSTANTS (PRESERVED)
 // ===============================================
@@ -604,7 +789,7 @@ try {
       setTimeout(function(){ tryRun(retry+1); }, 100);
       return;
     }
-    var _idbAvail = (typeof indexedDB !== 'undefined');
+    var _idbAvail = capabilities.has('indexed_db');
     console.log('[idb] migrate start (IDB available='+_idbAvail+')');
     idbMigrateFromLS().then(function(res){
       var migN = ((res && res.migrated)||[]).length;
@@ -1095,11 +1280,10 @@ try {
 /* MOVED: function _toggleCOI */
 /* MOVED: function _refreshCOIStatus */
 /* MOVED: function _packStringToSAB */
-// 起動ログで COI 状態を可視化（デバッグ用、_isSABAvailable は rest 側のため typeof guard 必須）
+// 起動ログで COI 状態を可視化
 try {
-  var _sabOk = (typeof _isSABAvailable === 'function') ? _isSABAvailable() : false;
-  console.log('[Epic18] crossOriginIsolated=' + (typeof window !== 'undefined' && window.crossOriginIsolated)
-    + ' SABAvailable=' + _sabOk);
+  console.log('[Epic18] crossOriginIsolated=' + capabilities.has('cross_origin_isolated')
+    + ' SABAvailable=' + capabilities.has('shared_array_buffer'));
 } catch(_){}
 
 // Epic 17 (P2-6) + Epic 21: 階層的 federated learning — global + per-stadium 重みを blend
@@ -1340,7 +1524,7 @@ window.addEventListener('unhandledrejection', function(e){
     "boatrace_exhibitionStats"
   ];
   var _idbInstance = null;
-  var _idbAvailable = typeof indexedDB !== "undefined";
+  var _idbAvailable = globalThis.capabilities && typeof globalThis.capabilities.has === "function" ? globalThis.capabilities.has("indexed_db") : typeof indexedDB !== "undefined";
   function _openIDB() {
     if (_idbInstance) return Promise.resolve(_idbInstance);
     if (!_idbAvailable) return Promise.reject(new Error("IDB unavailable"));
@@ -2930,7 +3114,7 @@ async function hardReload(){
   if(btn){ btn.disabled=true; btn.textContent='⏳ 削除中...'; }
   try{
     // 1) アクティブな SW に purge を依頼（cache を SW が握っている場合の救済）
-    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+    if(capabilities.has('service_worker') && navigator.serviceWorker.controller){
       try{
         var purged = new Promise(function(resolve){
           var to = setTimeout(resolve, 1500);  // タイムアウト 1.5s
@@ -2947,12 +3131,12 @@ async function hardReload(){
       }catch(_){}
     }
     // 2) クライアント側でも全 cache を削除（念のため重複実行）
-    if('caches' in window){
+    if(capabilities.has('cache_api')){
       var keys = await caches.keys();
       await Promise.all(keys.map(function(k){ return caches.delete(k); }));
     }
     // 3) 全 SW を unregister
-    if('serviceWorker' in navigator){
+    if(capabilities.has('service_worker')){
       var regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map(function(r){ return r.unregister(); }));
     }
@@ -2982,7 +3166,7 @@ async function forceRefresh(){
   if(navBtn){ navBtn.disabled=true; navBtn.innerHTML='<span class="nav-icon">⏳</span>更新中'; }
   try {
     // 1) Service Worker cache を全削除
-    if('caches' in window){
+    if(capabilities.has('cache_api')){
       var keys = await caches.keys();
       await Promise.all(keys.map(function(k){ return caches.delete(k); }));
     }
@@ -3120,10 +3304,10 @@ function _mapToWorkerUrl(openapiUrl){
 }
 
 function _fetchOne(url, timeoutMs){
-  var controller=new AbortController();
-  var tid=setTimeout(function(){controller.abort()},timeoutMs||10000);
-  return fetch(url,{signal:controller.signal,cache:'no-store'})
-    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()});
+  // Clearwing Phase 1: capabilities.makeTimeoutSignal で iOS Safari 旧版 (AbortSignal.timeout 非対応) を吸収
+  var signal = capabilities.makeTimeoutSignal(timeoutMs||10000);
+  return fetch(url,{signal:signal,cache:'no-store'})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()});
 }
 
 function fetchWithFallback(url){
@@ -3371,10 +3555,10 @@ function getAccuracy(){
 
 async function _yieldToMain(){
   // postTask は新しい task として実行されるため、TBT 計上の long task を確実に分割
-  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+  if(capabilities.has('scheduler_post_task')){
     return scheduler.postTask(function(){}, {priority:'user-blocking'});
   }
-  if(typeof scheduler !== 'undefined' && scheduler.yield){
+  if(capabilities.has('scheduler_yield')){
     await scheduler.yield();
     return;
   }
@@ -3556,10 +3740,8 @@ async function loadAllData(){
   if(msg) msg.textContent='完了';
 
   // PE-8: Phase 2 — 非クリティカル DB / 学習を idle time に deferred
-  //   起動 LCP/FCP に影響しないよう requestIdleCallback (フォールバック setTimeout)
-  var schedule = (typeof requestIdleCallback === 'function')
-    ? function(fn){ requestIdleCallback(fn, {timeout: 3000}); }
-    : function(fn){ setTimeout(fn, 100); };
+  //   capabilities.runIdle = scheduler.postTask 'background' > requestIdleCallback > setTimeout
+  var schedule = function(fn){ capabilities.runIdle(fn, {timeout: 3000, delay: 100}); };
   schedule(function(){ loadDeferredData(rawPrograms, rawPreviews).catch(function(e){
     console.warn('[PE-8] deferred load failed:', e);
   }); });
@@ -3949,14 +4131,16 @@ function showUpdateToast(onUpdate){
 }
 
 function _runIdleTask(fn, delay){
-  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+  // 直接 setTimeout fallback も capabilities.runIdle が同等カバー、ただし requestIdleCallback を
+  // 含めると 3 ms 単位の遅延が増えるためここは scheduler.postTask または setTimeout の 2 段。
+  if(capabilities.has('scheduler_post_task')){
     return scheduler.postTask(fn, {priority:'background'});
   }
   return setTimeout(fn, delay || 0);
 }
 
 function _setupServiceWorker(){
-  if(!('serviceWorker' in navigator)) return;
+  if(!capabilities.has('service_worker')) return;
   // updateViaCache:'none' で sw.js 自体を HTTP cache から外し、
   //   iOS が古い VERSION を見続ける事故を防ぐ
   // D6 (2026-05-17): reg.update() の rejection を catch してエラーログを汚さない。
@@ -3981,7 +4165,7 @@ function _setupServiceWorker(){
       // Epic 18 (P2-7): URL ?coi=1 が opt-in されている場合のみ COI reload を実施
       try {
         var _coiOptIn = (new URLSearchParams(location.search)).get('coi') === '1';
-        if(_coiOptIn && navigator.serviceWorker.controller && !window.crossOriginIsolated
+        if(_coiOptIn && navigator.serviceWorker.controller && !capabilities.has('cross_origin_isolated')
            && !sessionStorage.getItem('_coi_reloaded')){
           sessionStorage.setItem('_coi_reloaded', '1');
           console.log('[SW] coi opt-in: reloading once to activate cross-origin isolation');

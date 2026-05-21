@@ -76,8 +76,7 @@ function _setupActionDelegation(){
 }
 
 function _isSABAvailable(){
-  return (typeof window !== 'undefined' && window.crossOriginIsolated === true
-       && typeof SharedArrayBuffer !== 'undefined');
+  return capabilities.has('shared_array_buffer');
 }
 
 function _toggleCOI(){
@@ -101,7 +100,7 @@ function _toggleCOI(){
 function _refreshCOIStatus(){
   var el = document.getElementById('coiStatus');
   if(!el) return;
-  var coi = (typeof window !== 'undefined') && window.crossOriginIsolated;
+  var coi = capabilities.has('cross_origin_isolated');
   var sab = _isSABAvailable();
   var qsCoi = false;
   try { qsCoi = (new URLSearchParams(location.search)).get('coi') === '1'; } catch(_){}
@@ -1717,7 +1716,7 @@ function _stackedPredict(features6, l1probs){
 
 function _getAppWorker(){
   if(_appWorker) return _appWorker;
-  if(typeof Worker === 'undefined') return null;
+  if(!capabilities.has('worker')) return null;
   try {
     _appWorker = new Worker('assets/worker.js');
     _appWorker.addEventListener('message', function(e){
@@ -3012,7 +3011,7 @@ function racerBadges(boat,form,divergence){
 }
 
 function _enableNotifyPermission(){
-  if(typeof Notification === 'undefined'){
+  if(!capabilities.has('notification')){
     alert('このブラウザは通知に対応していません');
     return;
   }
@@ -3029,7 +3028,7 @@ function _enableNotifyPermission(){
 
 function _refreshNotifyStatus(){
   var el = document.getElementById('notifyStatus');
-  if(!el || typeof Notification === 'undefined') return;
+  if(!el || !capabilities.has('notification')) return;
   var p = Notification.permission;
   el.textContent = (p === 'granted') ? '✓ 許可済'
                  : (p === 'denied')  ? '× 拒否'
@@ -3038,7 +3037,7 @@ function _refreshNotifyStatus(){
 }
 
 function _maybeNotifyNewResults(){
-  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if(!capabilities.has('notification') || Notification.permission !== 'granted') return;
   if(!resultData || typeof resultData !== 'object') return;
   var watched = (typeof _loadWatched === 'function') ? _loadWatched() : [];
   if(watched.length === 0) return;
@@ -4211,7 +4210,8 @@ function renderStats(){
 }
 
 function _loadChartLib(){
-  if(typeof Chart !== 'undefined') return Promise.resolve();
+  capabilities.refresh('chart');
+  if(capabilities.has('chart')) return Promise.resolve();
   if(_chartLoadingPromise) return _chartLoadingPromise;
   _chartLoadingPromise = new Promise(function(resolve, reject){
     var s = document.createElement('script');
@@ -4220,7 +4220,7 @@ function _loadChartLib(){
     s.crossOrigin = 'anonymous';
     s.referrerPolicy = 'no-referrer';
     s.async = true;
-    s.onload = function(){ console.log('[Chart] loaded'); resolve(); };
+    s.onload = function(){ console.log('[Chart] loaded'); capabilities.refresh('chart'); resolve(); };
     s.onerror = function(e){
       console.warn('[Chart] load failed', e);
       _chartLoadingPromise = null;   // リトライ可能化
@@ -4235,7 +4235,8 @@ function renderStatsChart(){
   var ctx=document.getElementById('chartAccuracy');
   if(!ctx) return;
   // PD-13b: Chart.js が未ロードならまず読み込んで再帰呼出
-  if(typeof Chart === 'undefined'){
+  capabilities.refresh('chart');
+  if(!capabilities.has('chart')){
     _loadChartLib().then(renderStatsChart, function(err){
       var parent = ctx.parentNode;
       if(parent) parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
