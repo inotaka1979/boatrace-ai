@@ -45,69 +45,36 @@
     // 同期検出（起動時 1 回）
     // ─────────────────────────────────────────────
     detectSync() {
+      this._set("abort_timeout", typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function");
+      this._set("service_worker", typeof navigator !== "undefined" && "serviceWorker" in navigator);
+      this._set("indexed_db", typeof indexedDB !== "undefined");
+      this._set("cache_api", typeof caches !== "undefined");
       this._set(
-        "abort_timeout",
-        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        "local_storage",
+        (() => {
+          try {
+            if (typeof localStorage === "undefined") return false;
+            const k = "__br_cap_probe__";
+            localStorage.setItem(k, "1");
+            localStorage.removeItem(k);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })()
       );
-      this._set(
-        "service_worker",
-        typeof navigator !== "undefined" && "serviceWorker" in navigator
-      );
-      this._set(
-        "indexed_db",
-        typeof indexedDB !== "undefined"
-      );
-      this._set(
-        "cache_api",
-        typeof caches !== "undefined"
-      );
-      this._set("local_storage", (() => {
-        try {
-          if (typeof localStorage === "undefined") return false;
-          const k = "__br_cap_probe__";
-          localStorage.setItem(k, "1");
-          localStorage.removeItem(k);
-          return true;
-        } catch (_) {
-          return false;
-        }
-      })());
-      this._set(
-        "scheduler_post_task",
-        typeof scheduler !== "undefined" && typeof scheduler.postTask === "function"
-      );
-      this._set(
-        "scheduler_yield",
-        typeof scheduler !== "undefined" && typeof scheduler.yield === "function"
-      );
-      this._set(
-        "request_idle_callback",
-        typeof requestIdleCallback === "function"
-      );
-      this._set(
-        "document",
-        typeof document !== "undefined" && typeof document.querySelectorAll === "function"
-      );
-      this._set(
-        "notification",
-        typeof Notification !== "undefined"
-      );
-      this._set(
-        "chart",
-        typeof Chart !== "undefined"
-      );
-      this._set(
-        "worker",
-        typeof Worker !== "undefined"
-      );
+      this._set("scheduler_post_task", typeof scheduler !== "undefined" && typeof scheduler.postTask === "function");
+      this._set("scheduler_yield", typeof scheduler !== "undefined" && typeof scheduler.yield === "function");
+      this._set("request_idle_callback", typeof requestIdleCallback === "function");
+      this._set("document", typeof document !== "undefined" && typeof document.querySelectorAll === "function");
+      this._set("notification", typeof Notification !== "undefined");
+      this._set("chart", typeof Chart !== "undefined");
+      this._set("worker", typeof Worker !== "undefined");
       this._set(
         "shared_array_buffer",
         typeof window !== "undefined" && window.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined"
       );
-      this._set(
-        "cross_origin_isolated",
-        typeof window !== "undefined" && window.crossOriginIsolated === true
-      );
+      this._set("cross_origin_isolated", typeof window !== "undefined" && window.crossOriginIsolated === true);
       this._set("online", this._detectOnline());
       if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
         try {
@@ -187,12 +154,13 @@
       }
       const c = new AbortController();
       const ctxScheduler = typeof setTimeout === "function" ? setTimeout : null;
-      if (ctxScheduler) ctxScheduler(() => {
-        try {
-          c.abort();
-        } catch (_) {
-        }
-      }, ms);
+      if (ctxScheduler)
+        ctxScheduler(() => {
+          try {
+            c.abort();
+          } catch (_) {
+          }
+        }, ms);
       return c.signal;
     }
     // ─────────────────────────────────────────────
@@ -1968,7 +1936,8 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       });
     }).catch(function(e) {
       try {
-        if (typeof reportError === "function") reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
+        if (typeof reportError === "function")
+          reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
       } catch (_) {
       }
       return false;
@@ -2770,9 +2739,10 @@ function pf(v){return parseFloat(v)||0}
     const filtered = raw.previews.filter(function(p) {
       const hasWeather = (p.race_wind || 0) > 0 || (p.race_water_temperature || 0) > 0 || (p.race_temperature || 0) > 0 || (p.race_wave || 0) > 0 || p.race_wind_direction_number != null;
       let bs = p.boats || [];
-      if (!Array.isArray(bs)) bs = Object.keys(bs).map(function(k) {
-        return bs[k];
-      });
+      if (!Array.isArray(bs))
+        bs = Object.keys(bs).map(function(k) {
+          return bs[k];
+        });
       const hasExh = bs.some(function(b) {
         return b && (b.racer_exhibition_time || 0) > 0;
       });
@@ -2827,10 +2797,7 @@ function pf(v){return parseFloat(v)||0}
   function _renderFreshness() {
     const el = document.getElementById("dataFreshness");
     if (!el) return;
-    const latest = Math.max(
-      globalThis._dataLatestUpdatedAt || 0,
-      globalThis._dataTodayConfirmedAt || 0
-    );
+    const latest = Math.max(globalThis._dataLatestUpdatedAt || 0, globalThis._dataTodayConfirmedAt || 0);
     if (!latest) {
       el.textContent = "";
       return;
@@ -2905,8 +2872,12 @@ function pf(v){return parseFloat(v)||0}
     let totalBets = 0, totalStake = 0, totalPayout = 0;
     let hits3 = 0, hits2 = 0;
     const dailyROI = {};
-    let maxDD = 0, currentLoss = 0, balance = 0;
-    const byType = { honmei: { n: 0, hits: 0, payout: 0 }, middle: { n: 0, hits: 0, payout: 0 }, ana: { n: 0, hits: 0, payout: 0 } };
+    let maxDD = 0, currentLoss = 0;
+    const byType = {
+      honmei: { n: 0, hits: 0, payout: 0 },
+      middle: { n: 0, hits: 0, payout: 0 },
+      ana: { n: 0, hits: 0, payout: 0 }
+    };
     const byStadium = {};
     ledger.sort(function(a, b) {
       return (a.date || "").localeCompare(b.date || "");
@@ -2929,16 +2900,17 @@ function pf(v){return parseFloat(v)||0}
       }
       const sid = parseInt(h.stadium);
       if (sid && sid >= 1 && sid <= 24) {
-        if (!byStadium[sid]) byStadium[sid] = {
-          sid,
-          name: typeof globalThis.STADIUMS === "object" && globalThis.STADIUMS[sid] || "\u5834" + sid,
-          n: 0,
-          hits3: 0,
-          hits2: 0,
-          stake: 0,
-          payout: 0,
-          payout3: 0
-        };
+        if (!byStadium[sid])
+          byStadium[sid] = {
+            sid,
+            name: typeof globalThis.STADIUMS === "object" && globalThis.STADIUMS[sid] || "\u5834" + sid,
+            n: 0,
+            hits3: 0,
+            hits2: 0,
+            stake: 0,
+            payout: 0,
+            payout3: 0
+          };
         const ss = byStadium[sid];
         ss.n++;
         ss.stake += stake;
@@ -2948,7 +2920,6 @@ function pf(v){return parseFloat(v)||0}
         if (h.exacta_hit) ss.hits2++;
       }
       const net = payout - stake;
-      balance += net;
       if (net < 0) {
         currentLoss += -net;
         maxDD = Math.max(maxDD, currentLoss);

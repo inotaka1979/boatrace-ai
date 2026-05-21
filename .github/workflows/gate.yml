@@ -1,0 +1,73 @@
+name: Gate
+# Clearwing Phase 3: push 前ローカル CI gate と同等の CI 検証。
+#
+# 既存 test.yml が「test + typecheck (mypy advisory) + a11y (axe advisory)」を
+# 担当しているのに対し、本 gate.yml は **lint / format / build:check** を加えた
+# ローカル `make gate` 同等の流れを CI 上でも実行する。
+#
+# 失敗で PR を block するゲート系:
+#   - lint (eslint + prettier --check)
+#   - build:check (esbuild bundle injection 再現性 + critical/rest cross-layer 違反)
+#   - test (scripts/tests/run_all.sh)
+#
+# 既存 test.yml と本 gate.yml は重複もあるが、test.yml は a11y / mypy など advisory
+# を含む既存運用なので残置。本 gate.yml は **PR 必須チェック** を一本化する受け皿。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            build/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install root deps (eslint + prettier)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            # 初回 (lockfile 未生成): フォールバック
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Install build deps (esbuild)
+        run: |
+          cd build
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Lint (eslint + prettier --check)
+        run: npm run lint
+
+      - name: Test (scripts/tests/run_all.sh)
+        run: npm test
+
+      # build:check は scripts/split_app.py + build.mjs 再現性 + critical→rest lint を含む
+      - name: Build reproducibility check
+        run: npm run build:check

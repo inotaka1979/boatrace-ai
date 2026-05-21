@@ -28,53 +28,42 @@ class Capabilities {
   // ─────────────────────────────────────────────
   detectSync() {
     // ─── ネットワーク / SW / ストレージ ───
-    this._set('abort_timeout',
-      typeof AbortSignal !== 'undefined'
-        && typeof AbortSignal.timeout === 'function');
-    this._set('service_worker',
-      typeof navigator !== 'undefined' && 'serviceWorker' in navigator);
-    this._set('indexed_db',
-      typeof indexedDB !== 'undefined');
-    this._set('cache_api',
-      typeof caches !== 'undefined');
-    this._set('local_storage', (() => {
-      try {
-        if (typeof localStorage === 'undefined') return false;
-        const k = '__br_cap_probe__';
-        localStorage.setItem(k, '1');
-        localStorage.removeItem(k);
-        return true;
-      } catch (_) { return false; }
-    })());
+    this._set('abort_timeout', typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function');
+    this._set('service_worker', typeof navigator !== 'undefined' && 'serviceWorker' in navigator);
+    this._set('indexed_db', typeof indexedDB !== 'undefined');
+    this._set('cache_api', typeof caches !== 'undefined');
+    this._set(
+      'local_storage',
+      (() => {
+        try {
+          if (typeof localStorage === 'undefined') return false;
+          const k = '__br_cap_probe__';
+          localStorage.setItem(k, '1');
+          localStorage.removeItem(k);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      })()
+    );
 
     // ─── スケジューリング ───
-    this._set('scheduler_post_task',
-      typeof scheduler !== 'undefined'
-        && typeof scheduler.postTask === 'function');
-    this._set('scheduler_yield',
-      typeof scheduler !== 'undefined'
-        && typeof scheduler.yield === 'function');
-    this._set('request_idle_callback',
-      typeof requestIdleCallback === 'function');
+    this._set('scheduler_post_task', typeof scheduler !== 'undefined' && typeof scheduler.postTask === 'function');
+    this._set('scheduler_yield', typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function');
+    this._set('request_idle_callback', typeof requestIdleCallback === 'function');
 
     // ─── UI / API ───
-    this._set('document',
-      typeof document !== 'undefined'
-        && typeof document.querySelectorAll === 'function');
-    this._set('notification',
-      typeof Notification !== 'undefined');
-    this._set('chart',
-      typeof Chart !== 'undefined');   // 動的 import 後は refresh('chart') で更新
-    this._set('worker',
-      typeof Worker !== 'undefined');
+    this._set('document', typeof document !== 'undefined' && typeof document.querySelectorAll === 'function');
+    this._set('notification', typeof Notification !== 'undefined');
+    this._set('chart', typeof Chart !== 'undefined'); // 動的 import 後は refresh('chart') で更新
+    this._set('worker', typeof Worker !== 'undefined');
 
     // ─── 高度な機能 (cross-origin isolation) ───
-    this._set('shared_array_buffer',
-      typeof window !== 'undefined'
-        && window.crossOriginIsolated === true
-        && typeof SharedArrayBuffer !== 'undefined');
-    this._set('cross_origin_isolated',
-      typeof window !== 'undefined' && window.crossOriginIsolated === true);
+    this._set(
+      'shared_array_buffer',
+      typeof window !== 'undefined' && window.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined'
+    );
+    this._set('cross_origin_isolated', typeof window !== 'undefined' && window.crossOriginIsolated === true);
 
     // ─── オフライン状態 (動的) ───
     this._set('online', this._detectOnline());
@@ -82,13 +71,17 @@ class Capabilities {
     // online 状態は変化するため listener も attach
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       try {
-        window.addEventListener('online',  () => this._set('online', true));
+        window.addEventListener('online', () => this._set('online', true));
         window.addEventListener('offline', () => this._set('online', false));
-      } catch (_) { /* SSR / worker context */ }
+      } catch (_) {
+        /* SSR / worker context */
+      }
     }
   }
 
-  _set(name, value) { this._sync.set(name, value === true); }
+  _set(name, value) {
+    this._sync.set(name, value === true);
+  }
 
   _detectOnline() {
     if (typeof navigator === 'undefined') return true;
@@ -107,12 +100,14 @@ class Capabilities {
 
   // 動的に状態が変わる capability の再検出（chart 動的 import 後 等）
   refresh(name) {
-    if (name === 'chart')  this._set('chart',  typeof Chart !== 'undefined');
+    if (name === 'chart') this._set('chart', typeof Chart !== 'undefined');
     else if (name === 'online') this._set('online', this._detectOnline());
-    else this.detectSync();   // 全体再走査
+    else this.detectSync(); // 全体再走査
   }
 
-  list() { return Array.from(this._sync.keys()).concat(Array.from(this._async.keys())); }
+  list() {
+    return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
+  }
 
   // ─────────────────────────────────────────────
   // Async probes（on-demand、結果キャッシュ）
@@ -126,15 +121,16 @@ class Capabilities {
     let result = false;
     try {
       if (name === 'openapi_fresh') result = await this._probeOpenapiFresh(opts);
-    } catch (_) { result = false; }
+    } catch (_) {
+      result = false;
+    }
     this._async.set(name, result === true);
     return this._async.get(name);
   }
 
   async _probeOpenapiFresh(opts) {
     if (typeof fetch !== 'function') return false;
-    const url = (opts && opts.url)
-      || 'https://boatraceopenapi.github.io/programs/v2/today.json';
+    const url = (opts && opts.url) || 'https://boatraceopenapi.github.io/programs/v2/today.json';
     const ttlMs = (opts && opts.ttlMs) || 30 * 60 * 1000;
     const r = await fetch(url, {
       method: 'HEAD',
@@ -159,8 +155,13 @@ class Capabilities {
       return AbortSignal.timeout(ms);
     }
     const c = new AbortController();
-    const ctxScheduler = (typeof setTimeout === 'function') ? setTimeout : null;
-    if (ctxScheduler) ctxScheduler(() => { try { c.abort(); } catch (_) {} }, ms);
+    const ctxScheduler = typeof setTimeout === 'function' ? setTimeout : null;
+    if (ctxScheduler)
+      ctxScheduler(() => {
+        try {
+          c.abort();
+        } catch (_) {}
+      }, ms);
     return c.signal;
   }
 

@@ -20,7 +20,8 @@
 
 // ── Gaussian noise (Box-Muller) ──────────────────────────
 function _sampleStdNormal() {
-  let u = 0, v = 0;
+  let u = 0,
+    v = 0;
   while (u === 0) u = Math.random();
   while (v === 0) v = Math.random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
@@ -43,9 +44,9 @@ function clipGradient(grad, maxNorm) {
   const m = Math.max(0.001, maxNorm || 1.0);
   const n = _l2Norm(grad);
   // 常に NaN/Infinity を 0 に sanitize（DP 入力の前提条件）
-  if (n <= m || n === 0) return grad.map(g => (Number.isFinite(g) ? g : 0));
+  if (n <= m || n === 0) return grad.map((g) => (Number.isFinite(g) ? g : 0));
   const scale = m / n;
-  return grad.map(g => (Number.isFinite(g) ? g * scale : 0));
+  return grad.map((g) => (Number.isFinite(g) ? g * scale : 0));
 }
 
 // ── Gaussian noise mechanism ───────────────────────────
@@ -54,7 +55,7 @@ function addGaussianNoise(grad, sigma) {
   if (!Array.isArray(grad)) return grad;
   const s = Math.max(0, sigma || 0);
   if (s === 0) return grad.slice();
-  return grad.map(g => (Number.isFinite(g) ? g + _sampleStdNormal() * s : 0));
+  return grad.map((g) => (Number.isFinite(g) ? g + _sampleStdNormal() * s : 0));
 }
 
 // ── 一括適用: clip → noise ───────────────────────────────
@@ -72,10 +73,10 @@ function estimateDPParams(epsilon, delta, T) {
   const eps = Math.max(0.01, epsilon || 1.0);
   const dlt = Math.max(1e-9, delta || 1e-5);
   const t = Math.max(1, T || 100);
-  const sensitivity = 1.0;   // clipGradient で 1.0 に bound 済前提
+  const sensitivity = 1.0; // clipGradient で 1.0 に bound 済前提
   // T ステップで privacy 予算を split する素朴 composition
   const epsPerStep = eps / Math.sqrt(t);
-  const sigma = Math.sqrt(2 * Math.log(1.25 / dlt)) * sensitivity / epsPerStep;
+  const sigma = (Math.sqrt(2 * Math.log(1.25 / dlt)) * sensitivity) / epsPerStep;
   return { sigma: sigma, epsPerStep: epsPerStep, T: t, epsilon: eps, delta: dlt };
 }
 

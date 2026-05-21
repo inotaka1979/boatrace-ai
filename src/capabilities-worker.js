@@ -26,35 +26,26 @@ class WorkerCapabilities {
   }
 
   detectSync() {
-    this._set('abort_timeout',
-      typeof AbortSignal !== 'undefined'
-        && typeof AbortSignal.timeout === 'function');
+    this._set('abort_timeout', typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function');
     this._set('fetch', typeof fetch === 'function');
     this._set('indexed_db', typeof indexedDB !== 'undefined');
     this._set('cache_api', typeof caches !== 'undefined');
-    this._set('local_storage', (() => {
-      try {
-        if (typeof localStorage === 'undefined') return false;
-        const k = '__br_cap_w_probe__';
-        localStorage.setItem(k, '1');
-        localStorage.removeItem(k);
-        return true;
-      } catch (_) { return false; }
-    })());
+    // Dedicated/Shared Worker は仕様上 localStorage を持たない（同期 API は Worker で禁止）。
+    // worker_predictor.js の旧 localStorage.setItem は try/catch で握り潰される dead code。
+    // 互換性のため capability キー自体は残しつつ常に false を返す。
+    this._set('local_storage', false);
 
     // Worker でも scheduler API は利用可能 (Chrome 94+)
-    this._set('scheduler_post_task',
-      typeof scheduler !== 'undefined'
-        && typeof scheduler.postTask === 'function');
-    this._set('scheduler_yield',
-      typeof scheduler !== 'undefined'
-        && typeof scheduler.yield === 'function');
+    this._set('scheduler_post_task', typeof scheduler !== 'undefined' && typeof scheduler.postTask === 'function');
+    this._set('scheduler_yield', typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function');
 
     // Nested Worker は仕様上 Dedicated Worker でのみ可能
     this._set('worker', typeof Worker !== 'undefined');
   }
 
-  _set(name, value) { this._sync.set(name, value === true); }
+  _set(name, value) {
+    this._sync.set(name, value === true);
+  }
 
   has(name) {
     if (this._sync.has(name)) return this._sync.get(name) === true;
@@ -62,7 +53,9 @@ class WorkerCapabilities {
     return false;
   }
 
-  refresh(_name) { this.detectSync(); }
+  refresh(_name) {
+    this.detectSync();
+  }
   list() {
     return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
   }
@@ -72,7 +65,11 @@ class WorkerCapabilities {
       return AbortSignal.timeout(ms);
     }
     const c = new AbortController();
-    setTimeout(() => { try { c.abort(); } catch (_) {} }, ms);
+    setTimeout(() => {
+      try {
+        c.abort();
+      } catch (_) {}
+    }, ms);
     return c.signal;
   }
 

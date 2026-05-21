@@ -14,32 +14,13 @@
       this._async = /* @__PURE__ */ new Map();
     }
     detectSync() {
-      this._set(
-        "abort_timeout",
-        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-      );
+      this._set("abort_timeout", typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function");
       this._set("fetch", typeof fetch === "function");
       this._set("indexed_db", typeof indexedDB !== "undefined");
       this._set("cache_api", typeof caches !== "undefined");
-      this._set("local_storage", (() => {
-        try {
-          if (typeof localStorage === "undefined") return false;
-          const k = "__br_cap_w_probe__";
-          localStorage.setItem(k, "1");
-          localStorage.removeItem(k);
-          return true;
-        } catch (_) {
-          return false;
-        }
-      })());
-      this._set(
-        "scheduler_post_task",
-        typeof scheduler !== "undefined" && typeof scheduler.postTask === "function"
-      );
-      this._set(
-        "scheduler_yield",
-        typeof scheduler !== "undefined" && typeof scheduler.yield === "function"
-      );
+      this._set("local_storage", false);
+      this._set("scheduler_post_task", typeof scheduler !== "undefined" && typeof scheduler.postTask === "function");
+      this._set("scheduler_yield", typeof scheduler !== "undefined" && typeof scheduler.yield === "function");
       this._set("worker", typeof Worker !== "undefined");
     }
     _set(name, value) {
