@@ -1,0 +1,17 @@
+{
+  "abort_timeout": false,
+  "cache_api": false,
+  "chart": false,
+  "cross_origin_isolated": false,
+  "document": false,
+  "indexed_db": false,
+  "local_storage": true,
+  "notification": false,
+  "online": true,
+  "request_idle_callback": false,
+  "scheduler_post_task": false,
+  "scheduler_yield": false,
+  "service_worker": true,
+  "shared_array_buffer": false,
+  "worker": false
+}

@@ -18,22 +18,23 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install lint format type test test-e2e build build-check split gate clean
+.PHONY: help install lint format type test test-e2e snapshots-update build build-check split gate clean
 
 help:
 	@echo "Clearwing local CI gate (BoatRace Oracle)"
 	@echo ""
-	@echo "  make install      - npm ci (root + build/)"
-	@echo "  make lint         - eslint + prettier --check (src/, scripts/tests/)"
-	@echo "  make format       - prettier --write (src/)"
-	@echo "  make type         - type check (stub for now; Phase 4 wires tsc --noEmit)"
-	@echo "  make test         - bash scripts/tests/run_all.sh"
-	@echo "  make test-e2e     - Playwright suite (heavy)"
-	@echo "  make split        - python3 scripts/split_app.py (critical/rest 再生成)"
-	@echo "  make build        - esbuild IIFE inject + minify (canonical app.js)"
-	@echo "  make build-check  - --check モードで再現性ガード"
-	@echo "  make gate         - lint + type + test + build-check (push 前)"
-	@echo "  make clean        - node_modules / dist / .cache を削除"
+	@echo "  make install           - npm ci (root + build/)"
+	@echo "  make lint              - eslint + prettier --check (src/, scripts/tests/)"
+	@echo "  make format            - prettier --write (src/)"
+	@echo "  make type              - type check (stub for now; Phase 4 wires tsc --noEmit)"
+	@echo "  make test              - bash scripts/tests/run_all.sh"
+	@echo "  make test-e2e          - Playwright suite (heavy)"
+	@echo "  make snapshots-update  - 期待が変わったら UPDATE_SNAPSHOTS=1 で再生成"
+	@echo "  make split             - python3 scripts/split_app.py (critical/rest 再生成)"
+	@echo "  make build             - esbuild IIFE inject + minify (canonical app.js)"
+	@echo "  make build-check       - --check モードで再現性ガード"
+	@echo "  make gate              - lint + type + test + build-check (push 前)"
+	@echo "  make clean             - node_modules / dist / .cache を削除"
 
 install:
 	npm ci
@@ -54,6 +55,11 @@ test:
 
 test-e2e:
 	npm run test:e2e
+
+# Clearwing Phase 5: snapshot 再生成。
+#   通常開発で expectation が変わったら本ターゲットで更新 → git diff で内容を確認してから commit。
+snapshots-update:
+	UPDATE_SNAPSHOTS=1 node scripts/tests/test_snapshots.js
 
 split:
 	npm run split

@@ -1,0 +1,17 @@
+[
+  "abort_timeout",
+  "cache_api",
+  "chart",
+  "cross_origin_isolated",
+  "document",
+  "indexed_db",
+  "local_storage",
+  "notification",
+  "online",
+  "request_idle_callback",
+  "scheduler_post_task",
+  "scheduler_yield",
+  "service_worker",
+  "shared_array_buffer",
+  "worker"
+]

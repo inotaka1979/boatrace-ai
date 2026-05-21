@@ -157,6 +157,12 @@ step "X7 backtest engine tests" \
 step "F13 self-style score tests" \
      "node scripts/tests/test_self_style.js"
 
+# 17) Clearwing Phase 5: snapshot tests
+#     discovery / analysis / context / capabilities / math の出力固定
+#     更新したいときは UPDATE_SNAPSHOTS=1 node scripts/tests/test_snapshots.js
+step "Clearwing snapshot tests" \
+     "node scripts/tests/test_snapshots.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

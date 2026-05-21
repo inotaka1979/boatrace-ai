@@ -1,0 +1,53 @@
+{
+  "updated_at": "2026-05-21T08:00:00+09:00",
+  "programs": [
+    {
+      "race_stadium_number": 1,
+      "race_number": 1,
+      "race_date": "2026-05-21",
+      "race_title": "予選 1R",
+      "race_grade_number": 5,
+      "race_closed_at": "10:00",
+      "boats": [
+        { "racer_boat_number": 1, "racer_number": 4000, "racer_name": "テスト一郎", "racer_class_number": 1, "racer_national_top_1_percent": 6.50 },
+        { "racer_boat_number": 2, "racer_number": 4001, "racer_name": "テスト二郎", "racer_class_number": 2, "racer_national_top_1_percent": 5.20 },
+        { "racer_boat_number": 3, "racer_number": 4002, "racer_name": "テスト三郎", "racer_class_number": 3, "racer_national_top_1_percent": 4.80 },
+        { "racer_boat_number": 4, "racer_number": 4003, "racer_name": "テスト四郎", "racer_class_number": 3, "racer_national_top_1_percent": 4.10 },
+        { "racer_boat_number": 5, "racer_number": 4004, "racer_name": "テスト五郎", "racer_class_number": 4, "racer_national_top_1_percent": 3.70 },
+        { "racer_boat_number": 6, "racer_number": 4005, "racer_name": "テスト六郎", "racer_class_number": 4, "racer_national_top_1_percent": 3.20 }
+      ]
+    },
+    {
+      "race_stadium_number": 1,
+      "race_number": 2,
+      "race_date": "2026-05-21",
+      "race_title": "予選 2R",
+      "race_grade_number": 5,
+      "race_closed_at": "10:30",
+      "boats": [
+        { "racer_boat_number": 1, "racer_number": 4010, "racer_name": "選手A", "racer_class_number": 2, "racer_national_top_1_percent": 5.50 },
+        { "racer_boat_number": 2, "racer_number": 4011, "racer_name": "選手B", "racer_class_number": 3, "racer_national_top_1_percent": 4.60 },
+        { "racer_boat_number": 3, "racer_number": 4012, "racer_name": "選手C", "racer_class_number": 1, "racer_national_top_1_percent": 6.10 },
+        { "racer_boat_number": 4, "racer_number": 4013, "racer_name": "選手D", "racer_class_number": 3, "racer_national_top_1_percent": 4.40 },
+        { "racer_boat_number": 5, "racer_number": 4014, "racer_name": "選手E", "racer_class_number": 4, "racer_national_top_1_percent": 3.40 },
+        { "racer_boat_number": 6, "racer_number": 4015, "racer_name": "選手F", "racer_class_number": 4, "racer_national_top_1_percent": 3.10 }
+      ]
+    },
+    {
+      "race_stadium_number": 12,
+      "race_number": 1,
+      "race_date": "2026-05-21",
+      "race_title": "予選 1R",
+      "race_grade_number": 4,
+      "race_closed_at": "10:00",
+      "boats": [
+        { "racer_boat_number": 1, "racer_number": 4020, "racer_name": "住之江一", "racer_class_number": 1, "racer_national_top_1_percent": 7.00 },
+        { "racer_boat_number": 2, "racer_number": 4021, "racer_name": "住之江二", "racer_class_number": 1, "racer_national_top_1_percent": 6.80 },
+        { "racer_boat_number": 3, "racer_number": 4022, "racer_name": "住之江三", "racer_class_number": 2, "racer_national_top_1_percent": 5.40 },
+        { "racer_boat_number": 4, "racer_number": 4023, "racer_name": "住之江四", "racer_class_number": 2, "racer_national_top_1_percent": 5.10 },
+        { "racer_boat_number": 5, "racer_number": 4024, "racer_name": "住之江五", "racer_class_number": 3, "racer_national_top_1_percent": 4.20 },
+        { "racer_boat_number": 6, "racer_number": 4025, "racer_name": "住之江六", "racer_class_number": 3, "racer_national_top_1_percent": 4.00 }
+      ]
+    }
+  ]
+}
