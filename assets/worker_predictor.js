@@ -1,8 +1,88 @@
-// PG-2: Worker 用予測モジュール (auto-extracted from assets/app.js)
-
-// 編集禁止: src でなく app.js が source-of-truth、scripts/extract_predictor.py で再生成
+// PG-2: Worker 用予測モジュール
+// Clearwing Phase 2: src/capabilities-worker.js を BUILD マーカー領域に注入。
+//   その他の関数は本ファイルが source-of-truth（手動メンテ）。
 
 'use strict';
+
+/* BUILD:CAPABILITIES_WORKER:START */
+"use strict";
+(() => {
+  // ../src/capabilities-worker.js
+  var WorkerCapabilities = class {
+    constructor() {
+      this._sync = /* @__PURE__ */ new Map();
+      this._async = /* @__PURE__ */ new Map();
+    }
+    detectSync() {
+      this._set(
+        "abort_timeout",
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      );
+      this._set("fetch", typeof fetch === "function");
+      this._set("indexed_db", typeof indexedDB !== "undefined");
+      this._set("cache_api", typeof caches !== "undefined");
+      this._set("local_storage", (() => {
+        try {
+          if (typeof localStorage === "undefined") return false;
+          const k = "__br_cap_w_probe__";
+          localStorage.setItem(k, "1");
+          localStorage.removeItem(k);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      })());
+      this._set(
+        "scheduler_post_task",
+        typeof scheduler !== "undefined" && typeof scheduler.postTask === "function"
+      );
+      this._set(
+        "scheduler_yield",
+        typeof scheduler !== "undefined" && typeof scheduler.yield === "function"
+      );
+      this._set("worker", typeof Worker !== "undefined");
+    }
+    _set(name, value) {
+      this._sync.set(name, value === true);
+    }
+    has(name) {
+      if (this._sync.has(name)) return this._sync.get(name) === true;
+      if (this._async.has(name)) return this._async.get(name) === true;
+      return false;
+    }
+    refresh(_name) {
+      this.detectSync();
+    }
+    list() {
+      return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
+    }
+    makeTimeoutSignal(ms) {
+      if (this.has("abort_timeout")) {
+        return AbortSignal.timeout(ms);
+      }
+      const c = new AbortController();
+      setTimeout(() => {
+        try {
+          c.abort();
+        } catch (_) {
+        }
+      }, ms);
+      return c.signal;
+    }
+    runIdle(fn, opts) {
+      if (this.has("scheduler_post_task")) {
+        return scheduler.postTask(fn, { priority: "background", ...opts || {} });
+      }
+      return setTimeout(fn, opts && opts.delay || 0);
+    }
+  };
+  var capabilities = new WorkerCapabilities();
+  capabilities.detectSync();
+  globalThis.capabilities = capabilities;
+  globalThis.WorkerCapabilities = WorkerCapabilities;
+})();
+
+/* BUILD:CAPABILITIES_WORKER:END */
 
 var COURSE_WIN_RATE={1:0.55,2:0.14,3:0.12,4:0.11,5:0.06,6:0.02};
 var COURSE_MULTIPLIER=35;
@@ -682,13 +762,12 @@ function pf(v){return parseFloat(v)||0}
 function fetchWithFallback(url){
   // キャッシュキーはクエリパラメータを除いたベースURL
   var baseUrl=url.split('?')[0];
-  var controller=new AbortController();
-  var tid=setTimeout(function(){controller.abort()},15000);
-  return fetch(url,{signal:controller.signal,cache:'no-store'})
-    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()})
+  // Clearwing Phase 2: capabilities (worker) で AbortSignal.timeout 互換性を吸収
+  var signal=capabilities.makeTimeoutSignal(15000);
+  return fetch(url,{signal:signal,cache:'no-store'})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
     .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
     .catch(function(e){
-      clearTimeout(tid);
       console.warn('API error:',baseUrl,e.message);
       try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
       return null;
