@@ -2442,17 +2442,6 @@ window.addEventListener('unhandledrejection', function(e){
 //
 // より精緻な EV 再現は odds アーカイブが揃ってから X7+α で実装。
 
-/* MOVED: function _btParseDate */
-
-/* MOVED: function runBacktestEngine */
-
-// PB-3: Forward-chaining backtest（現状は履歴の logloss/brier/ece を時系列順で集計）
-//       完全な再予想には programData/previewData の保存が必要なため、暫定的に
-//       「保存済 mark_probs を時系列順で評価」する形で leakage を最小化
-/* MOVED: function runForwardChainBacktest */
-
-// PB-10 ヘルパ: 各エントリの mark_probs と actual から calibration metrics を計算
-/* MOVED: function _computeCalibrationMetrics */
 
 /* MOVED: function runBacktest */
 
@@ -2803,8 +2792,8 @@ var _workerHeavyLoaded = false;
  *       1 着が決まった後の残り 5 艇に確率を再分配する正攻法
  *   これにより EV/Kelly が「美味しく見える組合せ」を選ぶバイアスを除去
  */
-/* MOVED: function _plackettLuceTrifectaProb */
-/* MOVED: function _plackettLuceExactaProb */
+// _plackettLuceTrifectaProb / _plackettLuceExactaProb は src/analysis/backtest.js に移動 (Phase 2c)
+// → BUILD:ANALYSIS_BACKTEST bundle 経由で globalThis に export 済
 
 /**
  * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成（PL モデル）

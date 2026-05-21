@@ -4,6 +4,202 @@
 // window.load 後に lazy load される
 'use strict';
 
+/* BUILD:ANALYSIS_BACKTEST:START */
+"use strict";
+(() => {
+  // ../src/analysis/backtest.js
+  function _btParseDate(yyyymmdd) {
+    if (!yyyymmdd || typeof yyyymmdd !== "string" || yyyymmdd.length !== 8) return null;
+    return new Date(
+      parseInt(yyyymmdd.slice(0, 4), 10),
+      parseInt(yyyymmdd.slice(4, 6), 10) - 1,
+      parseInt(yyyymmdd.slice(6, 8), 10)
+    );
+  }
+  function runBacktestEngine(history, opt) {
+    opt = opt || {};
+    const periodDays = opt.periodDays != null ? opt.periodDays : 14;
+    const stakePerBet = opt.stakePerBet || 100;
+    const ledger = [];
+    let cutoff = null;
+    if (periodDays > 0) {
+      const d = /* @__PURE__ */ new Date();
+      d.setDate(d.getDate() - periodDays);
+      cutoff = d;
+    }
+    history.forEach(function(h) {
+      if (!h.actual) return;
+      if (cutoff) {
+        const hd = _btParseDate(h.date);
+        if (!hd || hd < cutoff) return;
+      }
+      ledger.push(h);
+    });
+    let totalBets = 0, totalStake = 0, totalPayout = 0;
+    let hits3 = 0, hits2 = 0;
+    const dailyROI = {};
+    let maxDD = 0, currentLoss = 0, balance = 0;
+    const byType = { honmei: { n: 0, hits: 0, payout: 0 }, middle: { n: 0, hits: 0, payout: 0 }, ana: { n: 0, hits: 0, payout: 0 } };
+    const byStadium = {};
+    ledger.sort(function(a, b) {
+      return (a.date || "").localeCompare(b.date || "");
+    });
+    ledger.forEach(function(h) {
+      const bets3n = (h.trifecta_bets || []).length;
+      const bets2n = (h.exacta_bets || []).length;
+      const stake = (bets3n + bets2n) * stakePerBet;
+      const payout = (h.payout3 || 0) + (h.payout2 || 0);
+      totalBets += bets3n + bets2n;
+      totalStake += stake;
+      totalPayout += payout;
+      if (h.trifecta_hit) hits3++;
+      if (h.exacta_hit) hits2++;
+      const rt = h.raceType || "middle";
+      if (byType[rt]) {
+        byType[rt].n++;
+        if (h.trifecta_hit) byType[rt].hits++;
+        byType[rt].payout += h.payout3 || 0;
+      }
+      const sid = parseInt(h.stadium);
+      if (sid && sid >= 1 && sid <= 24) {
+        if (!byStadium[sid]) byStadium[sid] = {
+          sid,
+          name: typeof globalThis.STADIUMS === "object" && globalThis.STADIUMS[sid] || "\u5834" + sid,
+          n: 0,
+          hits3: 0,
+          hits2: 0,
+          stake: 0,
+          payout: 0,
+          payout3: 0
+        };
+        const ss = byStadium[sid];
+        ss.n++;
+        ss.stake += stake;
+        ss.payout += payout;
+        ss.payout3 += h.payout3 || 0;
+        if (h.trifecta_hit) ss.hits3++;
+        if (h.exacta_hit) ss.hits2++;
+      }
+      const net = payout - stake;
+      balance += net;
+      if (net < 0) {
+        currentLoss += -net;
+        maxDD = Math.max(maxDD, currentLoss);
+      } else {
+        currentLoss = 0;
+      }
+      const d = h.date || "unknown";
+      if (!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
+      dailyROI[d].stake += stake;
+      dailyROI[d].payout += payout;
+      dailyROI[d].n++;
+    });
+    const roi = totalStake > 0 ? totalPayout / totalStake : 0;
+    const hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
+    const hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
+    const dailyReturns = Object.keys(dailyROI).map(function(d) {
+      const s = dailyROI[d].stake;
+      return s > 0 ? (dailyROI[d].payout - s) / s : 0;
+    });
+    const meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a, b) {
+      return a + b;
+    }, 0) / dailyReturns.length : 0;
+    const varR = dailyReturns.length > 1 ? dailyReturns.reduce(function(a, r) {
+      return a + (r - meanR) * (r - meanR);
+    }, 0) / (dailyReturns.length - 1) : 0;
+    const stdR = Math.sqrt(varR);
+    const sharpe = stdR > 0 ? meanR / stdR : 0;
+    const calibration = _computeCalibrationMetrics(ledger);
+    return {
+      samples: ledger.length,
+      totalBets,
+      totalStake,
+      totalPayout,
+      netProfit: totalPayout - totalStake,
+      roi,
+      hitRate3,
+      hitRate2,
+      maxDrawdown: maxDD,
+      sharpe,
+      byType,
+      byStadium,
+      dailyROI,
+      period: periodDays,
+      logLoss: calibration.logLoss,
+      brier: calibration.brier,
+      ece: calibration.ece,
+      calibratedSamples: calibration.n,
+      leakageNote: "NOTE: \u65E2\u5B58\u5C65\u6B74\u306F\u4E88\u60F3\u6642\u70B9\u3067\u65E2\u306B L2 \u5B66\u7FD2\u304C\u53CD\u6620\u6E08\u307F\u306E\u305F\u3081 look-ahead leakage \u306E\u53EF\u80FD\u6027\u3042\u308A\u3002\u5B8C\u5168\u306A forward-chain \u8A55\u4FA1\u306B\u306F runForwardChainBacktest() \u3092\u4F7F\u7528"
+    };
+  }
+  function runForwardChainBacktest(history, opt) {
+    opt = opt || {};
+    const warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
+    const sorted = (history || []).slice().filter(function(h) {
+      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    });
+    sorted.sort(function(a, b) {
+      const d = (a.date || "").localeCompare(b.date || "");
+      if (d !== 0) return d;
+      return (a.stadium || 0) - (b.stadium || 0) || (a.race || 0) - (b.race || 0);
+    });
+    const evalSet = sorted.slice(warmup);
+    const cal = _computeCalibrationMetrics(evalSet);
+    return {
+      totalSamples: sorted.length,
+      warmupSkipped: Math.min(warmup, sorted.length),
+      evaluatedSamples: evalSet.length,
+      logLoss: cal.logLoss,
+      brier: cal.brier,
+      ece: cal.ece,
+      note: "\u6642\u7CFB\u5217\u9806\u3067 warmup \u5F8C\u306E\u30EC\u30FC\u30B9\u306E\u307F\u8A55\u4FA1\u3002\u5B8C\u5168\u306A forward-chain \u518D\u5B66\u7FD2\u306B\u306F\u30EC\u30FC\u30B9\u6642\u70B9\u306E features \u4FDD\u5B58\u304C\u5FC5\u8981"
+    };
+  }
+  function _computeCalibrationMetrics(entries) {
+    let logLossSum = 0, brierSum = 0, n = 0;
+    const bins = [];
+    for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
+    entries.forEach(function(h) {
+      if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+      const winner = h.actual[0];
+      const probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      const pWin = probs[winner];
+      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+      logLossSum += -Math.log(pWin);
+      for (let b = 1; b <= 6; b++) {
+        const p = probs[b] || 0;
+        const y = b === winner ? 1 : 0;
+        brierSum += (p - y) * (p - y);
+      }
+      const binIdx = Math.min(9, Math.floor(pWin * 10));
+      bins[binIdx].sum += pWin;
+      bins[binIdx].hit += 1;
+      bins[binIdx].n += 1;
+      n++;
+    });
+    const logLoss = n > 0 ? logLossSum / n : 0;
+    const brier = n > 0 ? brierSum / n : 0;
+    let ece = 0;
+    bins.forEach(function(b) {
+      if (b.n === 0) return;
+      const avgP = b.sum / b.n;
+      const actRate = b.hit / b.n;
+      ece += b.n / Math.max(1, n) * Math.abs(avgP - actRate);
+    });
+    return { logLoss, brier, ece, n };
+  }
+  globalThis._btParseDate = _btParseDate;
+  globalThis.runBacktestEngine = runBacktestEngine;
+  globalThis.runForwardChainBacktest = runForwardChainBacktest;
+  globalThis._computeCalibrationMetrics = _computeCalibrationMetrics;
+})();
+
+/* BUILD:ANALYSIS_BACKTEST:END */
+
+
 function _initFeatureStats(){
   return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 }
@@ -198,193 +394,6 @@ function _renderApiHealthBanner(){
   if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
   msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
   banner.style.display = 'block';
-}
-
-function _btParseDate(yyyymmdd){
-  if(!yyyymmdd || typeof yyyymmdd !== 'string' || yyyymmdd.length !== 8) return null;
-  return new Date(
-    parseInt(yyyymmdd.slice(0,4),10),
-    parseInt(yyyymmdd.slice(4,6),10) - 1,
-    parseInt(yyyymmdd.slice(6,8),10)
-  );
-}
-
-function runBacktestEngine(history, opt){
-  opt = opt || {};
-  var periodDays = opt.periodDays != null ? opt.periodDays : 14;
-  var stakePerBet = opt.stakePerBet || 100;
-  var ledger = [];
-
-  // 期間フィルタ
-  var cutoff = null;
-  if(periodDays > 0){
-    var d = new Date();
-    d.setDate(d.getDate() - periodDays);
-    cutoff = d;
-  }
-  history.forEach(function(h){
-    if(!h.actual) return;
-    if(cutoff){
-      var hd = _btParseDate(h.date);
-      if(!hd || hd < cutoff) return;
-    }
-    ledger.push(h);
-  });
-
-  // 集計
-  var totalBets = 0, totalStake = 0, totalPayout = 0;
-  var hits3 = 0, hits2 = 0;
-  var dailyROI = {};
-  var maxDD = 0, currentLoss = 0, balance = 0;
-  var byType = { honmei: {n:0, hits:0, payout:0}, middle: {n:0, hits:0, payout:0}, ana: {n:0, hits:0, payout:0} };
-  // B17 (2026-05-17): 場別集計を追加。回収率順で表示可能なよう sid -> 集計の dict を構築
-  var byStadium = {};
-
-  ledger.sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
-  ledger.forEach(function(h){
-    var bets3n = (h.trifecta_bets || []).length;
-    var bets2n = (h.exacta_bets || []).length;
-    var stake = (bets3n + bets2n) * stakePerBet;
-    var payout = (h.payout3 || 0) + (h.payout2 || 0);
-    totalBets += bets3n + bets2n;
-    totalStake += stake;
-    totalPayout += payout;
-    if(h.trifecta_hit) hits3++;
-    if(h.exacta_hit) hits2++;
-    var rt = h.raceType || 'middle';
-    if(byType[rt]){
-      byType[rt].n++;
-      if(h.trifecta_hit) byType[rt].hits++;
-      byType[rt].payout += (h.payout3 || 0);
-    }
-    // B17: 場別集計
-    var sid = parseInt(h.stadium);
-    if(sid && sid >= 1 && sid <= 24){
-      if(!byStadium[sid]) byStadium[sid] = { sid: sid, name: (typeof STADIUMS==='object' && STADIUMS[sid]) || ('場'+sid),
-                                              n: 0, hits3: 0, hits2: 0, stake: 0, payout: 0, payout3: 0 };
-      var ss = byStadium[sid];
-      ss.n++;
-      ss.stake += stake;
-      ss.payout += payout;
-      ss.payout3 += (h.payout3 || 0);
-      if(h.trifecta_hit) ss.hits3++;
-      if(h.exacta_hit) ss.hits2++;
-    }
-    var net = payout - stake;
-    balance += net;
-    if(net < 0){
-      currentLoss += -net;
-      maxDD = Math.max(maxDD, currentLoss);
-    } else {
-      currentLoss = 0;
-    }
-    var d = h.date || 'unknown';
-    if(!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
-    dailyROI[d].stake += stake;
-    dailyROI[d].payout += payout;
-    dailyROI[d].n++;
-  });
-
-  var roi = totalStake > 0 ? totalPayout / totalStake : 0;
-  var hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
-  var hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
-
-  // シャープレシオ（日次 net return / std）
-  var dailyReturns = Object.keys(dailyROI).map(function(d){
-    var s = dailyROI[d].stake;
-    return s > 0 ? (dailyROI[d].payout - s) / s : 0;
-  });
-  var meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a,b){return a+b;}, 0) / dailyReturns.length : 0;
-  var varR = dailyReturns.length > 1
-    ? dailyReturns.reduce(function(a,r){ return a + (r-meanR)*(r-meanR); }, 0) / (dailyReturns.length - 1)
-    : 0;
-  var stdR = Math.sqrt(varR);
-  var sharpe = stdR > 0 ? meanR / stdR : 0;
-
-  // PB-10: log loss / Brier / ECE（mark_probs を保存している履歴のみ）
-  var calibration = _computeCalibrationMetrics(ledger);
-
-  return {
-    samples: ledger.length,
-    totalBets: totalBets,
-    totalStake: totalStake,
-    totalPayout: totalPayout,
-    netProfit: totalPayout - totalStake,
-    roi: roi,
-    hitRate3: hitRate3,
-    hitRate2: hitRate2,
-    maxDrawdown: maxDD,
-    sharpe: sharpe,
-    byType: byType,
-    byStadium: byStadium,   // B17: 場別集計
-    dailyROI: dailyROI,
-    period: periodDays,
-    // PB-10: calibration metrics
-    logLoss: calibration.logLoss,
-    brier: calibration.brier,
-    ece: calibration.ece,
-    calibratedSamples: calibration.n,
-    // PB-3: leakage 注意
-    leakageNote: 'NOTE: 既存履歴は予想時点で既に L2 学習が反映済みのため look-ahead leakage の可能性あり。完全な forward-chain 評価には runForwardChainBacktest() を使用',
-  };
-}
-
-function runForwardChainBacktest(history, opt){
-  opt = opt || {};
-  var warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
-  var sorted = (history||[]).slice().filter(function(h){
-    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
-  });
-  sorted.sort(function(a,b){
-    var d = (a.date||'').localeCompare(b.date||'');
-    if(d !== 0) return d;
-    return ((a.stadium||0)-(b.stadium||0)) || ((a.race||0)-(b.race||0));
-  });
-  var evalSet = sorted.slice(warmup);
-  var cal = _computeCalibrationMetrics(evalSet);
-  return {
-    totalSamples: sorted.length,
-    warmupSkipped: Math.min(warmup, sorted.length),
-    evaluatedSamples: evalSet.length,
-    logLoss: cal.logLoss,
-    brier: cal.brier,
-    ece: cal.ece,
-    note: '時系列順で warmup 後のレースのみ評価。完全な forward-chain 再学習にはレース時点の features 保存が必要',
-  };
-}
-
-function _computeCalibrationMetrics(entries){
-  var logLossSum = 0, brierSum = 0, n = 0;
-  var bins = []; for(var i=0;i<10;i++) bins.push({sum:0,hit:0,n:0});
-  entries.forEach(function(h){
-    if(!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
-    var winner = h.actual[0];
-    var probs = {};
-    h.mark_probs.forEach(function(mp){ probs[mp.boat] = mp.prob; });
-    var pWin = probs[winner];
-    if(!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
-    logLossSum += -Math.log(pWin);
-    // Brier: Σ(p_i - y_i)^2 （6 艇 multi-class）
-    for(var b=1;b<=6;b++){
-      var p = probs[b]||0; var y = (b===winner)?1:0;
-      brierSum += (p-y)*(p-y);
-    }
-    // ECE: 1 着確率 vs 1 着率を 10 分位 bin で
-    var binIdx = Math.min(9, Math.floor(pWin*10));
-    bins[binIdx].sum += pWin;
-    bins[binIdx].hit += 1;
-    bins[binIdx].n   += 1;
-    n++;
-  });
-  var logLoss = n>0 ? logLossSum/n : 0;
-  var brier   = n>0 ? brierSum/n : 0;
-  var ece = 0;
-  bins.forEach(function(b){
-    if(b.n===0) return;
-    var avgP = b.sum/b.n; var actRate = b.hit/b.n;
-    ece += (b.n/Math.max(1,n)) * Math.abs(avgP-actRate);
-  });
-  return {logLoss: logLoss, brier: brier, ece: ece, n: n};
 }
 
 function runBacktest(){
@@ -2288,26 +2297,6 @@ function calcOddsDivergence(aiProbsByBoat, oddsWin){
     };
   }
   return result;
-}
-
-function _plackettLuceTrifectaProb(p, i, j, k){
-  var pi = p[i]||0, pj = p[j]||0, pk = p[k]||0;
-  if(pi <= 0 || pj <= 0 || pk <= 0) return 0;
-  var denom1 = 1 - pi;
-  if(denom1 <= 1e-9) return 0;
-  var denom2 = 1 - pi - pj;
-  if(denom2 <= 1e-9) return 0;
-  var prob = pi * (pj / denom1) * (pk / denom2);
-  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
-}
-
-function _plackettLuceExactaProb(p, i, j){
-  var pi = p[i]||0, pj = p[j]||0;
-  if(pi <= 0 || pj <= 0) return 0;
-  var denom = 1 - pi;
-  if(denom <= 1e-9) return 0;
-  var prob = pi * (pj / denom);
-  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
 }
 
 function buildTrifectaProbDist(marks){
