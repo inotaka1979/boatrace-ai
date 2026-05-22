@@ -2848,7 +2848,7 @@ var CLASS_COURSE_MULT = [
 //   preview.racer_course_number > predictedEntries > 枠番 の優先順
 /* MOVED: function _resolveCourse */
 
-/* MOVED: function scoreBoatV2 */
+
 
 // ===============================================
 // PREDICTION ENGINE V2: Layer 2 (PRESERVED)

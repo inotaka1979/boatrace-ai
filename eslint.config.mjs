@@ -124,6 +124,30 @@ export default [
     },
   },
 
+  // src/analysis/score_boat.js — 大型関数の段階抽出 (Phase 2 完遂中)
+  //   約 20 個の app.js 内 helper / state を globalThis 経由で参照する。
+  //   Phase 4 strict (jsconfig.json) には未収容、依存先 helper が型定義される
+  //   までは ESLint no-undef も off とする (PR では reviewer が手動確認)。
+  {
+    files: ['src/analysis/score_boat.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+
   // src/capabilities.js / src/capabilities-worker.js — capabilities 本体
   //   ここは AbortController / AbortSignal.timeout を直接扱う「公式の窓口」のため
   //   no-restricted-syntax を除外する。他の制約は src/**/*.js と同等。

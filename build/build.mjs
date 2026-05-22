@@ -123,6 +123,7 @@ async function main() {
     { marker: 'ANALYSIS_BACKTEST', src: 'analysis/backtest.js' },        // Clearwing Phase 2c
     { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
+    { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [

@@ -210,6 +210,9 @@ for name, body in funcs.items():
 #         split 後のファイル間で重複しないよう片方からのみ削除する。
 REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_BACKTEST',
+    # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
+    # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
+    'ANALYSIS_SCORE_BOAT',
 }
 
 rest_bundle_extracted: list[str] = []
