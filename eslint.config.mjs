@@ -142,6 +142,9 @@ export default [
       'src/reporting/stadium_pages.js',
       'src/reporting/page_router.js',
       'src/reporting/race_detail.js',
+      'src/reporting/race_detail_boats.js',
+      'src/reporting/race_detail_prediction.js',
+      'src/reporting/race_detail_bets.js',
     ],
     languageOptions: {
       ecmaVersion: 2022,
