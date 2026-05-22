@@ -21,6 +21,15 @@
 
 'use strict';
 
+// 型付き globalThis ハンドル (Phase 4: JSDoc strict 整合用)
+/** @type {BoatRaceGlobalAPI & typeof globalThis} */
+const _g = /** @type {any} */ (globalThis);
+
+/**
+ * "YYYYMMDD" 文字列 → JST 想定の Date オブジェクト。
+ * @param {string | null | undefined} yyyymmdd
+ * @returns {Date | null}
+ */
 function _btParseDate(yyyymmdd) {
   if (!yyyymmdd || typeof yyyymmdd !== 'string' || yyyymmdd.length !== 8) return null;
   return new Date(
@@ -30,10 +39,40 @@ function _btParseDate(yyyymmdd) {
   );
 }
 
+/**
+ * boatrace_history を「もし trifecta_bets / exacta_bets を 100 円ずつ均等買いしていたら」の前提で
+ * 後付け集計し、ROI / 的中率 / 投資総額 / 払戻総額 / drawdown / シャープレシオを返す。
+ *
+ * @param {Array<any>} history  - boatrace_history の配列。actual / *_bets / payout3 / payout2 を持つ要素のみ集計対象。
+ * @param {{ periodDays?: number; stakePerBet?: number }} [opt]
+ *   periodDays=0 で全件、>0 で「直近 N 日」のみフィルタ。stakePerBet 既定 100 円。
+ * @returns {{
+ *   samples: number;
+ *   totalBets: number;
+ *   totalStake: number;
+ *   totalPayout: number;
+ *   netProfit: number;
+ *   roi: number;
+ *   hitRate3: number;
+ *   hitRate2: number;
+ *   maxDrawdown: number;
+ *   sharpe: number;
+ *   byType: Record<string, { n: number; hits: number; payout: number }>;
+ *   byStadium: Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number }>;
+ *   dailyROI: Record<string, { stake: number; payout: number; n: number }>;
+ *   period: number;
+ *   logLoss: number;
+ *   brier: number;
+ *   ece: number;
+ *   calibratedSamples: number;
+ *   leakageNote: string;
+ * }}
+ */
 function runBacktestEngine(history, opt) {
   opt = opt || {};
   const periodDays = opt.periodDays != null ? opt.periodDays : 14;
   const stakePerBet = opt.stakePerBet || 100;
+  /** @type {Array<any>} */
   const ledger = [];
 
   // 期間フィルタ
@@ -58,22 +97,25 @@ function runBacktestEngine(history, opt) {
     totalPayout = 0;
   let hits3 = 0,
     hits2 = 0;
+  /** @type {Record<string, { stake: number; payout: number; n: number }>} */
   const dailyROI = {};
   let maxDD = 0,
     currentLoss = 0;
   // 旧 balance 変数は drawdown 計算には不要 (currentLoss だけで判定可能) のため削除
+  /** @type {Record<string, { n: number; hits: number; payout: number }>} */
   const byType = {
     honmei: { n: 0, hits: 0, payout: 0 },
     middle: { n: 0, hits: 0, payout: 0 },
     ana: { n: 0, hits: 0, payout: 0 },
   };
   // B17 (2026-05-17): 場別集計を追加。回収率順で表示可能なよう sid -> 集計の dict を構築
+  /** @type {Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number }>} */
   const byStadium = {};
 
-  ledger.sort(function (a, b) {
+  ledger.sort(function (/** @type {any} */ a, /** @type {any} */ b) {
     return (a.date || '').localeCompare(b.date || '');
   });
-  ledger.forEach(function (h) {
+  ledger.forEach(function (/** @type {any} */ h) {
     const bets3n = (h.trifecta_bets || []).length;
     const bets2n = (h.exacta_bets || []).length;
     const stake = (bets3n + bets2n) * stakePerBet;
@@ -95,7 +137,7 @@ function runBacktestEngine(history, opt) {
       if (!byStadium[sid])
         byStadium[sid] = {
           sid: sid,
-          name: (typeof globalThis.STADIUMS === 'object' && globalThis.STADIUMS[sid]) || '場' + sid,
+          name: (typeof _g.STADIUMS === 'object' && _g.STADIUMS[sid]) || '場' + sid,
           n: 0,
           hits3: 0,
           hits2: 0,
@@ -178,13 +220,21 @@ function runBacktestEngine(history, opt) {
 }
 
 // PB-3: Forward-chaining backtest（現状は履歴の logloss/brier/ece を時系列順で集計）
+/**
+ * 時系列順で warmup 後のレースのみを評価するキャリブレーション。
+ * 完全な forward-chain 再学習にはレース時点の features 保存が必要なため、
+ * 暫定的に「保存済 mark_probs を時系列順で評価」する形で leakage を最小化。
+ * @param {Array<any>} history
+ * @param {{ warmupRaces?: number }} [opt]
+ * @returns {{ totalSamples: number; warmupSkipped: number; evaluatedSamples: number; logLoss: number; brier: number; ece: number; note: string }}
+ */
 function runForwardChainBacktest(history, opt) {
   opt = opt || {};
   const warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
-  const sorted = (history || []).slice().filter(function (h) {
+  const sorted = (history || []).slice().filter(function (/** @type {any} */ h) {
     return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
   });
-  sorted.sort(function (a, b) {
+  sorted.sort(function (/** @type {any} */ a, /** @type {any} */ b) {
     const d = (a.date || '').localeCompare(b.date || '');
     if (d !== 0) return d;
     return (a.stadium || 0) - (b.stadium || 0) || (a.race || 0) - (b.race || 0);
@@ -203,17 +253,25 @@ function runForwardChainBacktest(history, opt) {
 }
 
 // PB-10 ヘルパ: 各エントリの mark_probs と actual から calibration metrics を計算
+/**
+ * 各エントリの mark_probs と actual から calibration metrics を計算。
+ * log loss / Brier (6 艇 multi-class) / ECE (10 分位 bin) を返す。
+ * @param {Array<any>} entries
+ * @returns {{ logLoss: number; brier: number; ece: number; n: number }}
+ */
 function _computeCalibrationMetrics(entries) {
   let logLossSum = 0,
     brierSum = 0,
     n = 0;
+  /** @type {Array<{ sum: number; hit: number; n: number }>} */
   const bins = [];
   for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
-  entries.forEach(function (h) {
+  entries.forEach(function (/** @type {any} */ h) {
     if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
     const winner = h.actual[0];
+    /** @type {Record<number, number>} */
     const probs = {};
-    h.mark_probs.forEach(function (mp) {
+    h.mark_probs.forEach(function (/** @type {any} */ mp) {
       probs[mp.boat] = mp.prob;
     });
     const pWin = probs[winner];
@@ -247,8 +305,8 @@ function _computeCalibrationMetrics(entries) {
 // 注: _plackettLuceTrifectaProb / _plackettLuceExactaProb は src/utils/math.js が
 //     既に提供している（BUILD:MATH bundle 経由）。analysis 側では参照のみ。
 
-// globalThis export
-globalThis._btParseDate = _btParseDate;
-globalThis.runBacktestEngine = runBacktestEngine;
-globalThis.runForwardChainBacktest = runForwardChainBacktest;
-globalThis._computeCalibrationMetrics = _computeCalibrationMetrics;
+// globalThis export — 冒頭の _g 経由で Window インタフェースに整合
+_g._btParseDate = _btParseDate;
+_g.runBacktestEngine = runBacktestEngine;
+_g.runForwardChainBacktest = runForwardChainBacktest;
+_g._computeCalibrationMetrics = _computeCalibrationMetrics;

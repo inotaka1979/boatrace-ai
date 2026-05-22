@@ -8,6 +8,10 @@
 "use strict";
 (() => {
   // ../src/analysis/backtest.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
   function _btParseDate(yyyymmdd) {
     if (!yyyymmdd || typeof yyyymmdd !== "string" || yyyymmdd.length !== 8) return null;
     return new Date(
@@ -38,8 +42,12 @@
     let totalBets = 0, totalStake = 0, totalPayout = 0;
     let hits3 = 0, hits2 = 0;
     const dailyROI = {};
-    let maxDD = 0, currentLoss = 0, balance = 0;
-    const byType = { honmei: { n: 0, hits: 0, payout: 0 }, middle: { n: 0, hits: 0, payout: 0 }, ana: { n: 0, hits: 0, payout: 0 } };
+    let maxDD = 0, currentLoss = 0;
+    const byType = {
+      honmei: { n: 0, hits: 0, payout: 0 },
+      middle: { n: 0, hits: 0, payout: 0 },
+      ana: { n: 0, hits: 0, payout: 0 }
+    };
     const byStadium = {};
     ledger.sort(function(a, b) {
       return (a.date || "").localeCompare(b.date || "");
@@ -62,16 +70,17 @@
       }
       const sid = parseInt(h.stadium);
       if (sid && sid >= 1 && sid <= 24) {
-        if (!byStadium[sid]) byStadium[sid] = {
-          sid,
-          name: typeof globalThis.STADIUMS === "object" && globalThis.STADIUMS[sid] || "\u5834" + sid,
-          n: 0,
-          hits3: 0,
-          hits2: 0,
-          stake: 0,
-          payout: 0,
-          payout3: 0
-        };
+        if (!byStadium[sid])
+          byStadium[sid] = {
+            sid,
+            name: typeof _g.STADIUMS === "object" && _g.STADIUMS[sid] || "\u5834" + sid,
+            n: 0,
+            hits3: 0,
+            hits2: 0,
+            stake: 0,
+            payout: 0,
+            payout3: 0
+          };
         const ss = byStadium[sid];
         ss.n++;
         ss.stake += stake;
@@ -81,7 +90,6 @@
         if (h.exacta_hit) ss.hits2++;
       }
       const net = payout - stake;
-      balance += net;
       if (net < 0) {
         currentLoss += -net;
         maxDD = Math.max(maxDD, currentLoss);
@@ -191,10 +199,10 @@
     });
     return { logLoss, brier, ece, n };
   }
-  globalThis._btParseDate = _btParseDate;
-  globalThis.runBacktestEngine = runBacktestEngine;
-  globalThis.runForwardChainBacktest = runForwardChainBacktest;
-  globalThis._computeCalibrationMetrics = _computeCalibrationMetrics;
+  _g._btParseDate = _btParseDate;
+  _g.runBacktestEngine = runBacktestEngine;
+  _g.runForwardChainBacktest = runForwardChainBacktest;
+  _g._computeCalibrationMetrics = _computeCalibrationMetrics;
 })();
 
 /* BUILD:ANALYSIS_BACKTEST:END */

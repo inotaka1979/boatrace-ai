@@ -65,6 +65,9 @@ jobs:
       - name: Lint (eslint + prettier --check)
         run: npm run lint
 
+      - name: Type check (tsc --noEmit -p jsconfig.json)
+        run: npm run type
+
       - name: Test (scripts/tests/run_all.sh)
         run: npm test
 

@@ -26,7 +26,7 @@ help:
 	@echo "  make install           - npm ci (root + build/)"
 	@echo "  make lint              - eslint + prettier --check (src/, scripts/tests/)"
 	@echo "  make format            - prettier --write (src/)"
-	@echo "  make type              - type check (stub for now; Phase 4 wires tsc --noEmit)"
+	@echo "  make type              - tsc --noEmit -p jsconfig.json (JSDoc strict / Phase 4)"
 	@echo "  make test              - bash scripts/tests/run_all.sh"
 	@echo "  make test-e2e          - Playwright suite (heavy)"
 	@echo "  make snapshots-update  - 期待が変わったら UPDATE_SNAPSHOTS=1 で再生成"

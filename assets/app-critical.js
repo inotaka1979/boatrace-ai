@@ -50,69 +50,36 @@
     // 同期検出（起動時 1 回）
     // ─────────────────────────────────────────────
     detectSync() {
+      this._set("abort_timeout", typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function");
+      this._set("service_worker", typeof navigator !== "undefined" && "serviceWorker" in navigator);
+      this._set("indexed_db", typeof indexedDB !== "undefined");
+      this._set("cache_api", typeof caches !== "undefined");
       this._set(
-        "abort_timeout",
-        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        "local_storage",
+        (() => {
+          try {
+            if (typeof localStorage === "undefined") return false;
+            const k = "__br_cap_probe__";
+            localStorage.setItem(k, "1");
+            localStorage.removeItem(k);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })()
       );
-      this._set(
-        "service_worker",
-        typeof navigator !== "undefined" && "serviceWorker" in navigator
-      );
-      this._set(
-        "indexed_db",
-        typeof indexedDB !== "undefined"
-      );
-      this._set(
-        "cache_api",
-        typeof caches !== "undefined"
-      );
-      this._set("local_storage", (() => {
-        try {
-          if (typeof localStorage === "undefined") return false;
-          const k = "__br_cap_probe__";
-          localStorage.setItem(k, "1");
-          localStorage.removeItem(k);
-          return true;
-        } catch (_) {
-          return false;
-        }
-      })());
-      this._set(
-        "scheduler_post_task",
-        typeof scheduler !== "undefined" && typeof scheduler.postTask === "function"
-      );
-      this._set(
-        "scheduler_yield",
-        typeof scheduler !== "undefined" && typeof scheduler.yield === "function"
-      );
-      this._set(
-        "request_idle_callback",
-        typeof requestIdleCallback === "function"
-      );
-      this._set(
-        "document",
-        typeof document !== "undefined" && typeof document.querySelectorAll === "function"
-      );
-      this._set(
-        "notification",
-        typeof Notification !== "undefined"
-      );
-      this._set(
-        "chart",
-        typeof Chart !== "undefined"
-      );
-      this._set(
-        "worker",
-        typeof Worker !== "undefined"
-      );
+      this._set("scheduler_post_task", typeof scheduler !== "undefined" && typeof scheduler.postTask === "function");
+      this._set("scheduler_yield", typeof scheduler !== "undefined" && typeof scheduler.yield === "function");
+      this._set("request_idle_callback", typeof requestIdleCallback === "function");
+      this._set("document", typeof document !== "undefined" && typeof document.querySelectorAll === "function");
+      this._set("notification", typeof Notification !== "undefined");
+      this._set("chart", typeof Chart !== "undefined");
+      this._set("worker", typeof Worker !== "undefined");
       this._set(
         "shared_array_buffer",
         typeof window !== "undefined" && window.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined"
       );
-      this._set(
-        "cross_origin_isolated",
-        typeof window !== "undefined" && window.crossOriginIsolated === true
-      );
+      this._set("cross_origin_isolated", typeof window !== "undefined" && window.crossOriginIsolated === true);
       this._set("online", this._detectOnline());
       if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
         try {
@@ -122,9 +89,14 @@
         }
       }
     }
+    /**
+     * @param {string} name
+     * @param {boolean} value
+     */
     _set(name, value) {
       this._sync.set(name, value === true);
     }
+    /** @returns {boolean} */
     _detectOnline() {
       if (typeof navigator === "undefined") return true;
       if (typeof navigator.onLine !== "boolean") return true;
@@ -133,17 +105,25 @@
     // ─────────────────────────────────────────────
     // 公開 API
     // ─────────────────────────────────────────────
+    /**
+     * @param {string} name
+     * @returns {boolean}
+     */
     has(name) {
       if (this._sync.has(name)) return this._sync.get(name) === true;
       if (this._async.has(name)) return this._async.get(name) === true;
       return false;
     }
-    // 動的に状態が変わる capability の再検出（chart 動的 import 後 等）
+    /**
+     * 動的に状態が変わる capability の再検出（chart 動的 import 後 等）
+     * @param {string} [name]
+     */
     refresh(name) {
       if (name === "chart") this._set("chart", typeof Chart !== "undefined");
       else if (name === "online") this._set("online", this._detectOnline());
       else this.detectSync();
     }
+    /** @returns {string[]} */
     list() {
       return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
     }
@@ -154,8 +134,13 @@
     //   - 'exhibition_data': 個別レースの preview 取得試行（呼出側で sid/rno を渡す形に拡張可能）
     //
     // Phase 1 では openapi_fresh のみ実装、他は API としてのみ用意。
+    /**
+     * @param {string} name
+     * @param {{ url?: string; ttlMs?: number }} [opts]
+     * @returns {Promise<boolean>}
+     */
     async probe(name, opts) {
-      if (this._async.has(name)) return this._async.get(name);
+      if (this._async.has(name)) return this._async.get(name) === true;
       let result = false;
       try {
         if (name === "openapi_fresh") result = await this._probeOpenapiFresh(opts);
@@ -163,8 +148,12 @@
         result = false;
       }
       this._async.set(name, result === true);
-      return this._async.get(name);
+      return this._async.get(name) === true;
     }
+    /**
+     * @param {{ url?: string; ttlMs?: number }} [opts]
+     * @returns {Promise<boolean>}
+     */
     async _probeOpenapiFresh(opts) {
       if (typeof fetch !== "function") return false;
       const url = opts && opts.url || "https://boatraceopenapi.github.io/programs/v2/today.json";
@@ -186,38 +175,56 @@
     //   false なら AbortController + setTimeout の polyfill
     // 主に iOS Safari 旧版での fetch timeout 互換を確保するため。
     // ─────────────────────────────────────────────
+    /**
+     * @param {number} ms
+     * @returns {AbortSignal}
+     */
     makeTimeoutSignal(ms) {
       if (this.has("abort_timeout")) {
         return AbortSignal.timeout(ms);
       }
       const c = new AbortController();
       const ctxScheduler = typeof setTimeout === "function" ? setTimeout : null;
-      if (ctxScheduler) ctxScheduler(() => {
-        try {
-          c.abort();
-        } catch (_) {
-        }
-      }, ms);
+      if (ctxScheduler)
+        ctxScheduler(() => {
+          try {
+            c.abort();
+          } catch (_) {
+          }
+        }, ms);
       return c.signal;
     }
     // ─────────────────────────────────────────────
     // ヘルパ: 利用可能な「アイドル時実行」関数を返す
     //   scheduler.postTask({priority:'background'}) > requestIdleCallback > setTimeout
     // ─────────────────────────────────────────────
+    /**
+     * @param {() => void} fn
+     * @param {{ delay?: number; timeout?: number; priority?: string }} [opts]
+     * @returns {unknown}
+     */
     runIdle(fn, opts) {
+      const _gAny = (
+        /** @type {any} */
+        globalThis
+      );
       if (this.has("scheduler_post_task")) {
-        return scheduler.postTask(fn, { priority: "background", ...opts || {} });
+        return _gAny.scheduler.postTask(fn, { priority: "background", ...opts || {} });
       }
       if (this.has("request_idle_callback")) {
-        return requestIdleCallback(fn, { timeout: opts && opts.timeout || 3e3 });
+        return _gAny.requestIdleCallback(fn, { timeout: opts && opts.timeout || 3e3 });
       }
       return setTimeout(fn, opts && opts.delay || 0);
     }
   };
   var capabilities = new Capabilities();
   capabilities.detectSync();
-  globalThis.capabilities = capabilities;
-  globalThis.Capabilities = Capabilities;
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  _g.capabilities = capabilities;
+  _g.Capabilities = Capabilities;
 })();
 
 /* BUILD:CAPABILITIES:END */
@@ -1680,7 +1687,8 @@ window.addEventListener('unhandledrejection', function(e){
       });
     }).catch(function(e) {
       try {
-        if (typeof reportError === "function") reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
+        if (typeof reportError === "function")
+          reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
       } catch (_) {
       }
       return false;
@@ -2326,6 +2334,10 @@ window.addEventListener('unhandledrejection', function(e){
 "use strict";
 (() => {
   // ../src/discovery/openapi_client.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
   var BC_MAX_BYTES = 100 * 1024;
   var WORKER_BASE = "https://boatrace-scrape-trigger.inotaka1979.workers.dev";
   var _apiHealth = { programs: "ok", previews: "ok", results: "ok", odds: "ok" };
@@ -2333,9 +2345,9 @@ window.addEventListener('unhandledrejection', function(e){
     const key = url.indexOf("/programs/") >= 0 ? "programs" : url.indexOf("/previews/") >= 0 ? "previews" : url.indexOf("/results/") >= 0 ? "results" : url.indexOf("/odds/") >= 0 ? "odds" : null;
     if (!key) return;
     _apiHealth[key] = state;
-    if (typeof globalThis._renderApiHealthBanner === "function") {
+    if (typeof _g._renderApiHealthBanner === "function") {
       try {
-        globalThis._renderApiHealthBanner();
+        _g._renderApiHealthBanner();
       } catch (_) {
       }
     }
@@ -2347,9 +2359,9 @@ window.addEventListener('unhandledrejection', function(e){
     return null;
   }
   function _fetchOne(url, timeoutMs) {
-    const signal = globalThis.capabilities.makeTimeoutSignal(timeoutMs || 1e4);
+    const signal = _g.capabilities.makeTimeoutSignal(timeoutMs || 1e4);
     return fetch(url, { signal, cache: "no-store" }).then(function(r) {
-      if (!r.ok) throw new Error(r.status);
+      if (!r.ok) throw new Error(String(r.status));
       return r.json();
     });
   }
@@ -2362,7 +2374,7 @@ window.addEventListener('unhandledrejection', function(e){
       try {
         const serialized = JSON.stringify({ data: d, time: Date.now() });
         if (serialized.length <= BC_MAX_BYTES) {
-          localStorage.setItem(globalThis.cacheKey(baseUrl), serialized);
+          localStorage.setItem(_g.cacheKey(baseUrl), serialized);
         }
       } catch (_) {
       }
@@ -2375,7 +2387,7 @@ window.addEventListener('unhandledrejection', function(e){
         try {
           const serialized = JSON.stringify({ data: d, time: Date.now() });
           if (serialized.length <= BC_MAX_BYTES) {
-            localStorage.setItem(globalThis.cacheKey(baseUrl), serialized);
+            localStorage.setItem(_g.cacheKey(baseUrl), serialized);
           }
         } catch (_) {
         }
@@ -2384,7 +2396,7 @@ window.addEventListener('unhandledrejection', function(e){
       }).catch(function(e) {
         console.warn("API error:", baseUrl, e.message);
         try {
-          const c = localStorage.getItem(globalThis.cacheKey(baseUrl));
+          const c = localStorage.getItem(_g.cacheKey(baseUrl));
           if (c) {
             const o = JSON.parse(c);
             if (Date.now() - o.time < 6e5) {
@@ -2430,7 +2442,10 @@ window.addEventListener('unhandledrejection', function(e){
     if (!indexed) return null;
     for (const sid in indexed) {
       for (const rn in indexed[sid]) {
-        const p = indexed[sid][rn];
+        const p = (
+          /** @type {any} */
+          indexed[sid][rn]
+        );
         p.weather = {
           wind_speed: p.race_wind || 0,
           wind_direction: p.race_wind_direction_number || 0,
@@ -2448,7 +2463,10 @@ window.addEventListener('unhandledrejection', function(e){
     if (!indexed) return null;
     for (const sid in indexed) {
       for (const rn in indexed[sid]) {
-        const r = indexed[sid][rn];
+        const r = (
+          /** @type {any} */
+          indexed[sid][rn]
+        );
         const isFinished = r.race_technique_number != null;
         if (isFinished && r.boats && Array.isArray(r.boats)) {
           r.results = r.boats.filter(function(b) {
@@ -2482,9 +2500,10 @@ window.addEventListener('unhandledrejection', function(e){
     const filtered = raw.previews.filter(function(p) {
       const hasWeather = (p.race_wind || 0) > 0 || (p.race_water_temperature || 0) > 0 || (p.race_temperature || 0) > 0 || (p.race_wave || 0) > 0 || p.race_wind_direction_number != null;
       let bs = p.boats || [];
-      if (!Array.isArray(bs)) bs = Object.keys(bs).map(function(k) {
-        return bs[k];
-      });
+      if (!Array.isArray(bs))
+        bs = Object.keys(bs).map(function(k) {
+          return bs[k];
+        });
       const hasExh = bs.some(function(b) {
         return b && (b.racer_exhibition_time || 0) > 0;
       });
@@ -2495,18 +2514,18 @@ window.addEventListener('unhandledrejection', function(e){
     }
     return { previews: filtered, updated_at: raw.updated_at };
   }
-  globalThis.BC_MAX_BYTES = BC_MAX_BYTES;
-  globalThis.WORKER_BASE = WORKER_BASE;
-  globalThis._apiHealth = _apiHealth;
-  globalThis._setApiHealth = _setApiHealth;
-  globalThis._mapToWorkerUrl = _mapToWorkerUrl;
-  globalThis._fetchOne = _fetchOne;
-  globalThis.fetchWithFallback = fetchWithFallback;
-  globalThis.validateApiPayload = validateApiPayload;
-  globalThis.indexByStadiumRace = indexByStadiumRace;
-  globalThis.indexPreviews = indexPreviews;
-  globalThis.indexResults = indexResults;
-  globalThis._filterStalePreviews = _filterStalePreviews;
+  _g.BC_MAX_BYTES = BC_MAX_BYTES;
+  _g.WORKER_BASE = WORKER_BASE;
+  _g._apiHealth = _apiHealth;
+  _g._setApiHealth = _setApiHealth;
+  _g._mapToWorkerUrl = _mapToWorkerUrl;
+  _g._fetchOne = _fetchOne;
+  _g.fetchWithFallback = fetchWithFallback;
+  _g.validateApiPayload = validateApiPayload;
+  _g.indexByStadiumRace = indexByStadiumRace;
+  _g.indexPreviews = indexPreviews;
+  _g.indexResults = indexResults;
+  _g._filterStalePreviews = _filterStalePreviews;
 })();
 
 /* BUILD:DISCOVERY_OPENAPI:END */
@@ -2515,11 +2534,15 @@ window.addEventListener('unhandledrejection', function(e){
 "use strict";
 (() => {
   // ../src/reporting/status_banner.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
   function _renderApiHealthBanner() {
     const banner = document.getElementById("apiHealthBanner");
     const msg = document.getElementById("apiHealthMsg");
     if (!banner || !msg) return;
-    const health = globalThis._apiHealth || {};
+    const health = _g._apiHealth || {};
     const fails = [];
     const cached = [];
     for (const k in health) {
@@ -2539,10 +2562,7 @@ window.addEventListener('unhandledrejection', function(e){
   function _renderFreshness() {
     const el = document.getElementById("dataFreshness");
     if (!el) return;
-    const latest = Math.max(
-      globalThis._dataLatestUpdatedAt || 0,
-      globalThis._dataTodayConfirmedAt || 0
-    );
+    const latest = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
     if (!latest) {
       el.textContent = "";
       return;
@@ -2561,8 +2581,8 @@ window.addEventListener('unhandledrejection', function(e){
     const color = sec < 180 ? "#A5D6A7" : sec < 600 ? "#FFCC80" : "#FF8A80";
     el.innerHTML = '<span style="color:' + color + '">\u{1F4E1} ' + label + "</span>";
   }
-  globalThis._renderApiHealthBanner = _renderApiHealthBanner;
-  globalThis._renderFreshness = _renderFreshness;
+  _g._renderApiHealthBanner = _renderApiHealthBanner;
+  _g._renderFreshness = _renderFreshness;
 })();
 
 /* BUILD:REPORTING_STATUS_BANNER:END */

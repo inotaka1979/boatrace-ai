@@ -81,9 +81,15 @@ class WorkerCapabilities {
   }
 }
 
-const capabilities = new WorkerCapabilities();
-capabilities.detectSync();
+// Phase 4 (JSDoc strict): 識別子名 `capabilities` を src/capabilities.js のローカル
+//   と区別するため `workerCaps` を使用 (TS は両 .js を同一 compilation 単位として
+//   見るため、トップレベル const 衝突 TS2451 を回避)。runtime は globalThis 経由で
+//   別 thread に届くので影響なし。
+const workerCaps = new WorkerCapabilities();
+workerCaps.detectSync();
 
 // Worker global は self / globalThis のどちらでも届く
-globalThis.capabilities = capabilities;
-globalThis.WorkerCapabilities = WorkerCapabilities;
+/** @type {BoatRaceGlobalAPI & typeof globalThis} */
+const _g = /** @type {any} */ (globalThis);
+_g.capabilities = workerCaps;
+/** @type {any} */ (_g).WorkerCapabilities = WorkerCapabilities;

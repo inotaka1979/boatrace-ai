@@ -9,7 +9,7 @@
     "lint:fix": "eslint --fix src/ scripts/tests/",
     "format:check": "prettier --check src/",
     "format": "prettier --write src/",
-    "type": "echo 'type-check stub (Phase 4 will add tsc --noEmit + jsconfig.json)'",
+    "type": "tsc --noEmit -p jsconfig.json",
     "test": "bash scripts/tests/run_all.sh",
     "test:e2e": "cd build && npm run test:e2e",
     "split": "python3 scripts/split_app.py",
@@ -19,8 +19,9 @@
   },
   "devDependencies": {
     "eslint": "^9.18.0",
+    "globals": "^15.14.0",
     "prettier": "^3.4.2",
-    "globals": "^15.14.0"
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=20.0.0",

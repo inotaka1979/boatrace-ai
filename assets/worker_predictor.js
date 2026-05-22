@@ -57,10 +57,14 @@
       return setTimeout(fn, opts && opts.delay || 0);
     }
   };
-  var capabilities = new WorkerCapabilities();
-  capabilities.detectSync();
-  globalThis.capabilities = capabilities;
-  globalThis.WorkerCapabilities = WorkerCapabilities;
+  var workerCaps = new WorkerCapabilities();
+  workerCaps.detectSync();
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  _g.capabilities = workerCaps;
+  _g.WorkerCapabilities = WorkerCapabilities;
 })();
 
 /* BUILD:CAPABILITIES_WORKER:END */

@@ -16,11 +16,15 @@
 
 'use strict';
 
+// 型付き globalThis ハンドル (Phase 4: JSDoc strict 整合用)
+/** @type {BoatRaceGlobalAPI & typeof globalThis} */
+const _g = /** @type {any} */ (globalThis);
+
 function _renderApiHealthBanner() {
   const banner = document.getElementById('apiHealthBanner');
   const msg = document.getElementById('apiHealthMsg');
   if (!banner || !msg) return;
-  const health = globalThis._apiHealth || {};
+  const health = _g._apiHealth || {};
   const fails = [];
   const cached = [];
   for (const k in health) {
@@ -42,7 +46,7 @@ function _renderFreshness() {
   const el = document.getElementById('dataFreshness');
   if (!el) return;
   // updated_at と race_date 両方の最新を比較（GitHub Pages 反映遅延対策）
-  const latest = Math.max(globalThis._dataLatestUpdatedAt || 0, globalThis._dataTodayConfirmedAt || 0);
+  const latest = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
   if (!latest) {
     el.textContent = '';
     return;
@@ -64,6 +68,6 @@ function _renderFreshness() {
   el.innerHTML = '<span style="color:' + color + '">📡 ' + label + '</span>';
 }
 
-// globalThis export
-globalThis._renderApiHealthBanner = _renderApiHealthBanner;
-globalThis._renderFreshness = _renderFreshness;
+// globalThis export — 冒頭の _g 経由で Window インタフェースに整合
+_g._renderApiHealthBanner = _renderApiHealthBanner;
+_g._renderFreshness = _renderFreshness;
