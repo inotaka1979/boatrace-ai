@@ -126,6 +126,8 @@ async function main() {
     { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
     { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
+    { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
+    { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [

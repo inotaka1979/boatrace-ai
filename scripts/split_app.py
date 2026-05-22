@@ -217,6 +217,9 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_CALIBRATION',
     # 成績タブ render (renderStats + renderStatsChart) は成績タブ open 時のみ。
     'REPORTING_STATS_PAGE',
+    # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
+    'ANALYSIS_PREDICT_SCENARIOS',
+    'ANALYSIS_PREDICT_RACE',
 }
 
 rest_bundle_extracted: list[str] = []

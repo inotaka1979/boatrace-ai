@@ -2687,11 +2687,6 @@ var SCENARIO_DIST = {
   },
 };
 
-// シナリオ確率を場・選手の状況から推定
-/* MOVED: function predictScenarios */
-
-// シナリオ加重で 1-2-3 着分布を作る
-/* MOVED: function predictWithScenarios */
 
 // ===============================================
 // X4: 環境データ（潮汐 R-02 / 場別風向 R-10 / 風×波交差項 R-14）
@@ -2760,7 +2755,6 @@ var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:
  * @param sid stadium id
  * @returns {byBoat: {1:course,2:course,...}, conf: {1:p,2:p,...}}
  */
-/* MOVED: function predictEntryCourses */
 
 // 進入パターンを results から学習
 /* MOVED: function learnEntryPatternFromResults */
@@ -2895,21 +2889,15 @@ var _workerHeavyLoaded = false;
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）
 //   呼出側で「await できる場面」では predictRaceAsync を使う
-/* MOVED: function predictRaceAsync */
 
-// pairs 抽出は同期で実行（軽量）、grid search のみ Worker
-
-// PF-9: async 化、Worker があれば使う、無ければ main thread fallback
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
 // ===============================================
-/* MOVED: function predictRace */
 
 // ===============================================
 // 番組予想（展示・風なし、出走表データのみ）
 // ===============================================
-/* MOVED: function predictRaceProgram */
 
 // ===============================================
 // 番組予想 vs 直前予想の差分分析

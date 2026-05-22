@@ -133,6 +133,8 @@ export default [
     files: [
       'src/analysis/score_boat.js',
       'src/analysis/calibration.js',
+      'src/analysis/predict_race.js',
+      'src/analysis/predict_scenarios.js',
       'src/reporting/stats_page.js',
     ],
     languageOptions: {

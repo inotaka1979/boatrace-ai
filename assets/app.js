@@ -3408,65 +3408,122 @@ var SCENARIO_DIST = {
   },
 };
 
-// シナリオ確率を場・選手の状況から推定
-function predictScenarios(boats, preview, weather, sid, grade){
-  var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
-  var scen = Object.assign({}, prior);
-
-  // 場別補正（場別 1コース勝率を使う）
-  var sdb = stadiumDB[String(sid)];
-  if(sdb && sdb.courseWinRate && sdb.courseWinRate[1]){
-    var cwr = sdb.courseWinRate[1];
-    if(cwr.races >= 30){
-      var rate = cwr.win / cwr.races;
-      // 1コース勝率 0.55 を基準に scen.nige を調整
-      var delta = (rate - 0.55) * 0.5;   // ±0.1 程度
-      scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_scenarios.js
+  function predictScenarios(boats, preview, weather, sid, grade) {
+    var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
+    var scen = Object.assign({}, prior);
+    var sdb = stadiumDB[String(sid)];
+    if (sdb && sdb.courseWinRate && sdb.courseWinRate[1]) {
+      var cwr = sdb.courseWinRate[1];
+      if (cwr.races >= 30) {
+        var rate = cwr.win / cwr.races;
+        var delta = (rate - 0.55) * 0.5;
+        scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
+      }
     }
-  }
-
-  // 風波で穴度合い調整
-  if(weather){
-    var ws = weather.wind_speed || weather.race_wind || 0;
-    var wh = weather.wave_height || weather.race_wave || 0;
-    if(ws >= 5 || wh >= 7){
-      scen.nige *= 0.7;
-      scen.makuri *= 1.3;
-      scen.other *= 1.5;
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wh = weather.wave_height || weather.race_wave || 0;
+      if (ws >= 5 || wh >= 7) {
+        scen.nige *= 0.7;
+        scen.makuri *= 1.3;
+        scen.other *= 1.5;
+      }
     }
+    var sum = 0;
+    for (var k in scen) sum += scen[k];
+    if (sum > 0) {
+      for (var k2 in scen) scen[k2] = scen[k2] / sum;
+    }
+    return scen;
   }
-
-  // 正規化
-  var sum = 0;
-  for(var k in scen) sum += scen[k];
-  if(sum > 0){ for(var k2 in scen) scen[k2] = scen[k2] / sum; }
-  return scen;
-}
-
-// シナリオ加重で 1-2-3 着分布を作る
-function predictWithScenarios(boats, preview, weather, sid, grade){
-  var sc = predictScenarios(boats, preview, weather, sid, grade);
-  var dist = {};
-  Object.keys(SCENARIO_DIST).forEach(function(scKey){
-    var w = sc[scKey] || 0;
-    var template = SCENARIO_DIST[scKey];
-    Object.keys(template).forEach(function(combo){
-      dist[combo] = (dist[combo] || 0) + w * template[combo];
+  function predictWithScenarios(boats, preview, weather, sid, grade) {
+    var sc = predictScenarios(boats, preview, weather, sid, grade);
+    var dist = {};
+    Object.keys(SCENARIO_DIST).forEach(function(scKey) {
+      var w = sc[scKey] || 0;
+      var template = SCENARIO_DIST[scKey];
+      Object.keys(template).forEach(function(combo) {
+        dist[combo] = (dist[combo] || 0) + w * template[combo];
+      });
     });
-  });
-  // 残りの 1-2-3 組合せに薄く確率を散らす（ゼロ確率を避ける）
-  var allCombos = [];
-  for(var i=1;i<=6;i++) for(var j=1;j<=6;j++) for(var k=1;k<=6;k++){
-    if(i!==j && j!==k && i!==k) allCombos.push(i+'-'+j+'-'+k);
+    var allCombos = [];
+    for (var i = 1; i <= 6; i++)
+      for (var j = 1; j <= 6; j++)
+        for (var k = 1; k <= 6; k++) {
+          if (i !== j && j !== k && i !== k) allCombos.push(i + "-" + j + "-" + k);
+        }
+    var residual = 0.05 / allCombos.length;
+    allCombos.forEach(function(c3) {
+      if (dist[c3] == null) dist[c3] = residual;
+    });
+    var s = 0;
+    for (var c in dist) s += dist[c];
+    if (s > 0) for (var c2 in dist) dist[c2] = dist[c2] / s;
+    return { dist, scenarios: sc };
   }
-  var residual = 0.05 / allCombos.length;
-  allCombos.forEach(function(c){ if(dist[c] == null) dist[c] = residual; });
-  // 正規化
-  var s = 0;
-  for(var c in dist) s += dist[c];
-  if(s > 0) for(var c2 in dist) dist[c2] = dist[c2] / s;
-  return { dist: dist, scenarios: sc };
-}
+  function predictEntryCourses(boats, sid) {
+    var dists = boats.map(function(b) {
+      return {
+        boat: b.racer_boat_number,
+        rid: b.racer_number,
+        dist: getEntryDist(b.racer_number, b.racer_boat_number, sid)
+      };
+    });
+    var permutations = [];
+    function perm(arr, current) {
+      if (arr.length === 0) {
+        permutations.push(current);
+        return;
+      }
+      for (var i2 = 0; i2 < arr.length; i2++) {
+        var rest = arr.slice(0, i2).concat(arr.slice(i2 + 1));
+        perm(rest, current.concat([arr[i2]]));
+      }
+    }
+    perm([1, 2, 3, 4, 5, 6], []);
+    var best = null, bestScore = -Infinity;
+    permutations.forEach(function(p) {
+      var s = 0;
+      var valid = true;
+      for (var i2 = 0; i2 < dists.length; i2++) {
+        var pr = dists[i2].dist[String(p[i2])] || 0;
+        if (pr <= 0) {
+          valid = false;
+          break;
+        }
+        s += Math.log(pr);
+      }
+      if (valid && s > bestScore) {
+        bestScore = s;
+        best = p;
+      }
+    });
+    if (!best) {
+      var by = {};
+      var c = {};
+      boats.forEach(function(b) {
+        by[b.racer_boat_number] = b.racer_boat_number;
+        c[b.racer_boat_number] = 0.5;
+      });
+      return { byBoat: by, conf: c };
+    }
+    var byBoat = {}, conf = {};
+    for (var i = 0; i < dists.length; i++) {
+      byBoat[dists[i].boat] = best[i];
+      conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
+    }
+    return { byBoat, conf };
+  }
+  globalThis.predictScenarios = predictScenarios;
+  globalThis.predictWithScenarios = predictWithScenarios;
+  globalThis.predictEntryCourses = predictEntryCourses;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:END */
 
 // ===============================================
 // X4: 環境データ（潮汐 R-02 / 場別風向 R-10 / 風×波交差項 R-14）
@@ -3615,56 +3672,6 @@ function getEntryDist(rid, boat, sid){
  * @param sid stadium id
  * @returns {byBoat: {1:course,2:course,...}, conf: {1:p,2:p,...}}
  */
-function predictEntryCourses(boats, sid){
-  // 各艇の枠→コース確率を取得
-  var dists = boats.map(function(b){
-    return {
-      boat: b.racer_boat_number,
-      rid: b.racer_number,
-      dist: getEntryDist(b.racer_number, b.racer_boat_number, sid),
-    };
-  });
-
-  // ハンガリアン: 全艇 × 全コース の割当を確率最大化
-  // 6 艇 6 コースなら 6! = 720 通り全列挙で十分
-  var permutations = [];
-  function perm(arr, current){
-    if(arr.length === 0){ permutations.push(current); return; }
-    for(var i=0; i<arr.length; i++){
-      var rest = arr.slice(0,i).concat(arr.slice(i+1));
-      perm(rest, current.concat([arr[i]]));
-    }
-  }
-  perm([1,2,3,4,5,6], []);
-
-  var best = null, bestScore = -Infinity;
-  permutations.forEach(function(p){
-    var s = 0;
-    var valid = true;
-    for(var i=0; i<dists.length; i++){
-      var pr = (dists[i].dist[String(p[i])] || 0);
-      if(pr <= 0){ valid = false; break; }
-      s += Math.log(pr);
-    }
-    if(valid && s > bestScore){
-      bestScore = s;
-      best = p;
-    }
-  });
-
-  if(!best){
-    // フォールバック: 枠通り
-    var by = {}; var c = {};
-    boats.forEach(function(b){ by[b.racer_boat_number] = b.racer_boat_number; c[b.racer_boat_number] = 0.5; });
-    return {byBoat: by, conf: c};
-  }
-  var byBoat = {}, conf = {};
-  for(var i=0; i<dists.length; i++){
-    byBoat[dists[i].boat] = best[i];
-    conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
-  }
-  return {byBoat: byBoat, conf: conf};
-}
 
 // 進入パターンを results から学習
 function learnEntryPatternFromResults(resultsJson){
@@ -4879,342 +4886,380 @@ var _workerHeavyLoaded = false;
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）
 //   呼出側で「await できる場面」では predictRaceAsync を使う
-function predictRaceAsync(sid, raceNum){
-  var w = _getAppWorker();
-  if(!w){
-    // Worker 不可時は main thread fallback
-    return Promise.resolve(predictRace(sid, raceNum));
+
+/* BUILD:ANALYSIS_PREDICT_RACE:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_race.js
+  function predictRaceAsync(sid, raceNum) {
+    var w = _getAppWorker();
+    if (!w) {
+      return Promise.resolve(predictRace(sid, raceNum));
+    }
+    var reqId = ++_appWorkerReqId;
+    return new Promise(function(resolve, reject) {
+      _appWorkerCallbacks.set(reqId, function(msg) {
+        if (msg.type === "predict_done") resolve(msg.result);
+        else if (msg.type === "error") {
+          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
+          try {
+            resolve(predictRace(sid, raceNum));
+          } catch (e) {
+            reject(e);
+          }
+        } else {
+          reject(new Error("unexpected worker message: " + JSON.stringify(msg).slice(0, 200)));
+        }
+      });
+      w.postMessage({
+        type: "predict",
+        reqId,
+        input: {
+          sid,
+          raceNum
+          // state を毎回送るのは重いので省略、init/sync_state で同期済み前提
+        }
+      });
+    });
   }
-  var reqId = ++_appWorkerReqId;
-  return new Promise(function(resolve, reject){
-    _appWorkerCallbacks.set(reqId, function(msg){
-      if(msg.type === 'predict_done') resolve(msg.result);
-      else if(msg.type === 'error'){
-        console.warn('[PG-4] worker predict error:', msg.error, msg.stack);
-        // フォールバック: main thread 実行
-        try { resolve(predictRace(sid, raceNum)); }
-        catch(e){ reject(e); }
-      } else {
-        reject(new Error('unexpected worker message: ' + JSON.stringify(msg).slice(0,200)));
-      }
+  function predictRace(sid, raceNum) {
+    if (!programData) return null;
+    var stadiumProg = programData[String(sid)];
+    if (!stadiumProg) return null;
+    var race = stadiumProg[String(raceNum)];
+    if (!race || !race.boats) return null;
+    var preview = null, weather = null;
+    if (previewData && previewData[String(sid)] && previewData[String(sid)][String(raceNum)]) {
+      preview = previewData[String(sid)][String(raceNum)];
+      weather = preview.weather || preview;
+    }
+    var boats = race.boats;
+    if (!Array.isArray(boats)) return null;
+    var predictedEntries = null;
+    if (!preview || !preview.boats || Object.keys(preview.boats).every(function(k) {
+      return preview.boats[k].racer_course_number == null;
+    })) {
+      predictedEntries = predictEntryCourses(boats, sid);
+    }
+    var l1scores = [];
+    boats.forEach(function(b) {
+      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
+      var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries);
+      l1scores.push(s);
     });
-    w.postMessage({
-      type: 'predict',
-      reqId: reqId,
-      input: {
-        sid: sid,
-        raceNum: raceNum,
-        // state を毎回送るのは重いので省略、init/sync_state で同期済み前提
-      }
+    var l1total = l1scores.reduce(function(a, s) {
+      return a + Math.exp(s.score / 15);
+    }, 0);
+    var l1probs = l1scores.map(function(s) {
+      return Math.exp(s.score / 15) / l1total;
     });
-  });
-}
+    var stRanks = [];
+    if (preview && preview.boats) {
+      var sts = [];
+      for (var si = 1; si <= 6; si++) {
+        var spv = preview.boats[String(si)];
+        var stVal = spv && spv.racer_start_timing != null ? pf(spv.racer_start_timing) : 99;
+        sts.push({ boat: si, st: stVal });
+      }
+      sts.sort(function(a, b) {
+        return a.st - b.st;
+      });
+      for (var sr = 0; sr < sts.length; sr++) stRanks[sts[sr].boat] = sr;
+    }
+    var features6 = boats.map(function(b) {
+      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+    });
+    var l2probs = l2Predict(features6);
+    var dbSize = Object.keys(racerDB).length;
+    var alpha = 300 / (300 + dbSize);
+    var beta = 1 - alpha;
+    var finalProbs = boats.map(function(b, i) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      var idx = boats.indexOf(b);
+      var fp2 = alpha * l1probs[idx] + beta * l2probs[idx];
+      return {
+        boat: b.racer_boat_number,
+        prob: fp2,
+        score: l1s.score,
+        course: l1s.course,
+        etRank: l1s.etRank,
+        etTime: l1s.etTime,
+        reasons: l1s.reasons,
+        risks: l1s.risks,
+        motorLabel: l1s.motorLabel,
+        motorEmoji: l1s.motorEmoji,
+        motorRate: l1s.motorRate,
+        boatRate: l1s.boatRate,
+        form: l1s.form,
+        classNum: l1s.classNum
+      };
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = _applyPlattCalibration(p.prob);
+    });
+    finalProbs.forEach(function(p) {
+      var l1 = l1scores.find(function(s) {
+        return s.boat === p.boat;
+      });
+      var fc = l1 ? l1.fc || 0 : 0;
+      var lc = l1 ? l1.lc || 0 : 0;
+      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
+      p.prob *= mult;
+    });
+    var _sumCalib = finalProbs.reduce(function(a, p) {
+      return a + p.prob;
+    }, 0);
+    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
+      finalProbs.forEach(function(p) {
+        p.prob = p.prob / _sumCalib;
+      });
+    }
+    finalProbs.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    var marks = finalProbs.map(function(p, i) {
+      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
+      return p;
+    });
+    var topProb = marks[0].prob;
+    var top2Prob = marks[0].prob + marks[1].prob;
+    var raceType, typeLabel, typeCls;
+    var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
+    var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var RT = TUNING.RACE_TYPE;
+    if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
+      raceType = "honmei";
+      typeLabel = "\u672C\u547D";
+      typeCls = "type-honmei";
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+      raceType = "ana";
+      typeLabel = "\u7A74";
+      typeCls = "type-ana";
+    } else {
+      raceType = "middle";
+      typeLabel = "\u6DF7\u6226";
+      typeCls = "type-middle";
+    }
+    var betCount3 = parseInt(settings.betCount3) || 10;
+    var betCount2 = parseInt(settings.betCount2) || 5;
+    var method = settings.betMethod || "auto";
+    var evMode = settings.evMode === true || settings.evMode === "true";
+    var kpiMode = settings.kpiMode || "balanced";
+    var TYPE_EVMIN = {
+      roi: { honmei: 1.2, middle: 1.25, ana: 1.35 },
+      balanced: { honmei: 1.1, middle: 1.15, ana: 1.25 },
+      hit: { honmei: 1, middle: 1.05, ana: 1.1 }
+    };
+    var TYPE_MAXBETS = {
+      roi: { honmei: 4, middle: 5, ana: 3 },
+      balanced: { honmei: 6, middle: 8, ana: 5 },
+      hit: { honmei: 10, middle: 12, ana: 8 }
+    };
+    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
+    var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
+    var evOpt = {
+      evMin: modeEvMin != null ? modeEvMin : defEvMin,
+      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+      bankroll: parseInt(settings.bankroll) || 1e4
+    };
+    var raceOddsForEV = null;
+    if (oddsData && oddsData.odds) {
+      var found = oddsData.odds.find(function(o) {
+        return o.stadium === parseInt(sid) && o.race === parseInt(raceNum);
+      });
+      if (found) raceOddsForEV = found;
+    }
+    if (method === "auto") {
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      else if (raceType === "honmei") method = "prob";
+      else if (raceType === "ana") method = "box";
+      else method = "formation";
+    }
+    var grade = race.race_grade_number || 0;
+    var scenarioRes = predictWithScenarios(boats, preview, weather, sid, grade);
+    var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
+    bets.marks = marks;
+    bets.evApplied = method === "ev";
+    bets.scenarios = scenarioRes.scenarios;
+    bets.scenarioDist = scenarioRes.dist;
+    bets.grade = grade;
+    if (raceOddsForEV && raceOddsForEV.win) {
+      var aiByBoat = [];
+      for (var bi = 1; bi <= 6; bi++) {
+        var fp = finalProbs.find(function(p) {
+          return p.boat === bi;
+        });
+        aiByBoat.push(fp ? fp.prob : 0);
+      }
+      bets.divergence = calcOddsDivergence(aiByBoat, raceOddsForEV.win);
+    }
+    bets.raceType = raceType;
+    bets.typeLabel = typeLabel;
+    bets.typeCls = typeCls;
+    bets.weather = weather;
+    bets.method = method;
+    bets.features6 = features6;
+    var conf = Math.round(topProb * 100);
+    bets.confidence = conf;
+    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+    bets.ana = function() {
+      var anaTopN = parseInt(settings.betCountAna) || 3;
+      if (anaTopN < 1) anaTopN = 1;
+      else if (anaTopN > 6) anaTopN = 6;
+      var excludeCombos = (bets.trifecta || []).map(function(t) {
+        return t.combo;
+      });
+      if (raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length > 0) {
+        var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
+          minOdds: 30,
+          minEV: 1,
+          minOddsLoose: 15,
+          topN: anaTopN,
+          excludeCombos
+        });
+        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
+        return picks.map(function(p) {
+          return p.combo;
+        });
+      }
+      if (marks && marks.length >= 3) {
+        var dist = buildTrifectaProbDist(marks);
+        var top1Boat = marks[0].boat;
+        var excludeSet = {};
+        excludeCombos.forEach(function(c) {
+          if (c) excludeSet[String(c)] = true;
+        });
+        var cands = [];
+        for (var k in dist) {
+          if (!Object.prototype.hasOwnProperty.call(dist, k)) continue;
+          if (k.split("-")[0] === String(top1Boat)) continue;
+          if (excludeSet[k]) continue;
+          cands.push({ combo: k, prob: dist[k] });
+        }
+        cands.sort(function(a, b) {
+          return b.prob - a.prob;
+        });
+        return cands.slice(0, anaTopN).map(function(c) {
+          return c.combo;
+        });
+      }
+      return [];
+    }();
+    return bets;
+  }
+  function predictRaceProgram(sid, raceNum) {
+    if (!programData) return null;
+    var stadiumProg = programData[String(sid)];
+    if (!stadiumProg) return null;
+    var race = stadiumProg[String(raceNum)];
+    if (!race || !race.boats) return null;
+    var boats = race.boats;
+    if (!Array.isArray(boats)) return null;
+    var predictedEntries = predictEntryCourses(boats, sid);
+    var l1scores = [];
+    boats.forEach(function(b) {
+      var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries);
+      l1scores.push(s);
+    });
+    var l1total = l1scores.reduce(function(a, s) {
+      return a + Math.exp(s.score / 15);
+    }, 0);
+    var l1probs = l1scores.map(function(s) {
+      return Math.exp(s.score / 15) / l1total;
+    });
+    var features6 = boats.map(function(b) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
+    });
+    var l2probs = l2Predict(features6);
+    var dbSize = Object.keys(racerDB).length;
+    var alpha = 600 / (600 + dbSize);
+    var beta = 1 - alpha;
+    var finalProbs = boats.map(function(b, i) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      var idx = boats.indexOf(b);
+      var fp = alpha * l1probs[idx] + beta * l2probs[idx];
+      return {
+        boat: b.racer_boat_number,
+        prob: fp,
+        score: l1s.score,
+        course: l1s.course,
+        reasons: l1s.reasons,
+        risks: l1s.risks,
+        motorLabel: l1s.motorLabel,
+        motorEmoji: l1s.motorEmoji,
+        motorRate: l1s.motorRate,
+        classNum: l1s.classNum
+      };
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = _applyPlattCalibration(p.prob);
+    });
+    finalProbs.forEach(function(p) {
+      var l1 = l1scores.find(function(s) {
+        return s.boat === p.boat;
+      });
+      var fc = l1 ? l1.fc || 0 : 0;
+      var lc = l1 ? l1.lc || 0 : 0;
+      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
+      p.prob *= mult;
+    });
+    var _sum2 = finalProbs.reduce(function(a, p) {
+      return a + p.prob;
+    }, 0);
+    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
+      finalProbs.forEach(function(p) {
+        p.prob = p.prob / _sum2;
+      });
+    }
+    finalProbs.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    finalProbs.forEach(function(p, i) {
+      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
+    });
+    var topProb = finalProbs[0].prob;
+    var top2Prob = finalProbs[0].prob + finalProbs[1].prob;
+    var raceType, typeLabel;
+    var RT2 = TUNING.RACE_TYPE;
+    if (topProb > RT2.HONMEI_TOP1_MIN && top2Prob > RT2.HONMEI_TOP2_MIN) {
+      raceType = "honmei";
+      typeLabel = "\u672C\u547D";
+    } else if (topProb < RT2.ANA_TOP1_MAX) {
+      raceType = "ana";
+      typeLabel = "\u7A74";
+    } else {
+      raceType = "middle";
+      typeLabel = "\u6DF7\u6226";
+    }
+    return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
+  }
+  globalThis.predictRace = predictRace;
+  globalThis.predictRaceAsync = predictRaceAsync;
+  globalThis.predictRaceProgram = predictRaceProgram;
+})();
 
-// pairs 抽出は同期で実行（軽量）、grid search のみ Worker
-
-// PF-9: async 化、Worker があれば使う、無ければ main thread fallback
+/* BUILD:ANALYSIS_PREDICT_RACE:END */
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
 // ===============================================
-function predictRace(sid,raceNum){
-  if(!programData) return null;
-  var stadiumProg=programData[String(sid)];
-  if(!stadiumProg) return null;
-  var race=stadiumProg[String(raceNum)];
-  if(!race||!race.boats) return null;
-
-  var preview=null,weather=null;
-  if(previewData&&previewData[String(sid)]&&previewData[String(sid)][String(raceNum)]){
-    preview=previewData[String(sid)][String(raceNum)];
-    weather=preview.weather||preview;
-  }
-
-  var boats=race.boats;
-  if(!Array.isArray(boats)) return null;
-
-  // X3: preview の進入が無ければ予測を使う
-  var predictedEntries = null;
-  if(!preview || !preview.boats || Object.keys(preview.boats).every(function(k){return preview.boats[k].racer_course_number == null})){
-    predictedEntries = predictEntryCourses(boats, sid);
-  }
-  var l1scores=[];
-  boats.forEach(function(b){
-    var pv=preview&&preview.boats?preview.boats[String(b.racer_boat_number)]:null;
-    var s=scoreBoatV2(b,pv,weather,boats,preview,sid,predictedEntries);
-    l1scores.push(s);
-  });
-
-  var l1total=l1scores.reduce(function(a,s){return a+Math.exp(s.score/15)},0);
-  var l1probs=l1scores.map(function(s){return Math.exp(s.score/15)/l1total});
-
-  var stRanks=[];
-  if(preview&&preview.boats){
-    var sts=[];
-    for(var si=1;si<=6;si++){
-      var spv=preview.boats[String(si)];
-      var stVal=(spv&&spv.racer_start_timing!=null)?pf(spv.racer_start_timing):99;
-      sts.push({boat:si,st:stVal});
-    }
-    sts.sort(function(a,b){return a.st-b.st});
-    for(var sr=0;sr<sts.length;sr++) stRanks[sts[sr].boat]=sr;
-  }
-
-  var features6=boats.map(function(b){
-    var pv=preview&&preview.boats?preview.boats[String(b.racer_boat_number)]:null;
-    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
-    return getL2Features(b,pv,weather,l1s?l1s.etRank:5,stRanks[b.racer_boat_number]||5,sid);
-  });
-  var l2probs=l2Predict(features6);
-
-  // PB-8: Bayesian shrinkage で L1/L2 融合比を連続化
-  //       α = N0 / (N0 + n)  ─ n が 0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）
-  //       N0=300 は「L1 を 300 サンプル相当として信用する」事前
-  var dbSize=Object.keys(racerDB).length;
-  var alpha=300/(300+dbSize);
-  var beta=1-alpha;
-
-  var finalProbs=boats.map(function(b,i){
-    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
-    var idx=boats.indexOf(b);
-    var fp=alpha*l1probs[idx]+beta*l2probs[idx];
-    return{
-      boat:b.racer_boat_number,
-      prob:fp,
-      score:l1s.score,
-      course:l1s.course,
-      etRank:l1s.etRank,
-      etTime:l1s.etTime,
-      reasons:l1s.reasons,
-      risks:l1s.risks,
-      motorLabel:l1s.motorLabel,
-      motorEmoji:l1s.motorEmoji,
-      motorRate:l1s.motorRate,
-      boatRate:l1s.boatRate,
-      form:l1s.form,
-      classNum:l1s.classNum
-    };
-  });
-  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
-  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
-  finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
-  // P1-A4: F/L ペナルティを 1着確率乗数として post-hoc 適用
-  //   既存の score 減点 (-25/-15/-5) は L1 段階の減衰、本層は確率の心理的補正:
-  //   F2 持ちは斡旋停止リスクで 2 着狙いに走り、1 着確率は更に 0.75 倍程度になる経験則。
-  //   l1scores から fc/lc を引き、p.prob に乗算（再正規化で Σp=1 を維持）
-  finalProbs.forEach(function(p){
-    var l1 = l1scores.find(function(s){ return s.boat === p.boat; });
-    var fc = l1 ? (l1.fc||0) : 0;
-    var lc = l1 ? (l1.lc||0) : 0;
-    var mult = (fc>=2) ? 0.75 : (fc>=1) ? 0.85 : (lc>=1) ? 0.95 : 1.0;
-    p.prob *= mult;
-  });
-  var _sumCalib = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
-  if(_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6){
-    finalProbs.forEach(function(p){ p.prob = p.prob / _sumCalib; });
-  }
-  finalProbs.sort(function(a,b){return b.prob-a.prob});
-
-  var marks=finalProbs.map(function(p,i){
-    p.mark=i===0?'◎':i===1?'○':i===2?'▲':i===3?'△':'×';
-    return p;
-  });
-
-  var topProb=marks[0].prob;
-  var top2Prob=marks[0].prob+marks[1].prob;
-  var raceType,typeLabel,typeCls;
-  var wh=(weather?weather.wave_height||weather.race_wave||0:0);
-  var ws2=(weather?weather.wind_speed||weather.race_wind||0:0);
-  // PC-3: TUNING.RACE_TYPE 集約定数を使用
-  var RT=TUNING.RACE_TYPE;
-  if(topProb>RT.HONMEI_TOP1_MIN && top2Prob>RT.HONMEI_TOP2_MIN){raceType='honmei';typeLabel='本命';typeCls='type-honmei'}
-  else if(topProb<RT.ANA_TOP1_MAX || wh>=RT.ANA_WAVE_HEIGHT_CM || ws2>=RT.ANA_WIND_SPEED_MS){raceType='ana';typeLabel='穴';typeCls='type-ana'}
-  else{raceType='middle';typeLabel='混戦';typeCls='type-middle'}
-
-  var betCount3=parseInt(settings.betCount3)||10;
-  var betCount2=parseInt(settings.betCount2)||5;
-  var method=settings.betMethod||'auto';
-  // X1: EV モード優先（オッズが揃っていれば）
-  var evMode = settings.evMode === true || settings.evMode === 'true';
-  // P0-3: KPI モードによる race_type 別 evMin/maxBets プリセット（off で従来挙動）
-  var kpiMode = settings.kpiMode || 'balanced';
-  var TYPE_EVMIN = {
-    roi:      { honmei: 1.20, middle: 1.25, ana: 1.35 },
-    balanced: { honmei: 1.10, middle: 1.15, ana: 1.25 },
-    hit:      { honmei: 1.00, middle: 1.05, ana: 1.10 }
-  };
-  var TYPE_MAXBETS = {
-    roi:      { honmei: 4, middle: 5, ana: 3 },
-    balanced: { honmei: 6, middle: 8, ana: 5 },
-    hit:      { honmei: 10, middle: 12, ana: 8 }
-  };
-  var defEvMin = parseFloat(settings.evMin)||1.15;
-  var modeEvMin = (kpiMode!=='off' && TYPE_EVMIN[kpiMode]) ? TYPE_EVMIN[kpiMode][raceType] : null;
-  var modeMaxBets = (kpiMode!=='off' && TYPE_MAXBETS[kpiMode]) ? TYPE_MAXBETS[kpiMode][raceType] : null;
-  var evOpt = {
-    evMin: (modeEvMin!=null) ? modeEvMin : defEvMin,
-    maxBets: (modeMaxBets!=null) ? modeMaxBets : betCount3,
-    kellyFrac: parseFloat(settings.kellyFrac)||0.5,
-    bankroll: parseInt(settings.bankroll)||10000,
-  };
-  // 当該レースのオッズを取得
-  var raceOddsForEV = null;
-  if(oddsData && oddsData.odds){
-    var found = oddsData.odds.find(function(o){
-      return o.stadium===parseInt(sid) && o.race===parseInt(raceNum);
-    });
-    if(found) raceOddsForEV = found;
-  }
-  if(method==='auto'){
-    if(evMode && raceOddsForEV && raceOddsForEV.trifecta) method='ev';
-    else if(raceType==='honmei') method='prob';
-    else if(raceType==='ana') method='box';
-    else method='formation';
-  }
-
-  // X5: シナリオ展開予測（局面別 1-2-3 着分布）
-  var grade = race.race_grade_number || 0;
-  var scenarioRes = predictWithScenarios(boats, preview, weather, sid, grade);
-
-  var bets=generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
-  bets.marks=marks;
-  bets.evApplied = (method==='ev');
-  bets.scenarios = scenarioRes.scenarios;   // {nige:0.55, sashi:0.18, ...}
-  bets.scenarioDist = scenarioRes.dist;     // {"1-2-3": 0.18, ...}
-  bets.grade = grade;
-  // X1: 単勝オッズ乖離を計算
-  if(raceOddsForEV && raceOddsForEV.win){
-    var aiByBoat = [];
-    for(var bi=1; bi<=6; bi++){
-      var fp = finalProbs.find(function(p){ return p.boat===bi; });
-      aiByBoat.push(fp ? fp.prob : 0);
-    }
-    bets.divergence = calcOddsDivergence(aiByBoat, raceOddsForEV.win);
-  }
-  bets.raceType=raceType;
-  bets.typeLabel=typeLabel;
-  bets.typeCls=typeCls;
-  bets.weather=weather;
-  bets.method=method;
-  bets.features6=features6;
-
-  var conf=Math.round(topProb*100);
-  bets.confidence=conf;
-  bets.confStars=conf>=40?5:conf>=30?4:conf>=22?3:conf>=15?2:1;
-
-  // B14 (2026-05-17): 詳細画面で表示される 🔥穴予想 (高EV chip) を bets.ana に
-  //   組込んで savePrediction で履歴追跡できるようにする。EV>=1.0 が無ければ
-  //   AI 確率分布の top N (1コース絡み以外) を fallback で入れる。
-  bets.ana = (function(){
-    var anaTopN = parseInt(settings.betCountAna)||3;
-    if(anaTopN<1) anaTopN=1; else if(anaTopN>6) anaTopN=6;
-    var excludeCombos = (bets.trifecta||[]).map(function(t){return t.combo;});
-    if(raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length>0){
-      var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
-        minOdds:30, minEV:1.0, minOddsLoose:15, topN:anaTopN,
-        excludeCombos: excludeCombos,
-      });
-      var picks = anaRes.primary.length>0 ? anaRes.primary : anaRes.fallback;
-      return picks.map(function(p){return p.combo;});
-    }
-    // オッズ未取得: AI 確率分布の上位（1着が1番人気でないもの）を穴候補に
-    if(marks && marks.length>=3){
-      var dist = buildTrifectaProbDist(marks);
-      var top1Boat = marks[0].boat;
-      var excludeSet = {};
-      excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
-      var cands = [];
-      for(var k in dist){
-        if(!Object.prototype.hasOwnProperty.call(dist,k)) continue;
-        if(k.split('-')[0] === String(top1Boat)) continue;
-        if(excludeSet[k]) continue;
-        cands.push({combo:k, prob:dist[k]});
-      }
-      cands.sort(function(a,b){return b.prob-a.prob});
-      return cands.slice(0, anaTopN).map(function(c){return c.combo;});
-    }
-    return [];
-  })();
-
-  return bets;
-}
 
 // ===============================================
 // 番組予想（展示・風なし、出走表データのみ）
 // ===============================================
-function predictRaceProgram(sid,raceNum){
-  if(!programData) return null;
-  var stadiumProg=programData[String(sid)];
-  if(!stadiumProg) return null;
-  var race=stadiumProg[String(raceNum)];
-  if(!race||!race.boats) return null;
-  var boats=race.boats;
-  if(!Array.isArray(boats)) return null;
-
-  // preview=null, weather=null で scoreBoatV2 を呼ぶ → E(展示)とF(風)がスキップ
-  // X3: 出走表段階でも進入予測を効かせる
-  var predictedEntries = predictEntryCourses(boats, sid);
-  var l1scores=[];
-  boats.forEach(function(b){
-    var s=scoreBoatV2(b,null,null,boats,null,sid,predictedEntries);
-    l1scores.push(s);
-  });
-
-  var l1total=l1scores.reduce(function(a,s){return a+Math.exp(s.score/15)},0);
-  var l1probs=l1scores.map(function(s){return Math.exp(s.score/15)/l1total});
-
-  // Layer2（展示なしの特徴量）
-  var features6=boats.map(function(b){
-    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
-    return getL2Features(b,null,null,l1s?l1s.etRank:5,5,sid);
-  });
-  var l2probs=l2Predict(features6);
-
-  // PB-8: Bayesian shrinkage（番組予想は展示情報なしのため L1 比率高め: N0=600）
-  var dbSize=Object.keys(racerDB).length;
-  var alpha=600/(600+dbSize);
-  var beta=1-alpha;
-
-  var finalProbs=boats.map(function(b,i){
-    var l1s=l1scores.find(function(s){return s.boat===b.racer_boat_number});
-    var idx=boats.indexOf(b);
-    var fp=alpha*l1probs[idx]+beta*l2probs[idx];
-    return{
-      boat:b.racer_boat_number,prob:fp,score:l1s.score,course:l1s.course,
-      reasons:l1s.reasons,risks:l1s.risks,
-      motorLabel:l1s.motorLabel,motorEmoji:l1s.motorEmoji,motorRate:l1s.motorRate,classNum:l1s.classNum
-    };
-  });
-  // PB-6: Platt scaling（番組予想にも同じく適用）
-  finalProbs.forEach(function(p){ p.prob = _applyPlattCalibration(p.prob); });
-  // P1-A4: F/L 1着確率乗数（番組予想にも適用）
-  finalProbs.forEach(function(p){
-    var l1 = l1scores.find(function(s){ return s.boat === p.boat; });
-    var fc = l1 ? (l1.fc||0) : 0;
-    var lc = l1 ? (l1.lc||0) : 0;
-    var mult = (fc>=2) ? 0.75 : (fc>=1) ? 0.85 : (lc>=1) ? 0.95 : 1.0;
-    p.prob *= mult;
-  });
-  var _sum2 = finalProbs.reduce(function(a,p){return a+p.prob;}, 0);
-  if(_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6){
-    finalProbs.forEach(function(p){ p.prob = p.prob / _sum2; });
-  }
-  finalProbs.sort(function(a,b){return b.prob-a.prob});
-  finalProbs.forEach(function(p,i){
-    p.mark=i===0?'◎':i===1?'○':i===2?'▲':i===3?'△':'×';
-  });
-
-  var topProb=finalProbs[0].prob;
-  var top2Prob=finalProbs[0].prob+finalProbs[1].prob;
-  var raceType,typeLabel;
-  // PC-3: TUNING.RACE_TYPE 集約定数を使用（環境補正は呼出側で済んでいる前提）
-  var RT2=TUNING.RACE_TYPE;
-  if(topProb>RT2.HONMEI_TOP1_MIN && top2Prob>RT2.HONMEI_TOP2_MIN){raceType='honmei';typeLabel='本命'}
-  else if(topProb<RT2.ANA_TOP1_MAX){raceType='ana';typeLabel='穴'}
-  else{raceType='middle';typeLabel='混戦'}
-
-  return{marks:finalProbs,raceType:raceType,typeLabel:typeLabel,confidence:Math.round(topProb*100)};
-}
 
 // ===============================================
 // 番組予想 vs 直前予想の差分分析
