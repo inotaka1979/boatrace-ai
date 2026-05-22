@@ -124,6 +124,8 @@ async function main() {
     { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
     { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
+    { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
+    { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [

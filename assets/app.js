@@ -1153,9 +1153,6 @@ var _featureStats = (function(){
   return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 })();
 // _initFeatureStats は rest 側 utility として後方互換のため残置（呼出元 0 件、安全）
-function _initFeatureStats(){
-  return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
-}
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
 //   将来 _refitPlattCoeffs(history) で auto-tune
@@ -4346,7 +4343,8 @@ function _resolveCourse(boat, preview, predictedEntries){
     score += motorEval.score;
     var motorLabel = motorEval.label;
     var motorEmoji = motorEval.emoji;
-    if (motorEval.label === "\u8D85\u629C") reasons.push("\u8D85\u629C\u30E2\u30FC\u30BF\u30FC(" + motorRate + "%" + (motorEval.z != null ? " z=" + motorEval.z.toFixed(1) : "") + ")");
+    if (motorEval.label === "\u8D85\u629C")
+      reasons.push("\u8D85\u629C\u30E2\u30FC\u30BF\u30FC(" + motorRate + "%" + (motorEval.z != null ? " z=" + motorEval.z.toFixed(1) : "") + ")");
     else if (motorEval.label === "\u6574\u5099\u8981") risks.push("\u30E2\u30FC\u30BF\u30FC\u4E0D\u8ABF(" + motorRate + "%)");
     var boatRate = pf(boat.racer_assigned_boat_top_2_percent);
     score += boatRate * 0.08;
@@ -4597,38 +4595,147 @@ function getL2Features(boat,preview,weather,etRank,stRank,sid){
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
-// PB-7: Welford's online algorithm で 特徴量 mean/variance を更新
-function _updateFeatureStats(featRow){
-  if(!Array.isArray(featRow)) return;
-  _featureStats.n += 1;
-  var n = _featureStats.n;
-  for(var i=0;i<FEATURE_DIM;i++){
-    var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
-    var delta = x - _featureStats.mean[i];
-    _featureStats.mean[i] += delta / n;
-    var delta2 = x - _featureStats.mean[i];
-    _featureStats.m2[i]   += delta * delta2;
+/* BUILD:ANALYSIS_CALIBRATION:START */
+"use strict";
+(() => {
+  // ../src/analysis/calibration.js
+  function _initFeatureStats() {
+    return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
   }
-}
+  function _updateFeatureStats(featRow) {
+    if (!Array.isArray(featRow)) return;
+    _featureStats.n += 1;
+    var n = _featureStats.n;
+    for (var i = 0; i < FEATURE_DIM; i++) {
+      var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
+      var delta = x - _featureStats.mean[i];
+      _featureStats.mean[i] += delta / n;
+      var delta2 = x - _featureStats.mean[i];
+      _featureStats.m2[i] += delta * delta2;
+    }
+  }
+  function _normalizeFeatures(featRow) {
+    if (!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
+    var n = _featureStats.n;
+    if (n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
+    var means = _featureStats.mean;
+    var m2s = _featureStats.m2;
+    var divisor = n > 1 ? n - 1 : 1;
+    var out = new Array(FEATURE_DIM);
+    for (var i = 0; i < FEATURE_DIM; i++) {
+      var variance = m2s[i] / divisor;
+      var std = Math.sqrt(variance + 1e-6);
+      var x = featRow[i] || 0;
+      out[i] = (x - means[i]) / std;
+    }
+    return out;
+  }
+  function _applyPlattCalibration(p) {
+    if (!TUNING.PREDICTION.ENABLE_PLATT) return p;
+    var a = _plattCoeffs.a, b = _plattCoeffs.b;
+    if (a === 1 && b === 0) return p;
+    var clipped = Math.min(0.9999, Math.max(1e-4, p));
+    var logit = Math.log(clipped / (1 - clipped));
+    var z = a * logit + b;
+    if (z > 30) return 1;
+    if (z < -30) return 0;
+    return 1 / (1 + Math.exp(-z));
+  }
+  function _stackedPredict(features6, l1probs) {
+    if (TUNING.PREDICTION.STACKING_MODE !== "residual") return l1probs;
+    var feats = features6.map(_normalizeFeatures);
+    var l2Logits = feats.map(function(feat, b) {
+      var z = L2_BIAS + (COURSE_LOG_PRIOR[b] || 0);
+      for (var i = 0; i < feat.length; i++) z += feat[i] * (l2weights[i] || 0);
+      return z;
+    });
+    var combinedLogits = l1probs.map(function(p, b) {
+      var clipped = Math.min(0.9999, Math.max(1e-4, p));
+      var l1Logit = Math.log(clipped / (1 - clipped));
+      return l1Logit + _stackingGamma * l2Logits[b];
+    });
+    return softmax(combinedLogits);
+  }
+  function _extractPlattPairs(history) {
+    if (!Array.isArray(history)) return [];
+    var samples = history.filter(function(h) {
+      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    });
+    if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
+    var pairs = [];
+    samples.forEach(function(h) {
+      var winner = h.actual[0];
+      var probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      var pWin = probs[winner];
+      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+      pairs.push({ p: pWin, y: 1 });
+      for (var b = 1; b <= 6; b++) {
+        if (b === winner) continue;
+        var pb = probs[b];
+        if (Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({ p: pb, y: 0 });
+      }
+    });
+    return pairs;
+  }
+  async function _refitPlattCoeffs(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 100) return null;
+    var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
+    if (w) {
+      return new Promise(function(resolve) {
+        var onMsg = function(e) {
+          if (!e.data || e.data.type !== "platt_refit_done") return;
+          w.removeEventListener("message", onMsg);
+          var r = e.data.result;
+          if (!r) {
+            resolve(null);
+            return;
+          }
+          _plattCoeffs = { a: r.a, b: r.b, fittedAt: Date.now(), n: r.n };
+          safeSet("boatrace_platt", _plattCoeffs);
+          resolve(_plattCoeffs);
+        };
+        w.addEventListener("message", onMsg);
+        w.postMessage({ type: "platt_refit", samples: pairs });
+      });
+    }
+    var bestA = 1, bestB = 0, bestLoss = Infinity;
+    for (var a = 0.5; a <= 2; a += 0.1) {
+      for (var b = -1; b <= 1; b += 0.1) {
+        var loss = 0;
+        for (var i = 0; i < pairs.length; i++) {
+          var pi = pairs[i];
+          var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
+          var logit = Math.log(clipped / (1 - clipped));
+          var z = a * logit + b;
+          var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
+          pp = Math.min(0.9999, Math.max(1e-4, pp));
+          loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+        }
+        if (loss < bestLoss) {
+          bestLoss = loss;
+          bestA = a;
+          bestB = b;
+        }
+      }
+    }
+    _plattCoeffs = { a: bestA, b: bestB, fittedAt: Date.now(), n: pairs.length };
+    safeSet("boatrace_platt", _plattCoeffs);
+    return _plattCoeffs;
+  }
+  globalThis._initFeatureStats = _initFeatureStats;
+  globalThis._updateFeatureStats = _updateFeatureStats;
+  globalThis._normalizeFeatures = _normalizeFeatures;
+  globalThis._applyPlattCalibration = _applyPlattCalibration;
+  globalThis._stackedPredict = _stackedPredict;
+  globalThis._extractPlattPairs = _extractPlattPairs;
+  globalThis._refitPlattCoeffs = _refitPlattCoeffs;
+})();
 
-// PB-7 + PF-5: 特徴量を z-score 正規化（warmup 前は identity）
-//   PF-5: divisor を pre-compute、Number.isFinite 呼出を || 0 に置換
-function _normalizeFeatures(featRow){
-  if(!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
-  var n = _featureStats.n;
-  if(n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
-  var means = _featureStats.mean;
-  var m2s = _featureStats.m2;
-  var divisor = n > 1 ? n - 1 : 1;
-  var out = new Array(FEATURE_DIM);
-  for(var i=0;i<FEATURE_DIM;i++){
-    var variance = m2s[i] / divisor;
-    var std = Math.sqrt(variance + 1e-6);
-    var x = featRow[i] || 0;   // PF-5: Number.isFinite を省略（NaN→0 を || で代用）
-    out[i] = (x - means[i]) / std;
-  }
-  return out;
-}
+/* BUILD:ANALYSIS_CALIBRATION:END */
 
 function l2Predict(features6){
   // PF-5: ホットパス最適化 — for ループ + 一時配列削減
@@ -4678,40 +4785,10 @@ function l2Update(features6,winnerIdx){
 // PB-6: Platt scaling — 確率の post-hoc 校正
 //   p' = sigmoid(a * logit(p) + b)
 //   既定 a=1, b=0 で identity（変化なし）。データ蓄積後 _refitPlattCoeffs で auto-tune
-function _applyPlattCalibration(p){
-  if(!TUNING.PREDICTION.ENABLE_PLATT) return p;
-  var a = _plattCoeffs.a, b = _plattCoeffs.b;
-  if(a === 1 && b === 0) return p;   // 高速 path: identity
-  // ロジット変換 (clip で 0/1 を回避)
-  var clipped = Math.min(0.9999, Math.max(0.0001, p));
-  var logit = Math.log(clipped / (1 - clipped));
-  var z = a * logit + b;
-  // sigmoid (overflow 安全)
-  if(z > 30) return 1.0;
-  if(z < -30) return 0.0;
-  return 1.0 / (1.0 + Math.exp(-z));
-}
 
 // PB-5: Stacking 予測 — L2 が L1 確率を補正する形式
 //   p_stacked[b] = softmax( logit(L1[b]) + γ * residual_b ) where residual_b は L2 の輸出 logit
 //   既定 γ=0 で stacking 無効（純粋に L1 を返す）。STACKING_MODE='residual' で active
-function _stackedPredict(features6, l1probs){
-  if(TUNING.PREDICTION.STACKING_MODE !== 'residual') return l1probs;
-  // L2 logit を別ルートで計算（softmax 適用前）
-  var feats = features6.map(_normalizeFeatures);
-  var l2Logits = feats.map(function(feat,b){
-    var z = L2_BIAS + (COURSE_LOG_PRIOR[b]||0);
-    for(var i=0;i<feat.length;i++) z+=feat[i]*(l2weights[i]||0);
-    return z;
-  });
-  // L1 logit + γ * L2 logit
-  var combinedLogits = l1probs.map(function(p,b){
-    var clipped = Math.min(0.9999, Math.max(0.0001, p));
-    var l1Logit = Math.log(clipped/(1-clipped));
-    return l1Logit + _stackingGamma * l2Logits[b];
-  });
-  return softmax(combinedLogits);
-}
 
 // PB-6: Platt 係数を既存履歴から re-fit
 //   2 パラメータ (a, b) のみなので grid search で十分
@@ -4834,70 +4911,8 @@ function predictRaceAsync(sid, raceNum){
 }
 
 // pairs 抽出は同期で実行（軽量）、grid search のみ Worker
-function _extractPlattPairs(history){
-  if(!Array.isArray(history)) return [];
-  var samples = history.filter(function(h){
-    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
-  });
-  if(samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
-  var pairs = [];
-  samples.forEach(function(h){
-    var winner = h.actual[0];
-    var probs = {};
-    h.mark_probs.forEach(function(mp){ probs[mp.boat] = mp.prob; });
-    var pWin = probs[winner];
-    if(!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
-    pairs.push({p: pWin, y: 1});
-    for(var b=1;b<=6;b++){
-      if(b===winner) continue;
-      var pb = probs[b];
-      if(Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({p: pb, y: 0});
-    }
-  });
-  return pairs;
-}
 
 // PF-9: async 化、Worker があれば使う、無ければ main thread fallback
-async function _refitPlattCoeffs(history){
-  var pairs = _extractPlattPairs(history);
-  if(pairs.length < 100) return null;
-  var w = _getPlattWorker();
-  if(w){
-    return new Promise(function(resolve){
-      var onMsg = function(e){
-        if(!e.data || e.data.type !== 'platt_refit_done') return;
-        w.removeEventListener('message', onMsg);
-        var r = e.data.result;
-        if(!r){ resolve(null); return; }
-        _plattCoeffs = { a: r.a, b: r.b, fittedAt: Date.now(), n: r.n };
-        safeSet('boatrace_platt', _plattCoeffs);
-        resolve(_plattCoeffs);
-      };
-      w.addEventListener('message', onMsg);
-      w.postMessage({ type: 'platt_refit', samples: pairs });
-    });
-  }
-  // フォールバック: main thread で実行
-  var bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
-  for(var a = 0.5; a <= 2.0; a += 0.1){
-    for(var b = -1.0; b <= 1.0; b += 0.1){
-      var loss = 0;
-      for(var i=0;i<pairs.length;i++){
-        var pi = pairs[i];
-        var clipped = Math.min(0.9999, Math.max(0.0001, pi.p));
-        var logit = Math.log(clipped/(1-clipped));
-        var z = a*logit + b;
-        var pp = (z > 30) ? 1.0 : (z < -30) ? 0.0 : 1.0/(1.0+Math.exp(-z));
-        pp = Math.min(0.9999, Math.max(0.0001, pp));
-        loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
-      }
-      if(loss < bestLoss){ bestLoss = loss; bestA = a; bestB = b; }
-    }
-  }
-  _plattCoeffs = { a: bestA, b: bestB, fittedAt: Date.now(), n: pairs.length };
-  safeSet('boatrace_platt', _plattCoeffs);
-  return _plattCoeffs;
-}
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
@@ -7828,119 +7843,177 @@ function _rateColor(rate){
   return 'recovery-negative';
 }
 
-function renderStats(){
-  // PF-3: 成績タブ open 時に backfill を即時実行（lazy 起動）
-  if(typeof _runLazyBackfillOnce === 'function') _runLazyBackfillOnce('stats tab opened');
-  // 設計者A P1: history 未 load 中は skeleton placeholder を出して「読込中…」放置を防ぐ
-  //   resultData が空 = まだ Phase 2 lazy load 完了前と推定
-  if(!resultData || (Array.isArray(resultData) && resultData.length === 0)
-      || (typeof resultData === 'object' && Object.keys(resultData).length === 0)){
-    var sumEl = document.getElementById('statSummary');
-    var recEl = document.getElementById('statRecovery');
-    var skel = '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">…</div><div class="stat-label">読込中</div></div>';
-    if(sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
-    if(recEl && !recEl.innerHTML.trim()){
-      var rows = '';
-      for(var i=0;i<3;i++) rows += '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
-      recEl.innerHTML = '<table style="width:100%"><tbody>'+rows+'</tbody></table>';
+/* BUILD:REPORTING_STATS_PAGE:START */
+"use strict";
+(() => {
+  // ../src/reporting/stats_page.js
+  function renderStats() {
+    if (typeof _runLazyBackfillOnce === "function") _runLazyBackfillOnce("stats tab opened");
+    if (!resultData || Array.isArray(resultData) && resultData.length === 0 || typeof resultData === "object" && Object.keys(resultData).length === 0) {
+      var sumEl = document.getElementById("statSummary");
+      var recEl = document.getElementById("statRecovery");
+      var skel = '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">\u2026</div><div class="stat-label">\u8AAD\u8FBC\u4E2D</div></div>';
+      if (sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
+      if (recEl && !recEl.innerHTML.trim()) {
+        var rows = "";
+        for (var i = 0; i < 3; i++)
+          rows += '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
+        recEl.innerHTML = '<table style="width:100%"><tbody>' + rows + "</tbody></table>";
+      }
     }
-    // 既存のフロー（calcTodayStats → 描画）にそのまま委ねる。result 0件でも 0件として描画される。
-  }
-  var s=calcTodayStats();
-
-  // ヘッダ: 本日サマリ
-  var triRate3=s.tri.invest>0?Math.round(s.tri.payout/s.tri.invest*100):0;
-  var trifectaRate=s.total>0?(s.tri.hits/s.total*100).toFixed(1):'0.0';
-  document.getElementById('statSummary').innerHTML=
-    '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">'+s.total+'</div><div class="stat-label">本日 判定済</div></div>'
-    +'<div class="stat-card"><div class="stat-num" style="color:var(--gold)">'+s.tri.hits+'</div><div class="stat-label">3連単的中</div></div>'
-    +'<div class="stat-card"><div class="stat-num" style="color:'+(triRate3>=100?'var(--success)':'var(--danger)')+'">'+triRate3+'%</div><div class="stat-label">3連単回収率</div></div>';
-
-  var recHtml='';
-
-  // 券種別 (本日)
-  recHtml+='<div class="card" class="p-overflow-hidden">';
-  recHtml+='<div class="card-header-row">本日 券種別</div>';
-  recHtml+='<table class="recovery-table">';
-  recHtml+='<thead><tr><th>券種</th><th>的中</th><th>投資</th><th>回収</th><th>回収率</th></tr></thead><tbody>';
-  var triR=s.tri.invest>0?Math.round(s.tri.payout/s.tri.invest*100):0;
-  var exaR=s.exa.invest>0?Math.round(s.exa.payout/s.exa.invest*100):0;
-  var triHitRate=s.total>0?(s.tri.hits/s.total*100).toFixed(0):'-';
-  var exaHitRate=s.total>0?(s.exa.hits/s.total*100).toFixed(0):'-';
-  recHtml+='<tr><td><b>3連単</b></td><td>'+s.tri.hits+' ('+triHitRate+'%)</td><td>¥'+s.tri.invest.toLocaleString()+'</td><td>¥'+s.tri.payout.toLocaleString()+'</td><td class="'+_rateColor(triR)+'">'+triR+'%</td></tr>';
-  recHtml+='<tr><td><b>2連単</b></td><td>'+s.exa.hits+' ('+exaHitRate+'%)</td><td>¥'+s.exa.invest.toLocaleString()+'</td><td>¥'+s.exa.payout.toLocaleString()+'</td><td class="'+_rateColor(exaR)+'">'+exaR+'%</td></tr>';
-  // B14: 🔥穴予想 行（ana_bets が登録された R のみカウント、推奨買い目とは独立）
-  if(s.ana && s.ana.races > 0){
-    var anaR = s.ana.invest>0?Math.round(s.ana.payout/s.ana.invest*100):0;
-    var anaHitRate = s.ana.races>0?(s.ana.hits/s.ana.races*100).toFixed(0):'-';
-    recHtml+='<tr><td><b style="color:#FF5722">🔥穴予想</b><br><span style="font-size:9px;color:var(--text-dim)">対象 '+s.ana.races+'R</span></td><td>'+s.ana.hits+' ('+anaHitRate+'%)</td><td>¥'+s.ana.invest.toLocaleString()+'</td><td>¥'+s.ana.payout.toLocaleString()+'</td><td class="'+_rateColor(anaR)+'">'+anaR+'%</td></tr>';
-  }
-  // 合計行
-  var totInv=s.tri.invest+s.exa.invest;
-  var totPay=s.tri.payout+s.exa.payout;
-  var totRate=totInv>0?Math.round(totPay/totInv*100):0;
-  var net=totPay-totInv;
-  recHtml+='<tr style="background:#F8F8F8;font-weight:700"><td>合計</td><td>'+(s.tri.hits+s.exa.hits)+'</td><td>¥'+totInv.toLocaleString()+'</td><td>¥'+totPay.toLocaleString()+'<br><span style="font-size:9px;color:'+(net>=0?'var(--success)':'var(--danger)')+'">('+(net>=0?'+':'')+'¥'+net.toLocaleString()+')</span></td><td class="'+_rateColor(totRate)+'">'+totRate+'%</td></tr>';
-  recHtml+='</tbody></table></div>';
-
-  // レースタイプ別 (本日)
-  recHtml+='<div class="card" class="p-overflow-hidden">';
-  recHtml+='<div class="card-header-row">本日 レースタイプ別 (3連単)</div>';
-  recHtml+='<table class="recovery-table">';
-  recHtml+='<thead><tr><th>タイプ</th><th>R数</th><th>的中</th><th>的中率</th><th>回収率</th></tr></thead><tbody>';
-  var typeLabels={honmei:'⚡本命',middle:'📊混戦',ana:'🔥穴'};
-  ['honmei','middle','ana'].forEach(function(t){
-    var ts=s.typeStats[t];
-    var hr=ts.total>0?(ts.hit3/ts.total*100).toFixed(0):'-';
-    var rr=ts.invest>0?Math.round(ts.payout3/ts.invest*100):0;
-    recHtml+='<tr><td>'+typeLabels[t]+'</td><td>'+ts.total+'</td><td>'+ts.hit3+'</td><td>'+hr+'%</td><td class="'+_rateColor(rr)+'">'+rr+'%</td></tr>';
-  });
-  recHtml+='</tbody></table></div>';
-
-  // 場別 全場 (本日)
-  var stadArr=[];
-  for(var sid in s.stadiumStats) stadArr.push(s.stadiumStats[sid]);
-  // 回収率の高い順
-  stadArr.forEach(function(ss){
-    ss.rate3=ss.invest3>0?Math.round(ss.payout3/ss.invest3*100):0;
-    ss.rate2=ss.invest2>0?Math.round(ss.payout2/ss.invest2*100):0;
-  });
-  stadArr.sort(function(a,b){return b.rate3-a.rate3});
-
-  if(stadArr.length>0){
-    recHtml+='<div class="card" class="p-overflow-hidden">';
-    recHtml+='<div class="card-header-row">本日 場別 (回収率順)</div>';
-    recHtml+='<table class="recovery-table">';
-    recHtml+='<thead><tr><th>場</th><th>R数</th><th>3連的中</th><th>3連投資</th><th>3連回収</th><th>3連率</th></tr></thead><tbody>';
-    stadArr.forEach(function(ss){
-      var hr=ss.total>0?(ss.hit3/ss.total*100).toFixed(0):'-';
-      recHtml+='<tr><td><b>'+escText(ss.name)+'</b></td><td>'+ss.total+'</td><td>'+ss.hit3+' ('+hr+'%)</td><td>¥'+ss.invest3.toLocaleString()+'</td><td>¥'+ss.payout3.toLocaleString()+'</td><td class="'+_rateColor(ss.rate3)+'">'+ss.rate3+'%</td></tr>';
+    var s = calcTodayStats();
+    var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
+    var trifectaRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(1) : "0.0";
+    document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
+    var recHtml = "";
+    recHtml += '<div class="card" class="p-overflow-hidden">';
+    recHtml += '<div class="card-header-row">\u672C\u65E5 \u5238\u7A2E\u5225</div>';
+    recHtml += '<table class="recovery-table">';
+    recHtml += "<thead><tr><th>\u5238\u7A2E</th><th>\u7684\u4E2D</th><th>\u6295\u8CC7</th><th>\u56DE\u53CE</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
+    var triR = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
+    var exaR = s.exa.invest > 0 ? Math.round(s.exa.payout / s.exa.invest * 100) : 0;
+    var triHitRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(0) : "-";
+    var exaHitRate = s.total > 0 ? (s.exa.hits / s.total * 100).toFixed(0) : "-";
+    recHtml += "<tr><td><b>3\u9023\u5358</b></td><td>" + s.tri.hits + " (" + triHitRate + "%)</td><td>\xA5" + s.tri.invest.toLocaleString() + "</td><td>\xA5" + s.tri.payout.toLocaleString() + '</td><td class="' + _rateColor(triR) + '">' + triR + "%</td></tr>";
+    recHtml += "<tr><td><b>2\u9023\u5358</b></td><td>" + s.exa.hits + " (" + exaHitRate + "%)</td><td>\xA5" + s.exa.invest.toLocaleString() + "</td><td>\xA5" + s.exa.payout.toLocaleString() + '</td><td class="' + _rateColor(exaR) + '">' + exaR + "%</td></tr>";
+    if (s.ana && s.ana.races > 0) {
+      var anaR = s.ana.invest > 0 ? Math.round(s.ana.payout / s.ana.invest * 100) : 0;
+      var anaHitRate = s.ana.races > 0 ? (s.ana.hits / s.ana.races * 100).toFixed(0) : "-";
+      recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:9px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
+    }
+    var totInv = s.tri.invest + s.exa.invest;
+    var totPay = s.tri.payout + s.exa.payout;
+    var totRate = totInv > 0 ? Math.round(totPay / totInv * 100) : 0;
+    var net = totPay - totInv;
+    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
+    recHtml += "</tbody></table></div>";
+    recHtml += '<div class="card" class="p-overflow-hidden">';
+    recHtml += '<div class="card-header-row">\u672C\u65E5 \u30EC\u30FC\u30B9\u30BF\u30A4\u30D7\u5225 (3\u9023\u5358)</div>';
+    recHtml += '<table class="recovery-table">';
+    recHtml += "<thead><tr><th>\u30BF\u30A4\u30D7</th><th>R\u6570</th><th>\u7684\u4E2D</th><th>\u7684\u4E2D\u7387</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
+    var typeLabels = { honmei: "\u26A1\u672C\u547D", middle: "\u{1F4CA}\u6DF7\u6226", ana: "\u{1F525}\u7A74" };
+    ["honmei", "middle", "ana"].forEach(function(t) {
+      var ts = s.typeStats[t];
+      var hr = ts.total > 0 ? (ts.hit3 / ts.total * 100).toFixed(0) : "-";
+      var rr = ts.invest > 0 ? Math.round(ts.payout3 / ts.invest * 100) : 0;
+      recHtml += "<tr><td>" + typeLabels[t] + "</td><td>" + ts.total + "</td><td>" + ts.hit3 + "</td><td>" + hr + '%</td><td class="' + _rateColor(rr) + '">' + rr + "%</td></tr>";
     });
-    recHtml+='</tbody></table></div>';
-  }
-
-  // F18: データ整合性 警告（的中だが payout 未取得の件）
-  var w = s.warnings;
-  if(w.tri_zero.length > 0 || w.exa_zero.length > 0){
-    recHtml+='<div class="card" style="padding:12px;background:#FFF3E0;border-left:4px solid var(--warn)">';
-    recHtml+='<div style="font-weight:700;color:#E65100;margin-bottom:6px">⚠ データ整合性の警告</div>';
-    if(w.tri_zero.length > 0){
-      recHtml+='<div style="font-size:11px;margin-bottom:4px">3連単的中だが払戻未取得: <b>'+w.tri_zero.length+'件</b></div>';
-      recHtml+='<div style="font-size:10px;color:var(--text-sub)">'+escText(w.tri_zero.join(', '))+'</div>';
+    recHtml += "</tbody></table></div>";
+    var stadArr = [];
+    for (var sid in s.stadiumStats) stadArr.push(s.stadiumStats[sid]);
+    stadArr.forEach(function(ss) {
+      ss.rate3 = ss.invest3 > 0 ? Math.round(ss.payout3 / ss.invest3 * 100) : 0;
+      ss.rate2 = ss.invest2 > 0 ? Math.round(ss.payout2 / ss.invest2 * 100) : 0;
+    });
+    stadArr.sort(function(a, b) {
+      return b.rate3 - a.rate3;
+    });
+    if (stadArr.length > 0) {
+      recHtml += '<div class="card" class="p-overflow-hidden">';
+      recHtml += '<div class="card-header-row">\u672C\u65E5 \u5834\u5225 (\u56DE\u53CE\u7387\u9806)</div>';
+      recHtml += '<table class="recovery-table">';
+      recHtml += "<thead><tr><th>\u5834</th><th>R\u6570</th><th>3\u9023\u7684\u4E2D</th><th>3\u9023\u6295\u8CC7</th><th>3\u9023\u56DE\u53CE</th><th>3\u9023\u7387</th></tr></thead><tbody>";
+      stadArr.forEach(function(ss) {
+        var hr = ss.total > 0 ? (ss.hit3 / ss.total * 100).toFixed(0) : "-";
+        recHtml += "<tr><td><b>" + escText(ss.name) + "</b></td><td>" + ss.total + "</td><td>" + ss.hit3 + " (" + hr + "%)</td><td>\xA5" + ss.invest3.toLocaleString() + "</td><td>\xA5" + ss.payout3.toLocaleString() + '</td><td class="' + _rateColor(ss.rate3) + '">' + ss.rate3 + "%</td></tr>";
+      });
+      recHtml += "</tbody></table></div>";
     }
-    if(w.exa_zero.length > 0){
-      recHtml+='<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2連単的中だが払戻未取得: <b>'+w.exa_zero.length+'件</b></div>';
-      recHtml+='<div style="font-size:10px;color:var(--text-sub)">'+escText(w.exa_zero.join(', '))+'</div>';
+    var w = s.warnings;
+    if (w.tri_zero.length > 0 || w.exa_zero.length > 0) {
+      recHtml += '<div class="card" style="padding:12px;background:#FFF3E0;border-left:4px solid var(--warn)">';
+      recHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:6px">\u26A0 \u30C7\u30FC\u30BF\u6574\u5408\u6027\u306E\u8B66\u544A</div>';
+      if (w.tri_zero.length > 0) {
+        recHtml += '<div style="font-size:11px;margin-bottom:4px">3\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.tri_zero.length + "\u4EF6</b></div>";
+        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.tri_zero.join(", ")) + "</div>";
+      }
+      if (w.exa_zero.length > 0) {
+        recHtml += '<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.exa_zero.length + "\u4EF6</b></div>";
+        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.exa_zero.join(", ")) + "</div>";
+      }
+      recHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">\u203B \u8A72\u5F53\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u30C7\u30FC\u30BF\u304C Open API / \u81EA\u524D\u30B9\u30AF\u30EC\u30A4\u30D1\u30FC\u306B\u307E\u3060\u53CD\u6620\u3055\u308C\u3066\u3044\u306A\u3044\u53EF\u80FD\u6027\u3002\u300C\u66F4\u65B0\u300D\u3092\u62BC\u3059\u3068\u518D\u53D6\u5F97\u30FB\u518D\u88DC\u5B8C\u3055\u308C\u307E\u3059\u3002</div>';
+      recHtml += "</div>";
     }
-    recHtml+='<div style="font-size:9px;color:var(--text-dim);margin-top:6px">※ 該当レースの結果データが Open API / 自前スクレイパーにまだ反映されていない可能性。「更新」を押すと再取得・再補完されます。</div>';
-    recHtml+='</div>';
+    document.getElementById("statRecovery").innerHTML = recHtml;
+    var sd = document.getElementById("statDetail");
+    if (sd) sd.innerHTML = "";
+    var sc = document.getElementById("statsChart");
+    if (sc && sc.parentNode) {
+      sc.parentNode.style.display = "none";
+    }
   }
+  function renderStatsChart() {
+    var ctx = document.getElementById("chartAccuracy");
+    if (!ctx) return;
+    capabilities.refresh("chart");
+    if (!capabilities.has("chart")) {
+      _loadChartLib().then(renderStatsChart, function(err) {
+        var parent = ctx.parentNode;
+        if (parent)
+          parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
+      });
+      return;
+    }
+    if (statsChart) statsChart.destroy();
+    var history = safeParse("boatrace_history", []);
+    var byDate = {};
+    history.forEach(function(h) {
+      if (!h.actual) return;
+      if (!byDate[h.date]) byDate[h.date] = { total: 0, hit: 0 };
+      byDate[h.date].total++;
+      if (h.trifecta_hit) byDate[h.date].hit++;
+    });
+    var dates = Object.keys(byDate).sort().slice(-14);
+    var rates = dates.map(function(d) {
+      return byDate[d].total > 0 ? byDate[d].hit / byDate[d].total * 100 : 0;
+    });
+    statsChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: dates.map(function(d) {
+          return d.slice(4, 6) + "/" + d.slice(6);
+        }),
+        datasets: [
+          {
+            data: rates,
+            backgroundColor: "rgba(33,150,243,0.5)",
+            borderColor: "#2196F3",
+            borderWidth: 1,
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: "\u65E5\u52253\u9023\u5358\u7684\u4E2D\u7387(%)", color: "#666", font: { size: 11 } }
+        },
+        scales: {
+          x: { ticks: { font: { size: 9 }, color: "#999" }, grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              font: { size: 9 },
+              color: "#999",
+              callback: function(v) {
+                return v + "%";
+              }
+            },
+            grid: { color: "rgba(0,0,0,0.06)" }
+          }
+        }
+      }
+    });
+  }
+  globalThis.renderStats = renderStats;
+  globalThis.renderStatsChart = renderStatsChart;
+})();
 
-  document.getElementById('statRecovery').innerHTML=recHtml;
-  // 旧 statDetail（重複情報）と statChart は空に
-  var sd=document.getElementById('statDetail'); if(sd) sd.innerHTML='';
-  var sc=document.getElementById('statsChart'); if(sc && sc.parentNode){ sc.parentNode.style.display='none'; }
-}
+/* BUILD:REPORTING_STATS_PAGE:END */
 
 // PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）
 //   インターネット切断時はキャッシュ（PD-2 SW cdn-v1）から提供
@@ -7968,46 +8041,6 @@ function _loadChartLib(){
   return _chartLoadingPromise;
 }
 
-function renderStatsChart(){
-  var ctx=document.getElementById('chartAccuracy');
-  if(!ctx) return;
-  // PD-13b: Chart.js が未ロードならまず読み込んで再帰呼出
-  capabilities.refresh('chart');
-  if(!capabilities.has('chart')){
-    _loadChartLib().then(renderStatsChart, function(err){
-      var parent = ctx.parentNode;
-      if(parent) parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
-    });
-    return;
-  }
-  if(statsChart) statsChart.destroy();
-  var history=safeParse('boatrace_history', []);   // PA-5
-  var byDate={};
-  history.forEach(function(h){
-    if(!h.actual) return;
-    if(!byDate[h.date]) byDate[h.date]={total:0,hit:0};
-    byDate[h.date].total++;
-    if(h.trifecta_hit) byDate[h.date].hit++;
-  });
-  var dates=Object.keys(byDate).sort().slice(-14);
-  var rates=dates.map(function(d){return byDate[d].total>0?(byDate[d].hit/byDate[d].total*100):0});
-
-  statsChart=new Chart(ctx,{
-    type:'bar',
-    data:{
-      labels:dates.map(function(d){return d.slice(4,6)+'/'+d.slice(6)}),
-      datasets:[{data:rates,backgroundColor:'rgba(33,150,243,0.5)',borderColor:'#2196F3',borderWidth:1,borderRadius:4}]
-    },
-    options:{
-      responsive:true,maintainAspectRatio:false,animation:{duration:0},
-      plugins:{legend:{display:false},title:{display:true,text:'日別3連単的中率(%)',color:'#666',font:{size:11}}},
-      scales:{
-        x:{ticks:{font:{size:9},color:'#999'},grid:{display:false}},
-        y:{beginAtZero:true,max:100,ticks:{font:{size:9},color:'#999',callback:function(v){return v+'%'}},grid:{color:'rgba(0,0,0,0.06)'}}
-      }
-    }
-  });
-}
 
 // ===============================================
 // SCREEN 5: SETTINGS (REWRITTEN)

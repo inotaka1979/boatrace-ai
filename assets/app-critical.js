@@ -1158,7 +1158,6 @@ var _featureStats = (function(){
   return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 })();
 // _initFeatureStats は rest 側 utility として後方互換のため残置（呼出元 0 件、安全）
-/* MOVED: function _initFeatureStats */
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
 //   将来 _refitPlattCoeffs(history) で auto-tune
@@ -2860,12 +2859,6 @@ var CLASS_COURSE_MULT = [
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
-// PB-7: Welford's online algorithm で 特徴量 mean/variance を更新
-/* MOVED: function _updateFeatureStats */
-
-// PB-7 + PF-5: 特徴量を z-score 正規化（warmup 前は identity）
-//   PF-5: divisor を pre-compute、Number.isFinite 呼出を || 0 に置換
-/* MOVED: function _normalizeFeatures */
 
 /* MOVED: function l2Predict */
 
@@ -2874,12 +2867,10 @@ var CLASS_COURSE_MULT = [
 // PB-6: Platt scaling — 確率の post-hoc 校正
 //   p' = sigmoid(a * logit(p) + b)
 //   既定 a=1, b=0 で identity（変化なし）。データ蓄積後 _refitPlattCoeffs で auto-tune
-/* MOVED: function _applyPlattCalibration */
 
 // PB-5: Stacking 予測 — L2 が L1 確率を補正する形式
 //   p_stacked[b] = softmax( logit(L1[b]) + γ * residual_b ) where residual_b は L2 の輸出 logit
 //   既定 γ=0 で stacking 無効（純粋に L1 を返す）。STACKING_MODE='residual' で active
-/* MOVED: function _stackedPredict */
 
 // PB-6: Platt 係数を既存履歴から re-fit
 //   2 パラメータ (a, b) のみなので grid search で十分
@@ -2907,10 +2898,8 @@ var _workerHeavyLoaded = false;
 /* MOVED: function predictRaceAsync */
 
 // pairs 抽出は同期で実行（軽量）、grid search のみ Worker
-/* MOVED: function _extractPlattPairs */
 
 // PF-9: async 化、Worker があれば使う、無ければ main thread fallback
-/* MOVED: function _refitPlattCoeffs */
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
@@ -3169,7 +3158,6 @@ var _nextOpenMap = {};
 
 /* MOVED: function _rateColor */
 
-/* MOVED: function renderStats */
 
 // PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）
 //   インターネット切断時はキャッシュ（PD-2 SW cdn-v1）から提供
@@ -3177,7 +3165,6 @@ var _nextOpenMap = {};
 var _chartLoadingPromise = null;
 /* MOVED: function _loadChartLib */
 
-/* MOVED: function renderStatsChart */
 
 // ===============================================
 // SCREEN 5: SETTINGS (REWRITTEN)

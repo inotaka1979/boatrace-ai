@@ -213,6 +213,10 @@ REST_ONLY_BUILD_MARKERS = {
     # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
     # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
     'ANALYSIS_SCORE_BOAT',
+    # Platt scaling / featureStats は学習 (results 受信時) と設定画面のみで呼ばれる。
+    'ANALYSIS_CALIBRATION',
+    # 成績タブ render (renderStats + renderStatsChart) は成績タブ open 時のみ。
+    'REPORTING_STATS_PAGE',
 }
 
 rest_bundle_extracted: list[str] = []
