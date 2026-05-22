@@ -223,6 +223,10 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_PREDICT_PROGRAM',
     # L2 / scoring helpers — レース詳細 / 学習 / 設定でしか呼ばれない
     'ANALYSIS_L2_FEATURES',
+    # 学習バッチ (results 受信時のみ) — critical 起動には不要
+    'ANALYSIS_LEARNING',
+    # レース詳細 (openRace 712 行) — 詳細を開いた時のみ
+    'REPORTING_RACE_DETAIL',
 }
 
 rest_bundle_extracted: list[str] = []

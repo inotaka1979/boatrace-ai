@@ -130,6 +130,10 @@ async function main() {
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
     { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
     { marker: 'ANALYSIS_L2_FEATURES', src: 'analysis/l2_features.js' },       // Phase 2 完遂続き (scoreBoatV2 helpers + L2)
+    { marker: 'ANALYSIS_LEARNING', src: 'analysis/learning.js' },             // Phase 2 完遂続編 (learnFromResults)
+    { marker: 'REPORTING_PAGE_ROUTER', src: 'reporting/page_router.js' },     // Phase 2 完遂続編 (showPage)
+    { marker: 'REPORTING_STADIUM_PAGES', src: 'reporting/stadium_pages.js' }, // Phase 2 完遂続編 (renderStadiums + openStadium)
+    { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace 712 行)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [

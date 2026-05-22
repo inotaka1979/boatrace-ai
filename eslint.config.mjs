@@ -137,7 +137,11 @@ export default [
       'src/analysis/predict_scenarios.js',
       'src/analysis/predict_program.js',
       'src/analysis/l2_features.js',
+      'src/analysis/learning.js',
       'src/reporting/stats_page.js',
+      'src/reporting/stadium_pages.js',
+      'src/reporting/page_router.js',
+      'src/reporting/race_detail.js',
     ],
     languageOptions: {
       ecmaVersion: 2022,
@@ -146,6 +150,9 @@ export default [
     },
     rules: {
       'no-undef': 'off',
+      // 抽出元の var (関数スコープ) ループ変数を ESLint は block-scoped と
+      // 誤検知して no-redeclare を出すので無効化 (原コードの挙動を保つ)
+      'no-redeclare': 'off',
       'no-unused-vars': [
         'warn',
         {
