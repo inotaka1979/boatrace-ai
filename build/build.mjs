@@ -143,6 +143,75 @@ async function main() {
     { marker: 'CAPABILITIES_WORKER', src: 'capabilities-worker.js' }, // Clearwing Phase 2
   ];
 
+  // Phase 2 完遂続編 (Clearwing): Worker twin sync auto-generation。
+  //   src/utils/math.js + src/analysis/* を concat + esbuild bundle して worker_predictor.js の
+  //   BUILD:WORKER_TWIN_SYNCED マーカー領域に注入する。
+  //   従来は手動コピー → twin sync test で divergence 検出だったが、
+  //   本機構で物理的に divergence が起きない (auto-gen)。
+  //
+  //   excludeFunctions: worker context で不要な main thread 専用関数を bundle 後に strip
+  //     (predictRaceAsync は _getAppWorker を呼ぶため worker では動かない)
+  async function generateWorkerTwinSynced() {
+    // 結合順: math (依存なし) → calibration (math 参照) → l2_features (calibration 参照)
+    //         → score_boat (l2_features 参照) → predict_scenarios → predict_race
+    const sources = [
+      'utils/math.js',
+      'analysis/calibration.js',
+      'analysis/l2_features.js',
+      'analysis/score_boat.js',
+      'analysis/predict_scenarios.js',
+      'analysis/predict_race.js',
+    ];
+    let concatenated = '';
+    for (const rel of sources) {
+      const txt = await readFile(resolve(SRC, rel), 'utf8');
+      concatenated += '\n// ===== ' + rel + ' =====\n' + txt + '\n';
+    }
+    // esbuild で bundle (concat 済なので bundle:false でも OK だが、minify を後段で実施)
+    const result = await esbuild({
+      stdin: { contents: concatenated, sourcefile: 'twin_synced.js', loader: 'js' },
+      bundle: false,
+      format: 'iife',
+      target: 'es2020',
+      legalComments: 'none',
+      minify: false,
+      write: false,
+    });
+    let bundled = result.outputFiles[0].text;
+    // predictRaceAsync は worker 不要 → 関数定義と globalThis export を strip
+    bundled = stripFunction(bundled, 'predictRaceAsync');
+    bundled = bundled.replace(/^.*globalThis\.predictRaceAsync\s*=\s*predictRaceAsync;.*$/m, '');
+    return bundled;
+  }
+
+  // 文字列内の `function NAME(...) { ... }` (brace 深度ベース) を 1 個削除
+  function stripFunction(src, fnName) {
+    const re = new RegExp('^(?:async\\s+)?function\\s+' + fnName + '\\s*\\(', 'm');
+    const m = re.exec(src);
+    if (!m) return src;
+    let i = src.indexOf('{', m.index + m[0].length);
+    if (i < 0) return src;
+    let depth = 0, inStr = null, inLineC = false, inBlockC = false, inTpl = false;
+    let j = i;
+    while (j < src.length) {
+      const ch = src[j], nxt = j + 1 < src.length ? src[j + 1] : '';
+      if (inLineC) { if (ch === '\n') inLineC = false; }
+      else if (inBlockC) { if (ch === '*' && nxt === '/') { inBlockC = false; j++; } }
+      else if (inStr) { if (ch === '\\') j++; else if (ch === inStr) inStr = null; }
+      else if (inTpl) { if (ch === '\\') j++; else if (ch === '`') inTpl = false; }
+      else {
+        if (ch === '/' && nxt === '/') { inLineC = true; j++; }
+        else if (ch === '/' && nxt === '*') { inBlockC = true; j++; }
+        else if (ch === "'" || ch === '"') inStr = ch;
+        else if (ch === '`') inTpl = true;
+        else if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) { return src.slice(0, m.index) + src.slice(j + 1); } }
+      }
+      j++;
+    }
+    return src;
+  }
+
   async function applyInjections(targetPath, mods, label){
     const before = await readFile(targetPath, 'utf8');
     let current = before;
@@ -151,6 +220,13 @@ async function main() {
       const code = await bundleModule(resolve(SRC, m.src));
       console.log('  -> ' + code.length + ' chars (marker: ' + m.marker + ')');
       current = injectBundle(current, m.marker, code);
+    }
+    // Phase 2 完遂続編: worker_predictor.js のみ WORKER_TWIN_SYNCED auto-gen を注入
+    if (targetPath.endsWith('worker_predictor.js') && current.indexOf('/* BUILD:WORKER_TWIN_SYNCED:START */') >= 0) {
+      console.log('[bundle] WORKER_TWIN_SYNCED (auto-gen from src/utils + src/analysis)');
+      const twinBundle = await generateWorkerTwinSynced();
+      console.log('  -> ' + twinBundle.length + ' chars (marker: WORKER_TWIN_SYNCED)');
+      current = injectBundle(current, 'WORKER_TWIN_SYNCED', twinBundle);
     }
     if (CHECK_MODE) {
       if (before !== current) {
@@ -241,7 +317,7 @@ async function main() {
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
     { path: 'assets/app-rest-stats.min.js',  max: 20000, level: 'warn' },  // 成績 + バックテスト sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
-    { path: 'assets/worker_predictor.js', max: 75000,  level: 'warn' },
+    { path: 'assets/worker_predictor.js', max: 80000,  level: 'warn' },   // twin auto-gen 後 (~77KB)
   ];
   let budgetFail = false;
   for (const b of BUDGETS) {
