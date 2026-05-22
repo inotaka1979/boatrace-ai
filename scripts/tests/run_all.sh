@@ -168,6 +168,12 @@ step "Clearwing snapshot tests" \
 step "Clearwing deprecated pattern detector" \
      "node scripts/tests/test_deprecated_patterns.js"
 
+# 19) Clearwing Phase 2 完遂: Worker twin sync lint
+#     src/analysis/* / src/utils/* と assets/worker_predictor.js の関数等価性を検証
+#     片方を編集して他方を忘れる "twin maintenance" バグを CI で検出
+step "Worker twin sync lint (src vs worker_predictor.js)" \
+     "node scripts/tests/test_worker_twin_sync.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
