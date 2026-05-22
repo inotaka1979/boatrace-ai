@@ -1,0 +1,20 @@
+# Clearwing Phase 6: pre-commit ローカルゲート (軽量版)
+#
+# 目的: 重い `make gate` の全部ではなく、push 前に「素早く検出可能な
+#       退行 (lint / type / 既知の致命バグパターン)」だけを走らせる。
+#       残りの test / build:check は CI (.github/workflows/gate.yml) で実行。
+#
+# bypass: HUSKY=0 git commit -m '...'   (どうしても緊急回避が必要なとき)
+# 無効化: rm -rf .husky/_  または core.hooksPath を変える
+
+set -e
+
+# 1) Lint + format check (秒オーダー)
+npm run lint
+
+# 2) Type check (~5 秒、jsconfig.json で 5 ファイル限定)
+npm run type
+
+# 3) Build reproducibility (~5-15 秒、esbuild + split_app.py)
+#    PJ Phase の致命バグ (critical → rest cross-layer call) の再発を検出する Epic 27 lint も含む
+cd build && node build.mjs --check

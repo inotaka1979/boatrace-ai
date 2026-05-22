@@ -163,6 +163,11 @@ step "F13 self-style score tests" \
 step "Clearwing snapshot tests" \
      "node scripts/tests/test_snapshots.js"
 
+# 18) Clearwing Phase 6: 退行禁止パターン検出 (deprecated patterns regression guard)
+#     AbortSignal.timeout 直接呼出 / 層責務違反 / @ts-ignore 等を検出
+step "Clearwing deprecated pattern detector" \
+     "node scripts/tests/test_deprecated_patterns.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
