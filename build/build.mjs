@@ -202,12 +202,21 @@ async function main() {
   // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
   //   critical は LCP に直結するため hard fail、それ以外は warn 留め。
   //   超過時は CI が PR を block して退行を防ぐ。
+  //
   // Epic 1-28g 完了時点 (critical=75.4KB / rest=116KB / worker=59KB)
   //   Epic 28x で診断ロジック / IDB migration polling / TOP10 等の保険コード追加で +1KB
-  //   今後 i18n テーブルを別 module bundle にして lazy load する余地あり。
+  //
+  // Clearwing Phase 完了時点で rest = 134.2KB。旧 125KB warn は時代遅れ
+  // (Phase 2 で discovery / analysis / reporting / context / scoreBoatV2 を
+  //  REST_ONLY bundle として注入したため rest の絶対サイズが微増)。
+  // 新 140000 warn は「現状 + 5KB 余裕」で設定し、本格的な圧縮は次フェーズで:
+  //   - app-rest を core / stats / settings の 3 chunk に分割 (lazy load)
+  //   - i18n table を別 chunk
+  //   - worker_predictor を必要時のみ register (現状は startup 直後 register)
+  //  詳細は docs/architecture.md § 5 ビルドパイプライン参照。
   const BUDGETS = [
     { path: 'assets/app-critical.min.js', max: 90000,  level: 'fail' },
-    { path: 'assets/app-rest.min.js',     max: 125000, level: 'warn' },
+    { path: 'assets/app-rest.min.js',     max: 140000, level: 'warn' },
     { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
   ];
   let budgetFail = false;

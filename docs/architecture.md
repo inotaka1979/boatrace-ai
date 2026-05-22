@@ -271,9 +271,56 @@ HEAD probe による更新確認も可能 (`capabilities.probe('openapi_fresh')`
 
 ---
 
-## 9. 参考ファイル
+## 9. 未完の課題と将来 (Phase 2 完遂 + 性能最適化)
 
-- `CLAUDE.md` — リポジトリ全体の修正履歴 (PJ / PG / PI / Phase 1-6)
+### Phase 2 残り抽出 (analysis / reporting)
+
+下記の関数群は依然 `assets/app.js` (canonical) に残置しており、Clearwing
+4 層への完全分離には次のセッション以降で抽出が必要:
+
+| 関数 | 行数 | 移行先 | 備考 |
+|------|------|--------|------|
+| `predictRace` / `predictRaceProgram` / `predictRaceAsync` | ~250 | `src/analysis/` | scoreBoatV2 に依存 |
+| `openRace` | ~548 | `src/reporting/` | 最大の UI 関数、DOM 操作多数 |
+| `l2Predict` / `l2Update` | ~100 | `src/analysis/` | worker_predictor.js と二重メンテ要 |
+| `learnFromResults` / `learnFromResultsViaWorker` | ~150 | `src/analysis/` | worker 経由学習 |
+| `_normalizeFeatures` / `_initFeatureStats` | ~50 | `src/analysis/` | Welford online algorithm |
+| `_refitPlattCoeffs` / `_applyPlattCalibration` | ~80 | `src/analysis/` | Platt scaling 校正 |
+| `renderStadiums` / `renderStats` / `renderStatsChart` | ~250 | `src/reporting/` | UI render |
+
+抽出済 (Phase 2): `scoreBoatV2` (310 行) / `runBacktestEngine` 群 / discovery 各種 /
+`_renderApiHealthBanner` / `_renderFreshness` / `STADIUMS` 等 context 定数。
+
+### app-rest.min.js の lazy chunking (B 未完)
+
+現状 rest = 134KB。本格的な分割案:
+
+```
+app-rest.min.js          (~80KB)  : 起動後 lazy load の基本層 (UI 駆動 + predictRace)
+   ↓ ユーザが backtest タブを開いた時
+app-rest-stats.min.js    (~30KB)  : runBacktestEngine + runForwardChainBacktest +
+                                     _computeCalibrationMetrics + UI driver
+   ↓ ユーザが race detail を開いた時
+app-rest-detail.min.js   (~12KB)  : scoreBoatV2 (現状 ANALYSIS_SCORE_BOAT bundle)
+   ↓ ユーザが設定画面を開いた時
+app-rest-settings.min.js (~10KB)  : Platt refit / shareLearnedWeights / 設定永続化
+```
+
+実装には以下が必要:
+- `scripts/split_app.py` を 3-way 分割対応に拡張
+- `build/build.mjs` で minify 対象を増やす
+- `index.html` に chunk-specific dynamic import (Promise.all)
+- SW cache 戦略の更新 (`sw.js`)
+- CSP `script-src` の更新
+
+現在は実装コスト > 効果 (LCP は既に 1.5s, FCP 1.5s で Good 圏内) のため deferred。
+真に必要になったら別 PR で取り組む。
+
+---
+
+## 10. 参考ファイル
+
+- `CLAUDE.md` — リポジトリ全体の修正履歴 (PJ / PG / PI / Phase 1-7)
 - `CONTRIBUTING.md` — 開発時のレビュー基準・トラブルシューティング
 - `.refactor/BASELINE.md` — Phase 0 (現状調査) 結果
 - `.refactor/PHASE2_NOTES.md` — Phase 2 (4 層骨格) 完了レポート
