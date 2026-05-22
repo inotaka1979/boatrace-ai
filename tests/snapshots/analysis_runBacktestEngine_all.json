@@ -1,0 +1,94 @@
+{
+  "samples": 5,
+  "totalBets": 20,
+  "totalStake": 2000,
+  "totalPayout": 7260,
+  "netProfit": 5260,
+  "roi": 3.63,
+  "hitRate3": 0.4,
+  "hitRate2": 0.4,
+  "maxDrawdown": 600,
+  "sharpe": 0.586263402942835,
+  "byType": {
+    "honmei": {
+      "n": 2,
+      "hits": 1,
+      "payout": 880
+    },
+    "middle": {
+      "n": 2,
+      "hits": 1,
+      "payout": 4200
+    },
+    "ana": {
+      "n": 1,
+      "hits": 0,
+      "payout": 0
+    }
+  },
+  "byStadium": {
+    "1": {
+      "sid": 1,
+      "name": "桐生",
+      "n": 2,
+      "hits3": 1,
+      "hits2": 1,
+      "stake": 600,
+      "payout": 1200,
+      "payout3": 880
+    },
+    "4": {
+      "sid": 4,
+      "name": "平和島",
+      "n": 1,
+      "hits3": 0,
+      "hits2": 0,
+      "stake": 400,
+      "payout": 0,
+      "payout3": 0
+    },
+    "12": {
+      "sid": 12,
+      "name": "住之江",
+      "n": 2,
+      "hits3": 1,
+      "hits2": 1,
+      "stake": 1000,
+      "payout": 6060,
+      "payout3": 4200
+    }
+  },
+  "dailyROI": {
+    "20260514": {
+      "stake": 400,
+      "payout": 1200,
+      "n": 1
+    },
+    "20260515": {
+      "stake": 500,
+      "payout": 4200,
+      "n": 1
+    },
+    "20260516": {
+      "stake": 400,
+      "payout": 0,
+      "n": 1
+    },
+    "20260517": {
+      "stake": 200,
+      "payout": 0,
+      "n": 1
+    },
+    "20260518": {
+      "stake": 500,
+      "payout": 1860,
+      "n": 1
+    }
+  },
+  "period": 0,
+  "logLoss": 1.2207715468259979,
+  "brier": 0.5862399999999999,
+  "ece": 0.6479999999999999,
+  "calibratedSamples": 5,
+  "leakageNote": "NOTE: 既存履歴は予想時点で既に L2 学習が反映済みのため look-ahead leakage の可能性あり。完全な forward-chain 評価には runForwardChainBacktest() を使用"
+}

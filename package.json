@@ -1,0 +1,32 @@
+{
+  "name": "boatrace-oracle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "BoatRace Oracle PWA — AI prediction app for Japanese boat racing. PWA single-HTML deployment to GitHub Pages.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "lint": "eslint src/ scripts/tests/",
+    "lint:fix": "eslint --fix src/ scripts/tests/",
+    "format:check": "prettier --check src/",
+    "format": "prettier --write src/",
+    "type": "tsc --noEmit -p jsconfig.json",
+    "test": "bash scripts/tests/run_all.sh",
+    "test:e2e": "cd build && npm run test:e2e",
+    "split": "python3 scripts/split_app.py",
+    "build": "cd build && node build.mjs",
+    "build:check": "cd build && node build.mjs --check",
+    "gate": "npm run lint && npm run format:check && npm run type && npm run test && npm run build:check",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.4.2",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

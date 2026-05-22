@@ -1,0 +1,107 @@
+[
+  {
+    "date": "20260514",
+    "stadium": 1,
+    "race": 1,
+    "raceType": "honmei",
+    "actual": [1, 2, 3],
+    "trifecta_bets": ["1-2-3", "1-3-2"],
+    "exacta_bets": ["1-2", "1-3"],
+    "trifecta_hit": true,
+    "exacta_hit": true,
+    "payout3": 880,
+    "payout2": 320,
+    "mark_probs": [
+      { "boat": 1, "prob": 0.55 },
+      { "boat": 2, "prob": 0.18 },
+      { "boat": 3, "prob": 0.12 },
+      { "boat": 4, "prob": 0.08 },
+      { "boat": 5, "prob": 0.04 },
+      { "boat": 6, "prob": 0.03 }
+    ]
+  },
+  {
+    "date": "20260515",
+    "stadium": 12,
+    "race": 5,
+    "raceType": "middle",
+    "actual": [3, 1, 2],
+    "trifecta_bets": ["1-2-3", "1-3-2", "3-1-2"],
+    "exacta_bets": ["1-2", "1-3"],
+    "trifecta_hit": true,
+    "exacta_hit": false,
+    "payout3": 4200,
+    "payout2": 0,
+    "mark_probs": [
+      { "boat": 1, "prob": 0.32 },
+      { "boat": 2, "prob": 0.22 },
+      { "boat": 3, "prob": 0.18 },
+      { "boat": 4, "prob": 0.12 },
+      { "boat": 5, "prob": 0.10 },
+      { "boat": 6, "prob": 0.06 }
+    ]
+  },
+  {
+    "date": "20260516",
+    "stadium": 4,
+    "race": 7,
+    "raceType": "ana",
+    "actual": [5, 3, 1],
+    "trifecta_bets": ["1-2-3", "1-3-2"],
+    "exacta_bets": ["1-2", "1-3"],
+    "trifecta_hit": false,
+    "exacta_hit": false,
+    "payout3": 0,
+    "payout2": 0,
+    "mark_probs": [
+      { "boat": 1, "prob": 0.22 },
+      { "boat": 2, "prob": 0.20 },
+      { "boat": 3, "prob": 0.18 },
+      { "boat": 4, "prob": 0.16 },
+      { "boat": 5, "prob": 0.13 },
+      { "boat": 6, "prob": 0.11 }
+    ]
+  },
+  {
+    "date": "20260517",
+    "stadium": 1,
+    "race": 3,
+    "raceType": "honmei",
+    "actual": [1, 4, 2],
+    "trifecta_bets": ["1-2-3"],
+    "exacta_bets": ["1-2"],
+    "trifecta_hit": false,
+    "exacta_hit": false,
+    "payout3": 0,
+    "payout2": 0,
+    "mark_probs": [
+      { "boat": 1, "prob": 0.62 },
+      { "boat": 2, "prob": 0.15 },
+      { "boat": 3, "prob": 0.10 },
+      { "boat": 4, "prob": 0.07 },
+      { "boat": 5, "prob": 0.04 },
+      { "boat": 6, "prob": 0.02 }
+    ]
+  },
+  {
+    "date": "20260518",
+    "stadium": 12,
+    "race": 12,
+    "raceType": "middle",
+    "actual": [2, 1, 4],
+    "trifecta_bets": ["1-2-3", "2-1-3", "2-1-4"],
+    "exacta_bets": ["2-1", "1-2"],
+    "trifecta_hit": false,
+    "exacta_hit": true,
+    "payout3": 0,
+    "payout2": 1860,
+    "mark_probs": [
+      { "boat": 1, "prob": 0.42 },
+      { "boat": 2, "prob": 0.28 },
+      { "boat": 3, "prob": 0.12 },
+      { "boat": 4, "prob": 0.10 },
+      { "boat": 5, "prob": 0.05 },
+      { "boat": 6, "prob": 0.03 }
+    ]
+  }
+]

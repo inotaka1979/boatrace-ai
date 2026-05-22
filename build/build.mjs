@@ -109,6 +109,7 @@ async function main() {
   const manifestPath = resolve(ROOT, 'manifest.json');
 
   // 1) PE-4 + PE-10: 全モジュールを IIFE bundle してマーカー領域に注入
+  // main thread bundle 群 (assets/app.js に注入)
   const modules = [
     { marker: 'SAFE_STORAGE', src: 'utils/safe_storage.js' },
     { marker: 'MATH',         src: 'utils/math.js' },
@@ -117,29 +118,43 @@ async function main() {
     { marker: 'BANDIT',       src: 'utils/bandit.js' },     // Epic 15
     { marker: 'I18N',         src: 'utils/i18n.js' },       // Epic 16
     { marker: 'DP_GRADIENT',  src: 'utils/dp_gradient.js' },// Epic 21
+    { marker: 'CAPABILITIES', src: 'capabilities.js' },     // Clearwing Phase 1
+    { marker: 'DISCOVERY_OPENAPI', src: 'discovery/openapi_client.js' }, // Clearwing Phase 2b
+    { marker: 'ANALYSIS_BACKTEST', src: 'analysis/backtest.js' },        // Clearwing Phase 2c
+    { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
+    { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
   ];
-  let beforeApp = await readFile(appJsPath, 'utf8');
-  let currentApp = beforeApp;
-  for (const m of modules) {
-    console.log('[bundle] src/' + m.src + ' ...');
-    const code = await bundleModule(resolve(SRC, m.src));
-    console.log('  -> ' + code.length + ' chars (marker: ' + m.marker + ')');
-    currentApp = injectBundle(currentApp, m.marker, code);
-  }
-  const afterApp = currentApp;
+  // Worker bundle 群 (assets/worker_predictor.js に注入)
+  const workerModules = [
+    { marker: 'CAPABILITIES_WORKER', src: 'capabilities-worker.js' }, // Clearwing Phase 2
+  ];
 
-  if (CHECK_MODE) {
-    if (beforeApp !== afterApp) {
-      console.error('[check] assets/app.js differs from build output. Run "npm run build" and commit.');
-      process.exit(1);
+  async function applyInjections(targetPath, mods, label){
+    const before = await readFile(targetPath, 'utf8');
+    let current = before;
+    for (const m of mods) {
+      console.log('[bundle] src/' + m.src + ' ...');
+      const code = await bundleModule(resolve(SRC, m.src));
+      console.log('  -> ' + code.length + ' chars (marker: ' + m.marker + ')');
+      current = injectBundle(current, m.marker, code);
     }
-    console.log('[check] assets/app.js matches build output ✓');
-  } else if (beforeApp !== afterApp) {
-    await writeFile(appJsPath, afterApp);
-    console.log('[write] assets/app.js updated');
-  } else {
-    console.log('[no-op] assets/app.js already up-to-date');
+    if (CHECK_MODE) {
+      if (before !== current) {
+        console.error('[check] ' + label + ' differs from build output. Run "npm run build" and commit.');
+        process.exit(1);
+      }
+      console.log('[check] ' + label + ' matches build output ✓');
+    } else if (before !== current) {
+      await writeFile(targetPath, current);
+      console.log('[write] ' + label + ' updated');
+    } else {
+      console.log('[no-op] ' + label + ' already up-to-date');
+    }
   }
+
+  await applyInjections(appJsPath, modules, 'assets/app.js');
+  const workerPredPath = resolve(ROOT, 'assets/worker_predictor.js');
+  await applyInjections(workerPredPath, workerModules, 'assets/worker_predictor.js');
 
   // 2b) PE-6 + PI-3: minify を 3 ファイル (app + critical + rest) で実行
   //         配信物のみ最小化、tests / debug は ソース版を参照

@@ -1,0 +1,32 @@
+{
+  "updated_at": "2026-05-21T16:00:00+09:00",
+  "results": [
+    {
+      "race_stadium_number": 1,
+      "race_number": 1,
+      "race_date": "2026-05-21",
+      "race_technique_number": 1,
+      "boats": [
+        { "racer_boat_number": 1, "racer_place_number": 1, "racer_course_number": 1, "racer_number": 4000, "racer_name": "テスト一郎", "racer_start_timing": 0.15 },
+        { "racer_boat_number": 2, "racer_place_number": 2, "racer_course_number": 2, "racer_number": 4001, "racer_name": "テスト二郎", "racer_start_timing": 0.16 },
+        { "racer_boat_number": 3, "racer_place_number": 3, "racer_course_number": 3, "racer_number": 4002, "racer_name": "テスト三郎", "racer_start_timing": 0.14 },
+        { "racer_boat_number": 4, "racer_place_number": 4, "racer_course_number": 4, "racer_number": 4003, "racer_name": "テスト四郎", "racer_start_timing": 0.20 },
+        { "racer_boat_number": 5, "racer_place_number": 5, "racer_course_number": 5, "racer_number": 4004, "racer_name": "テスト五郎", "racer_start_timing": 0.25 },
+        { "racer_boat_number": 6, "racer_place_number": 6, "racer_course_number": 6, "racer_number": 4005, "racer_name": "テスト六郎", "racer_start_timing": 0.30 }
+      ],
+      "payouts": {
+        "trifecta": [{ "combination": "1-2-3", "amount": 880 }],
+        "exacta":   [{ "combination": "1-2",   "amount": 320 }]
+      }
+    },
+    {
+      "race_stadium_number": 12,
+      "race_number": 1,
+      "race_date": "2026-05-21",
+      "race_technique_number": null,
+      "boats": [
+        { "racer_boat_number": 1, "racer_place_number": null, "racer_course_number": 1 }
+      ]
+    }
+  ]
+}

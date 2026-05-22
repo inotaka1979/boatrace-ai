@@ -32,18 +32,298 @@
   } catch(_){}
 })();
 
+/* BUILD:CAPABILITIES:START */
+"use strict";
+(() => {
+  // ../src/capabilities.js
+  var Capabilities = class {
+    constructor() {
+      this._sync = /* @__PURE__ */ new Map();
+      this._async = /* @__PURE__ */ new Map();
+    }
+    // ─────────────────────────────────────────────
+    // 同期検出（起動時 1 回）
+    // ─────────────────────────────────────────────
+    detectSync() {
+      this._set("abort_timeout", typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function");
+      this._set("service_worker", typeof navigator !== "undefined" && "serviceWorker" in navigator);
+      this._set("indexed_db", typeof indexedDB !== "undefined");
+      this._set("cache_api", typeof caches !== "undefined");
+      this._set(
+        "local_storage",
+        (() => {
+          try {
+            if (typeof localStorage === "undefined") return false;
+            const k = "__br_cap_probe__";
+            localStorage.setItem(k, "1");
+            localStorage.removeItem(k);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        })()
+      );
+      this._set("scheduler_post_task", typeof scheduler !== "undefined" && typeof scheduler.postTask === "function");
+      this._set("scheduler_yield", typeof scheduler !== "undefined" && typeof scheduler.yield === "function");
+      this._set("request_idle_callback", typeof requestIdleCallback === "function");
+      this._set("document", typeof document !== "undefined" && typeof document.querySelectorAll === "function");
+      this._set("notification", typeof Notification !== "undefined");
+      this._set("chart", typeof Chart !== "undefined");
+      this._set("worker", typeof Worker !== "undefined");
+      this._set(
+        "shared_array_buffer",
+        typeof window !== "undefined" && window.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined"
+      );
+      this._set("cross_origin_isolated", typeof window !== "undefined" && window.crossOriginIsolated === true);
+      this._set("online", this._detectOnline());
+      if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        try {
+          window.addEventListener("online", () => this._set("online", true));
+          window.addEventListener("offline", () => this._set("online", false));
+        } catch (_) {
+        }
+      }
+    }
+    /**
+     * @param {string} name
+     * @param {boolean} value
+     */
+    _set(name, value) {
+      this._sync.set(name, value === true);
+    }
+    /** @returns {boolean} */
+    _detectOnline() {
+      if (typeof navigator === "undefined") return true;
+      if (typeof navigator.onLine !== "boolean") return true;
+      return navigator.onLine;
+    }
+    // ─────────────────────────────────────────────
+    // 公開 API
+    // ─────────────────────────────────────────────
+    /**
+     * @param {string} name
+     * @returns {boolean}
+     */
+    has(name) {
+      if (this._sync.has(name)) return this._sync.get(name) === true;
+      if (this._async.has(name)) return this._async.get(name) === true;
+      return false;
+    }
+    /**
+     * 動的に状態が変わる capability の再検出（chart 動的 import 後 等）
+     * @param {string} [name]
+     */
+    refresh(name) {
+      if (name === "chart") this._set("chart", typeof Chart !== "undefined");
+      else if (name === "online") this._set("online", this._detectOnline());
+      else this.detectSync();
+    }
+    /** @returns {string[]} */
+    list() {
+      return Array.from(this._sync.keys()).concat(Array.from(this._async.keys()));
+    }
+    // ─────────────────────────────────────────────
+    // Async probes（on-demand、結果キャッシュ）
+    // ─────────────────────────────────────────────
+    //   - 'openapi_fresh': boatraceopenapi の HEAD レスポンスから更新時刻判定
+    //   - 'exhibition_data': 個別レースの preview 取得試行（呼出側で sid/rno を渡す形に拡張可能）
+    //
+    // Phase 1 では openapi_fresh のみ実装、他は API としてのみ用意。
+    /**
+     * @param {string} name
+     * @param {{ url?: string; ttlMs?: number }} [opts]
+     * @returns {Promise<boolean>}
+     */
+    async probe(name, opts) {
+      if (this._async.has(name)) return this._async.get(name) === true;
+      let result = false;
+      try {
+        if (name === "openapi_fresh") result = await this._probeOpenapiFresh(opts);
+      } catch (_) {
+        result = false;
+      }
+      this._async.set(name, result === true);
+      return this._async.get(name) === true;
+    }
+    /**
+     * @param {{ url?: string; ttlMs?: number }} [opts]
+     * @returns {Promise<boolean>}
+     */
+    async _probeOpenapiFresh(opts) {
+      if (typeof fetch !== "function") return false;
+      const url = opts && opts.url || "https://boatraceopenapi.github.io/programs/v2/today.json";
+      const ttlMs = opts && opts.ttlMs || 30 * 60 * 1e3;
+      const r = await fetch(url, {
+        method: "HEAD",
+        signal: this.makeTimeoutSignal(3e3),
+        cache: "no-store"
+      });
+      if (!r.ok) return false;
+      const lm = r.headers.get("last-modified");
+      if (!lm) return false;
+      const age = Date.now() - new Date(lm).getTime();
+      return Number.isFinite(age) && age >= 0 && age < ttlMs;
+    }
+    // ─────────────────────────────────────────────
+    // ヘルパ: 互換性のあるタイムアウト signal を返す
+    //   has('abort_timeout') が true なら AbortSignal.timeout(ms)
+    //   false なら AbortController + setTimeout の polyfill
+    // 主に iOS Safari 旧版での fetch timeout 互換を確保するため。
+    // ─────────────────────────────────────────────
+    /**
+     * @param {number} ms
+     * @returns {AbortSignal}
+     */
+    makeTimeoutSignal(ms) {
+      if (this.has("abort_timeout")) {
+        return AbortSignal.timeout(ms);
+      }
+      const c = new AbortController();
+      const ctxScheduler = typeof setTimeout === "function" ? setTimeout : null;
+      if (ctxScheduler)
+        ctxScheduler(() => {
+          try {
+            c.abort();
+          } catch (_) {
+          }
+        }, ms);
+      return c.signal;
+    }
+    // ─────────────────────────────────────────────
+    // ヘルパ: 利用可能な「アイドル時実行」関数を返す
+    //   scheduler.postTask({priority:'background'}) > requestIdleCallback > setTimeout
+    // ─────────────────────────────────────────────
+    /**
+     * @param {() => void} fn
+     * @param {{ delay?: number; timeout?: number; priority?: string }} [opts]
+     * @returns {unknown}
+     */
+    runIdle(fn, opts) {
+      const _gAny = (
+        /** @type {any} */
+        globalThis
+      );
+      if (this.has("scheduler_post_task")) {
+        return _gAny.scheduler.postTask(fn, { priority: "background", ...opts || {} });
+      }
+      if (this.has("request_idle_callback")) {
+        return _gAny.requestIdleCallback(fn, { timeout: opts && opts.timeout || 3e3 });
+      }
+      return setTimeout(fn, opts && opts.delay || 0);
+    }
+  };
+  var capabilities = new Capabilities();
+  capabilities.detectSync();
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  _g.capabilities = capabilities;
+  _g.Capabilities = Capabilities;
+})();
+
+/* BUILD:CAPABILITIES:END */
+
 // ===============================================
 // CONSTANTS (PRESERVED)
 // ===============================================
-var STADIUMS={1:"桐生",2:"戸田",3:"江戸川",4:"平和島",5:"多摩川",6:"浜名湖",7:"蒲郡",8:"常滑",9:"津",10:"三国",11:"びわこ",12:"住之江",13:"尼崎",14:"鳴門",15:"丸亀",16:"児島",17:"宮島",18:"徳山",19:"下関",20:"若松",21:"芦屋",22:"福岡",23:"唐津",24:"大村"};
-var CLASS_NAME={1:"A1",2:"A2",3:"B1",4:"B2"};
-var CLASS_COLOR={1:"#FF2244",2:"#FF6644",3:"#2288FF",4:"#888888"};
-var BOAT_COLORS={1:"#FFFFFF",2:"#000000",3:"#FF1122",4:"#2255FF",5:"#FFD700",6:"#22CC44"};
-var BOAT_TEXT={1:"#000000",2:"#FFFFFF",3:"#FFFFFF",4:"#FFFFFF",5:"#000000",6:"#FFFFFF"};
+// 競艇ドメインの静的データテーブル (STADIUMS / CLASS_NAME / BOAT_COLORS / BOAT_TEXT /
+//   TECHNIQUE / WIND_DIR / GRADE_CLASS / CLASS_COLOR) は src/context/domain_constants.js
+//   に移動 (Clearwing Phase 2e)。BUILD:CONTEXT_DOMAIN bundle 経由で globalThis に公開。
+/* BUILD:CONTEXT_DOMAIN:START */
+"use strict";
+(() => {
+  // ../src/context/domain_constants.js
+  var STADIUMS = Object.freeze({
+    1: "\u6850\u751F",
+    2: "\u6238\u7530",
+    3: "\u6C5F\u6238\u5DDD",
+    4: "\u5E73\u548C\u5CF6",
+    5: "\u591A\u6469\u5DDD",
+    6: "\u6D5C\u540D\u6E56",
+    7: "\u84B2\u90E1",
+    8: "\u5E38\u6ED1",
+    9: "\u6D25",
+    10: "\u4E09\u56FD",
+    11: "\u3073\u308F\u3053",
+    12: "\u4F4F\u4E4B\u6C5F",
+    13: "\u5C3C\u5D0E",
+    14: "\u9CF4\u9580",
+    15: "\u4E38\u4E80",
+    16: "\u5150\u5CF6",
+    17: "\u5BAE\u5CF6",
+    18: "\u5FB3\u5C71",
+    19: "\u4E0B\u95A2",
+    20: "\u82E5\u677E",
+    21: "\u82A6\u5C4B",
+    22: "\u798F\u5CA1",
+    23: "\u5510\u6D25",
+    24: "\u5927\u6751"
+  });
+  var CLASS_NAME = Object.freeze({ 1: "A1", 2: "A2", 3: "B1", 4: "B2" });
+  var CLASS_COLOR = Object.freeze({ 1: "#FF2244", 2: "#FF6644", 3: "#2288FF", 4: "#888888" });
+  var BOAT_COLORS = Object.freeze({
+    1: "#FFFFFF",
+    2: "#000000",
+    3: "#FF1122",
+    4: "#2255FF",
+    5: "#FFD700",
+    6: "#22CC44"
+  });
+  var BOAT_TEXT = Object.freeze({
+    1: "#000000",
+    2: "#FFFFFF",
+    3: "#FFFFFF",
+    4: "#FFFFFF",
+    5: "#000000",
+    6: "#FFFFFF"
+  });
+  var TECHNIQUE = Object.freeze({
+    1: "\u9003\u3052",
+    2: "\u5DEE\u3057",
+    3: "\u307E\u304F\u308A",
+    4: "\u307E\u304F\u308A\u5DEE\u3057",
+    5: "\u629C\u304D",
+    6: "\u6075\u307E\u308C"
+  });
+  var WIND_DIR = Object.freeze({
+    1: "N",
+    2: "NNE",
+    3: "NE",
+    4: "ENE",
+    5: "E",
+    6: "ESE",
+    7: "SE",
+    8: "SSE",
+    9: "S",
+    10: "SSW",
+    11: "SW",
+    12: "WSW",
+    13: "W",
+    14: "WNW",
+    15: "NW",
+    16: "NNW",
+    17: "\u7121\u98A8"
+  });
+  var GRADE_CLASS = Object.freeze({
+    1: Object.freeze({ name: "SG", cls: "grade-sg" }),
+    2: Object.freeze({ name: "G1", cls: "grade-g1" }),
+    3: Object.freeze({ name: "G2", cls: "grade-g2" }),
+    4: Object.freeze({ name: "G3", cls: "grade-g3" }),
+    5: Object.freeze({ name: "\u4E00\u822C", cls: "grade-general" })
+  });
+  globalThis.STADIUMS = STADIUMS;
+  globalThis.CLASS_NAME = CLASS_NAME;
+  globalThis.CLASS_COLOR = CLASS_COLOR;
+  globalThis.BOAT_COLORS = BOAT_COLORS;
+  globalThis.BOAT_TEXT = BOAT_TEXT;
+  globalThis.TECHNIQUE = TECHNIQUE;
+  globalThis.WIND_DIR = WIND_DIR;
+  globalThis.GRADE_CLASS = GRADE_CLASS;
+})();
+
+/* BUILD:CONTEXT_DOMAIN:END */
 var COURSE_WIN_RATE={1:0.55,2:0.14,3:0.12,4:0.11,5:0.06,6:0.02};
-var TECHNIQUE={1:"逃げ",2:"差し",3:"まくり",4:"まくり差し",5:"抜き",6:"恵まれ"};
-var WIND_DIR={1:"N",2:"NNE",3:"NE",4:"ENE",5:"E",6:"ESE",7:"SE",8:"SSE",9:"S",10:"SSW",11:"SW",12:"WSW",13:"W",14:"WNW",15:"NW",16:"NNW",17:"無風"};
-var GRADE_CLASS={1:{name:"SG",cls:"grade-sg"},2:{name:"G1",cls:"grade-g1"},3:{name:"G2",cls:"grade-g2"},4:{name:"G3",cls:"grade-g3"},5:{name:"一般",cls:"grade-general"}};
 var API_BASE='https://boatraceopenapi.github.io';
 // F19: RPi serve_data 機能撤去（GitHub Pages 配信のみで運用）
 // var LOCAL_RPI_URL=...; は削除済
@@ -599,7 +879,7 @@ try {
       setTimeout(function(){ tryRun(retry+1); }, 100);
       return;
     }
-    var _idbAvail = (typeof indexedDB !== 'undefined');
+    var _idbAvail = capabilities.has('indexed_db');
     console.log('[idb] migrate start (IDB available='+_idbAvail+')');
     idbMigrateFromLS().then(function(res){
       var migN = ((res && res.migrated)||[]).length;
@@ -1152,8 +1432,7 @@ try {
 //   COI は opt-in（URL ?coi=1 が付いた navigation のみ SW が COOP/COEP を inject）。
 //   外部リソース (font/CDN) の CORP 対応を確認するため段階展開。
 function _isSABAvailable(){
-  return (typeof window !== 'undefined' && window.crossOriginIsolated === true
-       && typeof SharedArrayBuffer !== 'undefined');
+  return capabilities.has('shared_array_buffer');
 }
 function _toggleCOI(){
   // 現在 ?coi=1 が付いていなければ付けて reload、付いていれば削除して reload
@@ -1175,7 +1454,7 @@ function _toggleCOI(){
 function _refreshCOIStatus(){
   var el = document.getElementById('coiStatus');
   if(!el) return;
-  var coi = (typeof window !== 'undefined') && window.crossOriginIsolated;
+  var coi = capabilities.has('cross_origin_isolated');
   var sab = _isSABAvailable();
   var qsCoi = false;
   try { qsCoi = (new URLSearchParams(location.search)).get('coi') === '1'; } catch(_){}
@@ -1196,11 +1475,10 @@ function _packStringToSAB(str){
     return null;
   }
 }
-// 起動ログで COI 状態を可視化（デバッグ用、_isSABAvailable は rest 側のため typeof guard 必須）
+// 起動ログで COI 状態を可視化
 try {
-  var _sabOk = (typeof _isSABAvailable === 'function') ? _isSABAvailable() : false;
-  console.log('[Epic18] crossOriginIsolated=' + (typeof window !== 'undefined' && window.crossOriginIsolated)
-    + ' SABAvailable=' + _sabOk);
+  console.log('[Epic18] crossOriginIsolated=' + capabilities.has('cross_origin_isolated')
+    + ' SABAvailable=' + capabilities.has('shared_array_buffer'));
 } catch(_){}
 
 // Epic 17 (P2-6) + Epic 21: 階層的 federated learning — global + per-stadium 重みを blend
@@ -1309,7 +1587,7 @@ async function hardReload(){
   if(btn){ btn.disabled=true; btn.textContent='⏳ 削除中...'; }
   try{
     // 1) アクティブな SW に purge を依頼（cache を SW が握っている場合の救済）
-    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+    if(capabilities.has('service_worker') && navigator.serviceWorker.controller){
       try{
         var purged = new Promise(function(resolve){
           var to = setTimeout(resolve, 1500);  // タイムアウト 1.5s
@@ -1326,12 +1604,12 @@ async function hardReload(){
       }catch(_){}
     }
     // 2) クライアント側でも全 cache を削除（念のため重複実行）
-    if('caches' in window){
+    if(capabilities.has('cache_api')){
       var keys = await caches.keys();
       await Promise.all(keys.map(function(k){ return caches.delete(k); }));
     }
     // 3) 全 SW を unregister
-    if('serviceWorker' in navigator){
+    if(capabilities.has('service_worker')){
       var regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map(function(r){ return r.unregister(); }));
     }
@@ -1367,7 +1645,7 @@ async function forceRefresh(){
   if(navBtn){ navBtn.disabled=true; navBtn.innerHTML='<span class="nav-icon">⏳</span>更新中'; }
   try {
     // 1) Service Worker cache を全削除
-    if('caches' in window){
+    if(capabilities.has('cache_api')){
       var keys = await caches.keys();
       await Promise.all(keys.map(function(k){ return caches.delete(k); }));
     }
@@ -1629,7 +1907,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
     "boatrace_exhibitionStats"
   ];
   var _idbInstance = null;
-  var _idbAvailable = typeof indexedDB !== "undefined";
+  var _idbAvailable = globalThis.capabilities && typeof globalThis.capabilities.has === "function" ? globalThis.capabilities.has("indexed_db") : typeof indexedDB !== "undefined";
   function _openIDB() {
     if (_idbInstance) return Promise.resolve(_idbInstance);
     if (!_idbAvailable) return Promise.reject(new Error("IDB unavailable"));
@@ -1697,7 +1975,8 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       });
     }).catch(function(e) {
       try {
-        if (typeof reportError === "function") reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
+        if (typeof reportError === "function")
+          reportError({ type: "warn", msg: "idbPut failed: " + (e && e.message || "unknown"), key });
       } catch (_) {
       }
       return false;
@@ -2339,187 +2618,262 @@ function starsHtml(n){var s='';for(var i=0;i<5;i++)s+=i<n?'★':'☆';return s}
 function pf(v){return parseFloat(v)||0}
 
 // P0-7: API health 状態 — 'ok' | 'cached' | 'fail'
-var _apiHealth = { programs:'ok', previews:'ok', results:'ok', odds:'ok' };
-function _setApiHealth(url, state){
-  var key = (url.indexOf('/programs/')>=0) ? 'programs'
-          : (url.indexOf('/previews/')>=0) ? 'previews'
-          : (url.indexOf('/results/')>=0) ? 'results'
-          : (url.indexOf('/odds/')>=0)     ? 'odds' : null;
-  if(!key) return;
-  _apiHealth[key] = state;
-  _renderApiHealthBanner();
-}
-function _renderApiHealthBanner(){
-  var banner = document.getElementById('apiHealthBanner');
-  var msg = document.getElementById('apiHealthMsg');
-  if(!banner || !msg) return;
-  var fails = [];
-  var caches = [];
-  for(var k in _apiHealth){
-    if(_apiHealth[k]==='fail') fails.push(k);
-    else if(_apiHealth[k]==='cached') caches.push(k);
-  }
-  if(fails.length === 0 && caches.length === 0){
-    banner.style.display = 'none';
-    return;
-  }
-  var parts = [];
-  if(fails.length) parts.push('API取得失敗: ' + fails.join('/'));
-  if(caches.length) parts.push('キャッシュ使用中: ' + caches.join('/'));
-  msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
-  banner.style.display = 'block';
-}
-
-// Epic 28b: localStorage 5MB 超過の真因 — fetchWithFallback が programs/previews
-//   (各 ~1MB の API response 全体) を毎回 bc_* に保存していた。
-//   「更新」で再 fetch すると 2-3MB が即座に復活し、容量解放しても元に戻る現象。
-//   対策: サイズ上限 (BC_MAX_BYTES=100KB) を設け、超過レスポンスは bc_* 非保存。
-//        SW (sw.js) のキャッシュ戦略が大きい response の fallback を担うため重複不要。
-var BC_MAX_BYTES = 100 * 1024;
-// Path C (2026-05-17): Cloudflare Worker を一次データソースに。
-// 3 段 fallback: Worker /api → openapi 直接 → localStorage cache
-var WORKER_BASE = 'https://boatrace-scrape-trigger.inotaka1979.workers.dev';
-// openapi URL を Worker URL に map (programs/previews/results)
-function _mapToWorkerUrl(openapiUrl){
-  if(openapiUrl.indexOf('/programs/v2/today.json') >= 0) return WORKER_BASE + '/api/programs';
-  if(openapiUrl.indexOf('/previews/v2/today.json') >= 0) return WORKER_BASE + '/api/previews';
-  if(openapiUrl.indexOf('/results/v2/today.json') >= 0)  return WORKER_BASE + '/api/results';
-  return null;   // Worker でカバーされない URL (過去日付 等) は openapi 直
-}
-
-function _fetchOne(url, timeoutMs){
-  var controller=new AbortController();
-  var tid=setTimeout(function(){controller.abort()},timeoutMs||10000);
-  return fetch(url,{signal:controller.signal,cache:'no-store'})
-    .then(function(r){clearTimeout(tid);if(!r.ok)throw new Error(r.status);return r.json()});
-}
-
-function fetchWithFallback(url){
-  var baseUrl=url.split('?')[0];
-  var workerUrl=_mapToWorkerUrl(baseUrl);
-  // Tier 1: Worker /api/* (Cloudflare KV、~ 5 分鮮度、GHA 独立)
-  var primary = workerUrl
-    ? _fetchOne(workerUrl + '?_=' + Date.now(), 8000)
-    : Promise.reject(new Error('no-worker-mapping'));
-  return primary
-    .then(function(d){
-      _setApiHealth(baseUrl, 'ok');
-      try{
-        var serialized = JSON.stringify({data:d,time:Date.now()});
-        if(serialized.length <= BC_MAX_BYTES){
-          localStorage.setItem(cacheKey(baseUrl), serialized);
-        }
-      }catch(e){}
-      return d;
-    })
-    .catch(function(workerErr){
-      // Tier 2: openapi 直接 (Worker 失敗時)
-      if(workerErr && workerErr.message !== 'no-worker-mapping'){
-        console.warn('[fetch] worker miss, falling back to openapi:', workerErr.message);
+/* BUILD:DISCOVERY_OPENAPI:START */
+"use strict";
+(() => {
+  // ../src/discovery/openapi_client.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  var BC_MAX_BYTES = 100 * 1024;
+  var WORKER_BASE = "https://boatrace-scrape-trigger.inotaka1979.workers.dev";
+  var _apiHealth = { programs: "ok", previews: "ok", results: "ok", odds: "ok" };
+  function _setApiHealth(url, state) {
+    const key = url.indexOf("/programs/") >= 0 ? "programs" : url.indexOf("/previews/") >= 0 ? "previews" : url.indexOf("/results/") >= 0 ? "results" : url.indexOf("/odds/") >= 0 ? "odds" : null;
+    if (!key) return;
+    _apiHealth[key] = state;
+    if (typeof _g._renderApiHealthBanner === "function") {
+      try {
+        _g._renderApiHealthBanner();
+      } catch (_) {
       }
-      return _fetchOne(url, 15000)
-        .then(function(d){
-          try{
-            var serialized = JSON.stringify({data:d,time:Date.now()});
-            if(serialized.length <= BC_MAX_BYTES){
-              localStorage.setItem(cacheKey(baseUrl), serialized);
-            }
-          }catch(e){}
-          _setApiHealth(baseUrl, 'ok');
-          return d;
-        })
-        .catch(function(e){
-          console.warn('API error:',baseUrl,e.message);
-          // Tier 3: localStorage cache (10 min まで)
-          try{
-            var c=localStorage.getItem(cacheKey(baseUrl));
-            if(c){
-              var o=JSON.parse(c);
-              if(Date.now()-o.time<600000){
-                _setApiHealth(baseUrl, 'cached');
-                return o.data;
-              }
-            }
-          }catch(ex){}
-          _setApiHealth(baseUrl, 'fail');
-          return null;
-        });
-    });
-}
-
-// P4 W-08: 受信 JSON のスキーマ最小検証
-function validateApiPayload(apiJson, key){
-  if(!apiJson || typeof apiJson !== 'object') return false;
-  if(!Array.isArray(apiJson[key])) return false;
-  // race_stadium_number / race_number があるかは indexByStadiumRace 内で String 化されるので最低限の存在チェック
-  return true;
-}
-
-function indexByStadiumRace(apiJson, key){
-  if(!validateApiPayload(apiJson, key)){
-    if(apiJson){
-      console.warn('[schema] invalid payload for', key);
-      // P0-7: スキーマ不正は API 異常と同等に扱う
-      try { _setApiHealth('/'+key+'/', 'fail'); } catch(_){}
     }
+  }
+  function _mapToWorkerUrl(openapiUrl) {
+    if (openapiUrl.indexOf("/programs/v2/today.json") >= 0) return WORKER_BASE + "/api/programs";
+    if (openapiUrl.indexOf("/previews/v2/today.json") >= 0) return WORKER_BASE + "/api/previews";
+    if (openapiUrl.indexOf("/results/v2/today.json") >= 0) return WORKER_BASE + "/api/results";
     return null;
   }
-  var arr=apiJson[key];
-  var result={};
-  arr.forEach(function(item){
-    var sid=String(item.race_stadium_number);
-    var rn=String(item.race_number);
-    if(!result[sid]) result[sid]={};
-    result[sid][rn]=item;
-  });
-  return result;
-}
-
-function indexPreviews(apiJson){
-  var indexed=indexByStadiumRace(apiJson,'previews');
-  if(!indexed) return null;
-  for(var sid in indexed){
-    for(var rn in indexed[sid]){
-      var p=indexed[sid][rn];
-      p.weather={
-        wind_speed:p.race_wind||0,
-        wind_direction:p.race_wind_direction_number||0,
-        wave_height:p.race_wave||0,
-        temperature:p.race_temperature||0,
-        water_temperature:p.race_water_temperature||0,
-        weather_number:p.race_weather_number||0
-      };
-    }
+  function _fetchOne(url, timeoutMs) {
+    const signal = _g.capabilities.makeTimeoutSignal(timeoutMs || 1e4);
+    return fetch(url, { signal, cache: "no-store" }).then(function(r) {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    });
   }
-  return indexed;
-}
-
-function indexResults(apiJson){
-  var indexed=indexByStadiumRace(apiJson,'results');
-  if(!indexed) return null;
-  for(var sid in indexed){
-    for(var rn in indexed[sid]){
-      var r=indexed[sid][rn];
-      var isFinished=r.race_technique_number!=null;
-      if(isFinished&&r.boats&&Array.isArray(r.boats)){
-        r.results=r.boats.filter(function(b){return b.racer_place_number!=null}).map(function(b){
-          return{
-            place:b.racer_place_number,
-            racer_boat_number:b.racer_boat_number,
-            racer_course_number:b.racer_course_number,
-            racer_number:b.racer_number,
-            racer_name:b.racer_name,
-            racer_start_timing:b.racer_start_timing
-          };
-        });
+  function fetchWithFallback(url) {
+    const baseUrl = url.split("?")[0];
+    const workerUrl = _mapToWorkerUrl(baseUrl);
+    const primary = workerUrl ? _fetchOne(workerUrl + "?_=" + Date.now(), 8e3) : Promise.reject(new Error("no-worker-mapping"));
+    return primary.then(function(d) {
+      _setApiHealth(baseUrl, "ok");
+      try {
+        const serialized = JSON.stringify({ data: d, time: Date.now() });
+        if (serialized.length <= BC_MAX_BYTES) {
+          localStorage.setItem(_g.cacheKey(baseUrl), serialized);
+        }
+      } catch (_) {
       }
-      if(r.payouts) r.refund=r.payouts;
-      r.technique_number=r.race_technique_number;
-      r.isFinished=isFinished;
-    }
+      return d;
+    }).catch(function(workerErr) {
+      if (workerErr && workerErr.message !== "no-worker-mapping") {
+        console.warn("[fetch] worker miss, falling back to openapi:", workerErr.message);
+      }
+      return _fetchOne(url, 15e3).then(function(d) {
+        try {
+          const serialized = JSON.stringify({ data: d, time: Date.now() });
+          if (serialized.length <= BC_MAX_BYTES) {
+            localStorage.setItem(_g.cacheKey(baseUrl), serialized);
+          }
+        } catch (_) {
+        }
+        _setApiHealth(baseUrl, "ok");
+        return d;
+      }).catch(function(e) {
+        console.warn("API error:", baseUrl, e.message);
+        try {
+          const c = localStorage.getItem(_g.cacheKey(baseUrl));
+          if (c) {
+            const o = JSON.parse(c);
+            if (Date.now() - o.time < 6e5) {
+              _setApiHealth(baseUrl, "cached");
+              return o.data;
+            }
+          }
+        } catch (_) {
+        }
+        _setApiHealth(baseUrl, "fail");
+        return null;
+      });
+    });
   }
-  return indexed;
-}
+  function validateApiPayload(apiJson, key) {
+    if (!apiJson || typeof apiJson !== "object") return false;
+    if (!Array.isArray(apiJson[key])) return false;
+    return true;
+  }
+  function indexByStadiumRace(apiJson, key) {
+    if (!validateApiPayload(apiJson, key)) {
+      if (apiJson) {
+        console.warn("[schema] invalid payload for", key);
+        try {
+          _setApiHealth("/" + key + "/", "fail");
+        } catch (_) {
+        }
+      }
+      return null;
+    }
+    const arr = apiJson[key];
+    const result = {};
+    arr.forEach(function(item) {
+      const sid = String(item.race_stadium_number);
+      const rn = String(item.race_number);
+      if (!result[sid]) result[sid] = {};
+      result[sid][rn] = item;
+    });
+    return result;
+  }
+  function indexPreviews(apiJson) {
+    const indexed = indexByStadiumRace(apiJson, "previews");
+    if (!indexed) return null;
+    for (const sid in indexed) {
+      for (const rn in indexed[sid]) {
+        const p = (
+          /** @type {any} */
+          indexed[sid][rn]
+        );
+        p.weather = {
+          wind_speed: p.race_wind || 0,
+          wind_direction: p.race_wind_direction_number || 0,
+          wave_height: p.race_wave || 0,
+          temperature: p.race_temperature || 0,
+          water_temperature: p.race_water_temperature || 0,
+          weather_number: p.race_weather_number || 0
+        };
+      }
+    }
+    return indexed;
+  }
+  function indexResults(apiJson) {
+    const indexed = indexByStadiumRace(apiJson, "results");
+    if (!indexed) return null;
+    for (const sid in indexed) {
+      for (const rn in indexed[sid]) {
+        const r = (
+          /** @type {any} */
+          indexed[sid][rn]
+        );
+        const isFinished = r.race_technique_number != null;
+        if (isFinished && r.boats && Array.isArray(r.boats)) {
+          r.results = r.boats.filter(function(b) {
+            return b.racer_place_number != null;
+          }).map(function(b) {
+            return {
+              place: b.racer_place_number,
+              racer_boat_number: b.racer_boat_number,
+              racer_course_number: b.racer_course_number,
+              racer_number: b.racer_number,
+              racer_name: b.racer_name,
+              racer_start_timing: b.racer_start_timing
+            };
+          });
+        }
+        if (r.payouts) r.refund = r.payouts;
+        r.technique_number = r.race_technique_number;
+        r.isFinished = isFinished;
+      }
+    }
+    return indexed;
+  }
+  function _filterStalePreviews(raw) {
+    if (!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
+    const today = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
+    const firstDate = raw.previews[0].race_date || "";
+    if (firstDate && firstDate !== today) {
+      console.warn("\u516C\u5F0F API previews \u306F\u53E4\u3044(" + firstDate + " JST), \u5168\u4EF6 skip");
+      return { previews: [], updated_at: raw.updated_at };
+    }
+    const filtered = raw.previews.filter(function(p) {
+      const hasWeather = (p.race_wind || 0) > 0 || (p.race_water_temperature || 0) > 0 || (p.race_temperature || 0) > 0 || (p.race_wave || 0) > 0 || p.race_wind_direction_number != null;
+      let bs = p.boats || [];
+      if (!Array.isArray(bs))
+        bs = Object.keys(bs).map(function(k) {
+          return bs[k];
+        });
+      const hasExh = bs.some(function(b) {
+        return b && (b.racer_exhibition_time || 0) > 0;
+      });
+      return hasWeather || hasExh;
+    });
+    if (filtered.length !== raw.previews.length) {
+      console.info("previews: " + raw.previews.length + " \u2192 " + filtered.length + " (\u30C7\u30FC\u30BF\u672A\u53D6\u5F97\u306E\u30EC\u30FC\u30B9\u3092\u9664\u5916)");
+    }
+    return { previews: filtered, updated_at: raw.updated_at };
+  }
+  _g.BC_MAX_BYTES = BC_MAX_BYTES;
+  _g.WORKER_BASE = WORKER_BASE;
+  _g._apiHealth = _apiHealth;
+  _g._setApiHealth = _setApiHealth;
+  _g._mapToWorkerUrl = _mapToWorkerUrl;
+  _g._fetchOne = _fetchOne;
+  _g.fetchWithFallback = fetchWithFallback;
+  _g.validateApiPayload = validateApiPayload;
+  _g.indexByStadiumRace = indexByStadiumRace;
+  _g.indexPreviews = indexPreviews;
+  _g.indexResults = indexResults;
+  _g._filterStalePreviews = _filterStalePreviews;
+})();
+
+/* BUILD:DISCOVERY_OPENAPI:END */
+
+/* BUILD:REPORTING_STATUS_BANNER:START */
+"use strict";
+(() => {
+  // ../src/reporting/status_banner.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  function _renderApiHealthBanner() {
+    const banner = document.getElementById("apiHealthBanner");
+    const msg = document.getElementById("apiHealthMsg");
+    if (!banner || !msg) return;
+    const health = _g._apiHealth || {};
+    const fails = [];
+    const cached = [];
+    for (const k in health) {
+      if (health[k] === "fail") fails.push(k);
+      else if (health[k] === "cached") cached.push(k);
+    }
+    if (fails.length === 0 && cached.length === 0) {
+      banner.style.display = "none";
+      return;
+    }
+    const parts = [];
+    if (fails.length) parts.push("API\u53D6\u5F97\u5931\u6557: " + fails.join("/"));
+    if (cached.length) parts.push("\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D: " + cached.join("/"));
+    msg.textContent = parts.join(" / ") + " \u2014 \u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059";
+    banner.style.display = "block";
+  }
+  function _renderFreshness() {
+    const el = document.getElementById("dataFreshness");
+    if (!el) return;
+    const latest = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
+    if (!latest) {
+      el.textContent = "";
+      return;
+    }
+    const todayJst = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
+    const dataDate = new Date(latest + 9 * 36e5).toISOString().slice(0, 10);
+    if (dataDate !== todayJst) {
+      el.innerHTML = '<span style="color:#BDBDBD">\u{1F4A4} \u672C\u65E5\u30C7\u30FC\u30BF\u53D6\u5F97\u5F85\u3061</span>';
+      return;
+    }
+    const sec = Math.max(0, Math.floor((Date.now() - latest) / 1e3));
+    let label;
+    if (sec < 60) label = sec + "\u79D2\u524D";
+    else if (sec < 3600) label = Math.floor(sec / 60) + "\u5206\u524D";
+    else label = Math.floor(sec / 3600) + "\u6642\u9593\u524D";
+    const color = sec < 180 ? "#A5D6A7" : sec < 600 ? "#FFCC80" : "#FF8A80";
+    el.innerHTML = '<span style="color:' + color + '">\u{1F4E1} ' + label + "</span>";
+  }
+  _g._renderApiHealthBanner = _renderApiHealthBanner;
+  _g._renderFreshness = _renderFreshness;
+})();
+
+/* BUILD:REPORTING_STATUS_BANNER:END */
 
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
@@ -2537,196 +2891,208 @@ function indexResults(apiJson){
 //
 // より精緻な EV 再現は odds アーカイブが揃ってから X7+α で実装。
 
-function _btParseDate(yyyymmdd){
-  if(!yyyymmdd || typeof yyyymmdd !== 'string' || yyyymmdd.length !== 8) return null;
-  return new Date(
-    parseInt(yyyymmdd.slice(0,4),10),
-    parseInt(yyyymmdd.slice(4,6),10) - 1,
-    parseInt(yyyymmdd.slice(6,8),10)
+/* BUILD:ANALYSIS_BACKTEST:START */
+"use strict";
+(() => {
+  // ../src/analysis/backtest.js
+  var _g = (
+    /** @type {any} */
+    globalThis
   );
-}
-
-function runBacktestEngine(history, opt){
-  opt = opt || {};
-  var periodDays = opt.periodDays != null ? opt.periodDays : 14;
-  var stakePerBet = opt.stakePerBet || 100;
-  var ledger = [];
-
-  // 期間フィルタ
-  var cutoff = null;
-  if(periodDays > 0){
-    var d = new Date();
-    d.setDate(d.getDate() - periodDays);
-    cutoff = d;
+  function _btParseDate(yyyymmdd) {
+    if (!yyyymmdd || typeof yyyymmdd !== "string" || yyyymmdd.length !== 8) return null;
+    return new Date(
+      parseInt(yyyymmdd.slice(0, 4), 10),
+      parseInt(yyyymmdd.slice(4, 6), 10) - 1,
+      parseInt(yyyymmdd.slice(6, 8), 10)
+    );
   }
-  history.forEach(function(h){
-    if(!h.actual) return;
-    if(cutoff){
-      var hd = _btParseDate(h.date);
-      if(!hd || hd < cutoff) return;
+  function runBacktestEngine(history, opt) {
+    opt = opt || {};
+    const periodDays = opt.periodDays != null ? opt.periodDays : 14;
+    const stakePerBet = opt.stakePerBet || 100;
+    const ledger = [];
+    let cutoff = null;
+    if (periodDays > 0) {
+      const d = /* @__PURE__ */ new Date();
+      d.setDate(d.getDate() - periodDays);
+      cutoff = d;
     }
-    ledger.push(h);
-  });
+    history.forEach(function(h) {
+      if (!h.actual) return;
+      if (cutoff) {
+        const hd = _btParseDate(h.date);
+        if (!hd || hd < cutoff) return;
+      }
+      ledger.push(h);
+    });
+    let totalBets = 0, totalStake = 0, totalPayout = 0;
+    let hits3 = 0, hits2 = 0;
+    const dailyROI = {};
+    let maxDD = 0, currentLoss = 0;
+    const byType = {
+      honmei: { n: 0, hits: 0, payout: 0 },
+      middle: { n: 0, hits: 0, payout: 0 },
+      ana: { n: 0, hits: 0, payout: 0 }
+    };
+    const byStadium = {};
+    ledger.sort(function(a, b) {
+      return (a.date || "").localeCompare(b.date || "");
+    });
+    ledger.forEach(function(h) {
+      const bets3n = (h.trifecta_bets || []).length;
+      const bets2n = (h.exacta_bets || []).length;
+      const stake = (bets3n + bets2n) * stakePerBet;
+      const payout = (h.payout3 || 0) + (h.payout2 || 0);
+      totalBets += bets3n + bets2n;
+      totalStake += stake;
+      totalPayout += payout;
+      if (h.trifecta_hit) hits3++;
+      if (h.exacta_hit) hits2++;
+      const rt = h.raceType || "middle";
+      if (byType[rt]) {
+        byType[rt].n++;
+        if (h.trifecta_hit) byType[rt].hits++;
+        byType[rt].payout += h.payout3 || 0;
+      }
+      const sid = parseInt(h.stadium);
+      if (sid && sid >= 1 && sid <= 24) {
+        if (!byStadium[sid])
+          byStadium[sid] = {
+            sid,
+            name: typeof _g.STADIUMS === "object" && _g.STADIUMS[sid] || "\u5834" + sid,
+            n: 0,
+            hits3: 0,
+            hits2: 0,
+            stake: 0,
+            payout: 0,
+            payout3: 0
+          };
+        const ss = byStadium[sid];
+        ss.n++;
+        ss.stake += stake;
+        ss.payout += payout;
+        ss.payout3 += h.payout3 || 0;
+        if (h.trifecta_hit) ss.hits3++;
+        if (h.exacta_hit) ss.hits2++;
+      }
+      const net = payout - stake;
+      if (net < 0) {
+        currentLoss += -net;
+        maxDD = Math.max(maxDD, currentLoss);
+      } else {
+        currentLoss = 0;
+      }
+      const d = h.date || "unknown";
+      if (!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
+      dailyROI[d].stake += stake;
+      dailyROI[d].payout += payout;
+      dailyROI[d].n++;
+    });
+    const roi = totalStake > 0 ? totalPayout / totalStake : 0;
+    const hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
+    const hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
+    const dailyReturns = Object.keys(dailyROI).map(function(d) {
+      const s = dailyROI[d].stake;
+      return s > 0 ? (dailyROI[d].payout - s) / s : 0;
+    });
+    const meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a, b) {
+      return a + b;
+    }, 0) / dailyReturns.length : 0;
+    const varR = dailyReturns.length > 1 ? dailyReturns.reduce(function(a, r) {
+      return a + (r - meanR) * (r - meanR);
+    }, 0) / (dailyReturns.length - 1) : 0;
+    const stdR = Math.sqrt(varR);
+    const sharpe = stdR > 0 ? meanR / stdR : 0;
+    const calibration = _computeCalibrationMetrics(ledger);
+    return {
+      samples: ledger.length,
+      totalBets,
+      totalStake,
+      totalPayout,
+      netProfit: totalPayout - totalStake,
+      roi,
+      hitRate3,
+      hitRate2,
+      maxDrawdown: maxDD,
+      sharpe,
+      byType,
+      byStadium,
+      dailyROI,
+      period: periodDays,
+      logLoss: calibration.logLoss,
+      brier: calibration.brier,
+      ece: calibration.ece,
+      calibratedSamples: calibration.n,
+      leakageNote: "NOTE: \u65E2\u5B58\u5C65\u6B74\u306F\u4E88\u60F3\u6642\u70B9\u3067\u65E2\u306B L2 \u5B66\u7FD2\u304C\u53CD\u6620\u6E08\u307F\u306E\u305F\u3081 look-ahead leakage \u306E\u53EF\u80FD\u6027\u3042\u308A\u3002\u5B8C\u5168\u306A forward-chain \u8A55\u4FA1\u306B\u306F runForwardChainBacktest() \u3092\u4F7F\u7528"
+    };
+  }
+  function runForwardChainBacktest(history, opt) {
+    opt = opt || {};
+    const warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
+    const sorted = (history || []).slice().filter(function(h) {
+      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    });
+    sorted.sort(function(a, b) {
+      const d = (a.date || "").localeCompare(b.date || "");
+      if (d !== 0) return d;
+      return (a.stadium || 0) - (b.stadium || 0) || (a.race || 0) - (b.race || 0);
+    });
+    const evalSet = sorted.slice(warmup);
+    const cal = _computeCalibrationMetrics(evalSet);
+    return {
+      totalSamples: sorted.length,
+      warmupSkipped: Math.min(warmup, sorted.length),
+      evaluatedSamples: evalSet.length,
+      logLoss: cal.logLoss,
+      brier: cal.brier,
+      ece: cal.ece,
+      note: "\u6642\u7CFB\u5217\u9806\u3067 warmup \u5F8C\u306E\u30EC\u30FC\u30B9\u306E\u307F\u8A55\u4FA1\u3002\u5B8C\u5168\u306A forward-chain \u518D\u5B66\u7FD2\u306B\u306F\u30EC\u30FC\u30B9\u6642\u70B9\u306E features \u4FDD\u5B58\u304C\u5FC5\u8981"
+    };
+  }
+  function _computeCalibrationMetrics(entries) {
+    let logLossSum = 0, brierSum = 0, n = 0;
+    const bins = [];
+    for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
+    entries.forEach(function(h) {
+      if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+      const winner = h.actual[0];
+      const probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      const pWin = probs[winner];
+      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+      logLossSum += -Math.log(pWin);
+      for (let b = 1; b <= 6; b++) {
+        const p = probs[b] || 0;
+        const y = b === winner ? 1 : 0;
+        brierSum += (p - y) * (p - y);
+      }
+      const binIdx = Math.min(9, Math.floor(pWin * 10));
+      bins[binIdx].sum += pWin;
+      bins[binIdx].hit += 1;
+      bins[binIdx].n += 1;
+      n++;
+    });
+    const logLoss = n > 0 ? logLossSum / n : 0;
+    const brier = n > 0 ? brierSum / n : 0;
+    let ece = 0;
+    bins.forEach(function(b) {
+      if (b.n === 0) return;
+      const avgP = b.sum / b.n;
+      const actRate = b.hit / b.n;
+      ece += b.n / Math.max(1, n) * Math.abs(avgP - actRate);
+    });
+    return { logLoss, brier, ece, n };
+  }
+  _g._btParseDate = _btParseDate;
+  _g.runBacktestEngine = runBacktestEngine;
+  _g.runForwardChainBacktest = runForwardChainBacktest;
+  _g._computeCalibrationMetrics = _computeCalibrationMetrics;
+})();
 
-  // 集計
-  var totalBets = 0, totalStake = 0, totalPayout = 0;
-  var hits3 = 0, hits2 = 0;
-  var dailyROI = {};
-  var maxDD = 0, currentLoss = 0, balance = 0;
-  var byType = { honmei: {n:0, hits:0, payout:0}, middle: {n:0, hits:0, payout:0}, ana: {n:0, hits:0, payout:0} };
-  // B17 (2026-05-17): 場別集計を追加。回収率順で表示可能なよう sid -> 集計の dict を構築
-  var byStadium = {};
-
-  ledger.sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
-  ledger.forEach(function(h){
-    var bets3n = (h.trifecta_bets || []).length;
-    var bets2n = (h.exacta_bets || []).length;
-    var stake = (bets3n + bets2n) * stakePerBet;
-    var payout = (h.payout3 || 0) + (h.payout2 || 0);
-    totalBets += bets3n + bets2n;
-    totalStake += stake;
-    totalPayout += payout;
-    if(h.trifecta_hit) hits3++;
-    if(h.exacta_hit) hits2++;
-    var rt = h.raceType || 'middle';
-    if(byType[rt]){
-      byType[rt].n++;
-      if(h.trifecta_hit) byType[rt].hits++;
-      byType[rt].payout += (h.payout3 || 0);
-    }
-    // B17: 場別集計
-    var sid = parseInt(h.stadium);
-    if(sid && sid >= 1 && sid <= 24){
-      if(!byStadium[sid]) byStadium[sid] = { sid: sid, name: (typeof STADIUMS==='object' && STADIUMS[sid]) || ('場'+sid),
-                                              n: 0, hits3: 0, hits2: 0, stake: 0, payout: 0, payout3: 0 };
-      var ss = byStadium[sid];
-      ss.n++;
-      ss.stake += stake;
-      ss.payout += payout;
-      ss.payout3 += (h.payout3 || 0);
-      if(h.trifecta_hit) ss.hits3++;
-      if(h.exacta_hit) ss.hits2++;
-    }
-    var net = payout - stake;
-    balance += net;
-    if(net < 0){
-      currentLoss += -net;
-      maxDD = Math.max(maxDD, currentLoss);
-    } else {
-      currentLoss = 0;
-    }
-    var d = h.date || 'unknown';
-    if(!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
-    dailyROI[d].stake += stake;
-    dailyROI[d].payout += payout;
-    dailyROI[d].n++;
-  });
-
-  var roi = totalStake > 0 ? totalPayout / totalStake : 0;
-  var hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
-  var hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
-
-  // シャープレシオ（日次 net return / std）
-  var dailyReturns = Object.keys(dailyROI).map(function(d){
-    var s = dailyROI[d].stake;
-    return s > 0 ? (dailyROI[d].payout - s) / s : 0;
-  });
-  var meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a,b){return a+b;}, 0) / dailyReturns.length : 0;
-  var varR = dailyReturns.length > 1
-    ? dailyReturns.reduce(function(a,r){ return a + (r-meanR)*(r-meanR); }, 0) / (dailyReturns.length - 1)
-    : 0;
-  var stdR = Math.sqrt(varR);
-  var sharpe = stdR > 0 ? meanR / stdR : 0;
-
-  // PB-10: log loss / Brier / ECE（mark_probs を保存している履歴のみ）
-  var calibration = _computeCalibrationMetrics(ledger);
-
-  return {
-    samples: ledger.length,
-    totalBets: totalBets,
-    totalStake: totalStake,
-    totalPayout: totalPayout,
-    netProfit: totalPayout - totalStake,
-    roi: roi,
-    hitRate3: hitRate3,
-    hitRate2: hitRate2,
-    maxDrawdown: maxDD,
-    sharpe: sharpe,
-    byType: byType,
-    byStadium: byStadium,   // B17: 場別集計
-    dailyROI: dailyROI,
-    period: periodDays,
-    // PB-10: calibration metrics
-    logLoss: calibration.logLoss,
-    brier: calibration.brier,
-    ece: calibration.ece,
-    calibratedSamples: calibration.n,
-    // PB-3: leakage 注意
-    leakageNote: 'NOTE: 既存履歴は予想時点で既に L2 学習が反映済みのため look-ahead leakage の可能性あり。完全な forward-chain 評価には runForwardChainBacktest() を使用',
-  };
-}
-
-// PB-3: Forward-chaining backtest（現状は履歴の logloss/brier/ece を時系列順で集計）
-//       完全な再予想には programData/previewData の保存が必要なため、暫定的に
-//       「保存済 mark_probs を時系列順で評価」する形で leakage を最小化
-function runForwardChainBacktest(history, opt){
-  opt = opt || {};
-  var warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
-  var sorted = (history||[]).slice().filter(function(h){
-    return h.actual && h.actual.length>0 && Array.isArray(h.mark_probs);
-  });
-  sorted.sort(function(a,b){
-    var d = (a.date||'').localeCompare(b.date||'');
-    if(d !== 0) return d;
-    return ((a.stadium||0)-(b.stadium||0)) || ((a.race||0)-(b.race||0));
-  });
-  var evalSet = sorted.slice(warmup);
-  var cal = _computeCalibrationMetrics(evalSet);
-  return {
-    totalSamples: sorted.length,
-    warmupSkipped: Math.min(warmup, sorted.length),
-    evaluatedSamples: evalSet.length,
-    logLoss: cal.logLoss,
-    brier: cal.brier,
-    ece: cal.ece,
-    note: '時系列順で warmup 後のレースのみ評価。完全な forward-chain 再学習にはレース時点の features 保存が必要',
-  };
-}
-
-// PB-10 ヘルパ: 各エントリの mark_probs と actual から calibration metrics を計算
-function _computeCalibrationMetrics(entries){
-  var logLossSum = 0, brierSum = 0, n = 0;
-  var bins = []; for(var i=0;i<10;i++) bins.push({sum:0,hit:0,n:0});
-  entries.forEach(function(h){
-    if(!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
-    var winner = h.actual[0];
-    var probs = {};
-    h.mark_probs.forEach(function(mp){ probs[mp.boat] = mp.prob; });
-    var pWin = probs[winner];
-    if(!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
-    logLossSum += -Math.log(pWin);
-    // Brier: Σ(p_i - y_i)^2 （6 艇 multi-class）
-    for(var b=1;b<=6;b++){
-      var p = probs[b]||0; var y = (b===winner)?1:0;
-      brierSum += (p-y)*(p-y);
-    }
-    // ECE: 1 着確率 vs 1 着率を 10 分位 bin で
-    var binIdx = Math.min(9, Math.floor(pWin*10));
-    bins[binIdx].sum += pWin;
-    bins[binIdx].hit += 1;
-    bins[binIdx].n   += 1;
-    n++;
-  });
-  var logLoss = n>0 ? logLossSum/n : 0;
-  var brier   = n>0 ? brierSum/n : 0;
-  var ece = 0;
-  bins.forEach(function(b){
-    if(b.n===0) return;
-    var avgP = b.sum/b.n; var actRate = b.hit/b.n;
-    ece += (b.n/Math.max(1,n)) * Math.abs(avgP-actRate);
-  });
-  return {logLoss: logLoss, brier: brier, ece: ece, n: n};
-}
+/* BUILD:ANALYSIS_BACKTEST:END */
 
 function runBacktest(){
   var resultDiv = document.getElementById('btResult');
@@ -4336,7 +4702,7 @@ var _appWorkerReqId = 0;
 var _appWorkerCallbacks = new Map();
 function _getAppWorker(){
   if(_appWorker) return _appWorker;
-  if(typeof Worker === 'undefined') return null;
+  if(!capabilities.has('worker')) return null;
   try {
     _appWorker = new Worker('assets/worker.js');
     _appWorker.addEventListener('message', function(e){
@@ -4930,24 +5296,8 @@ function calcOddsDivergence(aiProbsByBoat, oddsWin){
  *       1 着が決まった後の残り 5 艇に確率を再分配する正攻法
  *   これにより EV/Kelly が「美味しく見える組合せ」を選ぶバイアスを除去
  */
-function _plackettLuceTrifectaProb(p, i, j, k){
-  var pi = p[i]||0, pj = p[j]||0, pk = p[k]||0;
-  if(pi <= 0 || pj <= 0 || pk <= 0) return 0;
-  var denom1 = 1 - pi;
-  if(denom1 <= 1e-9) return 0;
-  var denom2 = 1 - pi - pj;
-  if(denom2 <= 1e-9) return 0;
-  var prob = pi * (pj / denom1) * (pk / denom2);
-  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
-}
-function _plackettLuceExactaProb(p, i, j){
-  var pi = p[i]||0, pj = p[j]||0;
-  if(pi <= 0 || pj <= 0) return 0;
-  var denom = 1 - pi;
-  if(denom <= 1e-9) return 0;
-  var prob = pi * (pj / denom);
-  return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
-}
+// _plackettLuceTrifectaProb / _plackettLuceExactaProb は src/analysis/backtest.js に移動 (Phase 2c)
+// → BUILD:ANALYSIS_BACKTEST bundle 経由で globalThis に export 済
 
 /**
  * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成（PL モデル）
@@ -5399,10 +5749,10 @@ async function buildInitialDB(){
 //   PH-5: scheduler.postTask が yield より「明確な task 境界」を作るため優先
 async function _yieldToMain(){
   // postTask は新しい task として実行されるため、TBT 計上の long task を確実に分割
-  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+  if(capabilities.has('scheduler_post_task')){
     return scheduler.postTask(function(){}, {priority:'user-blocking'});
   }
-  if(typeof scheduler !== 'undefined' && scheduler.yield){
+  if(capabilities.has('scheduler_yield')){
     await scheduler.yield();
     return;
   }
@@ -5552,34 +5902,8 @@ async function learnFromResults(){
 // LIVE DATA MERGE HELPER
 // ===============================================
 
-// 公式 API previews/v2/today.json は (1) 前日データを残す、
-// (2) 当日の race_date に切り替わっても展示走行前は exhibition_time=0 /
-// start_timing=null のままという 2 つの性質がある。
-// レース単位で「展示済みのレースだけ」残す（展示前は前日値が紛れる原因）。
-function _filterStalePreviews(raw){
-  if(!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
-  var today = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  var firstDate = raw.previews[0].race_date || '';
-  if(firstDate && firstDate !== today){
-    console.warn('公式 API previews は古い('+firstDate+' JST), 全件 skip');
-    return { previews: [], updated_at: raw.updated_at };
-  }
-  // 「データが何もない」プレースホルダだけ除外。
-  //   PI-fix: 気象が計測済 OR 展示済 ならそのレースは「データあり」と扱う。
-  var filtered = raw.previews.filter(function(p){
-    var hasWeather = (p.race_wind||0)>0 || (p.race_water_temperature||0)>0
-                  || (p.race_temperature||0)>0 || (p.race_wave||0)>0
-                  || (p.race_wind_direction_number!=null);
-    var bs = p.boats || [];
-    if(!Array.isArray(bs)) bs = Object.keys(bs).map(function(k){return bs[k]});
-    var hasExh = bs.some(function(b){ return b && (b.racer_exhibition_time||0) > 0; });
-    return hasWeather || hasExh;
-  });
-  if(filtered.length !== raw.previews.length){
-    console.info('previews: '+raw.previews.length+' → '+filtered.length+' (データ未取得のレースを除外)');
-  }
-  return { previews: filtered, updated_at: raw.updated_at };
-}
+// _filterStalePreviews は src/discovery/openapi_client.js に移動 (Clearwing Phase 2b)
+// → BUILD:DISCOVERY_OPENAPI bundle 経由で globalThis._filterStalePreviews を提供
 
 // D4a (2026-05-17): local data/previews/today.json の merge を条件付きに。
 //   Path C で Worker /api/previews が 5 分鮮度になり、scrape_all は 30 分間隔
@@ -5737,10 +6061,8 @@ async function loadAllData(){
   if(msg) msg.textContent='完了';
 
   // PE-8: Phase 2 — 非クリティカル DB / 学習を idle time に deferred
-  //   起動 LCP/FCP に影響しないよう requestIdleCallback (フォールバック setTimeout)
-  var schedule = (typeof requestIdleCallback === 'function')
-    ? function(fn){ requestIdleCallback(fn, {timeout: 3000}); }
-    : function(fn){ setTimeout(fn, 100); };
+  //   capabilities.runIdle = scheduler.postTask 'background' > requestIdleCallback > setTimeout
+  var schedule = function(fn){ capabilities.runIdle(fn, {timeout: 3000, delay: 100}); };
   schedule(function(){ loadDeferredData(rawPrograms, rawPreviews).catch(function(e){
     console.warn('[PE-8] deferred load failed:', e);
   }); });
@@ -6062,7 +6384,7 @@ function showPage(page){
 //   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約
 //   許可: ユーザが明示的に「許可リクエスト」ボタンを押した時のみ requestPermission
 function _enableNotifyPermission(){
-  if(typeof Notification === 'undefined'){
+  if(!capabilities.has('notification')){
     alert('このブラウザは通知に対応していません');
     return;
   }
@@ -6078,7 +6400,7 @@ function _enableNotifyPermission(){
 }
 function _refreshNotifyStatus(){
   var el = document.getElementById('notifyStatus');
-  if(!el || typeof Notification === 'undefined') return;
+  if(!el || !capabilities.has('notification')) return;
   var p = Notification.permission;
   el.textContent = (p === 'granted') ? '✓ 許可済'
                  : (p === 'denied')  ? '× 拒否'
@@ -6086,7 +6408,7 @@ function _refreshNotifyStatus(){
   el.style.color = (p === 'granted') ? 'var(--success)' : 'var(--text-sub)';
 }
 function _maybeNotifyNewResults(){
-  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if(!capabilities.has('notification') || Notification.permission !== 'granted') return;
   if(!resultData || typeof resultData !== 'object') return;
   var watched = (typeof _loadWatched === 'function') ? _loadWatched() : [];
   if(watched.length === 0) return;
@@ -7603,7 +7925,8 @@ function renderStats(){
 //   SRI ハッシュは _validateLS の値と同じく PA-3 で計算済の SHA-384
 var _chartLoadingPromise = null;
 function _loadChartLib(){
-  if(typeof Chart !== 'undefined') return Promise.resolve();
+  capabilities.refresh('chart');
+  if(capabilities.has('chart')) return Promise.resolve();
   if(_chartLoadingPromise) return _chartLoadingPromise;
   _chartLoadingPromise = new Promise(function(resolve, reject){
     var s = document.createElement('script');
@@ -7612,7 +7935,7 @@ function _loadChartLib(){
     s.crossOrigin = 'anonymous';
     s.referrerPolicy = 'no-referrer';
     s.async = true;
-    s.onload = function(){ console.log('[Chart] loaded'); resolve(); };
+    s.onload = function(){ console.log('[Chart] loaded'); capabilities.refresh('chart'); resolve(); };
     s.onerror = function(e){
       console.warn('[Chart] load failed', e);
       _chartLoadingPromise = null;   // リトライ可能化
@@ -7627,7 +7950,8 @@ function renderStatsChart(){
   var ctx=document.getElementById('chartAccuracy');
   if(!ctx) return;
   // PD-13b: Chart.js が未ロードならまず読み込んで再帰呼出
-  if(typeof Chart === 'undefined'){
+  capabilities.refresh('chart');
+  if(!capabilities.has('chart')){
     _loadChartLib().then(renderStatsChart, function(err){
       var parent = ctx.parentNode;
       if(parent) parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
@@ -8370,7 +8694,9 @@ function showUpdateToast(onUpdate){
 //   scheduler.postTask があれば 'background' priority で投入
 //   フォールバックは setTimeout
 function _runIdleTask(fn, delay){
-  if(typeof scheduler !== 'undefined' && scheduler.postTask){
+  // 直接 setTimeout fallback も capabilities.runIdle が同等カバー、ただし requestIdleCallback を
+  // 含めると 3 ms 単位の遅延が増えるためここは scheduler.postTask または setTimeout の 2 段。
+  if(capabilities.has('scheduler_post_task')){
     return scheduler.postTask(fn, {priority:'background'});
   }
   return setTimeout(fn, delay || 0);
@@ -8379,7 +8705,7 @@ function _runIdleTask(fn, delay){
 // PH-3: SW 登録は load 後 + 余裕をもった setTimeout でさらに遅延
 //   これにより HTML parse + first paint 期に SW 登録が混入しない
 function _setupServiceWorker(){
-  if(!('serviceWorker' in navigator)) return;
+  if(!capabilities.has('service_worker')) return;
   // updateViaCache:'none' で sw.js 自体を HTTP cache から外し、
   //   iOS が古い VERSION を見続ける事故を防ぐ
   // D6 (2026-05-17): reg.update() の rejection を catch してエラーログを汚さない。
@@ -8404,7 +8730,7 @@ function _setupServiceWorker(){
       // Epic 18 (P2-7): URL ?coi=1 が opt-in されている場合のみ COI reload を実施
       try {
         var _coiOptIn = (new URLSearchParams(location.search)).get('coi') === '1';
-        if(_coiOptIn && navigator.serviceWorker.controller && !window.crossOriginIsolated
+        if(_coiOptIn && navigator.serviceWorker.controller && !capabilities.has('cross_origin_isolated')
            && !sessionStorage.getItem('_coi_reloaded')){
           sessionStorage.setItem('_coi_reloaded', '1');
           console.log('[SW] coi opt-in: reloading once to activate cross-origin isolation');
@@ -8574,28 +8900,8 @@ function _noteTodayDataFromRaw(raw, key){
   var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   if(dataIso === todayJst) _dataTodayConfirmedAt = Date.now();
 }
-function _renderFreshness(){
-  var el = document.getElementById('dataFreshness');
-  if(!el) return;
-  // updated_at と race_date 両方の最新を比較（GitHub Pages 反映遅延対策）
-  var latest = Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt);
-  if(!latest){ el.textContent=''; return; }
-  // データが今日 (JST) のものでなければ「待機中」表示（cron が本日まだ走っていない等）
-  var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  var dataDate = new Date(latest+9*3600000).toISOString().slice(0,10);
-  if(dataDate !== todayJst){
-    el.innerHTML = '<span style="color:#BDBDBD">💤 本日データ取得待ち</span>';
-    return;
-  }
-  var sec = Math.max(0, Math.floor((Date.now() - latest)/1000));
-  var label;
-  if(sec < 60) label = sec + '秒前';
-  else if(sec < 3600) label = Math.floor(sec/60) + '分前';
-  else label = Math.floor(sec/3600) + '時間前';
-  // PE-2: header 背景 (#1A3A5C) で AA 適合な明色で表示
-  var color = sec < 180 ? '#A5D6A7' : sec < 600 ? '#FFCC80' : '#FF8A80';
-  el.innerHTML = '<span style="color:'+color+'">📡 '+label+'</span>';
-}
+// _renderFreshness は src/reporting/status_banner.js に移動 (Phase 2d)
+// → BUILD:REPORTING_STATUS_BANNER bundle 経由で globalThis に export 済
 setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
 
 setManagedInterval(async function(){

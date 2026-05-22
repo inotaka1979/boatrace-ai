@@ -1,0 +1,6 @@
+{
+  "programs": "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs",
+  "previews": "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/previews",
+  "results": "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/results",
+  "other": null
+}

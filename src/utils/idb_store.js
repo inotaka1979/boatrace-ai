@@ -22,19 +22,33 @@
 const IDB_NAME = 'boatrace_idb';
 const IDB_STORE = 'kv';
 const IDB_VERSION = 1;
-const IDB_KEYS_LARGE = ['boatrace_racerDB', 'boatrace_stadiumDB', 'boatrace_pairwiseDB',
-                        'boatrace_motorStats', 'boatrace_exhibitionStats'];
+const IDB_KEYS_LARGE = [
+  'boatrace_racerDB',
+  'boatrace_stadiumDB',
+  'boatrace_pairwiseDB',
+  'boatrace_motorStats',
+  'boatrace_exhibitionStats',
+];
 
 let _idbInstance = null;
-let _idbAvailable = (typeof indexedDB !== 'undefined');
+// Clearwing Phase 1: capabilities が先に bundle される（順序保証は build.mjs の modules 配列）
+let _idbAvailable =
+  globalThis.capabilities && typeof globalThis.capabilities.has === 'function'
+    ? globalThis.capabilities.has('indexed_db')
+    : typeof indexedDB !== 'undefined';
 
 function _openIDB() {
   if (_idbInstance) return Promise.resolve(_idbInstance);
   if (!_idbAvailable) return Promise.reject(new Error('IDB unavailable'));
   return new Promise(function (resolve, reject) {
     let req;
-    try { req = indexedDB.open(IDB_NAME, IDB_VERSION); }
-    catch (e) { _idbAvailable = false; reject(e); return; }
+    try {
+      req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    } catch (e) {
+      _idbAvailable = false;
+      reject(e);
+      return;
+    }
     req.onupgradeneeded = function () {
       const db = req.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) {
@@ -43,67 +57,114 @@ function _openIDB() {
     };
     req.onsuccess = function () {
       _idbInstance = req.result;
-      _idbInstance.onversionchange = function () { try { _idbInstance.close(); } catch (_) {} _idbInstance = null; };
+      _idbInstance.onversionchange = function () {
+        try {
+          _idbInstance.close();
+        } catch (_) {}
+        _idbInstance = null;
+      };
       resolve(_idbInstance);
     };
-    req.onerror = function () { reject(req.error); };
-    req.onblocked = function () { reject(new Error('IDB blocked')); };
+    req.onerror = function () {
+      reject(req.error);
+    };
+    req.onblocked = function () {
+      reject(new Error('IDB blocked'));
+    };
   });
 }
 
 function idbGet(key) {
-  return _openIDB().then(function (db) {
-    return new Promise(function (resolve, reject) {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = function () { resolve(req.result === undefined ? null : req.result); };
-      req.onerror = function () { reject(req.error); };
+  return _openIDB()
+    .then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function () {
+          resolve(req.result === undefined ? null : req.result);
+        };
+        req.onerror = function () {
+          reject(req.error);
+        };
+      });
+    })
+    .catch(function () {
+      return null;
     });
-  }).catch(function () { return null; });
 }
 
 function idbPut(key, value) {
-  return _openIDB().then(function (db) {
-    return new Promise(function (resolve, reject) {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      const req = tx.objectStore(IDB_STORE).put(value, key);
-      req.onsuccess = function () { resolve(true); };
-      req.onerror = function () { reject(req.error); };
+  return _openIDB()
+    .then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        const req = tx.objectStore(IDB_STORE).put(value, key);
+        req.onsuccess = function () {
+          resolve(true);
+        };
+        req.onerror = function () {
+          reject(req.error);
+        };
+      });
+    })
+    .catch(function (e) {
+      try {
+        if (typeof reportError === 'function')
+          reportError({ type: 'warn', msg: 'idbPut failed: ' + ((e && e.message) || 'unknown'), key: key });
+      } catch (_) {}
+      return false;
     });
-  }).catch(function (e) {
-    try { if (typeof reportError === 'function') reportError({ type:'warn', msg:'idbPut failed: '+(e&&e.message||'unknown'), key:key }); } catch (_) {}
-    return false;
-  });
 }
 
 function idbDelete(key) {
-  return _openIDB().then(function (db) {
-    return new Promise(function (resolve) {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      const req = tx.objectStore(IDB_STORE).delete(key);
-      req.onsuccess = function () { resolve(true); };
-      req.onerror = function () { resolve(false); };
+  return _openIDB()
+    .then(function (db) {
+      return new Promise(function (resolve) {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        const req = tx.objectStore(IDB_STORE).delete(key);
+        req.onsuccess = function () {
+          resolve(true);
+        };
+        req.onerror = function () {
+          resolve(false);
+        };
+      });
+    })
+    .catch(function () {
+      return false;
     });
-  }).catch(function () { return false; });
 }
 
 function idbKeys() {
-  return _openIDB().then(function (db) {
-    return new Promise(function (resolve) {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).getAllKeys();
-      req.onsuccess = function () { resolve(req.result || []); };
-      req.onerror = function () { resolve([]); };
+  return _openIDB()
+    .then(function (db) {
+      return new Promise(function (resolve) {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const req = tx.objectStore(IDB_STORE).getAllKeys();
+        req.onsuccess = function () {
+          resolve(req.result || []);
+        };
+        req.onerror = function () {
+          resolve([]);
+        };
+      });
+    })
+    .catch(function () {
+      return [];
     });
-  }).catch(function () { return []; });
 }
 
 function idbBytes() {
   // 概算: navigator.storage.estimate を使う（精密ではないが localStorage 容量バー UI 補完用）
   if (navigator && navigator.storage && navigator.storage.estimate) {
-    return navigator.storage.estimate().then(function (e) {
-      return { usage: e.usage || 0, quota: e.quota || 0 };
-    }).catch(function () { return { usage: 0, quota: 0 }; });
+    return navigator.storage
+      .estimate()
+      .then(function (e) {
+        return { usage: e.usage || 0, quota: e.quota || 0 };
+      })
+      .catch(function () {
+        return { usage: 0, quota: 0 };
+      });
   }
   return Promise.resolve({ usage: 0, quota: 0 });
 }
@@ -115,28 +176,41 @@ function idbMigrateFromLS() {
   if (!_idbAvailable) return Promise.resolve({ migrated: [], skipped: ['idb_unavailable'], deduped: [] });
   const migrated = [];
   const errors = [];
-  const deduped = [];   // Epic 28g: 既に IDB にあって LS にも残ってた重複を削除した key
+  const deduped = []; // Epic 28g: 既に IDB にあって LS にも残ってた重複を削除した key
   const tasks = IDB_KEYS_LARGE.map(function (key) {
     return idbGet(key).then(function (existing) {
       if (existing != null) {
         // Epic 28g: 既に IDB にあるなら LS の重複コピーを必ず削除
         //   旧コードのコメントは「削除のみ」と言ってたが return だけで何もしていなかった (バグ)
         let lsHas = false;
-        try { lsHas = (localStorage.getItem(key) != null); } catch (_) {}
+        try {
+          lsHas = localStorage.getItem(key) != null;
+        } catch (_) {}
         if (lsHas) {
-          try { localStorage.removeItem(key); deduped.push(key); } catch (_) {}
+          try {
+            localStorage.removeItem(key);
+            deduped.push(key);
+          } catch (_) {}
         }
         return;
       }
       let lsRaw = null;
-      try { lsRaw = localStorage.getItem(key); } catch (_) {}
+      try {
+        lsRaw = localStorage.getItem(key);
+      } catch (_) {}
       if (lsRaw == null) return;
       let parsed;
-      try { parsed = JSON.parse(lsRaw); } catch (_) { return; }
+      try {
+        parsed = JSON.parse(lsRaw);
+      } catch (_) {
+        return;
+      }
       if (parsed == null) return;
       return idbPut(key, parsed).then(function (ok) {
         if (ok) {
-          try { localStorage.removeItem(key); } catch (_) {}
+          try {
+            localStorage.removeItem(key);
+          } catch (_) {}
           migrated.push(key);
         } else {
           errors.push(key);

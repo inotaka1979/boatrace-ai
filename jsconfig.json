@@ -1,0 +1,44 @@
+{
+  "// purpose": "Phase 4 (Clearwing patterns): JSDoc strict 型チェック (tsc --noEmit --allowJs)",
+  "// scope":   "Clearwing 4 層に抽出済のコアモジュール限定。app.js / assets/ は対象外。",
+  "// usage":   "npm run type  (or: npx tsc --noEmit -p jsconfig.json)",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable", "webworker"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": false,
+    "useUnknownInCatchVariables": false
+  },
+  "include": [
+    "src/types/globals.d.ts",
+    "src/capabilities.js",
+    "src/capabilities-worker.js",
+    "src/discovery/openapi_client.js",
+    "src/analysis/backtest.js",
+    "src/reporting/status_banner.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "assets",
+    "data",
+    "docs",
+    "cloudflare-worker",
+    "tests"
+  ]
+}

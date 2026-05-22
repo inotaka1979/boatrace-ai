@@ -21,41 +21,43 @@ const ERROR_BUF_MAX = 100;
 //   既存 literal 散在は段階移行。新規コードはこの定数経由で参照すること。
 //   schema migration / 容量監視 / cleanup スクリプトのターゲットとしても利用。
 const STORAGE_KEYS = Object.freeze({
-  SCHEMA_VERSION:   'boatrace_schema_version', // P0-6: 互換性管理
-  SETTINGS:         'boatrace_settings',
-  RACER_DB:         'boatrace_racerDB',
-  STADIUM_DB:       'boatrace_stadiumDB',
-  MOTOR_STATS:      'boatrace_motorStats',
+  SCHEMA_VERSION: 'boatrace_schema_version', // P0-6: 互換性管理
+  SETTINGS: 'boatrace_settings',
+  RACER_DB: 'boatrace_racerDB',
+  STADIUM_DB: 'boatrace_stadiumDB',
+  MOTOR_STATS: 'boatrace_motorStats',
   EXHIBITION_STATS: 'boatrace_exhibitionStats',
-  PAIRWISE_DB:      'boatrace_pairwiseDB',
-  WEIGHTS:          'boatrace_weights',        // PB-1: L2 学習重み
-  LEARNED:          'boatrace_learned',        // PB-1: 学習ガード
-  TRAINSTEP:        'boatrace_trainstep',      // PB-2: LR decay 用
-  FEATURE_STATS:    'boatrace_featurestats',   // PB-7: rolling stats
-  PLATT:            'boatrace_platt',          // PB-6: Platt 校正
-  HISTORY:          'boatrace_history',
-  ERRORS:           'boatrace_errors',         // PC-6: エラーログ
-  DIAG:             'boatrace_diag',           // PI 診断オーバーレイ
-  NAV:              'boatrace_nav',            // P0-5: PWA 状態復元（sessionStorage 側）
+  PAIRWISE_DB: 'boatrace_pairwiseDB',
+  WEIGHTS: 'boatrace_weights', // PB-1: L2 学習重み
+  LEARNED: 'boatrace_learned', // PB-1: 学習ガード
+  TRAINSTEP: 'boatrace_trainstep', // PB-2: LR decay 用
+  FEATURE_STATS: 'boatrace_featurestats', // PB-7: rolling stats
+  PLATT: 'boatrace_platt', // PB-6: Platt 校正
+  HISTORY: 'boatrace_history',
+  ERRORS: 'boatrace_errors', // PC-6: エラーログ
+  DIAG: 'boatrace_diag', // PI 診断オーバーレイ
+  NAV: 'boatrace_nav', // P0-5: PWA 状態復元（sessionStorage 側）
 });
 
 // L2_INIT_WEIGHTS は index.html の constants 部で定義済（global）。
 // _validateLS が weights schema 検証で参照する。
 // P1-Q4 (QA-B): nested 型検証ヘルパ — racerDB.courseStats.*.count 等が文字列でも素通り
 //   していた問題を防ぐ。サンプリング検査（全件は重いので先頭 50 件のみ）。
-function _isFiniteNum(v){ return typeof v === 'number' && Number.isFinite(v); }
+function _isFiniteNum(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
 function _validateRacerDBSample(value) {
   var ids = Object.keys(value);
   var sample = ids.slice(0, 50);
   for (var i = 0; i < sample.length; i++) {
     var r = value[sample[i]];
     if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
-    if (r.courseStats && typeof r.courseStats === 'object'){
-      for (var c in r.courseStats){
+    if (r.courseStats && typeof r.courseStats === 'object') {
+      for (var c in r.courseStats) {
         var cs = r.courseStats[c];
         if (!cs || typeof cs !== 'object') return false;
         if (cs.races != null && !_isFiniteNum(cs.races)) return false;
-        if (cs.win   != null && !_isFiniteNum(cs.win))   return false;
+        if (cs.win != null && !_isFiniteNum(cs.win)) return false;
       }
     }
     if (r.classNum != null && !_isFiniteNum(r.classNum)) return false;
@@ -67,12 +69,12 @@ function _validateStadiumDBSample(value) {
   for (var i = 0; i < sids.length; i++) {
     var s = value[sids[i]];
     if (!s || typeof s !== 'object') return false;
-    if (s.courseWinRate && typeof s.courseWinRate === 'object'){
-      for (var c in s.courseWinRate){
+    if (s.courseWinRate && typeof s.courseWinRate === 'object') {
+      for (var c in s.courseWinRate) {
         var cw = s.courseWinRate[c];
-        if (cw && typeof cw === 'object'){
+        if (cw && typeof cw === 'object') {
           if (cw.races != null && !_isFiniteNum(cw.races)) return false;
-          if (cw.win   != null && !_isFiniteNum(cw.win))   return false;
+          if (cw.win != null && !_isFiniteNum(cw.win)) return false;
         }
       }
     }
@@ -84,7 +86,7 @@ function _validateLS(key, value) {
   if (value === null || value === undefined) return null;
   switch (key) {
     case 'boatrace_settings':
-      return (typeof value === 'object' && !Array.isArray(value)) ? value : null;
+      return typeof value === 'object' && !Array.isArray(value) ? value : null;
     case 'boatrace_racerDB':
       if (typeof value !== 'object' || Array.isArray(value)) return null;
       if (Object.keys(value).length > 10000) return null;
@@ -104,7 +106,7 @@ function _validateLS(key, value) {
     case 'boatrace_weights':
       if (!Array.isArray(value)) return null;
       // L2_INIT_WEIGHTS は global from index.html
-      const expectedLen = (typeof L2_INIT_WEIGHTS !== 'undefined') ? L2_INIT_WEIGHTS.length : 12;
+      const expectedLen = typeof L2_INIT_WEIGHTS !== 'undefined' ? L2_INIT_WEIGHTS.length : 12;
       if (value.length !== expectedLen) return null;
       for (let i = 0; i < value.length; i++) {
         if (!Number.isFinite(value[i]) || Math.abs(value[i]) > 1000) return null;
@@ -112,13 +114,13 @@ function _validateLS(key, value) {
       return value;
     case 'boatrace_history':
       if (!Array.isArray(value)) return null;
-      return (value.length > 50000) ? value.slice(-1000) : value;
+      return value.length > 50000 ? value.slice(-1000) : value;
     case 'boatrace_learned':
       if (typeof value !== 'object' || Array.isArray(value)) return null;
       if (Object.keys(value).length > 50000) return null;
       return value;
     case 'boatrace_trainstep':
-      return (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e10) ? value : null;
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e10 ? value : null;
     case 'boatrace_featurestats':
       if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
       if (!Array.isArray(value.mean) || value.mean.length !== FEATURE_DIM) return null;
@@ -146,15 +148,21 @@ function _bootParseLS(key, fallback) {
     const v = JSON.parse(raw);
     const validated = _validateLS(key, v);
     if (validated === null && v !== null) {
-      try { localStorage.setItem(key + '__corrupt_' + Date.now(), raw); } catch (_) {}
-      try { localStorage.removeItem(key); } catch (_) {}
+      try {
+        localStorage.setItem(key + '__corrupt_' + Date.now(), raw);
+      } catch (_) {}
+      try {
+        localStorage.removeItem(key);
+      } catch (_) {}
       console.warn('[boot] schema invalid, restored fallback:', key);
       return fallback;
     }
-    return (validated !== null) ? validated : fallback;
+    return validated !== null ? validated : fallback;
   } catch (e) {
     console.warn('[boot] parse failed', key, e);
-    try { if (raw) localStorage.setItem(key + '__corrupt_' + Date.now(), raw); } catch (_) {}
+    try {
+      if (raw) localStorage.setItem(key + '__corrupt_' + Date.now(), raw);
+    } catch (_) {}
     return fallback;
   }
 }
@@ -168,15 +176,21 @@ function safeParse(key, fallback) {
     if (v === null || v === undefined) return fallback;
     const validated = _validateLS(key, v);
     if (validated === null) {
-      try { localStorage.setItem(key + '__corrupt_' + Date.now(), raw); } catch (_) {}
-      try { localStorage.removeItem(key); } catch (_) {}
+      try {
+        localStorage.setItem(key + '__corrupt_' + Date.now(), raw);
+      } catch (_) {}
+      try {
+        localStorage.removeItem(key);
+      } catch (_) {}
       console.warn('[storage] schema invalid, restored fallback:', key);
       return fallback;
     }
     return validated;
   } catch (e) {
     console.warn('[storage] parse failed', key, e);
-    try { if (raw) localStorage.setItem(key + '__corrupt_' + Date.now(), raw); } catch (_) {}
+    try {
+      if (raw) localStorage.setItem(key + '__corrupt_' + Date.now(), raw);
+    } catch (_) {}
     return fallback;
   }
 }
@@ -197,12 +211,16 @@ const _IDB_KEYS_LARGE_SET = {
 function safeSet(key, value) {
   // Epic 28h: 大型キーは IDB へ。IDB 未対応環境では下の LS 経路にフォールバック。
   if (_IDB_KEYS_LARGE_SET[key] && typeof globalThis.idbPut === 'function') {
-    try { globalThis.idbPut(key, value); } catch (_) {}
+    try {
+      globalThis.idbPut(key, value);
+    } catch (_) {}
     // 旧 LS コピーが残っていれば除去（migration とのレース防止 / 再起動後 deduped を発生させない）
-    try { localStorage.removeItem(key); } catch (_) {}
+    try {
+      localStorage.removeItem(key);
+    } catch (_) {}
     return true;
   }
-  const s = (typeof value === 'string') ? value : JSON.stringify(value);
+  const s = typeof value === 'string' ? value : JSON.stringify(value);
   try {
     localStorage.setItem(key, s);
     return true;
@@ -218,16 +236,24 @@ function safeSet(key, value) {
           const k = localStorage.key(i);
           if (k && k.indexOf('bc_') === 0) keys.push(k);
         }
-        keys.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
+        keys.forEach(function (k) {
+          try {
+            localStorage.removeItem(k);
+          } catch (_) {}
+        });
         localStorage.setItem(key, s);
         // P1-Q6: history 削減で復旧したことを UI 監視可能に
-        try { reportError({ type:'warn', msg:'storage quota recovered by history trim', key:key }); } catch(_){}
+        try {
+          reportError({ type: 'warn', msg: 'storage quota recovered by history trim', key: key });
+        } catch (_) {}
         return true;
       } catch (_) {}
     }
     console.warn('[storage] set failed', key, e);
     // P1-Q6: 呼出側が戻り値を見落としても reportError 経由で UI に到達する
-    try { reportError({ type:'error', msg:'storage set failed: '+(e&&e.message||'unknown'), key:key }); } catch(_){}
+    try {
+      reportError({ type: 'error', msg: 'storage set failed: ' + ((e && e.message) || 'unknown'), key: key });
+    } catch (_) {}
     return false;
   }
 }
@@ -243,11 +269,17 @@ function reportError(payload) {
       } catch (_) {}
     }
     const entry = { ts: Date.now(), iso: new Date().toISOString() };
-    for (const k in payload) { if (Object.prototype.hasOwnProperty.call(payload, k)) entry[k] = payload[k]; }
+    for (const k in payload) {
+      if (Object.prototype.hasOwnProperty.call(payload, k)) entry[k] = payload[k];
+    }
     buf.push(entry);
     if (buf.length > ERROR_BUF_MAX) buf = buf.slice(-ERROR_BUF_MAX);
-    try { localStorage.setItem('boatrace_errors', JSON.stringify(buf)); } catch (_) {}
-  } catch (_) { /* reporter 自身の失敗は無視（無限ループ防止） */ }
+    try {
+      localStorage.setItem('boatrace_errors', JSON.stringify(buf));
+    } catch (_) {}
+  } catch (_) {
+    /* reporter 自身の失敗は無視（無限ループ防止） */
+  }
 }
 
 // P0-6: スキーマバージョン管理 + マイグレーション
@@ -258,31 +290,39 @@ const SCHEMA_KEY = 'boatrace_schema_version';
 const CURRENT_SCHEMA = 2;
 const MIGRATIONS = {
   // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
-  2: function(){
+  2: function () {
     try {
       const raw = localStorage.getItem('boatrace_settings');
       const s = raw ? JSON.parse(raw) : {};
-      if(s && typeof s === 'object' && s.kpiMode == null){
+      if (s && typeof s === 'object' && s.kpiMode == null) {
         s.kpiMode = 'balanced';
         localStorage.setItem('boatrace_settings', JSON.stringify(s));
       }
-    } catch(_){ /* migration 失敗は致命にしない、次回再試行 */ }
-  }
+    } catch (_) {
+      /* migration 失敗は致命にしない、次回再試行 */
+    }
+  },
 };
-function _runMigrations(){
+function _runMigrations() {
   let cur = 1;
   try {
     const raw = localStorage.getItem(SCHEMA_KEY);
     const v = raw ? parseInt(raw, 10) : 1;
-    if(Number.isFinite(v) && v >= 1 && v <= 1000) cur = v;
-  } catch(_){}
-  if(cur >= CURRENT_SCHEMA) return;
-  for(let v = cur + 1; v <= CURRENT_SCHEMA; v++){
+    if (Number.isFinite(v) && v >= 1 && v <= 1000) cur = v;
+  } catch (_) {}
+  if (cur >= CURRENT_SCHEMA) return;
+  for (let v = cur + 1; v <= CURRENT_SCHEMA; v++) {
     const fn = MIGRATIONS[v];
-    if(typeof fn === 'function'){
-      try { fn(); } catch(e){ console.warn('[migrate] v'+v+' failed', e); }
+    if (typeof fn === 'function') {
+      try {
+        fn();
+      } catch (e) {
+        console.warn('[migrate] v' + v + ' failed', e);
+      }
     }
-    try { localStorage.setItem(SCHEMA_KEY, String(v)); } catch(_){}
+    try {
+      localStorage.setItem(SCHEMA_KEY, String(v));
+    } catch (_) {}
   }
 }
 

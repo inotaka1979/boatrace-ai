@@ -1,0 +1,6 @@
+{
+  "valid_real": true,
+  "valid_empty": true,
+  "invalid_null": false,
+  "invalid_shape": false
+}

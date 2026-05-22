@@ -305,11 +305,15 @@ function _detectLocale() {
 function setLocale(locale) {
   if (!I18N_TABLES[locale]) return false;
   _currentLocale = locale;
-  try { localStorage.setItem(I18N_KEY, locale); } catch (_) {}
+  try {
+    localStorage.setItem(I18N_KEY, locale);
+  } catch (_) {}
   return true;
 }
 
-function getLocale() { return _currentLocale; }
+function getLocale() {
+  return _currentLocale;
+}
 
 // t(key, params?) — params は {name: value} で {{name}} 置換
 function t(key, params) {
@@ -325,7 +329,9 @@ function t(key, params) {
   return text;
 }
 
-function availableLocales() { return Object.keys(I18N_TABLES); }
+function availableLocales() {
+  return Object.keys(I18N_TABLES);
+}
 
 // Epic 22: data-i18n 属性を持つ要素を一括翻訳
 //   <button data-i18n="common.refresh">更新</button> → 現 locale で置換
@@ -338,15 +344,21 @@ function translatePage(root) {
     const key = el.getAttribute('data-i18n');
     if (!key) return;
     const text = t(key);
-    if (text !== key) { el.textContent = text; n++; }
+    if (text !== key) {
+      el.textContent = text;
+      n++;
+    }
   });
   r.querySelectorAll('[data-i18n-attr]').forEach((el) => {
     const spec = el.getAttribute('data-i18n-attr') || '';
     spec.split(',').forEach((pair) => {
-      const [attr, key] = pair.split(':').map(s => s.trim());
+      const [attr, key] = pair.split(':').map((s) => s.trim());
       if (!attr || !key) return;
       const text = t(key);
-      if (text !== key) { el.setAttribute(attr, text); n++; }
+      if (text !== key) {
+        el.setAttribute(attr, text);
+        n++;
+      }
     });
   });
   return n;

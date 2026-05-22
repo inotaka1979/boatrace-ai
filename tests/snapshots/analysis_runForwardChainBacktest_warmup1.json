@@ -1,0 +1,9 @@
+{
+  "totalSamples": 5,
+  "warmupSkipped": 1,
+  "evaluatedSamples": 4,
+  "logLoss": 1.3765051833435922,
+  "brier": 0.66825,
+  "ece": 0.6975,
+  "note": "時系列順で warmup 後のレースのみ評価。完全な forward-chain 再学習にはレース時点の features 保存が必要"
+}

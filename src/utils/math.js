@@ -32,14 +32,16 @@ function sigmoid(z) {
 // safeDiv: 0 除算 / NaN 入力で fallback (既定 0) を返す
 function safeDiv(num, den, fallback) {
   if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
-    return (fallback == null) ? 0 : fallback;
+    return fallback == null ? 0 : fallback;
   }
   return num / den;
 }
 
 // PB-4: Plackett–Luce 3 連単確率
 function _plackettLuceTrifectaProb(p, i, j, k) {
-  const pi = p[i] || 0, pj = p[j] || 0, pk = p[k] || 0;
+  const pi = p[i] || 0,
+    pj = p[j] || 0,
+    pk = p[k] || 0;
   if (pi <= 0 || pj <= 0 || pk <= 0) return 0;
   const denom1 = 1 - pi;
   if (denom1 <= 1e-9) return 0;
@@ -50,7 +52,8 @@ function _plackettLuceTrifectaProb(p, i, j, k) {
 }
 
 function _plackettLuceExactaProb(p, i, j) {
-  const pi = p[i] || 0, pj = p[j] || 0;
+  const pi = p[i] || 0,
+    pj = p[j] || 0;
   if (pi <= 0 || pj <= 0) return 0;
   const denom = 1 - pi;
   if (denom <= 1e-9) return 0;

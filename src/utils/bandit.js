@@ -42,7 +42,8 @@ function _sampleGamma(shape) {
 
 // Box-Muller で標準正規乱数
 function _sampleNormal() {
-  let u = 0, v = 0;
+  let u = 0,
+    v = 0;
   while (u === 0) u = Math.random();
   while (v === 0) v = Math.random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
@@ -63,14 +64,17 @@ function banditSelect(variants) {
     const a = Math.max(1e-3, v.alpha || 1);
     const b = Math.max(1e-3, v.beta || 1);
     const s = _sampleBeta(a, b);
-    if (s > bestSample) { bestSample = s; best = v; }
+    if (s > bestSample) {
+      bestSample = s;
+      best = v;
+    }
   }
   return best;
 }
 
 // 報酬で variant を更新。reward は [0, 1] 範囲（Bernoulli または continuous）
 function banditUpdate(variants, variantId, reward) {
-  const v = variants.find(x => x.id === variantId);
+  const v = variants.find((x) => x.id === variantId);
   if (!v) return false;
   const r = Math.max(0, Math.min(1, +reward || 0));
   v.alpha = (v.alpha || 1) + r;
@@ -83,11 +87,13 @@ function banditUpdate(variants, variantId, reward) {
 
 // 各 variant の事後平均 (α / (α+β)) を取得 — 性能ランキング用
 function banditMeans(variants) {
-  return variants.map(v => ({
-    id: v.id,
-    mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
-    n: v.n || 0,
-  })).sort((a, b) => b.mean - a.mean);
+  return variants
+    .map((v) => ({
+      id: v.id,
+      mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
+      n: v.n || 0,
+    }))
+    .sort((a, b) => b.mean - a.mean);
 }
 
 // 永続化
@@ -106,7 +112,9 @@ function banditSave(variants) {
   try {
     localStorage.setItem(BANDIT_KEY, JSON.stringify({ variants: variants, updated_at: Date.now() }));
     return true;
-  } catch (_) { return false; }
+  } catch (_) {
+    return false;
+  }
 }
 
 // globalThis export

@@ -1,0 +1,25 @@
+# Auto-generated bundle output
+assets/app.js
+assets/app.min.js
+assets/app-critical.js
+assets/app-critical.min.js
+assets/app-rest.js
+assets/app-rest.min.js
+assets/worker.js
+assets/worker_predictor.js
+
+# 3rd party / data
+node_modules
+build/node_modules
+data
+docs
+cloudflare-worker
+.icon_backup
+*.min.js
+*.bak
+
+# Build / test artifacts
+build/playwright-report
+build/test-results
+test-results
+tests/e2e/screens.vrt.spec.mjs-snapshots
