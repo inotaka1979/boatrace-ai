@@ -898,8 +898,12 @@ try {
         console.log('[idb]   deduped (LS 重複削除):', res.deduped.join(', '));
       }
       // Epic 28f: 結果を reportError に保存 (スマホで DevTools 不可なユーザ向け)
+      // FIX (2026-05-22): 全 0 件 (avail=true, migrated=0, errors=0, deduped=0) は
+      //   「やることなし」の正常状態であり報告不要。errN/migN/dedN のいずれかが >0、
+      //   または IDB 不可の時のみ reportError する (boatrace_errors のノイズ削減)。
       try {
-        if(typeof reportError === 'function') reportError({
+        var _shouldReport = errN > 0 || migN > 0 || dedN > 0 || !_idbAvail;
+        if(_shouldReport && typeof reportError === 'function') reportError({
           type: 'diag_idb_migrate',
           msg: 'idb migrate: migrated=' + migN + ' errors=' + errN + ' deduped=' + dedN + ' (avail=' + _idbAvail + ')',
           idb_available: _idbAvail,
