@@ -2809,13 +2809,10 @@ var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
 // ===============================================
 // PREDICTION ENGINE V2: Layer 1 (PRESERVED)
 // ===============================================
-// PC-2b: scoreBoatV2 から抽出した純粋計算ヘルパ
-//   経緯: scoreBoatV2 は 287 行で UI 状態と密結合のため全分割は高リスク。
-//   純粋関数 (no DOM / no global mutation) のみ段階的に切り出してテスト可能化。
+// PC-2b: scoreBoatV2 から抽出した純粋計算ヘルパ + L2 features
+//   Clearwing Phase 2 完遂続きで src/analysis/l2_features.js に移管。
+//   note: worker_predictor.js にも twin が存在する (Web Worker 用)。
 
-// 平均クラスから階級減衰係数を計算
-//   B2 多 → 0.55, B1 多 → 0.70, A2 多 → 0.85, A1 多 → 1.00
-/* MOVED: function _computeClassAttenuation */
 
 // P0-1: 場別×級別×コースの相互作用係数。
 //   常識: 「A1の1コース」と「B2の1コース」では同じ scwr でも実勝率は大きく違う。
@@ -2829,17 +2826,14 @@ var CLASS_COURSE_MULT = [
   [1.03, 1.01, 1.00, 0.97],
   [1.02, 1.01, 1.00, 0.98]
 ];
-/* MOVED: function _classCourseMult */
 
 // P0-2: レース毎に1度だけ算出するシナリオ確率。
 //   nige_success_prob(1コース) = ∏(1 - attack_prob_c) for c=2..6
 //   attack_prob は隣接艇の決まり手主体率を簡略化（max(sashi, makuri+makuriSashi)）
 //   1コース以外は対象外（影響度が小さく、既存 C カテゴリで十分カバー）。
-/* MOVED: function _computeRaceScenario */
 
 // X3 進入予想 → 採用コースと信頼度を決定
 //   preview.racer_course_number > predictedEntries > 枠番 の優先順
-/* MOVED: function _resolveCourse */
 
 
 
@@ -2849,14 +2843,11 @@ var CLASS_COURSE_MULT = [
 // Epic 12 (P1-B1): 旧 inline 実装は src/utils/features.js (BUILD:FEATURES bundle) に移管。
 //   bundle 注入が globalThis.getL2Features を上書きするため通常はそちらが使われる。
 //   bundle 失敗時の fallback として旧本体を残置（数値出力は厳密に同一）。
-/* MOVED: function getL2Features */
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
 
-/* MOVED: function l2Predict */
 
-/* MOVED: function l2Update */
 
 // PB-6: Platt scaling — 確率の post-hoc 校正
 //   p' = sigmoid(a * logit(p) + b)

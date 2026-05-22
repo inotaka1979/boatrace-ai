@@ -220,6 +220,8 @@ REST_ONLY_BUILD_MARKERS = {
     # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
     'ANALYSIS_PREDICT_SCENARIOS',
     'ANALYSIS_PREDICT_RACE',
+    # L2 / scoring helpers — レース詳細 / 学習 / 設定でしか呼ばれない
+    'ANALYSIS_L2_FEATURES',
 }
 
 rest_bundle_extracted: list[str] = []
