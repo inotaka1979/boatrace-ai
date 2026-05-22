@@ -7080,8 +7080,8 @@ async function _loadNextOpen(){
       });
       resHtml = '<div class="result-box"><div class="result-title">\u30EC\u30FC\u30B9\u7D50\u679C</div>';
       resHtml += '<div class="result-places">';
-      places.slice(0, 3).forEach(function(p2) {
-        resHtml += p2.place + "\u7740" + boatBadge(p2.racer_boat_number) + " ";
+      places.slice(0, 3).forEach(function(p) {
+        resHtml += p.place + "\u7740" + boatBadge(p.racer_boat_number) + " ";
       });
       resHtml += "</div>";
       if (result.technique_number)
@@ -7106,6 +7106,118 @@ async function _loadNextOpen(){
       resHtml += "</div>";
     }
     document.getElementById("detailResult").innerHTML = resHtml;
+    var _ctxBoats = {
+      race,
+      preview,
+      pred,
+      rdForRace
+    };
+    _renderRaceDetailBoats(_ctxBoats);
+    var boatMap = _ctxBoats.boatMap;
+    var pvMap = _ctxBoats.pvMap;
+    var etRankMap = _ctxBoats.etRankMap;
+    var stRankMap = _ctxBoats.stRankMap;
+    var exhHtml = "";
+    if (preview && preview.boats) {
+      exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
+      exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
+      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th><th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var pv = pvMap[bn];
+        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : null;
+        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : null;
+        var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
+        var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
+        var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
+        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
+        var etRk = etRankMap[bn];
+        var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
+        var stRk = stRankMap[bn];
+        var stCls = stRk === 0 ? "hl-rank1" : stRk === 1 ? "hl-rank2" : stRk === 2 ? "hl-rank3" : "";
+        var stDisp = stVal !== null ? "." + String(Math.abs(pf(stVal) * 100).toFixed(0)).padStart(2, "0") : "---";
+        if (stVal !== null && pf(stVal) < 0) stDisp = "F" + stDisp;
+        var maintDisp = "";
+        if (propVal)
+          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' + escText(propVal) + "</span> ";
+        if (partsVal)
+          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
+        if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
+        var adjDisp = adjVal > 0 ? '<span style="color:var(--warn);font-weight:700">+' + adjVal.toFixed(1) + "</span>" : '<span style="color:#CCC">-</span>';
+        exhHtml += "<tr>";
+        exhHtml += '<td style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";font-weight:700;border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "</td>";
+        exhHtml += '<td class="' + stCls + '">' + stDisp + "</td>";
+        exhHtml += '<td class="' + etCls + '">' + (etVal !== null ? etVal : "---") + "</td>";
+        exhHtml += "<td>" + (tiltVal !== null ? tiltVal : "---") + "</td>";
+        exhHtml += '<td class="fs-9">' + maintDisp + "</td>";
+        exhHtml += "<td>" + adjDisp + "</td>";
+        exhHtml += "</tr>";
+      }
+      exhHtml += "</tbody></table></div>";
+      exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u307E\u308F\u308A\u8DB3\u30FB1\u5468\u30FB\u76F4\u7DDA\u30FB\u30D4\u30C3\u30C8\u96E2\u308C\u306F boatrace.jp \u516C\u5F0F\u306B\u975E\u516C\u958B\uFF08\u30DE\u30AF\u30FC\u30EB\u7B49\u5C02\u9580\u7D19\u306E\u307F\uFF09</div>';
+      if (preview.boats) {
+        var courseEntries = [];
+        var hasCourse = false;
+        for (var ci = 1; ci <= 6; ci++) {
+          var cpv = preview.boats[String(ci)];
+          var cn = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
+          if (cpv && cpv.racer_course_number != null) hasCourse = true;
+          courseEntries.push({ boat: ci, course: cn });
+        }
+        if (hasCourse) {
+          courseEntries.sort(function(a, b) {
+            return a.course - b.course;
+          });
+          exhHtml += '<div style="margin:8px 0;text-align:center;font-size:11px;font-weight:700;color:var(--text-sub)">\u9032\u5165\u30B3\u30FC\u30B9</div>';
+          exhHtml += '<div class="course-grid">';
+          courseEntries.forEach(function(e) {
+            exhHtml += '<div class="course-entry" style="background:' + BOAT_COLORS[e.boat] + ";color:" + BOAT_TEXT[e.boat] + ";border:1px solid " + (e.boat === 1 ? "#ccc" : "transparent") + '">' + e.boat + "</div>";
+          });
+          exhHtml += "</div>";
+        }
+      }
+    }
+    document.getElementById("detailExhibition").innerHTML = exhHtml;
+    _renderRaceDetailPrediction({
+      sid,
+      rn,
+      race,
+      pred,
+      preview,
+      result,
+      popularity,
+      raceOdds
+    });
+    document.getElementById("detailOdds").innerHTML = renderOddsSection(sid, rn, raceOdds, pred, race);
+    showPage("detail");
+    try {
+      var _shouldLive = false;
+      if (!oddsData || !oddsData.updated_at) {
+        _shouldLive = true;
+      } else {
+        var _t = Date.parse(oddsData.updated_at);
+        if (!isNaN(_t)) {
+          var _ageMin = (Date.now() - _t) / 6e4;
+          if (_ageMin >= 5) _shouldLive = true;
+        }
+      }
+      if (_shouldLive) _kickOffLiveOddsRefresh(sid, rn);
+    } catch (_) {
+    }
+  }
+  globalThis.openRace = openRace;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL:END */
+
+/* BUILD:REPORTING_RACE_DETAIL_BOATS:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_boats.js
+  function _renderRaceDetailBoats(ctx) {
+    var race = ctx.race;
+    var preview = ctx.preview;
+    var pred = ctx.pred;
+    var rdForRace = ctx.rdForRace;
     var boatsHtml = "";
     if (race && race.boats && Array.isArray(race.boats)) {
       var boatMap = {};
@@ -7340,82 +7452,39 @@ async function _loadNextOpen(){
       boatsHtml += "</table></div>";
     }
     document.getElementById("detailBoats").innerHTML = boatsHtml;
-    var exhHtml = "";
-    if (preview && preview.boats) {
-      exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
-      exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
-      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th><th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var pv = pvMap[bn];
-        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : null;
-        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : null;
-        var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
-        var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
-        var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
-        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
-        var etRk = etRankMap[bn];
-        var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
-        var stRk = stRankMap[bn];
-        var stCls = stRk === 0 ? "hl-rank1" : stRk === 1 ? "hl-rank2" : stRk === 2 ? "hl-rank3" : "";
-        var stDisp = stVal !== null ? "." + String(Math.abs(pf(stVal) * 100).toFixed(0)).padStart(2, "0") : "---";
-        if (stVal !== null && pf(stVal) < 0) stDisp = "F" + stDisp;
-        var maintDisp = "";
-        if (propVal)
-          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' + escText(propVal) + "</span> ";
-        if (partsVal)
-          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
-        if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
-        var adjDisp = adjVal > 0 ? '<span style="color:var(--warn);font-weight:700">+' + adjVal.toFixed(1) + "</span>" : '<span style="color:#CCC">-</span>';
-        exhHtml += "<tr>";
-        exhHtml += '<td style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";font-weight:700;border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "</td>";
-        exhHtml += '<td class="' + stCls + '">' + stDisp + "</td>";
-        exhHtml += '<td class="' + etCls + '">' + (etVal !== null ? etVal : "---") + "</td>";
-        exhHtml += "<td>" + (tiltVal !== null ? tiltVal : "---") + "</td>";
-        exhHtml += '<td class="fs-9">' + maintDisp + "</td>";
-        exhHtml += "<td>" + adjDisp + "</td>";
-        exhHtml += "</tr>";
-      }
-      exhHtml += "</tbody></table></div>";
-      exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u307E\u308F\u308A\u8DB3\u30FB1\u5468\u30FB\u76F4\u7DDA\u30FB\u30D4\u30C3\u30C8\u96E2\u308C\u306F boatrace.jp \u516C\u5F0F\u306B\u975E\u516C\u958B\uFF08\u30DE\u30AF\u30FC\u30EB\u7B49\u5C02\u9580\u7D19\u306E\u307F\uFF09</div>';
-      if (preview.boats) {
-        var courseEntries = [];
-        var hasCourse = false;
-        for (var ci = 1; ci <= 6; ci++) {
-          var cpv = preview.boats[String(ci)];
-          var cn = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
-          if (cpv && cpv.racer_course_number != null) hasCourse = true;
-          courseEntries.push({ boat: ci, course: cn });
-        }
-        if (hasCourse) {
-          courseEntries.sort(function(a, b) {
-            return a.course - b.course;
-          });
-          exhHtml += '<div style="margin:8px 0;text-align:center;font-size:11px;font-weight:700;color:var(--text-sub)">\u9032\u5165\u30B3\u30FC\u30B9</div>';
-          exhHtml += '<div class="course-grid">';
-          courseEntries.forEach(function(e) {
-            exhHtml += '<div class="course-entry" style="background:' + BOAT_COLORS[e.boat] + ";color:" + BOAT_TEXT[e.boat] + ";border:1px solid " + (e.boat === 1 ? "#ccc" : "transparent") + '">' + e.boat + "</div>";
-          });
-          exhHtml += "</div>";
-        }
-      }
-    }
-    document.getElementById("detailExhibition").innerHTML = exhHtml;
+    ctx.boatMap = boatMap;
+    ctx.pvMap = pvMap;
+    ctx.etRankMap = etRankMap;
+    ctx.stRankMap = stRankMap;
+  }
+  globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL_BOATS:END */
+
+/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_prediction.js
+  function _renderRaceDetailPrediction(ctx) {
+    var sid = ctx.sid, rn = ctx.rn, race = ctx.race, pred = ctx.pred;
+    var preview = ctx.preview, result = ctx.result, popularity = ctx.popularity, raceOdds = ctx.raceOdds;
     var predHtml = "";
     var progPred = predictRaceProgram(sid, parseInt(rn));
     var boats = race && race.boats ? race.boats : [];
     if (progPred) {
       predHtml += '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
       predHtml += '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">\u756A\u7D44\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u51FA\u8D70\u8868\u30C7\u30FC\u30BF\u306E\u307F</span></div>';
-      progPred.marks.forEach(function(m2, i2) {
-        if (i2 >= 4) return;
+      progPred.marks.forEach(function(m, i) {
+        if (i >= 4) return;
         var boatInfo = boats.find(function(b) {
-          return b.racer_boat_number === m2.boat;
+          return b.racer_boat_number === m.boat;
         });
         var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
-        var probPct = Math.round(m2.prob * 100);
+        var probPct = Math.round(m.prob * 100);
         predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m2.mark + "</span>";
-        predHtml += boatBadge(m2.boat);
+        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        predHtml += boatBadge(m.boat);
         predHtml += "<span>" + escText(nm) + "</span>";
         predHtml += '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + "%</span>";
         predHtml += "</div>";
@@ -7444,27 +7513,27 @@ async function _loadNextOpen(){
     predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
     if (hasRealPreview && pred) {
       var diff = comparePredictions(progPred, pred);
-      pred.marks.forEach(function(m2, i2) {
-        if (i2 >= 4) return;
+      pred.marks.forEach(function(m, i) {
+        if (i >= 4) return;
         var boatInfo = boats.find(function(b) {
-          return b.racer_boat_number === m2.boat;
+          return b.racer_boat_number === m.boat;
         });
         var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
-        var probPct = Math.round(m2.prob * 100);
+        var probPct = Math.round(m.prob * 100);
         var change = diff ? diff.changes.find(function(c) {
-          return c.boat === m2.boat;
+          return c.boat === m.boat;
         }) : null;
         var diffStr = "";
         if (change && change.rankDiff !== 0) {
-          var p2 = Math.round(change.probDiff * 100);
-          var pSign = p2 > 0 ? "+" : p2 < 0 ? "" : "";
+          var p = Math.round(change.probDiff * 100);
+          var pSign = p > 0 ? "+" : p < 0 ? "" : "";
           var arrow = change.rankDiff > 0 ? "\u2191" : "\u2193";
           var color = change.rankDiff > 0 ? "#43A047" : "#E53935";
-          diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p2 + "%</span>";
+          diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p + "%</span>";
         }
         predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m2.mark + "</span>";
-        predHtml += boatBadge(m2.boat);
+        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        predHtml += boatBadge(m.boat);
         predHtml += "<span>" + escText(nm) + "</span>";
         predHtml += '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + "%</span>";
         predHtml += diffStr;
@@ -7476,10 +7545,10 @@ async function _loadNextOpen(){
         var scen = pred.scenarios;
         var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };
         var scenStr = "";
-        Object.keys(scen).forEach(function(k2) {
-          if (scen[k2] >= 0.05) {
-            var pct = (scen[k2] * 100).toFixed(0);
-            scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k2] + "</b> " + pct + "%</span>";
+        Object.keys(scen).forEach(function(k) {
+          if (scen[k] >= 0.05) {
+            var pct = (scen[k] * 100).toFixed(0);
+            scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k] + "</b> " + pct + "%</span>";
           }
         });
         predHtml += '<div style="font-size:10px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">\u60F3\u5B9A\u5C55\u958B: ' + scenStr + "</div>";
@@ -7528,6 +7597,35 @@ async function _loadNextOpen(){
       predHtml += "</div>";
     }
     predHtml += "</div>";
+    predHtml += _renderRaceDetailBets({
+      sid,
+      rn,
+      race,
+      pred,
+      progPred,
+      hasRealPreview,
+      raceOdds
+    });
+    if (typeof _renderPairwiseSummary === "function" && race && race.boats) {
+      var pwHtml = _renderPairwiseSummary(race.boats);
+      if (pwHtml) predHtml += pwHtml;
+    }
+    document.getElementById("detailPrediction").innerHTML = predHtml;
+  }
+  globalThis._renderRaceDetailPrediction = _renderRaceDetailPrediction;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:END */
+
+/* BUILD:REPORTING_RACE_DETAIL_BETS:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_bets.js
+  function _renderRaceDetailBets(ctx) {
+    var sid = ctx.sid, rn = ctx.rn, race = ctx.race;
+    var pred = ctx.pred, progPred = ctx.progPred;
+    var hasRealPreview = ctx.hasRealPreview, raceOdds = ctx.raceOdds;
+    var predHtml = "";
     var activePred = hasRealPreview && pred ? pred : null;
     var activePredLabel = hasRealPreview ? "\u76F4\u524D\u4E88\u60F3" : "\u756A\u7D44\u4E88\u60F3";
     if (activePred || progPred) {
@@ -7618,9 +7716,9 @@ async function _loadNextOpen(){
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
             anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
             anaHtmlBlock += '<div class="bet-combos">';
-            picks.forEach(function(p2) {
-              var evColor = p2.ev >= 1 ? "#FF5722" : "#999";
-              anaHtmlBlock += '<span class="bet-chip">' + p2.combo + ' <span class="fs-9 c-dim">' + (p2.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p2.odds.toFixed(1) + '\u500D</span><span style="font-size:9px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p2.ev.toFixed(2) + "</span></span>";
+            picks.forEach(function(p) {
+              var evColor = p.ev >= 1 ? "#FF5722" : "#999";
+              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p.odds.toFixed(1) + '\u500D</span><span style="font-size:9px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p.ev.toFixed(2) + "</span></span>";
             });
             anaHtmlBlock += "</div></div>";
           }
@@ -7646,8 +7744,8 @@ async function _loadNextOpen(){
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
             anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 \u2014 AI \u7A74\u30B3\u30F3\u30D3\u5019\u88DC</span></div>';
             anaHtmlBlock += '<div class="bet-combos">';
-            anaCands.forEach(function(p2) {
-              anaHtmlBlock += '<span class="bet-chip">' + p2.combo + ' <span class="fs-9 c-dim">' + (p2.prob * 100).toFixed(2) + "%</span></span>";
+            anaCands.forEach(function(p) {
+              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + "%</span></span>";
             });
             anaHtmlBlock += "</div>";
             anaHtmlBlock += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B\u30AA\u30C3\u30BA\u53D6\u5F97\u5F8C\u306B EV \u8A55\u4FA1\u3078\u81EA\u52D5\u66F4\u65B0</div>';
@@ -7658,32 +7756,12 @@ async function _loadNextOpen(){
       }
       predHtml += "</div>";
     }
-    if (typeof _renderPairwiseSummary === "function" && race && race.boats) {
-      var pwHtml = _renderPairwiseSummary(race.boats);
-      if (pwHtml) predHtml += pwHtml;
-    }
-    document.getElementById("detailPrediction").innerHTML = predHtml;
-    document.getElementById("detailOdds").innerHTML = renderOddsSection(sid, rn, raceOdds, pred, race);
-    showPage("detail");
-    try {
-      var _shouldLive = false;
-      if (!oddsData || !oddsData.updated_at) {
-        _shouldLive = true;
-      } else {
-        var _t = Date.parse(oddsData.updated_at);
-        if (!isNaN(_t)) {
-          var _ageMin = (Date.now() - _t) / 6e4;
-          if (_ageMin >= 5) _shouldLive = true;
-        }
-      }
-      if (_shouldLive) _kickOffLiveOddsRefresh(sid, rn);
-    } catch (_) {
-    }
+    return predHtml;
   }
-  globalThis.openRace = openRace;
+  globalThis._renderRaceDetailBets = _renderRaceDetailBets;
 })();
 
-/* BUILD:REPORTING_RACE_DETAIL:END */
+/* BUILD:REPORTING_RACE_DETAIL_BETS:END */
 
 // ===============================================
 // Macour-style Odds Section (3d trifecta + 3e exacta + 3f controls)

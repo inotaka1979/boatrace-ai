@@ -225,8 +225,11 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_L2_FEATURES',
     # 学習バッチ (results 受信時のみ) — critical 起動には不要
     'ANALYSIS_LEARNING',
-    # レース詳細 (openRace 712 行) — 詳細を開いた時のみ
+    # レース詳細 — 詳細を開いた時のみ (race_detail.js orchestrator + boats + prediction)
     'REPORTING_RACE_DETAIL',
+    'REPORTING_RACE_DETAIL_BOATS',
+    'REPORTING_RACE_DETAIL_PREDICTION',
+    'REPORTING_RACE_DETAIL_BETS',
 }
 
 rest_bundle_extracted: list[str] = []

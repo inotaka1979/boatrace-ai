@@ -133,7 +133,10 @@ async function main() {
     { marker: 'ANALYSIS_LEARNING', src: 'analysis/learning.js' },             // Phase 2 完遂続編 (learnFromResults)
     { marker: 'REPORTING_PAGE_ROUTER', src: 'reporting/page_router.js' },     // Phase 2 完遂続編 (showPage)
     { marker: 'REPORTING_STADIUM_PAGES', src: 'reporting/stadium_pages.js' }, // Phase 2 完遂続編 (renderStadiums + openStadium)
-    { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace 712 行)
+    { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
+    { marker: 'REPORTING_RACE_DETAIL_BOATS', src: 'reporting/race_detail_boats.js' },           // Phase 2 完遂続編 (boats card)
+    { marker: 'REPORTING_RACE_DETAIL_PREDICTION', src: 'reporting/race_detail_prediction.js' }, // Phase 2 完遂続編 (番組 + 直前予想)
+    { marker: 'REPORTING_RACE_DETAIL_BETS', src: 'reporting/race_detail_bets.js' },             // Phase 2 完遂続編 (買い目 + 穴予想)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [
