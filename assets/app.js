@@ -6487,6 +6487,35 @@ function racerBadges(boat,form,divergence){
 "use strict";
 (() => {
   // ../src/reporting/page_router.js
+  var _statsChunkState = { loaded: false, promise: null };
+  function _ensureStatsChunk() {
+    if (_statsChunkState.loaded) return Promise.resolve();
+    if (_statsChunkState.promise) return _statsChunkState.promise;
+    _statsChunkState.promise = new Promise(function(resolve, reject) {
+      var ver = "";
+      try {
+        var existing = document.querySelector('script[src*="app-rest.min.js"]');
+        if (existing && existing.src) {
+          var m = existing.src.match(/\?v=([\w]+)/);
+          if (m) ver = "?v=" + m[1];
+        }
+      } catch (_) {
+      }
+      var s = document.createElement("script");
+      s.src = "assets/app-rest-stats.min.js" + ver;
+      s.defer = true;
+      s.onload = function() {
+        _statsChunkState.loaded = true;
+        resolve();
+      };
+      s.onerror = function(e) {
+        _statsChunkState.promise = null;
+        reject(new Error("Failed to load app-rest-stats.min.js: " + (e && e.message ? e.message : "unknown")));
+      };
+      document.head.appendChild(s);
+    });
+    return _statsChunkState.promise;
+  }
   function showPage(page) {
     document.querySelectorAll(".page").forEach(function(p) {
       p.classList.remove("active");
@@ -6516,10 +6545,22 @@ function racerBadges(boat,form,divergence){
     } else if (page === "stats") {
       document.getElementById("pageStats").classList.add("active");
       _setActive("navStats");
-      renderStats();
+      _ensureStatsChunk().then(
+        function() {
+          if (typeof renderStats === "function") renderStats();
+        },
+        function(err) {
+          try {
+            if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
+          } catch (_) {
+          }
+        }
+      );
     } else if (page === "backtest") {
       document.getElementById("pageBacktest").classList.add("active");
       _setActive("navBacktest");
+      _ensureStatsChunk().catch(function() {
+      });
     } else if (page === "settings") {
       document.getElementById("pageSettings").classList.add("active");
       _setActive("navSettings");
@@ -6532,6 +6573,7 @@ function racerBadges(boat,form,divergence){
     }
   }
   globalThis.showPage = showPage;
+  globalThis._ensureStatsChunk = _ensureStatsChunk;
 })();
 
 /* BUILD:REPORTING_PAGE_ROUTER:END */

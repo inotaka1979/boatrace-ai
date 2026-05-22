@@ -1,19 +1,52 @@
 // Phase 2 完遂続編 (Clearwing patterns): src/reporting/page_router.js
 //
-// Reporting 層: ページ切替の router (showPage)。stadium_pages.js から分離
-// (400 行制限遵守、stadium_pages.js が renderStadiums + openStadium を保持)。
+// Reporting 層: ページ切替の router (showPage) + lazy sub-chunk loader。
+// stadium_pages.js から分離 (400 行制限遵守)。critical bundle 同居。
 //
-// build/build.mjs が IIFE bundle して assets/app.js の
-//   /* BUILD:REPORTING_PAGE_ROUTER:START */ ... /* BUILD:REPORTING_PAGE_ROUTER:END */
-// に注入する。critical bundle に同居 (起動時から必要)。
+// 依存: stopOddsAutoRefresh / startOddsAutoRefresh / renderStats / loadSettings /
+//       _persistNavState / currentStadium / currentRace
 //
-// 依存:
-//   stopOddsAutoRefresh / startOddsAutoRefresh / renderStats / loadSettings /
-//   _persistNavState / currentStadium / currentRace
-//
-// Public: showPage
+// Public: showPage, _ensureStatsChunk
 
 'use strict';
+
+// ─────────────────────────────────────────────
+// Lazy sub-chunk loader (Phase 2 完遂続編)
+// 成績タブ / バックテストタブを開いた時に assets/app-rest-stats.min.js を動的 load。
+// 起動時の rest bundle download を ~12KB 縮小 (TBT / LCP 改善)。
+// ─────────────────────────────────────────────
+var _statsChunkState = { loaded: false, promise: null };
+
+function _ensureStatsChunk() {
+  if (_statsChunkState.loaded) return Promise.resolve();
+  if (_statsChunkState.promise) return _statsChunkState.promise;
+  // 既に DOM に script が存在する (showPage 連打) なら共通 Promise を返す
+  _statsChunkState.promise = new Promise(function (resolve, reject) {
+    // version は app-rest.min.js の `?v=...` と同期 (build.mjs が両方を sha256 で更新)
+    var ver = '';
+    try {
+      // index.html の <script src="assets/app-rest.min.js?v=XXXX"> から取得
+      var existing = document.querySelector('script[src*="app-rest.min.js"]');
+      if (existing && existing.src) {
+        var m = existing.src.match(/\?v=([\w]+)/);
+        if (m) ver = '?v=' + m[1];
+      }
+    } catch (_) {}
+    var s = document.createElement('script');
+    s.src = 'assets/app-rest-stats.min.js' + ver;
+    s.defer = true;
+    s.onload = function () {
+      _statsChunkState.loaded = true;
+      resolve();
+    };
+    s.onerror = function (e) {
+      _statsChunkState.promise = null; // 再試行可能に
+      reject(new Error('Failed to load app-rest-stats.min.js: ' + (e && e.message ? e.message : 'unknown')));
+    };
+    document.head.appendChild(s);
+  });
+  return _statsChunkState.promise;
+}
 
 function showPage(page) {
   document.querySelectorAll('.page').forEach(function (p) {
@@ -47,10 +80,25 @@ function showPage(page) {
   } else if (page === 'stats') {
     document.getElementById('pageStats').classList.add('active');
     _setActive('navStats');
-    renderStats();
+    // Phase 2 完遂続編: stats chunk を動的 load してから renderStats 呼出
+    _ensureStatsChunk().then(
+      function () {
+        if (typeof renderStats === 'function') renderStats();
+      },
+      function (err) {
+        try {
+          if (typeof reportError === 'function') reportError({ type: 'chunk-load', msg: String(err) });
+        } catch (_) {}
+        // load 失敗時は静かに諦める (next click で再試行される)
+      }
+    );
   } else if (page === 'backtest') {
     document.getElementById('pageBacktest').classList.add('active');
     _setActive('navBacktest');
+    // Phase 2 完遂続編: stats chunk を先読みするだけ (runBacktest はユーザがボタン押下時)
+    _ensureStatsChunk().catch(function () {
+      /* silent */
+    });
   } else if (page === 'settings') {
     document.getElementById('pageSettings').classList.add('active');
     _setActive('navSettings');
@@ -65,3 +113,4 @@ function showPage(page) {
 
 // globalThis export
 globalThis.showPage = showPage;
+globalThis._ensureStatsChunk = _ensureStatsChunk;
