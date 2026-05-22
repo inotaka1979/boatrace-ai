@@ -6,26 +6,38 @@
 // 依存: stopOddsAutoRefresh / startOddsAutoRefresh / renderStats / loadSettings /
 //       _persistNavState / currentStadium / currentRace
 //
-// Public: showPage, _ensureStatsChunk
+// Public: showPage, _ensureStatsChunk, _ensureRaceDetailChunk
 
 'use strict';
 
 // ─────────────────────────────────────────────
 // Lazy sub-chunk loader (Phase 2 完遂続編)
-// 成績タブ / バックテストタブを開いた時に assets/app-rest-stats.min.js を動的 load。
-// 起動時の rest bundle download を ~12KB 縮小 (TBT / LCP 改善)。
+//   - stats:  成績タブ / バックテストタブ open 時 (app-rest-stats.min.js)
+//   - detail: レース詳細ページ open 時 (app-rest-detail.min.js)
+// 起動時 rest bundle を ~50KB 縮小 (TBT/LCP 改善)。SW cache 後は 2 回目以降即時。
 // ─────────────────────────────────────────────
-var _statsChunkState = { loaded: false, promise: null };
 
-function _ensureStatsChunk() {
-  if (_statsChunkState.loaded) return Promise.resolve();
-  if (_statsChunkState.promise) return _statsChunkState.promise;
-  // 既に DOM に script が存在する (showPage 連打) なら共通 Promise を返す
-  _statsChunkState.promise = new Promise(function (resolve, reject) {
-    // version は app-rest.min.js の `?v=...` と同期 (build.mjs が両方を sha256 で更新)
+// 各 chunk の load 状態 (重複 load 防止)
+var _chunkStates = {
+  stats: { loaded: false, promise: null },
+  detail: { loaded: false, promise: null },
+};
+
+/**
+ * 任意の lazy chunk を動的 load する汎用ヘルパ。
+ * app-rest.min.js の URL から `?v=XXXX` を読み取って同じ version を chunk URL に付与する
+ * (build.mjs が複数 chunk の sha256 を 1 つの version に合成しているため stale risk なし)。
+ */
+function _loadChunk(stateKey, filename) {
+  var st = _chunkStates[stateKey];
+  if (!st) {
+    return Promise.reject(new Error('unknown chunk: ' + stateKey));
+  }
+  if (st.loaded) return Promise.resolve();
+  if (st.promise) return st.promise;
+  st.promise = new Promise(function (resolve, reject) {
     var ver = '';
     try {
-      // index.html の <script src="assets/app-rest.min.js?v=XXXX"> から取得
       var existing = document.querySelector('script[src*="app-rest.min.js"]');
       if (existing && existing.src) {
         var m = existing.src.match(/\?v=([\w]+)/);
@@ -33,19 +45,27 @@ function _ensureStatsChunk() {
       }
     } catch (_) {}
     var s = document.createElement('script');
-    s.src = 'assets/app-rest-stats.min.js' + ver;
+    s.src = 'assets/' + filename + ver;
     s.defer = true;
     s.onload = function () {
-      _statsChunkState.loaded = true;
+      st.loaded = true;
       resolve();
     };
     s.onerror = function (e) {
-      _statsChunkState.promise = null; // 再試行可能に
-      reject(new Error('Failed to load app-rest-stats.min.js: ' + (e && e.message ? e.message : 'unknown')));
+      st.promise = null; // 再試行可能に
+      reject(new Error('Failed to load ' + filename + ': ' + (e && e.message ? e.message : 'unknown')));
     };
     document.head.appendChild(s);
   });
-  return _statsChunkState.promise;
+  return st.promise;
+}
+
+function _ensureStatsChunk() {
+  return _loadChunk('stats', 'app-rest-stats.min.js');
+}
+
+function _ensureRaceDetailChunk() {
+  return _loadChunk('detail', 'app-rest-detail.min.js');
 }
 
 function showPage(page) {
@@ -73,6 +93,8 @@ function showPage(page) {
   } else if (page === 'races') {
     document.getElementById('pageRaces').classList.add('active');
     _setActive('navTop');
+    // 場一覧表示時に detail chunk を pre-fetch (実際の race click を高速化)
+    _ensureRaceDetailChunk().catch(function () {});
   } else if (page === 'detail') {
     document.getElementById('pageDetail').classList.add('active');
     _setActive('navTop');
@@ -80,7 +102,6 @@ function showPage(page) {
   } else if (page === 'stats') {
     document.getElementById('pageStats').classList.add('active');
     _setActive('navStats');
-    // Phase 2 完遂続編: stats chunk を動的 load してから renderStats 呼出
     _ensureStatsChunk().then(
       function () {
         if (typeof renderStats === 'function') renderStats();
@@ -89,16 +110,12 @@ function showPage(page) {
         try {
           if (typeof reportError === 'function') reportError({ type: 'chunk-load', msg: String(err) });
         } catch (_) {}
-        // load 失敗時は静かに諦める (next click で再試行される)
       }
     );
   } else if (page === 'backtest') {
     document.getElementById('pageBacktest').classList.add('active');
     _setActive('navBacktest');
-    // Phase 2 完遂続編: stats chunk を先読みするだけ (runBacktest はユーザがボタン押下時)
-    _ensureStatsChunk().catch(function () {
-      /* silent */
-    });
+    _ensureStatsChunk().catch(function () {});
   } else if (page === 'settings') {
     document.getElementById('pageSettings').classList.add('active');
     _setActive('navSettings');
@@ -114,3 +131,4 @@ function showPage(page) {
 // globalThis export
 globalThis.showPage = showPage;
 globalThis._ensureStatsChunk = _ensureStatsChunk;
+globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;

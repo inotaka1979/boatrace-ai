@@ -1245,7 +1245,17 @@ var ACTION_HANDLERS = {
   refreshOdds:             function(){ if(typeof refreshOdds==='function') refreshOdds(); },
   refreshThisRace:         function(){ if(typeof refreshThisRace==='function') refreshThisRace(); },
   openStadium:             function(el){ if(typeof openStadium==='function') openStadium(el.dataset.argSid); },
-  openRace:                function(el){ if(typeof openRace==='function') openRace(el.dataset.argSid, el.dataset.argRn); },
+  openRace:                function(el){
+    var sid = el.dataset.argSid, rn = el.dataset.argRn;
+    // Phase 2 完遂続編: openRace は app-rest-detail.min.js (lazy chunk) にあるため、
+    //   未 load なら _ensureRaceDetailChunk で動的 load してから呼出
+    if (typeof openRace === 'function') return openRace(sid, rn);
+    if (typeof _ensureRaceDetailChunk === 'function') {
+      _ensureRaceDetailChunk().then(function(){
+        if (typeof openRace === 'function') openRace(sid, rn);
+      }).catch(function(){ /* silent: 次の click で再試行 */ });
+    }
+  },
   showPage:                function(el){ if(typeof showPage==='function') showPage(el.dataset.argPage); },
   showDetailTab:           function(el){ if(typeof _showDetailTab==='function') _showDetailTab(el.dataset.argTab); },
   toggleRaceWatched:       function(el){ if(typeof _toggleRaceWatched==='function') _toggleRaceWatched(el.dataset.argSid, el.dataset.argRn); },
@@ -3073,6 +3083,48 @@ var _backfillTimer = null;
 "use strict";
 (() => {
   // ../src/reporting/page_router.js
+  var _chunkStates = {
+    stats: { loaded: false, promise: null },
+    detail: { loaded: false, promise: null }
+  };
+  function _loadChunk(stateKey, filename) {
+    var st = _chunkStates[stateKey];
+    if (!st) {
+      return Promise.reject(new Error("unknown chunk: " + stateKey));
+    }
+    if (st.loaded) return Promise.resolve();
+    if (st.promise) return st.promise;
+    st.promise = new Promise(function(resolve, reject) {
+      var ver = "";
+      try {
+        var existing = document.querySelector('script[src*="app-rest.min.js"]');
+        if (existing && existing.src) {
+          var m = existing.src.match(/\?v=([\w]+)/);
+          if (m) ver = "?v=" + m[1];
+        }
+      } catch (_) {
+      }
+      var s = document.createElement("script");
+      s.src = "assets/" + filename + ver;
+      s.defer = true;
+      s.onload = function() {
+        st.loaded = true;
+        resolve();
+      };
+      s.onerror = function(e) {
+        st.promise = null;
+        reject(new Error("Failed to load " + filename + ": " + (e && e.message ? e.message : "unknown")));
+      };
+      document.head.appendChild(s);
+    });
+    return st.promise;
+  }
+  function _ensureStatsChunk() {
+    return _loadChunk("stats", "app-rest-stats.min.js");
+  }
+  function _ensureRaceDetailChunk() {
+    return _loadChunk("detail", "app-rest-detail.min.js");
+  }
   function showPage(page) {
     document.querySelectorAll(".page").forEach(function(p) {
       p.classList.remove("active");
@@ -3095,6 +3147,8 @@ var _backfillTimer = null;
     } else if (page === "races") {
       document.getElementById("pageRaces").classList.add("active");
       _setActive("navTop");
+      _ensureRaceDetailChunk().catch(function() {
+      });
     } else if (page === "detail") {
       document.getElementById("pageDetail").classList.add("active");
       _setActive("navTop");
@@ -3102,10 +3156,22 @@ var _backfillTimer = null;
     } else if (page === "stats") {
       document.getElementById("pageStats").classList.add("active");
       _setActive("navStats");
-      renderStats();
+      _ensureStatsChunk().then(
+        function() {
+          if (typeof renderStats === "function") renderStats();
+        },
+        function(err) {
+          try {
+            if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
+          } catch (_) {
+          }
+        }
+      );
     } else if (page === "backtest") {
       document.getElementById("pageBacktest").classList.add("active");
       _setActive("navBacktest");
+      _ensureStatsChunk().catch(function() {
+      });
     } else if (page === "settings") {
       document.getElementById("pageSettings").classList.add("active");
       _setActive("navSettings");
@@ -3118,6 +3184,8 @@ var _backfillTimer = null;
     }
   }
   globalThis.showPage = showPage;
+  globalThis._ensureStatsChunk = _ensureStatsChunk;
+  globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;
 })();
 
 /* BUILD:REPORTING_PAGE_ROUTER:END */
