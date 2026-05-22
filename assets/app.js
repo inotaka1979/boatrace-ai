@@ -5162,6 +5162,16 @@ var _workerHeavyLoaded = false;
     }();
     return bets;
   }
+  globalThis.predictRace = predictRace;
+  globalThis.predictRaceAsync = predictRaceAsync;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_RACE:END */
+
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_program.js
   function predictRaceProgram(sid, raceNum) {
     if (!programData) return null;
     var stadiumProg = programData[String(sid)];
@@ -5253,12 +5263,10 @@ var _workerHeavyLoaded = false;
     }
     return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
   }
-  globalThis.predictRace = predictRace;
-  globalThis.predictRaceAsync = predictRaceAsync;
   globalThis.predictRaceProgram = predictRaceProgram;
 })();
 
-/* BUILD:ANALYSIS_PREDICT_RACE:END */
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)

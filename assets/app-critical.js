@@ -2882,6 +2882,7 @@ var _workerHeavyLoaded = false;
 //   呼出側で「await できる場面」では predictRaceAsync を使う
 
 
+
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
 // ===============================================

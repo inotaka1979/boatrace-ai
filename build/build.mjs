@@ -128,6 +128,7 @@ async function main() {
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
     { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
+    { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
     { marker: 'ANALYSIS_L2_FEATURES', src: 'analysis/l2_features.js' },       // Phase 2 完遂続き (scoreBoatV2 helpers + L2)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)

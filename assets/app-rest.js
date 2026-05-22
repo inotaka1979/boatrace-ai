@@ -4,177 +4,503 @@
 // window.load 後に lazy load される
 'use strict';
 
-/* BUILD:REPORTING_STATS_PAGE:START */
+/* BUILD:ANALYSIS_BACKTEST:START */
 "use strict";
 (() => {
-  // ../src/reporting/stats_page.js
-  function renderStats() {
-    if (typeof _runLazyBackfillOnce === "function") _runLazyBackfillOnce("stats tab opened");
-    if (!resultData || Array.isArray(resultData) && resultData.length === 0 || typeof resultData === "object" && Object.keys(resultData).length === 0) {
-      var sumEl = document.getElementById("statSummary");
-      var recEl = document.getElementById("statRecovery");
-      var skel = '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">\u2026</div><div class="stat-label">\u8AAD\u8FBC\u4E2D</div></div>';
-      if (sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
-      if (recEl && !recEl.innerHTML.trim()) {
-        var rows = "";
-        for (var i = 0; i < 3; i++)
-          rows += '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
-        recEl.innerHTML = '<table style="width:100%"><tbody>' + rows + "</tbody></table>";
-      }
-    }
-    var s = calcTodayStats();
-    var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
-    var trifectaRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(1) : "0.0";
-    document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
-    var recHtml = "";
-    recHtml += '<div class="card" class="p-overflow-hidden">';
-    recHtml += '<div class="card-header-row">\u672C\u65E5 \u5238\u7A2E\u5225</div>';
-    recHtml += '<table class="recovery-table">';
-    recHtml += "<thead><tr><th>\u5238\u7A2E</th><th>\u7684\u4E2D</th><th>\u6295\u8CC7</th><th>\u56DE\u53CE</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
-    var triR = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
-    var exaR = s.exa.invest > 0 ? Math.round(s.exa.payout / s.exa.invest * 100) : 0;
-    var triHitRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(0) : "-";
-    var exaHitRate = s.total > 0 ? (s.exa.hits / s.total * 100).toFixed(0) : "-";
-    recHtml += "<tr><td><b>3\u9023\u5358</b></td><td>" + s.tri.hits + " (" + triHitRate + "%)</td><td>\xA5" + s.tri.invest.toLocaleString() + "</td><td>\xA5" + s.tri.payout.toLocaleString() + '</td><td class="' + _rateColor(triR) + '">' + triR + "%</td></tr>";
-    recHtml += "<tr><td><b>2\u9023\u5358</b></td><td>" + s.exa.hits + " (" + exaHitRate + "%)</td><td>\xA5" + s.exa.invest.toLocaleString() + "</td><td>\xA5" + s.exa.payout.toLocaleString() + '</td><td class="' + _rateColor(exaR) + '">' + exaR + "%</td></tr>";
-    if (s.ana && s.ana.races > 0) {
-      var anaR = s.ana.invest > 0 ? Math.round(s.ana.payout / s.ana.invest * 100) : 0;
-      var anaHitRate = s.ana.races > 0 ? (s.ana.hits / s.ana.races * 100).toFixed(0) : "-";
-      recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:9px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
-    }
-    var totInv = s.tri.invest + s.exa.invest;
-    var totPay = s.tri.payout + s.exa.payout;
-    var totRate = totInv > 0 ? Math.round(totPay / totInv * 100) : 0;
-    var net = totPay - totInv;
-    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
-    recHtml += "</tbody></table></div>";
-    recHtml += '<div class="card" class="p-overflow-hidden">';
-    recHtml += '<div class="card-header-row">\u672C\u65E5 \u30EC\u30FC\u30B9\u30BF\u30A4\u30D7\u5225 (3\u9023\u5358)</div>';
-    recHtml += '<table class="recovery-table">';
-    recHtml += "<thead><tr><th>\u30BF\u30A4\u30D7</th><th>R\u6570</th><th>\u7684\u4E2D</th><th>\u7684\u4E2D\u7387</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
-    var typeLabels = { honmei: "\u26A1\u672C\u547D", middle: "\u{1F4CA}\u6DF7\u6226", ana: "\u{1F525}\u7A74" };
-    ["honmei", "middle", "ana"].forEach(function(t) {
-      var ts = s.typeStats[t];
-      var hr = ts.total > 0 ? (ts.hit3 / ts.total * 100).toFixed(0) : "-";
-      var rr = ts.invest > 0 ? Math.round(ts.payout3 / ts.invest * 100) : 0;
-      recHtml += "<tr><td>" + typeLabels[t] + "</td><td>" + ts.total + "</td><td>" + ts.hit3 + "</td><td>" + hr + '%</td><td class="' + _rateColor(rr) + '">' + rr + "%</td></tr>";
-    });
-    recHtml += "</tbody></table></div>";
-    var stadArr = [];
-    for (var sid in s.stadiumStats) stadArr.push(s.stadiumStats[sid]);
-    stadArr.forEach(function(ss) {
-      ss.rate3 = ss.invest3 > 0 ? Math.round(ss.payout3 / ss.invest3 * 100) : 0;
-      ss.rate2 = ss.invest2 > 0 ? Math.round(ss.payout2 / ss.invest2 * 100) : 0;
-    });
-    stadArr.sort(function(a, b) {
-      return b.rate3 - a.rate3;
-    });
-    if (stadArr.length > 0) {
-      recHtml += '<div class="card" class="p-overflow-hidden">';
-      recHtml += '<div class="card-header-row">\u672C\u65E5 \u5834\u5225 (\u56DE\u53CE\u7387\u9806)</div>';
-      recHtml += '<table class="recovery-table">';
-      recHtml += "<thead><tr><th>\u5834</th><th>R\u6570</th><th>3\u9023\u7684\u4E2D</th><th>3\u9023\u6295\u8CC7</th><th>3\u9023\u56DE\u53CE</th><th>3\u9023\u7387</th></tr></thead><tbody>";
-      stadArr.forEach(function(ss) {
-        var hr = ss.total > 0 ? (ss.hit3 / ss.total * 100).toFixed(0) : "-";
-        recHtml += "<tr><td><b>" + escText(ss.name) + "</b></td><td>" + ss.total + "</td><td>" + ss.hit3 + " (" + hr + "%)</td><td>\xA5" + ss.invest3.toLocaleString() + "</td><td>\xA5" + ss.payout3.toLocaleString() + '</td><td class="' + _rateColor(ss.rate3) + '">' + ss.rate3 + "%</td></tr>";
-      });
-      recHtml += "</tbody></table></div>";
-    }
-    var w = s.warnings;
-    if (w.tri_zero.length > 0 || w.exa_zero.length > 0) {
-      recHtml += '<div class="card" style="padding:12px;background:#FFF3E0;border-left:4px solid var(--warn)">';
-      recHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:6px">\u26A0 \u30C7\u30FC\u30BF\u6574\u5408\u6027\u306E\u8B66\u544A</div>';
-      if (w.tri_zero.length > 0) {
-        recHtml += '<div style="font-size:11px;margin-bottom:4px">3\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.tri_zero.length + "\u4EF6</b></div>";
-        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.tri_zero.join(", ")) + "</div>";
-      }
-      if (w.exa_zero.length > 0) {
-        recHtml += '<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.exa_zero.length + "\u4EF6</b></div>";
-        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.exa_zero.join(", ")) + "</div>";
-      }
-      recHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">\u203B \u8A72\u5F53\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u30C7\u30FC\u30BF\u304C Open API / \u81EA\u524D\u30B9\u30AF\u30EC\u30A4\u30D1\u30FC\u306B\u307E\u3060\u53CD\u6620\u3055\u308C\u3066\u3044\u306A\u3044\u53EF\u80FD\u6027\u3002\u300C\u66F4\u65B0\u300D\u3092\u62BC\u3059\u3068\u518D\u53D6\u5F97\u30FB\u518D\u88DC\u5B8C\u3055\u308C\u307E\u3059\u3002</div>';
-      recHtml += "</div>";
-    }
-    document.getElementById("statRecovery").innerHTML = recHtml;
-    var sd = document.getElementById("statDetail");
-    if (sd) sd.innerHTML = "";
-    var sc = document.getElementById("statsChart");
-    if (sc && sc.parentNode) {
-      sc.parentNode.style.display = "none";
-    }
+  // ../src/analysis/backtest.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  function _btParseDate(yyyymmdd) {
+    if (!yyyymmdd || typeof yyyymmdd !== "string" || yyyymmdd.length !== 8) return null;
+    return new Date(
+      parseInt(yyyymmdd.slice(0, 4), 10),
+      parseInt(yyyymmdd.slice(4, 6), 10) - 1,
+      parseInt(yyyymmdd.slice(6, 8), 10)
+    );
   }
-  function renderStatsChart() {
-    var ctx = document.getElementById("chartAccuracy");
-    if (!ctx) return;
-    capabilities.refresh("chart");
-    if (!capabilities.has("chart")) {
-      _loadChartLib().then(renderStatsChart, function(err) {
-        var parent = ctx.parentNode;
-        if (parent)
-          parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
-      });
-      return;
+  function runBacktestEngine(history, opt) {
+    opt = opt || {};
+    const periodDays = opt.periodDays != null ? opt.periodDays : 14;
+    const stakePerBet = opt.stakePerBet || 100;
+    const ledger = [];
+    let cutoff = null;
+    if (periodDays > 0) {
+      const d = /* @__PURE__ */ new Date();
+      d.setDate(d.getDate() - periodDays);
+      cutoff = d;
     }
-    if (statsChart) statsChart.destroy();
-    var history = safeParse("boatrace_history", []);
-    var byDate = {};
     history.forEach(function(h) {
       if (!h.actual) return;
-      if (!byDate[h.date]) byDate[h.date] = { total: 0, hit: 0 };
-      byDate[h.date].total++;
-      if (h.trifecta_hit) byDate[h.date].hit++;
+      if (cutoff) {
+        const hd = _btParseDate(h.date);
+        if (!hd || hd < cutoff) return;
+      }
+      ledger.push(h);
     });
-    var dates = Object.keys(byDate).sort().slice(-14);
-    var rates = dates.map(function(d) {
-      return byDate[d].total > 0 ? byDate[d].hit / byDate[d].total * 100 : 0;
+    let totalBets = 0, totalStake = 0, totalPayout = 0;
+    let hits3 = 0, hits2 = 0;
+    const dailyROI = {};
+    let maxDD = 0, currentLoss = 0;
+    const byType = {
+      honmei: { n: 0, hits: 0, payout: 0 },
+      middle: { n: 0, hits: 0, payout: 0 },
+      ana: { n: 0, hits: 0, payout: 0 }
+    };
+    const byStadium = {};
+    ledger.sort(function(a, b) {
+      return (a.date || "").localeCompare(b.date || "");
     });
-    statsChart = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels: dates.map(function(d) {
-          return d.slice(4, 6) + "/" + d.slice(6);
-        }),
-        datasets: [
-          {
-            data: rates,
-            backgroundColor: "rgba(33,150,243,0.5)",
-            borderColor: "#2196F3",
-            borderWidth: 1,
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 0 },
-        plugins: {
-          legend: { display: false },
-          title: { display: true, text: "\u65E5\u52253\u9023\u5358\u7684\u4E2D\u7387(%)", color: "#666", font: { size: 11 } }
-        },
-        scales: {
-          x: { ticks: { font: { size: 9 }, color: "#999" }, grid: { display: false } },
-          y: {
-            beginAtZero: true,
-            max: 100,
-            ticks: {
-              font: { size: 9 },
-              color: "#999",
-              callback: function(v) {
-                return v + "%";
-              }
-            },
-            grid: { color: "rgba(0,0,0,0.06)" }
+    ledger.forEach(function(h) {
+      const bets3n = (h.trifecta_bets || []).length;
+      const bets2n = (h.exacta_bets || []).length;
+      const stake = (bets3n + bets2n) * stakePerBet;
+      const payout = (h.payout3 || 0) + (h.payout2 || 0);
+      totalBets += bets3n + bets2n;
+      totalStake += stake;
+      totalPayout += payout;
+      if (h.trifecta_hit) hits3++;
+      if (h.exacta_hit) hits2++;
+      const rt = h.raceType || "middle";
+      if (byType[rt]) {
+        byType[rt].n++;
+        if (h.trifecta_hit) byType[rt].hits++;
+        byType[rt].payout += h.payout3 || 0;
+      }
+      const sid = parseInt(h.stadium);
+      if (sid && sid >= 1 && sid <= 24) {
+        if (!byStadium[sid])
+          byStadium[sid] = {
+            sid,
+            name: typeof _g.STADIUMS === "object" && _g.STADIUMS[sid] || "\u5834" + sid,
+            n: 0,
+            hits3: 0,
+            hits2: 0,
+            stake: 0,
+            payout: 0,
+            payout3: 0
+          };
+        const ss = byStadium[sid];
+        ss.n++;
+        ss.stake += stake;
+        ss.payout += payout;
+        ss.payout3 += h.payout3 || 0;
+        if (h.trifecta_hit) ss.hits3++;
+        if (h.exacta_hit) ss.hits2++;
+      }
+      const net = payout - stake;
+      if (net < 0) {
+        currentLoss += -net;
+        maxDD = Math.max(maxDD, currentLoss);
+      } else {
+        currentLoss = 0;
+      }
+      const d = h.date || "unknown";
+      if (!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
+      dailyROI[d].stake += stake;
+      dailyROI[d].payout += payout;
+      dailyROI[d].n++;
+    });
+    const roi = totalStake > 0 ? totalPayout / totalStake : 0;
+    const hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
+    const hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
+    const dailyReturns = Object.keys(dailyROI).map(function(d) {
+      const s = dailyROI[d].stake;
+      return s > 0 ? (dailyROI[d].payout - s) / s : 0;
+    });
+    const meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a, b) {
+      return a + b;
+    }, 0) / dailyReturns.length : 0;
+    const varR = dailyReturns.length > 1 ? dailyReturns.reduce(function(a, r) {
+      return a + (r - meanR) * (r - meanR);
+    }, 0) / (dailyReturns.length - 1) : 0;
+    const stdR = Math.sqrt(varR);
+    const sharpe = stdR > 0 ? meanR / stdR : 0;
+    const calibration = _computeCalibrationMetrics(ledger);
+    return {
+      samples: ledger.length,
+      totalBets,
+      totalStake,
+      totalPayout,
+      netProfit: totalPayout - totalStake,
+      roi,
+      hitRate3,
+      hitRate2,
+      maxDrawdown: maxDD,
+      sharpe,
+      byType,
+      byStadium,
+      dailyROI,
+      period: periodDays,
+      logLoss: calibration.logLoss,
+      brier: calibration.brier,
+      ece: calibration.ece,
+      calibratedSamples: calibration.n,
+      leakageNote: "NOTE: \u65E2\u5B58\u5C65\u6B74\u306F\u4E88\u60F3\u6642\u70B9\u3067\u65E2\u306B L2 \u5B66\u7FD2\u304C\u53CD\u6620\u6E08\u307F\u306E\u305F\u3081 look-ahead leakage \u306E\u53EF\u80FD\u6027\u3042\u308A\u3002\u5B8C\u5168\u306A forward-chain \u8A55\u4FA1\u306B\u306F runForwardChainBacktest() \u3092\u4F7F\u7528"
+    };
+  }
+  function runForwardChainBacktest(history, opt) {
+    opt = opt || {};
+    const warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
+    const sorted = (history || []).slice().filter(function(h) {
+      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    });
+    sorted.sort(function(a, b) {
+      const d = (a.date || "").localeCompare(b.date || "");
+      if (d !== 0) return d;
+      return (a.stadium || 0) - (b.stadium || 0) || (a.race || 0) - (b.race || 0);
+    });
+    const evalSet = sorted.slice(warmup);
+    const cal = _computeCalibrationMetrics(evalSet);
+    return {
+      totalSamples: sorted.length,
+      warmupSkipped: Math.min(warmup, sorted.length),
+      evaluatedSamples: evalSet.length,
+      logLoss: cal.logLoss,
+      brier: cal.brier,
+      ece: cal.ece,
+      note: "\u6642\u7CFB\u5217\u9806\u3067 warmup \u5F8C\u306E\u30EC\u30FC\u30B9\u306E\u307F\u8A55\u4FA1\u3002\u5B8C\u5168\u306A forward-chain \u518D\u5B66\u7FD2\u306B\u306F\u30EC\u30FC\u30B9\u6642\u70B9\u306E features \u4FDD\u5B58\u304C\u5FC5\u8981"
+    };
+  }
+  function _computeCalibrationMetrics(entries) {
+    let logLossSum = 0, brierSum = 0, n = 0;
+    const bins = [];
+    for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
+    entries.forEach(function(h) {
+      if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+      const winner = h.actual[0];
+      const probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      const pWin = probs[winner];
+      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+      logLossSum += -Math.log(pWin);
+      for (let b = 1; b <= 6; b++) {
+        const p = probs[b] || 0;
+        const y = b === winner ? 1 : 0;
+        brierSum += (p - y) * (p - y);
+      }
+      const binIdx = Math.min(9, Math.floor(pWin * 10));
+      bins[binIdx].sum += pWin;
+      bins[binIdx].hit += 1;
+      bins[binIdx].n += 1;
+      n++;
+    });
+    const logLoss = n > 0 ? logLossSum / n : 0;
+    const brier = n > 0 ? brierSum / n : 0;
+    let ece = 0;
+    bins.forEach(function(b) {
+      if (b.n === 0) return;
+      const avgP = b.sum / b.n;
+      const actRate = b.hit / b.n;
+      ece += b.n / Math.max(1, n) * Math.abs(avgP - actRate);
+    });
+    return { logLoss, brier, ece, n };
+  }
+  _g._btParseDate = _btParseDate;
+  _g.runBacktestEngine = runBacktestEngine;
+  _g.runForwardChainBacktest = runForwardChainBacktest;
+  _g._computeCalibrationMetrics = _computeCalibrationMetrics;
+})();
+
+/* BUILD:ANALYSIS_BACKTEST:END */
+
+
+/* BUILD:ANALYSIS_L2_FEATURES:START */
+"use strict";
+(() => {
+  // ../src/analysis/l2_features.js
+  function _computeClassAttenuation(allBoats) {
+    if (!Array.isArray(allBoats) || !allBoats.length) return 1;
+    var avgClass = 0;
+    allBoats.forEach(function(b) {
+      avgClass += b && b.racer_class_number || 3;
+    });
+    avgClass /= allBoats.length;
+    if (avgClass >= 3.5) return 0.55;
+    if (avgClass >= 3) return 0.7;
+    if (avgClass >= 2.5) return 0.85;
+    return 1;
+  }
+  function _classCourseMult(classNum, course) {
+    var c = classNum || 3, k = course || 3;
+    if (c < 1) c = 1;
+    if (c > 4) c = 4;
+    if (k < 1) k = 1;
+    if (k > 6) k = 6;
+    return CLASS_COURSE_MULT[k - 1][c - 1];
+  }
+  function _computeRaceScenario(allBoats, allPreviews, sid, raceHour) {
+    if (!Array.isArray(allBoats)) return null;
+    var attackProbs = [0, 0, 0, 0, 0, 0, 0];
+    for (var c = 2; c <= 6; c++) {
+      var bt = allBoats.find(function(b) {
+        return b.racer_boat_number === c;
+      });
+      if (!bt) {
+        attackProbs[c] = 0.1;
+        continue;
+      }
+      var rid = bt.racer_number || 0;
+      var style = getRacerCourseStyle(rid, c) || DEFAULT_COURSE_TECHNIQUE[c];
+      if (!style) {
+        attackProbs[c] = 0.08;
+        continue;
+      }
+      var total = (style.nige || 0) + (style.sashi || 0) + (style.makuri || 0) + (style.makuriSashi || 0) + (style.nuki || 0) + (style.megumare || 0);
+      if (total < 3) {
+        attackProbs[c] = 0.08;
+        continue;
+      }
+      var sashiRate = (style.sashi || 0) / total;
+      var makuriComboRate = ((style.makuri || 0) + (style.makuriSashi || 0)) / total;
+      var threat = c === 2 ? sashiRate * 0.7 + makuriComboRate * 0.4 : c === 3 ? makuriComboRate * 0.6 + sashiRate * 0.3 : makuriComboRate * 0.5;
+      if (threat < 0.02) threat = 0.02;
+      if (threat > 0.55) threat = 0.55;
+      attackProbs[c] = threat;
+    }
+    if (sid != null && raceHour != null && typeof tideData !== "undefined" && tideData && tideData.stadiums) {
+      var tideEntry = tideData.stadiums[String(sid)];
+      if (tideEntry && typeof classifyTidePhase === "function") {
+        var phase = classifyTidePhase(tideEntry, raceHour);
+        var outsideMakuriFactor = phase === "high" ? 0.85 : phase === "low" ? 1.15 : 1;
+        if (outsideMakuriFactor !== 1) {
+          for (var k = 4; k <= 6; k++) {
+            attackProbs[k] *= outsideMakuriFactor;
+            if (attackProbs[k] < 0.02) attackProbs[k] = 0.02;
+            if (attackProbs[k] > 0.55) attackProbs[k] = 0.55;
           }
         }
       }
-    });
+    }
+    var nigeSuccess = 1;
+    for (var i = 2; i <= 6; i++) nigeSuccess *= 1 - attackProbs[i];
+    if (nigeSuccess < 0.02) nigeSuccess = 0.02;
+    if (nigeSuccess > 0.95) nigeSuccess = 0.95;
+    return { nigeSuccess, attackProbs };
   }
-  globalThis.renderStats = renderStats;
-  globalThis.renderStatsChart = renderStatsChart;
+  function _resolveCourse(boat, preview, predictedEntries) {
+    var bn = boat.racer_boat_number;
+    if (preview && preview.racer_course_number != null) {
+      return { course: preview.racer_course_number, entryConf: 1, source: "preview" };
+    }
+    if (predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]) {
+      return {
+        course: predictedEntries.byBoat[bn],
+        entryConf: predictedEntries.conf[bn] || 0.5,
+        source: "predicted"
+      };
+    }
+    return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
+  }
+  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
+    var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
+    var rid = boat.racer_number || 0;
+    var racerCWR = getRacerCourseWinRate(rid, course);
+    var stadCWR = getStadiumCourseWinRate(String(sid), course);
+    var myPv = preview || {};
+    var st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
+    var tilt = pf(myPv.racer_tilt_adjustment);
+    var windCourse = 0;
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
+      var isHead = wd >= 7 && wd <= 11;
+      if (isHead && course === 1) windCourse = -ws / 10;
+      else if (isHead && course >= 4) windCourse = ws / 20;
+    }
+    var etComp = 0;
+    if (etRank <= 1 && st > 0 && st <= 0.1) etComp = 1;
+    else if (etRank >= 4 && st >= 0.15) etComp = -1;
+    var formScore = 0;
+    var form = getRacerForm(rid);
+    if (form) formScore = form.score / 10;
+    var tiltAlign = 0;
+    if (course <= 2 && tilt <= -0.5) tiltAlign = 1;
+    else if (course >= 4 && tilt >= 0.5) tiltAlign = 1;
+    else if (course <= 2 && tilt >= 0.5 || course >= 4 && tilt <= -0.5) tiltAlign = -1;
+    return [
+      pf(boat.racer_national_top_1_percent) / 10,
+      pf(boat.racer_assigned_motor_top_2_percent) / 100,
+      (etRank + 1) / 6,
+      course / 6,
+      (boat.racer_class_number || 3) / 4,
+      windCourse,
+      racerCWR || pf(boat.racer_national_top_1_percent) / 100,
+      (stRank + 1) / 6,
+      etComp,
+      formScore,
+      tiltAlign,
+      stadCWR
+    ];
+  }
+  function l2Predict(features6) {
+    var enableZ = TUNING.PREDICTION.ENABLE_ZSCORE;
+    var warmupOk = enableZ && _featureStats.n >= TUNING.PREDICTION.ZSCORE_WARMUP_N;
+    var w = l2weights;
+    var wlen = w.length;
+    var prior = COURSE_LOG_PRIOR;
+    var bias = L2_BIAS;
+    var logits = new Array(6);
+    for (var b = 0; b < 6; b++) {
+      var feat = features6[b];
+      if (warmupOk) feat = _normalizeFeatures(feat);
+      var z = bias + (prior[b] || 0);
+      for (var i = 0; i < wlen; i++) {
+        var fi = feat[i];
+        if (fi) z += fi * (w[i] || 0);
+      }
+      logits[b] = z;
+    }
+    return softmax(logits);
+  }
+  function l2Update(features6, winnerIdx) {
+    var probs = l2Predict(features6);
+    var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
+    for (var b = 0; b < 6; b++) {
+      var target = b === winnerIdx ? 1 : 0;
+      var err = probs[b] - target;
+      for (var i = 0; i < l2weights.length; i++) {
+        var grad = err * (features6[b][i] || 0) + L2_LAMBDA * l2weights[i];
+        l2weights[i] -= lr * grad;
+      }
+      _updateFeatureStats(features6[b]);
+    }
+    l2trainStep += 1;
+    safeSet("boatrace_weights", l2weights);
+    safeSet("boatrace_trainstep", l2trainStep);
+    if (l2trainStep % 50 === 0) safeSet("boatrace_featurestats", _featureStats);
+  }
+  globalThis._computeClassAttenuation = _computeClassAttenuation;
+  globalThis._classCourseMult = _classCourseMult;
+  globalThis._computeRaceScenario = _computeRaceScenario;
+  globalThis._resolveCourse = _resolveCourse;
+  globalThis.getL2Features = getL2Features;
+  globalThis.l2Predict = l2Predict;
+  globalThis.l2Update = l2Update;
 })();
 
-/* BUILD:REPORTING_STATS_PAGE:END */
+/* BUILD:ANALYSIS_L2_FEATURES:END */
+
+
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_scenarios.js
+  function predictScenarios(boats, preview, weather, sid, grade) {
+    var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
+    var scen = Object.assign({}, prior);
+    var sdb = stadiumDB[String(sid)];
+    if (sdb && sdb.courseWinRate && sdb.courseWinRate[1]) {
+      var cwr = sdb.courseWinRate[1];
+      if (cwr.races >= 30) {
+        var rate = cwr.win / cwr.races;
+        var delta = (rate - 0.55) * 0.5;
+        scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
+      }
+    }
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wh = weather.wave_height || weather.race_wave || 0;
+      if (ws >= 5 || wh >= 7) {
+        scen.nige *= 0.7;
+        scen.makuri *= 1.3;
+        scen.other *= 1.5;
+      }
+    }
+    var sum = 0;
+    for (var k in scen) sum += scen[k];
+    if (sum > 0) {
+      for (var k2 in scen) scen[k2] = scen[k2] / sum;
+    }
+    return scen;
+  }
+  function predictWithScenarios(boats, preview, weather, sid, grade) {
+    var sc = predictScenarios(boats, preview, weather, sid, grade);
+    var dist = {};
+    Object.keys(SCENARIO_DIST).forEach(function(scKey) {
+      var w = sc[scKey] || 0;
+      var template = SCENARIO_DIST[scKey];
+      Object.keys(template).forEach(function(combo) {
+        dist[combo] = (dist[combo] || 0) + w * template[combo];
+      });
+    });
+    var allCombos = [];
+    for (var i = 1; i <= 6; i++)
+      for (var j = 1; j <= 6; j++)
+        for (var k = 1; k <= 6; k++) {
+          if (i !== j && j !== k && i !== k) allCombos.push(i + "-" + j + "-" + k);
+        }
+    var residual = 0.05 / allCombos.length;
+    allCombos.forEach(function(c3) {
+      if (dist[c3] == null) dist[c3] = residual;
+    });
+    var s = 0;
+    for (var c in dist) s += dist[c];
+    if (s > 0) for (var c2 in dist) dist[c2] = dist[c2] / s;
+    return { dist, scenarios: sc };
+  }
+  function predictEntryCourses(boats, sid) {
+    var dists = boats.map(function(b) {
+      return {
+        boat: b.racer_boat_number,
+        rid: b.racer_number,
+        dist: getEntryDist(b.racer_number, b.racer_boat_number, sid)
+      };
+    });
+    var permutations = [];
+    function perm(arr, current) {
+      if (arr.length === 0) {
+        permutations.push(current);
+        return;
+      }
+      for (var i2 = 0; i2 < arr.length; i2++) {
+        var rest = arr.slice(0, i2).concat(arr.slice(i2 + 1));
+        perm(rest, current.concat([arr[i2]]));
+      }
+    }
+    perm([1, 2, 3, 4, 5, 6], []);
+    var best = null, bestScore = -Infinity;
+    permutations.forEach(function(p) {
+      var s = 0;
+      var valid = true;
+      for (var i2 = 0; i2 < dists.length; i2++) {
+        var pr = dists[i2].dist[String(p[i2])] || 0;
+        if (pr <= 0) {
+          valid = false;
+          break;
+        }
+        s += Math.log(pr);
+      }
+      if (valid && s > bestScore) {
+        bestScore = s;
+        best = p;
+      }
+    });
+    if (!best) {
+      var by = {};
+      var c = {};
+      boats.forEach(function(b) {
+        by[b.racer_boat_number] = b.racer_boat_number;
+        c[b.racer_boat_number] = 0.5;
+      });
+      return { byBoat: by, conf: c };
+    }
+    var byBoat = {}, conf = {};
+    for (var i = 0; i < dists.length; i++) {
+      byBoat[dists[i].boat] = best[i];
+      conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
+    }
+    return { byBoat, conf };
+  }
+  globalThis.predictScenarios = predictScenarios;
+  globalThis.predictWithScenarios = predictWithScenarios;
+  globalThis.predictEntryCourses = predictEntryCourses;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:END */
 
 
 /* BUILD:ANALYSIS_PREDICT_RACE:START */
@@ -445,6 +771,17 @@
     }();
     return bets;
   }
+  globalThis.predictRace = predictRace;
+  globalThis.predictRaceAsync = predictRaceAsync;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_RACE:END */
+
+
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_program.js
   function predictRaceProgram(sid, raceNum) {
     if (!programData) return null;
     var stadiumProg = programData[String(sid)];
@@ -536,12 +873,183 @@
     }
     return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
   }
-  globalThis.predictRace = predictRace;
-  globalThis.predictRaceAsync = predictRaceAsync;
   globalThis.predictRaceProgram = predictRaceProgram;
 })();
 
-/* BUILD:ANALYSIS_PREDICT_RACE:END */
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
+
+
+/* BUILD:REPORTING_STATS_PAGE:START */
+"use strict";
+(() => {
+  // ../src/reporting/stats_page.js
+  function renderStats() {
+    if (typeof _runLazyBackfillOnce === "function") _runLazyBackfillOnce("stats tab opened");
+    if (!resultData || Array.isArray(resultData) && resultData.length === 0 || typeof resultData === "object" && Object.keys(resultData).length === 0) {
+      var sumEl = document.getElementById("statSummary");
+      var recEl = document.getElementById("statRecovery");
+      var skel = '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">\u2026</div><div class="stat-label">\u8AAD\u8FBC\u4E2D</div></div>';
+      if (sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
+      if (recEl && !recEl.innerHTML.trim()) {
+        var rows = "";
+        for (var i = 0; i < 3; i++)
+          rows += '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
+        recEl.innerHTML = '<table style="width:100%"><tbody>' + rows + "</tbody></table>";
+      }
+    }
+    var s = calcTodayStats();
+    var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
+    var trifectaRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(1) : "0.0";
+    document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
+    var recHtml = "";
+    recHtml += '<div class="card" class="p-overflow-hidden">';
+    recHtml += '<div class="card-header-row">\u672C\u65E5 \u5238\u7A2E\u5225</div>';
+    recHtml += '<table class="recovery-table">';
+    recHtml += "<thead><tr><th>\u5238\u7A2E</th><th>\u7684\u4E2D</th><th>\u6295\u8CC7</th><th>\u56DE\u53CE</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
+    var triR = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
+    var exaR = s.exa.invest > 0 ? Math.round(s.exa.payout / s.exa.invest * 100) : 0;
+    var triHitRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(0) : "-";
+    var exaHitRate = s.total > 0 ? (s.exa.hits / s.total * 100).toFixed(0) : "-";
+    recHtml += "<tr><td><b>3\u9023\u5358</b></td><td>" + s.tri.hits + " (" + triHitRate + "%)</td><td>\xA5" + s.tri.invest.toLocaleString() + "</td><td>\xA5" + s.tri.payout.toLocaleString() + '</td><td class="' + _rateColor(triR) + '">' + triR + "%</td></tr>";
+    recHtml += "<tr><td><b>2\u9023\u5358</b></td><td>" + s.exa.hits + " (" + exaHitRate + "%)</td><td>\xA5" + s.exa.invest.toLocaleString() + "</td><td>\xA5" + s.exa.payout.toLocaleString() + '</td><td class="' + _rateColor(exaR) + '">' + exaR + "%</td></tr>";
+    if (s.ana && s.ana.races > 0) {
+      var anaR = s.ana.invest > 0 ? Math.round(s.ana.payout / s.ana.invest * 100) : 0;
+      var anaHitRate = s.ana.races > 0 ? (s.ana.hits / s.ana.races * 100).toFixed(0) : "-";
+      recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:9px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
+    }
+    var totInv = s.tri.invest + s.exa.invest;
+    var totPay = s.tri.payout + s.exa.payout;
+    var totRate = totInv > 0 ? Math.round(totPay / totInv * 100) : 0;
+    var net = totPay - totInv;
+    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
+    recHtml += "</tbody></table></div>";
+    recHtml += '<div class="card" class="p-overflow-hidden">';
+    recHtml += '<div class="card-header-row">\u672C\u65E5 \u30EC\u30FC\u30B9\u30BF\u30A4\u30D7\u5225 (3\u9023\u5358)</div>';
+    recHtml += '<table class="recovery-table">';
+    recHtml += "<thead><tr><th>\u30BF\u30A4\u30D7</th><th>R\u6570</th><th>\u7684\u4E2D</th><th>\u7684\u4E2D\u7387</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
+    var typeLabels = { honmei: "\u26A1\u672C\u547D", middle: "\u{1F4CA}\u6DF7\u6226", ana: "\u{1F525}\u7A74" };
+    ["honmei", "middle", "ana"].forEach(function(t) {
+      var ts = s.typeStats[t];
+      var hr = ts.total > 0 ? (ts.hit3 / ts.total * 100).toFixed(0) : "-";
+      var rr = ts.invest > 0 ? Math.round(ts.payout3 / ts.invest * 100) : 0;
+      recHtml += "<tr><td>" + typeLabels[t] + "</td><td>" + ts.total + "</td><td>" + ts.hit3 + "</td><td>" + hr + '%</td><td class="' + _rateColor(rr) + '">' + rr + "%</td></tr>";
+    });
+    recHtml += "</tbody></table></div>";
+    var stadArr = [];
+    for (var sid in s.stadiumStats) stadArr.push(s.stadiumStats[sid]);
+    stadArr.forEach(function(ss) {
+      ss.rate3 = ss.invest3 > 0 ? Math.round(ss.payout3 / ss.invest3 * 100) : 0;
+      ss.rate2 = ss.invest2 > 0 ? Math.round(ss.payout2 / ss.invest2 * 100) : 0;
+    });
+    stadArr.sort(function(a, b) {
+      return b.rate3 - a.rate3;
+    });
+    if (stadArr.length > 0) {
+      recHtml += '<div class="card" class="p-overflow-hidden">';
+      recHtml += '<div class="card-header-row">\u672C\u65E5 \u5834\u5225 (\u56DE\u53CE\u7387\u9806)</div>';
+      recHtml += '<table class="recovery-table">';
+      recHtml += "<thead><tr><th>\u5834</th><th>R\u6570</th><th>3\u9023\u7684\u4E2D</th><th>3\u9023\u6295\u8CC7</th><th>3\u9023\u56DE\u53CE</th><th>3\u9023\u7387</th></tr></thead><tbody>";
+      stadArr.forEach(function(ss) {
+        var hr = ss.total > 0 ? (ss.hit3 / ss.total * 100).toFixed(0) : "-";
+        recHtml += "<tr><td><b>" + escText(ss.name) + "</b></td><td>" + ss.total + "</td><td>" + ss.hit3 + " (" + hr + "%)</td><td>\xA5" + ss.invest3.toLocaleString() + "</td><td>\xA5" + ss.payout3.toLocaleString() + '</td><td class="' + _rateColor(ss.rate3) + '">' + ss.rate3 + "%</td></tr>";
+      });
+      recHtml += "</tbody></table></div>";
+    }
+    var w = s.warnings;
+    if (w.tri_zero.length > 0 || w.exa_zero.length > 0) {
+      recHtml += '<div class="card" style="padding:12px;background:#FFF3E0;border-left:4px solid var(--warn)">';
+      recHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:6px">\u26A0 \u30C7\u30FC\u30BF\u6574\u5408\u6027\u306E\u8B66\u544A</div>';
+      if (w.tri_zero.length > 0) {
+        recHtml += '<div style="font-size:11px;margin-bottom:4px">3\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.tri_zero.length + "\u4EF6</b></div>";
+        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.tri_zero.join(", ")) + "</div>";
+      }
+      if (w.exa_zero.length > 0) {
+        recHtml += '<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.exa_zero.length + "\u4EF6</b></div>";
+        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.exa_zero.join(", ")) + "</div>";
+      }
+      recHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">\u203B \u8A72\u5F53\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u30C7\u30FC\u30BF\u304C Open API / \u81EA\u524D\u30B9\u30AF\u30EC\u30A4\u30D1\u30FC\u306B\u307E\u3060\u53CD\u6620\u3055\u308C\u3066\u3044\u306A\u3044\u53EF\u80FD\u6027\u3002\u300C\u66F4\u65B0\u300D\u3092\u62BC\u3059\u3068\u518D\u53D6\u5F97\u30FB\u518D\u88DC\u5B8C\u3055\u308C\u307E\u3059\u3002</div>';
+      recHtml += "</div>";
+    }
+    document.getElementById("statRecovery").innerHTML = recHtml;
+    var sd = document.getElementById("statDetail");
+    if (sd) sd.innerHTML = "";
+    var sc = document.getElementById("statsChart");
+    if (sc && sc.parentNode) {
+      sc.parentNode.style.display = "none";
+    }
+  }
+  function renderStatsChart() {
+    var ctx = document.getElementById("chartAccuracy");
+    if (!ctx) return;
+    capabilities.refresh("chart");
+    if (!capabilities.has("chart")) {
+      _loadChartLib().then(renderStatsChart, function(err) {
+        var parent = ctx.parentNode;
+        if (parent)
+          parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
+      });
+      return;
+    }
+    if (statsChart) statsChart.destroy();
+    var history = safeParse("boatrace_history", []);
+    var byDate = {};
+    history.forEach(function(h) {
+      if (!h.actual) return;
+      if (!byDate[h.date]) byDate[h.date] = { total: 0, hit: 0 };
+      byDate[h.date].total++;
+      if (h.trifecta_hit) byDate[h.date].hit++;
+    });
+    var dates = Object.keys(byDate).sort().slice(-14);
+    var rates = dates.map(function(d) {
+      return byDate[d].total > 0 ? byDate[d].hit / byDate[d].total * 100 : 0;
+    });
+    statsChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: dates.map(function(d) {
+          return d.slice(4, 6) + "/" + d.slice(6);
+        }),
+        datasets: [
+          {
+            data: rates,
+            backgroundColor: "rgba(33,150,243,0.5)",
+            borderColor: "#2196F3",
+            borderWidth: 1,
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: "\u65E5\u52253\u9023\u5358\u7684\u4E2D\u7387(%)", color: "#666", font: { size: 11 } }
+        },
+        scales: {
+          x: { ticks: { font: { size: 9 }, color: "#999" }, grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              font: { size: 9 },
+              color: "#999",
+              callback: function(v) {
+                return v + "%";
+              }
+            },
+            grid: { color: "rgba(0,0,0,0.06)" }
+          }
+        }
+      }
+    });
+  }
+  globalThis.renderStats = renderStats;
+  globalThis.renderStatsChart = renderStatsChart;
+})();
+
+/* BUILD:REPORTING_STATS_PAGE:END */
 
 
 /* BUILD:ANALYSIS_CALIBRATION:START */
@@ -685,387 +1193,6 @@
 })();
 
 /* BUILD:ANALYSIS_CALIBRATION:END */
-
-
-/* BUILD:ANALYSIS_L2_FEATURES:START */
-"use strict";
-(() => {
-  // ../src/analysis/l2_features.js
-  function _computeClassAttenuation(allBoats) {
-    if (!Array.isArray(allBoats) || !allBoats.length) return 1;
-    var avgClass = 0;
-    allBoats.forEach(function(b) {
-      avgClass += b && b.racer_class_number || 3;
-    });
-    avgClass /= allBoats.length;
-    if (avgClass >= 3.5) return 0.55;
-    if (avgClass >= 3) return 0.7;
-    if (avgClass >= 2.5) return 0.85;
-    return 1;
-  }
-  function _classCourseMult(classNum, course) {
-    var c = classNum || 3, k = course || 3;
-    if (c < 1) c = 1;
-    if (c > 4) c = 4;
-    if (k < 1) k = 1;
-    if (k > 6) k = 6;
-    return CLASS_COURSE_MULT[k - 1][c - 1];
-  }
-  function _computeRaceScenario(allBoats, allPreviews, sid, raceHour) {
-    if (!Array.isArray(allBoats)) return null;
-    var attackProbs = [0, 0, 0, 0, 0, 0, 0];
-    for (var c = 2; c <= 6; c++) {
-      var bt = allBoats.find(function(b) {
-        return b.racer_boat_number === c;
-      });
-      if (!bt) {
-        attackProbs[c] = 0.1;
-        continue;
-      }
-      var rid = bt.racer_number || 0;
-      var style = getRacerCourseStyle(rid, c) || DEFAULT_COURSE_TECHNIQUE[c];
-      if (!style) {
-        attackProbs[c] = 0.08;
-        continue;
-      }
-      var total = (style.nige || 0) + (style.sashi || 0) + (style.makuri || 0) + (style.makuriSashi || 0) + (style.nuki || 0) + (style.megumare || 0);
-      if (total < 3) {
-        attackProbs[c] = 0.08;
-        continue;
-      }
-      var sashiRate = (style.sashi || 0) / total;
-      var makuriComboRate = ((style.makuri || 0) + (style.makuriSashi || 0)) / total;
-      var threat = c === 2 ? sashiRate * 0.7 + makuriComboRate * 0.4 : c === 3 ? makuriComboRate * 0.6 + sashiRate * 0.3 : makuriComboRate * 0.5;
-      if (threat < 0.02) threat = 0.02;
-      if (threat > 0.55) threat = 0.55;
-      attackProbs[c] = threat;
-    }
-    if (sid != null && raceHour != null && typeof tideData !== "undefined" && tideData && tideData.stadiums) {
-      var tideEntry = tideData.stadiums[String(sid)];
-      if (tideEntry && typeof classifyTidePhase === "function") {
-        var phase = classifyTidePhase(tideEntry, raceHour);
-        var outsideMakuriFactor = phase === "high" ? 0.85 : phase === "low" ? 1.15 : 1;
-        if (outsideMakuriFactor !== 1) {
-          for (var k = 4; k <= 6; k++) {
-            attackProbs[k] *= outsideMakuriFactor;
-            if (attackProbs[k] < 0.02) attackProbs[k] = 0.02;
-            if (attackProbs[k] > 0.55) attackProbs[k] = 0.55;
-          }
-        }
-      }
-    }
-    var nigeSuccess = 1;
-    for (var i = 2; i <= 6; i++) nigeSuccess *= 1 - attackProbs[i];
-    if (nigeSuccess < 0.02) nigeSuccess = 0.02;
-    if (nigeSuccess > 0.95) nigeSuccess = 0.95;
-    return { nigeSuccess, attackProbs };
-  }
-  function _resolveCourse(boat, preview, predictedEntries) {
-    var bn = boat.racer_boat_number;
-    if (preview && preview.racer_course_number != null) {
-      return { course: preview.racer_course_number, entryConf: 1, source: "preview" };
-    }
-    if (predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]) {
-      return {
-        course: predictedEntries.byBoat[bn],
-        entryConf: predictedEntries.conf[bn] || 0.5,
-        source: "predicted"
-      };
-    }
-    return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
-  }
-  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
-    var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
-    var rid = boat.racer_number || 0;
-    var racerCWR = getRacerCourseWinRate(rid, course);
-    var stadCWR = getStadiumCourseWinRate(String(sid), course);
-    var myPv = preview || {};
-    var st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
-    var tilt = pf(myPv.racer_tilt_adjustment);
-    var windCourse = 0;
-    if (weather) {
-      var ws = weather.wind_speed || weather.race_wind || 0;
-      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = wd >= 7 && wd <= 11;
-      if (isHead && course === 1) windCourse = -ws / 10;
-      else if (isHead && course >= 4) windCourse = ws / 20;
-    }
-    var etComp = 0;
-    if (etRank <= 1 && st > 0 && st <= 0.1) etComp = 1;
-    else if (etRank >= 4 && st >= 0.15) etComp = -1;
-    var formScore = 0;
-    var form = getRacerForm(rid);
-    if (form) formScore = form.score / 10;
-    var tiltAlign = 0;
-    if (course <= 2 && tilt <= -0.5) tiltAlign = 1;
-    else if (course >= 4 && tilt >= 0.5) tiltAlign = 1;
-    else if (course <= 2 && tilt >= 0.5 || course >= 4 && tilt <= -0.5) tiltAlign = -1;
-    return [
-      pf(boat.racer_national_top_1_percent) / 10,
-      pf(boat.racer_assigned_motor_top_2_percent) / 100,
-      (etRank + 1) / 6,
-      course / 6,
-      (boat.racer_class_number || 3) / 4,
-      windCourse,
-      racerCWR || pf(boat.racer_national_top_1_percent) / 100,
-      (stRank + 1) / 6,
-      etComp,
-      formScore,
-      tiltAlign,
-      stadCWR
-    ];
-  }
-  function l2Predict(features6) {
-    var enableZ = TUNING.PREDICTION.ENABLE_ZSCORE;
-    var warmupOk = enableZ && _featureStats.n >= TUNING.PREDICTION.ZSCORE_WARMUP_N;
-    var w = l2weights;
-    var wlen = w.length;
-    var prior = COURSE_LOG_PRIOR;
-    var bias = L2_BIAS;
-    var logits = new Array(6);
-    for (var b = 0; b < 6; b++) {
-      var feat = features6[b];
-      if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
-      for (var i = 0; i < wlen; i++) {
-        var fi = feat[i];
-        if (fi) z += fi * (w[i] || 0);
-      }
-      logits[b] = z;
-    }
-    return softmax(logits);
-  }
-  function l2Update(features6, winnerIdx) {
-    var probs = l2Predict(features6);
-    var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
-    for (var b = 0; b < 6; b++) {
-      var target = b === winnerIdx ? 1 : 0;
-      var err = probs[b] - target;
-      for (var i = 0; i < l2weights.length; i++) {
-        var grad = err * (features6[b][i] || 0) + L2_LAMBDA * l2weights[i];
-        l2weights[i] -= lr * grad;
-      }
-      _updateFeatureStats(features6[b]);
-    }
-    l2trainStep += 1;
-    safeSet("boatrace_weights", l2weights);
-    safeSet("boatrace_trainstep", l2trainStep);
-    if (l2trainStep % 50 === 0) safeSet("boatrace_featurestats", _featureStats);
-  }
-  globalThis._computeClassAttenuation = _computeClassAttenuation;
-  globalThis._classCourseMult = _classCourseMult;
-  globalThis._computeRaceScenario = _computeRaceScenario;
-  globalThis._resolveCourse = _resolveCourse;
-  globalThis.getL2Features = getL2Features;
-  globalThis.l2Predict = l2Predict;
-  globalThis.l2Update = l2Update;
-})();
-
-/* BUILD:ANALYSIS_L2_FEATURES:END */
-
-
-/* BUILD:ANALYSIS_BACKTEST:START */
-"use strict";
-(() => {
-  // ../src/analysis/backtest.js
-  var _g = (
-    /** @type {any} */
-    globalThis
-  );
-  function _btParseDate(yyyymmdd) {
-    if (!yyyymmdd || typeof yyyymmdd !== "string" || yyyymmdd.length !== 8) return null;
-    return new Date(
-      parseInt(yyyymmdd.slice(0, 4), 10),
-      parseInt(yyyymmdd.slice(4, 6), 10) - 1,
-      parseInt(yyyymmdd.slice(6, 8), 10)
-    );
-  }
-  function runBacktestEngine(history, opt) {
-    opt = opt || {};
-    const periodDays = opt.periodDays != null ? opt.periodDays : 14;
-    const stakePerBet = opt.stakePerBet || 100;
-    const ledger = [];
-    let cutoff = null;
-    if (periodDays > 0) {
-      const d = /* @__PURE__ */ new Date();
-      d.setDate(d.getDate() - periodDays);
-      cutoff = d;
-    }
-    history.forEach(function(h) {
-      if (!h.actual) return;
-      if (cutoff) {
-        const hd = _btParseDate(h.date);
-        if (!hd || hd < cutoff) return;
-      }
-      ledger.push(h);
-    });
-    let totalBets = 0, totalStake = 0, totalPayout = 0;
-    let hits3 = 0, hits2 = 0;
-    const dailyROI = {};
-    let maxDD = 0, currentLoss = 0;
-    const byType = {
-      honmei: { n: 0, hits: 0, payout: 0 },
-      middle: { n: 0, hits: 0, payout: 0 },
-      ana: { n: 0, hits: 0, payout: 0 }
-    };
-    const byStadium = {};
-    ledger.sort(function(a, b) {
-      return (a.date || "").localeCompare(b.date || "");
-    });
-    ledger.forEach(function(h) {
-      const bets3n = (h.trifecta_bets || []).length;
-      const bets2n = (h.exacta_bets || []).length;
-      const stake = (bets3n + bets2n) * stakePerBet;
-      const payout = (h.payout3 || 0) + (h.payout2 || 0);
-      totalBets += bets3n + bets2n;
-      totalStake += stake;
-      totalPayout += payout;
-      if (h.trifecta_hit) hits3++;
-      if (h.exacta_hit) hits2++;
-      const rt = h.raceType || "middle";
-      if (byType[rt]) {
-        byType[rt].n++;
-        if (h.trifecta_hit) byType[rt].hits++;
-        byType[rt].payout += h.payout3 || 0;
-      }
-      const sid = parseInt(h.stadium);
-      if (sid && sid >= 1 && sid <= 24) {
-        if (!byStadium[sid])
-          byStadium[sid] = {
-            sid,
-            name: typeof _g.STADIUMS === "object" && _g.STADIUMS[sid] || "\u5834" + sid,
-            n: 0,
-            hits3: 0,
-            hits2: 0,
-            stake: 0,
-            payout: 0,
-            payout3: 0
-          };
-        const ss = byStadium[sid];
-        ss.n++;
-        ss.stake += stake;
-        ss.payout += payout;
-        ss.payout3 += h.payout3 || 0;
-        if (h.trifecta_hit) ss.hits3++;
-        if (h.exacta_hit) ss.hits2++;
-      }
-      const net = payout - stake;
-      if (net < 0) {
-        currentLoss += -net;
-        maxDD = Math.max(maxDD, currentLoss);
-      } else {
-        currentLoss = 0;
-      }
-      const d = h.date || "unknown";
-      if (!dailyROI[d]) dailyROI[d] = { stake: 0, payout: 0, n: 0 };
-      dailyROI[d].stake += stake;
-      dailyROI[d].payout += payout;
-      dailyROI[d].n++;
-    });
-    const roi = totalStake > 0 ? totalPayout / totalStake : 0;
-    const hitRate3 = ledger.length > 0 ? hits3 / ledger.length : 0;
-    const hitRate2 = ledger.length > 0 ? hits2 / ledger.length : 0;
-    const dailyReturns = Object.keys(dailyROI).map(function(d) {
-      const s = dailyROI[d].stake;
-      return s > 0 ? (dailyROI[d].payout - s) / s : 0;
-    });
-    const meanR = dailyReturns.length > 0 ? dailyReturns.reduce(function(a, b) {
-      return a + b;
-    }, 0) / dailyReturns.length : 0;
-    const varR = dailyReturns.length > 1 ? dailyReturns.reduce(function(a, r) {
-      return a + (r - meanR) * (r - meanR);
-    }, 0) / (dailyReturns.length - 1) : 0;
-    const stdR = Math.sqrt(varR);
-    const sharpe = stdR > 0 ? meanR / stdR : 0;
-    const calibration = _computeCalibrationMetrics(ledger);
-    return {
-      samples: ledger.length,
-      totalBets,
-      totalStake,
-      totalPayout,
-      netProfit: totalPayout - totalStake,
-      roi,
-      hitRate3,
-      hitRate2,
-      maxDrawdown: maxDD,
-      sharpe,
-      byType,
-      byStadium,
-      dailyROI,
-      period: periodDays,
-      logLoss: calibration.logLoss,
-      brier: calibration.brier,
-      ece: calibration.ece,
-      calibratedSamples: calibration.n,
-      leakageNote: "NOTE: \u65E2\u5B58\u5C65\u6B74\u306F\u4E88\u60F3\u6642\u70B9\u3067\u65E2\u306B L2 \u5B66\u7FD2\u304C\u53CD\u6620\u6E08\u307F\u306E\u305F\u3081 look-ahead leakage \u306E\u53EF\u80FD\u6027\u3042\u308A\u3002\u5B8C\u5168\u306A forward-chain \u8A55\u4FA1\u306B\u306F runForwardChainBacktest() \u3092\u4F7F\u7528"
-    };
-  }
-  function runForwardChainBacktest(history, opt) {
-    opt = opt || {};
-    const warmup = opt.warmupRaces != null ? opt.warmupRaces : 30;
-    const sorted = (history || []).slice().filter(function(h) {
-      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
-    });
-    sorted.sort(function(a, b) {
-      const d = (a.date || "").localeCompare(b.date || "");
-      if (d !== 0) return d;
-      return (a.stadium || 0) - (b.stadium || 0) || (a.race || 0) - (b.race || 0);
-    });
-    const evalSet = sorted.slice(warmup);
-    const cal = _computeCalibrationMetrics(evalSet);
-    return {
-      totalSamples: sorted.length,
-      warmupSkipped: Math.min(warmup, sorted.length),
-      evaluatedSamples: evalSet.length,
-      logLoss: cal.logLoss,
-      brier: cal.brier,
-      ece: cal.ece,
-      note: "\u6642\u7CFB\u5217\u9806\u3067 warmup \u5F8C\u306E\u30EC\u30FC\u30B9\u306E\u307F\u8A55\u4FA1\u3002\u5B8C\u5168\u306A forward-chain \u518D\u5B66\u7FD2\u306B\u306F\u30EC\u30FC\u30B9\u6642\u70B9\u306E features \u4FDD\u5B58\u304C\u5FC5\u8981"
-    };
-  }
-  function _computeCalibrationMetrics(entries) {
-    let logLossSum = 0, brierSum = 0, n = 0;
-    const bins = [];
-    for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
-    entries.forEach(function(h) {
-      if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
-      const winner = h.actual[0];
-      const probs = {};
-      h.mark_probs.forEach(function(mp) {
-        probs[mp.boat] = mp.prob;
-      });
-      const pWin = probs[winner];
-      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
-      logLossSum += -Math.log(pWin);
-      for (let b = 1; b <= 6; b++) {
-        const p = probs[b] || 0;
-        const y = b === winner ? 1 : 0;
-        brierSum += (p - y) * (p - y);
-      }
-      const binIdx = Math.min(9, Math.floor(pWin * 10));
-      bins[binIdx].sum += pWin;
-      bins[binIdx].hit += 1;
-      bins[binIdx].n += 1;
-      n++;
-    });
-    const logLoss = n > 0 ? logLossSum / n : 0;
-    const brier = n > 0 ? brierSum / n : 0;
-    let ece = 0;
-    bins.forEach(function(b) {
-      if (b.n === 0) return;
-      const avgP = b.sum / b.n;
-      const actRate = b.hit / b.n;
-      ece += b.n / Math.max(1, n) * Math.abs(avgP - actRate);
-    });
-    return { logLoss, brier, ece, n };
-  }
-  _g._btParseDate = _btParseDate;
-  _g.runBacktestEngine = runBacktestEngine;
-  _g.runForwardChainBacktest = runForwardChainBacktest;
-  _g._computeCalibrationMetrics = _computeCalibrationMetrics;
-})();
-
-/* BUILD:ANALYSIS_BACKTEST:END */
 
 
 /* BUILD:ANALYSIS_SCORE_BOAT:START */
@@ -1401,124 +1528,6 @@
 })();
 
 /* BUILD:ANALYSIS_SCORE_BOAT:END */
-
-
-/* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
-"use strict";
-(() => {
-  // ../src/analysis/predict_scenarios.js
-  function predictScenarios(boats, preview, weather, sid, grade) {
-    var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
-    var scen = Object.assign({}, prior);
-    var sdb = stadiumDB[String(sid)];
-    if (sdb && sdb.courseWinRate && sdb.courseWinRate[1]) {
-      var cwr = sdb.courseWinRate[1];
-      if (cwr.races >= 30) {
-        var rate = cwr.win / cwr.races;
-        var delta = (rate - 0.55) * 0.5;
-        scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
-      }
-    }
-    if (weather) {
-      var ws = weather.wind_speed || weather.race_wind || 0;
-      var wh = weather.wave_height || weather.race_wave || 0;
-      if (ws >= 5 || wh >= 7) {
-        scen.nige *= 0.7;
-        scen.makuri *= 1.3;
-        scen.other *= 1.5;
-      }
-    }
-    var sum = 0;
-    for (var k in scen) sum += scen[k];
-    if (sum > 0) {
-      for (var k2 in scen) scen[k2] = scen[k2] / sum;
-    }
-    return scen;
-  }
-  function predictWithScenarios(boats, preview, weather, sid, grade) {
-    var sc = predictScenarios(boats, preview, weather, sid, grade);
-    var dist = {};
-    Object.keys(SCENARIO_DIST).forEach(function(scKey) {
-      var w = sc[scKey] || 0;
-      var template = SCENARIO_DIST[scKey];
-      Object.keys(template).forEach(function(combo) {
-        dist[combo] = (dist[combo] || 0) + w * template[combo];
-      });
-    });
-    var allCombos = [];
-    for (var i = 1; i <= 6; i++)
-      for (var j = 1; j <= 6; j++)
-        for (var k = 1; k <= 6; k++) {
-          if (i !== j && j !== k && i !== k) allCombos.push(i + "-" + j + "-" + k);
-        }
-    var residual = 0.05 / allCombos.length;
-    allCombos.forEach(function(c3) {
-      if (dist[c3] == null) dist[c3] = residual;
-    });
-    var s = 0;
-    for (var c in dist) s += dist[c];
-    if (s > 0) for (var c2 in dist) dist[c2] = dist[c2] / s;
-    return { dist, scenarios: sc };
-  }
-  function predictEntryCourses(boats, sid) {
-    var dists = boats.map(function(b) {
-      return {
-        boat: b.racer_boat_number,
-        rid: b.racer_number,
-        dist: getEntryDist(b.racer_number, b.racer_boat_number, sid)
-      };
-    });
-    var permutations = [];
-    function perm(arr, current) {
-      if (arr.length === 0) {
-        permutations.push(current);
-        return;
-      }
-      for (var i2 = 0; i2 < arr.length; i2++) {
-        var rest = arr.slice(0, i2).concat(arr.slice(i2 + 1));
-        perm(rest, current.concat([arr[i2]]));
-      }
-    }
-    perm([1, 2, 3, 4, 5, 6], []);
-    var best = null, bestScore = -Infinity;
-    permutations.forEach(function(p) {
-      var s = 0;
-      var valid = true;
-      for (var i2 = 0; i2 < dists.length; i2++) {
-        var pr = dists[i2].dist[String(p[i2])] || 0;
-        if (pr <= 0) {
-          valid = false;
-          break;
-        }
-        s += Math.log(pr);
-      }
-      if (valid && s > bestScore) {
-        bestScore = s;
-        best = p;
-      }
-    });
-    if (!best) {
-      var by = {};
-      var c = {};
-      boats.forEach(function(b) {
-        by[b.racer_boat_number] = b.racer_boat_number;
-        c[b.racer_boat_number] = 0.5;
-      });
-      return { byBoat: by, conf: c };
-    }
-    var byBoat = {}, conf = {};
-    for (var i = 0; i < dists.length; i++) {
-      byBoat[dists[i].boat] = best[i];
-      conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
-    }
-    return { byBoat, conf };
-  }
-  globalThis.predictScenarios = predictScenarios;
-  globalThis.predictWithScenarios = predictWithScenarios;
-  globalThis.predictEntryCourses = predictEntryCourses;
-})();
-
-/* BUILD:ANALYSIS_PREDICT_SCENARIOS:END */
 
 
 function _shareLearnedWeights(){

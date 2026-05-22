@@ -135,6 +135,7 @@ export default [
       'src/analysis/calibration.js',
       'src/analysis/predict_race.js',
       'src/analysis/predict_scenarios.js',
+      'src/analysis/predict_program.js',
       'src/analysis/l2_features.js',
       'src/reporting/stats_page.js',
     ],
