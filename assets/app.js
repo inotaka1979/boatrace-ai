@@ -1240,7 +1240,17 @@ var ACTION_HANDLERS = {
   refreshOdds:             function(){ if(typeof refreshOdds==='function') refreshOdds(); },
   refreshThisRace:         function(){ if(typeof refreshThisRace==='function') refreshThisRace(); },
   openStadium:             function(el){ if(typeof openStadium==='function') openStadium(el.dataset.argSid); },
-  openRace:                function(el){ if(typeof openRace==='function') openRace(el.dataset.argSid, el.dataset.argRn); },
+  openRace:                function(el){
+    var sid = el.dataset.argSid, rn = el.dataset.argRn;
+    // Phase 2 完遂続編: openRace は app-rest-detail.min.js (lazy chunk) にあるため、
+    //   未 load なら _ensureRaceDetailChunk で動的 load してから呼出
+    if (typeof openRace === 'function') return openRace(sid, rn);
+    if (typeof _ensureRaceDetailChunk === 'function') {
+      _ensureRaceDetailChunk().then(function(){
+        if (typeof openRace === 'function') openRace(sid, rn);
+      }).catch(function(){ /* silent: 次の click で再試行 */ });
+    }
+  },
   showPage:                function(el){ if(typeof showPage==='function') showPage(el.dataset.argPage); },
   showDetailTab:           function(el){ if(typeof _showDetailTab==='function') _showDetailTab(el.dataset.argTab); },
   toggleRaceWatched:       function(el){ if(typeof _toggleRaceWatched==='function') _toggleRaceWatched(el.dataset.argSid, el.dataset.argRn); },
@@ -6487,11 +6497,18 @@ function racerBadges(boat,form,divergence){
 "use strict";
 (() => {
   // ../src/reporting/page_router.js
-  var _statsChunkState = { loaded: false, promise: null };
-  function _ensureStatsChunk() {
-    if (_statsChunkState.loaded) return Promise.resolve();
-    if (_statsChunkState.promise) return _statsChunkState.promise;
-    _statsChunkState.promise = new Promise(function(resolve, reject) {
+  var _chunkStates = {
+    stats: { loaded: false, promise: null },
+    detail: { loaded: false, promise: null }
+  };
+  function _loadChunk(stateKey, filename) {
+    var st = _chunkStates[stateKey];
+    if (!st) {
+      return Promise.reject(new Error("unknown chunk: " + stateKey));
+    }
+    if (st.loaded) return Promise.resolve();
+    if (st.promise) return st.promise;
+    st.promise = new Promise(function(resolve, reject) {
       var ver = "";
       try {
         var existing = document.querySelector('script[src*="app-rest.min.js"]');
@@ -6502,19 +6519,25 @@ function racerBadges(boat,form,divergence){
       } catch (_) {
       }
       var s = document.createElement("script");
-      s.src = "assets/app-rest-stats.min.js" + ver;
+      s.src = "assets/" + filename + ver;
       s.defer = true;
       s.onload = function() {
-        _statsChunkState.loaded = true;
+        st.loaded = true;
         resolve();
       };
       s.onerror = function(e) {
-        _statsChunkState.promise = null;
-        reject(new Error("Failed to load app-rest-stats.min.js: " + (e && e.message ? e.message : "unknown")));
+        st.promise = null;
+        reject(new Error("Failed to load " + filename + ": " + (e && e.message ? e.message : "unknown")));
       };
       document.head.appendChild(s);
     });
-    return _statsChunkState.promise;
+    return st.promise;
+  }
+  function _ensureStatsChunk() {
+    return _loadChunk("stats", "app-rest-stats.min.js");
+  }
+  function _ensureRaceDetailChunk() {
+    return _loadChunk("detail", "app-rest-detail.min.js");
   }
   function showPage(page) {
     document.querySelectorAll(".page").forEach(function(p) {
@@ -6538,6 +6561,8 @@ function racerBadges(boat,form,divergence){
     } else if (page === "races") {
       document.getElementById("pageRaces").classList.add("active");
       _setActive("navTop");
+      _ensureRaceDetailChunk().catch(function() {
+      });
     } else if (page === "detail") {
       document.getElementById("pageDetail").classList.add("active");
       _setActive("navTop");
@@ -6574,6 +6599,7 @@ function racerBadges(boat,form,divergence){
   }
   globalThis.showPage = showPage;
   globalThis._ensureStatsChunk = _ensureStatsChunk;
+  globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;
 })();
 
 /* BUILD:REPORTING_PAGE_ROUTER:END */

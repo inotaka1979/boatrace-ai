@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-b460cbfc';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
+const VERSION = 'br-oracle-c2e9ed7c';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
@@ -33,11 +33,12 @@ const STATIC_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './assets/app-critical.min.js',   // PI-3: critical bundle (~33KB)
-  './assets/app-rest.min.js',       // PI-3: rest bundle (lazy on window.load)
-  './assets/app-rest-stats.min.js', // Phase 2 完遂続編: stats sub-chunk (成績/バックテストタブで動的 load)
-  './assets/worker.js',             // PF-9 + PG-3: Web Worker entry
-  './assets/worker_predictor.js',   // PG-2: 予測ロジックモジュール
+  './assets/app-critical.min.js',    // PI-3: critical bundle (~33KB)
+  './assets/app-rest.min.js',        // PI-3: rest bundle (lazy on window.load)
+  './assets/app-rest-stats.min.js',  // Phase 2 完遂続編: stats sub-chunk (成績/バックテストタブで動的 load)
+  './assets/app-rest-detail.min.js', // Phase 2 完遂続編: race detail sub-chunk (レース click で動的 load)
+  './assets/worker.js',              // PF-9 + PG-3: Web Worker entry
+  './assets/worker_predictor.js',    // PG-2: 予測ロジックモジュール
 ];
 
 // PD-2: 別 cache 名で永続キャッシュする外部リソース origin
