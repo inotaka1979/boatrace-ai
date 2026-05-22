@@ -16,10 +16,53 @@
 
 'use strict';
 
+// FIX (2026-05-22): Worker 内の error / unhandledrejection を捕捉して
+//   詳細を main に postMessage する。main 側の Worker.onerror は cross-origin
+//   セキュリティで filename/line/col/message を空にされるため、worker 内で
+//   情報を保存して送り返すのが唯一の方法。
+//   boatrace_errors に "worker_error: unknown (cross-origin or load fail)"
+//   が出ていた問題への対処。
+self.addEventListener('error', function (ev) {
+  try {
+    self.postMessage({
+      type: 'worker_self_error',
+      msg: (ev && ev.message) || 'worker error',
+      filename: (ev && ev.filename) || '',
+      line: (ev && ev.lineno) || 0,
+      col: (ev && ev.colno) || 0,
+      stack: ev && ev.error && ev.error.stack ? String(ev.error.stack).slice(0, 2000) : '',
+    });
+  } catch (_) {}
+});
+self.addEventListener('unhandledrejection', function (ev) {
+  try {
+    var reason = ev && ev.reason;
+    self.postMessage({
+      type: 'worker_self_error',
+      msg: 'unhandled rejection: ' + (reason && reason.message ? reason.message : String(reason).slice(0, 500)),
+      filename: '',
+      line: 0,
+      col: 0,
+      stack: reason && reason.stack ? String(reason.stack).slice(0, 2000) : '',
+    });
+  } catch (_) {}
+});
+
 // 予測ロジック本体を読込（assets/worker_predictor.js）
 try {
   importScripts('worker_predictor.js');
 } catch (e) {
+  // importScripts 失敗 (load fail) を main に通知
+  try {
+    self.postMessage({
+      type: 'worker_self_error',
+      msg: 'importScripts failed: ' + (e && e.message ? e.message : String(e)),
+      filename: 'worker_predictor.js',
+      line: 0,
+      col: 0,
+      stack: e && e.stack ? String(e.stack).slice(0, 2000) : '',
+    });
+  } catch (_) {}
   console.error('[worker] failed to load predictor:', e);
 }
 

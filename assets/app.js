@@ -893,8 +893,12 @@ try {
         console.log('[idb]   deduped (LS 重複削除):', res.deduped.join(', '));
       }
       // Epic 28f: 結果を reportError に保存 (スマホで DevTools 不可なユーザ向け)
+      // FIX (2026-05-22): 全 0 件 (avail=true, migrated=0, errors=0, deduped=0) は
+      //   「やることなし」の正常状態であり報告不要。errN/migN/dedN のいずれかが >0、
+      //   または IDB 不可の時のみ reportError する (boatrace_errors のノイズ削減)。
       try {
-        if(typeof reportError === 'function') reportError({
+        var _shouldReport = errN > 0 || migN > 0 || dedN > 0 || !_idbAvail;
+        if(_shouldReport && typeof reportError === 'function') reportError({
           type: 'diag_idb_migrate',
           msg: 'idb migrate: migrated=' + migN + ' errors=' + errN + ' deduped=' + dedN + ' (avail=' + _idbAvail + ')',
           idb_available: _idbAvail,
@@ -4830,30 +4834,54 @@ function _getAppWorker(){
     _appWorker = new Worker('assets/worker.js');
     _appWorker.addEventListener('message', function(e){
       var msg = e.data || {};
+      // FIX (2026-05-22): worker.js が self.onerror で詳細を post してくる場合、
+      //   main の onerror では cross-origin で空になる詳細を補完して reportError する。
+      if(msg.type === 'worker_self_error'){
+        try { reportError({
+          type: 'worker_error',
+          msg: msg.msg || 'worker self-reported error',
+          filename: msg.filename || '',
+          line: msg.line || 0,
+          col: msg.col || 0,
+          stack: msg.stack || '',
+          source: 'worker_self_error',
+        }); } catch(_){}
+        return;
+      }
       if(msg.reqId != null && _appWorkerCallbacks.has(msg.reqId)){
         var cb = _appWorkerCallbacks.get(msg.reqId);
         _appWorkerCallbacks.delete(msg.reqId);
         cb(msg);
       }
     });
+    // FIX (2026-05-22): worker.js が self.onerror で worker_self_error を
+    //   post する仕組みを導入したため、main の Worker.onerror は重複情報のみ
+    //   返してくる (cross-origin で詳細が空)。short window で self_error 到着を待ち、
+    //   届かなかった場合のみ「unknown」を記録 (ノイズ削減)。
+    var _lastWorkerSelfErrorAt = 0;
+    var _origAddMessage = _appWorker.addEventListener.bind(_appWorker);
+    _origAddMessage('message', function(ev){
+      var d = ev && ev.data;
+      if (d && d.type === 'worker_self_error') _lastWorkerSelfErrorAt = Date.now();
+    });
     _appWorker.addEventListener('error', function(e){
-      // Epic 28e: ErrorEvent の詳細を可能な限り抽出
-      //   Cross-Origin Worker error は browser がセキュリティ上詳細を hide するが、
-      //   Worker の URL や event.target の情報は取得可能なことがある
-      var detail = {
-        type: 'worker_error',
-        msg: (e && e.message) || 'unknown (cross-origin or load fail)',
-        filename: (e && e.filename) || '',
-        line: (e && e.lineno) || 0,
-        col: (e && e.colno) || 0,
-        eventType: (e && e.type) || '',
-        target: (e && e.target && (e.target.scriptURL || e.target.url)) || '',
-        // ErrorEvent の boolean フラグ
-        defaultPrevented: !!(e && e.defaultPrevented),
-        timeStamp: (e && e.timeStamp) || 0,
-      };
-      console.warn('[PG-3] worker error', JSON.stringify(detail));
-      try { reportError(detail); } catch(_){}
+      // Epic 28e + FIX: self_error が 500ms 以内に届いていれば main 側 onerror は無視
+      setTimeout(function(){
+        if (Date.now() - _lastWorkerSelfErrorAt < 1500) return; // self_error がカバー済
+        var detail = {
+          type: 'worker_error',
+          msg: (e && e.message) || 'unknown (cross-origin or load fail)',
+          filename: (e && e.filename) || '',
+          line: (e && e.lineno) || 0,
+          col: (e && e.colno) || 0,
+          eventType: (e && e.type) || '',
+          target: (e && e.target && (e.target.scriptURL || e.target.url)) || '',
+          defaultPrevented: !!(e && e.defaultPrevented),
+          timeStamp: (e && e.timeStamp) || 0,
+        };
+        console.warn('[PG-3] worker error', JSON.stringify(detail));
+        try { reportError(detail); } catch(_){}
+      }, 1000);
     });
     _appWorker.addEventListener('messageerror', function(e){
       console.warn('[PG-3] worker messageerror (structured-clone failed)', e);
