@@ -1158,7 +1158,6 @@ var _featureStats = (function(){
   return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
 })();
 // _initFeatureStats は rest 側 utility として後方互換のため残置（呼出元 0 件、安全）
-/* MOVED: function _initFeatureStats */
 
 // PB-6: Platt scaling 係数 — 既定は a=1, b=0（identity = no calibration）
 //   将来 _refitPlattCoeffs(history) で auto-tune
@@ -2688,11 +2687,6 @@ var SCENARIO_DIST = {
   },
 };
 
-// シナリオ確率を場・選手の状況から推定
-/* MOVED: function predictScenarios */
-
-// シナリオ加重で 1-2-3 着分布を作る
-/* MOVED: function predictWithScenarios */
 
 // ===============================================
 // X4: 環境データ（潮汐 R-02 / 場別風向 R-10 / 風×波交差項 R-14）
@@ -2761,7 +2755,6 @@ var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:
  * @param sid stadium id
  * @returns {byBoat: {1:course,2:course,...}, conf: {1:p,2:p,...}}
  */
-/* MOVED: function predictEntryCourses */
 
 // 進入パターンを results から学習
 /* MOVED: function learnEntryPatternFromResults */
@@ -2816,13 +2809,10 @@ var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
 // ===============================================
 // PREDICTION ENGINE V2: Layer 1 (PRESERVED)
 // ===============================================
-// PC-2b: scoreBoatV2 から抽出した純粋計算ヘルパ
-//   経緯: scoreBoatV2 は 287 行で UI 状態と密結合のため全分割は高リスク。
-//   純粋関数 (no DOM / no global mutation) のみ段階的に切り出してテスト可能化。
+// PC-2b: scoreBoatV2 から抽出した純粋計算ヘルパ + L2 features
+//   Clearwing Phase 2 完遂続きで src/analysis/l2_features.js に移管。
+//   note: worker_predictor.js にも twin が存在する (Web Worker 用)。
 
-// 平均クラスから階級減衰係数を計算
-//   B2 多 → 0.55, B1 多 → 0.70, A2 多 → 0.85, A1 多 → 1.00
-/* MOVED: function _computeClassAttenuation */
 
 // P0-1: 場別×級別×コースの相互作用係数。
 //   常識: 「A1の1コース」と「B2の1コース」では同じ scwr でも実勝率は大きく違う。
@@ -2836,19 +2826,16 @@ var CLASS_COURSE_MULT = [
   [1.03, 1.01, 1.00, 0.97],
   [1.02, 1.01, 1.00, 0.98]
 ];
-/* MOVED: function _classCourseMult */
 
 // P0-2: レース毎に1度だけ算出するシナリオ確率。
 //   nige_success_prob(1コース) = ∏(1 - attack_prob_c) for c=2..6
 //   attack_prob は隣接艇の決まり手主体率を簡略化（max(sashi, makuri+makuriSashi)）
 //   1コース以外は対象外（影響度が小さく、既存 C カテゴリで十分カバー）。
-/* MOVED: function _computeRaceScenario */
 
 // X3 進入予想 → 採用コースと信頼度を決定
 //   preview.racer_course_number > predictedEntries > 枠番 の優先順
-/* MOVED: function _resolveCourse */
 
-/* MOVED: function scoreBoatV2 */
+
 
 // ===============================================
 // PREDICTION ENGINE V2: Layer 2 (PRESERVED)
@@ -2856,30 +2843,19 @@ var CLASS_COURSE_MULT = [
 // Epic 12 (P1-B1): 旧 inline 実装は src/utils/features.js (BUILD:FEATURES bundle) に移管。
 //   bundle 注入が globalThis.getL2Features を上書きするため通常はそちらが使われる。
 //   bundle 失敗時の fallback として旧本体を残置（数値出力は厳密に同一）。
-/* MOVED: function getL2Features */
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
 
-// PB-7: Welford's online algorithm で 特徴量 mean/variance を更新
-/* MOVED: function _updateFeatureStats */
 
-// PB-7 + PF-5: 特徴量を z-score 正規化（warmup 前は identity）
-//   PF-5: divisor を pre-compute、Number.isFinite 呼出を || 0 に置換
-/* MOVED: function _normalizeFeatures */
 
-/* MOVED: function l2Predict */
-
-/* MOVED: function l2Update */
 
 // PB-6: Platt scaling — 確率の post-hoc 校正
 //   p' = sigmoid(a * logit(p) + b)
 //   既定 a=1, b=0 で identity（変化なし）。データ蓄積後 _refitPlattCoeffs で auto-tune
-/* MOVED: function _applyPlattCalibration */
 
 // PB-5: Stacking 予測 — L2 が L1 確率を補正する形式
 //   p_stacked[b] = softmax( logit(L1[b]) + γ * residual_b ) where residual_b は L2 の輸出 logit
 //   既定 γ=0 で stacking 無効（純粋に L1 を返す）。STACKING_MODE='residual' で active
-/* MOVED: function _stackedPredict */
 
 // PB-6: Platt 係数を既存履歴から re-fit
 //   2 パラメータ (a, b) のみなので grid search で十分
@@ -2904,23 +2880,16 @@ var _workerHeavyLoaded = false;
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）
 //   呼出側で「await できる場面」では predictRaceAsync を使う
-/* MOVED: function predictRaceAsync */
 
-// pairs 抽出は同期で実行（軽量）、grid search のみ Worker
-/* MOVED: function _extractPlattPairs */
 
-// PF-9: async 化、Worker があれば使う、無ければ main thread fallback
-/* MOVED: function _refitPlattCoeffs */
 
 // ===============================================
 // PREDICTION ENGINE V2: INTEGRATION (PRESERVED)
 // ===============================================
-/* MOVED: function predictRace */
 
 // ===============================================
 // 番組予想（展示・風なし、出走表データのみ）
 // ===============================================
-/* MOVED: function predictRaceProgram */
 
 // ===============================================
 // 番組予想 vs 直前予想の差分分析
@@ -3169,7 +3138,6 @@ var _nextOpenMap = {};
 
 /* MOVED: function _rateColor */
 
-/* MOVED: function renderStats */
 
 // PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）
 //   インターネット切断時はキャッシュ（PD-2 SW cdn-v1）から提供
@@ -3177,7 +3145,6 @@ var _nextOpenMap = {};
 var _chartLoadingPromise = null;
 /* MOVED: function _loadChartLib */
 
-/* MOVED: function renderStatsChart */
 
 // ===============================================
 // SCREEN 5: SETTINGS (REWRITTEN)

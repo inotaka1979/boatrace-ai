@@ -123,6 +123,13 @@ async function main() {
     { marker: 'ANALYSIS_BACKTEST', src: 'analysis/backtest.js' },        // Clearwing Phase 2c
     { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
+    { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
+    { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
+    { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
+    { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
+    { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
+    { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
+    { marker: 'ANALYSIS_L2_FEATURES', src: 'analysis/l2_features.js' },       // Phase 2 完遂続き (scoreBoatV2 helpers + L2)
   ];
   // Worker bundle 群 (assets/worker_predictor.js に注入)
   const workerModules = [
@@ -201,12 +208,21 @@ async function main() {
   // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
   //   critical は LCP に直結するため hard fail、それ以外は warn 留め。
   //   超過時は CI が PR を block して退行を防ぐ。
+  //
   // Epic 1-28g 完了時点 (critical=75.4KB / rest=116KB / worker=59KB)
   //   Epic 28x で診断ロジック / IDB migration polling / TOP10 等の保険コード追加で +1KB
-  //   今後 i18n テーブルを別 module bundle にして lazy load する余地あり。
+  //
+  // Clearwing Phase 完了時点で rest = 134.2KB。旧 125KB warn は時代遅れ
+  // (Phase 2 で discovery / analysis / reporting / context / scoreBoatV2 を
+  //  REST_ONLY bundle として注入したため rest の絶対サイズが微増)。
+  // 新 140000 warn は「現状 + 5KB 余裕」で設定し、本格的な圧縮は次フェーズで:
+  //   - app-rest を core / stats / settings の 3 chunk に分割 (lazy load)
+  //   - i18n table を別 chunk
+  //   - worker_predictor を必要時のみ register (現状は startup 直後 register)
+  //  詳細は docs/architecture.md § 5 ビルドパイプライン参照。
   const BUDGETS = [
     { path: 'assets/app-critical.min.js', max: 90000,  level: 'fail' },
-    { path: 'assets/app-rest.min.js',     max: 125000, level: 'warn' },
+    { path: 'assets/app-rest.min.js',     max: 140000, level: 'warn' },
     { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
   ];
   let budgetFail = false;

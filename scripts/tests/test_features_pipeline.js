@@ -13,11 +13,32 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 
 // 旧 getL2Features を抽出（function 宣言）
+//   Clearwing Phase 2 完遂続きで src/analysis/l2_features.js に extract された後、
+//   BUILD:ANALYSIS_L2_FEATURES bundle 内に IIFE 経由で再注入される (esbuild 出力は
+//   インデント有り)。regex は top-level と indented 両方に対応。
 function extractFn(name, src){
-  const re = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
-  const m = src.match(re);
-  if(!m) throw new Error('cannot extract ' + name);
-  return m[1];
+  // まず top-level (行頭) を試す
+  let re = new RegExp(`(^function\\s+${name}\\s*\\([\\s\\S]*?^\\})`, 'm');
+  let m = src.match(re);
+  if(m) return m[1];
+  // 次に indented (IIFE bundle 内) を試す。brace 深度ベースで body 末尾を探す。
+  const head = new RegExp(`(?:^|\\n)(\\s+)function\\s+${name}\\s*\\(`);
+  const hm = src.match(head);
+  if(!hm) throw new Error('cannot extract ' + name);
+  const indent = hm[1];
+  const startIdx = hm.index + hm[0].indexOf('function');
+  // body の開始 '{' を探す
+  let i = src.indexOf('{', startIdx);
+  if(i < 0) throw new Error('no function body for ' + name);
+  let depth = 0;
+  for(; i < src.length; i++){
+    const c = src[i];
+    if(c === '{') depth++;
+    else if(c === '}'){ depth--; if(depth === 0){ i++; break; } }
+  }
+  // インデント前置を剥がして top-level コード化
+  const body = src.slice(startIdx, i);
+  return body.replace(new RegExp('^' + indent, 'gm'), '');
 }
 
 // BUILD:FEATURES bundle 領域を抽出

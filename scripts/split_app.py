@@ -210,6 +210,19 @@ for name, body in funcs.items():
 #         split 後のファイル間で重複しないよう片方からのみ削除する。
 REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_BACKTEST',
+    # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
+    # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
+    'ANALYSIS_SCORE_BOAT',
+    # Platt scaling / featureStats は学習 (results 受信時) と設定画面のみで呼ばれる。
+    'ANALYSIS_CALIBRATION',
+    # 成績タブ render (renderStats + renderStatsChart) は成績タブ open 時のみ。
+    'REPORTING_STATS_PAGE',
+    # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
+    'ANALYSIS_PREDICT_SCENARIOS',
+    'ANALYSIS_PREDICT_RACE',
+    'ANALYSIS_PREDICT_PROGRAM',
+    # L2 / scoring helpers — レース詳細 / 学習 / 設定でしか呼ばれない
+    'ANALYSIS_L2_FEATURES',
 }
 
 rest_bundle_extracted: list[str] = []
