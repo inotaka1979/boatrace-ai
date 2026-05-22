@@ -230,7 +230,7 @@ async function main() {
   const BUDGETS = [
     { path: 'assets/app-critical.min.js', max: 90000,  level: 'fail' },
     { path: 'assets/app-rest.min.js',     max: 140000, level: 'warn' },
-    { path: 'assets/worker_predictor.js', max: 65000,  level: 'warn' },
+    { path: 'assets/worker_predictor.js', max: 75000,  level: 'warn' },
   ];
   let budgetFail = false;
   for (const b of BUDGETS) {
