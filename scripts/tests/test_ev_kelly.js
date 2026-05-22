@@ -42,13 +42,14 @@ const stub = {
 stub.globalThis = stub; stub.self = stub;
 
 const ctx = vm.createContext(stub);
-try { vm.runInContext(code, ctx, { timeout: 5000 }); } catch(e) {}
+try { vm.runInContext(code, ctx, { timeout: 5000 }); } catch(_) {}
 
 let pass = 0, fail = 0;
 function t(name, fn){
   try { fn(); console.log('  PASS:', name); pass++; }
   catch(e){ console.log('  FAIL:', name, '\n   ', e.message); fail++; }
 }
+// eslint-disable-next-line no-unused-vars -- 数値比較ヘルパ、追加テスト時に使用
 function close(a, b, eps){ return Math.abs(a-b) < (eps||1e-6); }
 
 console.log('[selectBetsByEV]');

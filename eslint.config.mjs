@@ -200,6 +200,10 @@ export default [
   },
 
   // scripts/tests/ — Node CLI テスト群 (CommonJS / classic script style)
+  // Phase 2 完遂続編: no-undef を厳格化 (typo / undeclared variable を検出)。
+  //   テストは assets/app.js を readFileSync + vm.runInContext で解析するため
+  //   抽出関数は ctx.X 経由でアクセスし、bare global identifier として参照しない。
+  //   したがって globals.node 以外の追加 globals は不要。
   {
     files: ['scripts/tests/**/*.js'],
     languageOptions: {
@@ -207,13 +211,19 @@ export default [
       sourceType: 'script',
       globals: {
         ...globals.node,
-        // テストは assets/app.js を readFileSync して抽出するため、抽出された関数も globals
-        // 列挙が膨大なので no-undef を無効化 (Phase 5 snapshot test 整備時に厳格化検討)
+        // 自前 helper / fixture (一部テストで定義) 用に Buffer / process は globals.node 経由
       },
     },
     rules: {
-      'no-undef': 'off',
-      'no-unused-vars': 'off',
+      'no-undef': 'error',
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
     },
   },
 ];

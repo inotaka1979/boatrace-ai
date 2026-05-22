@@ -40,7 +40,7 @@ const stub = {
 stub.globalThis = stub; stub.self = stub;
 
 const ctx = vm.createContext(stub);
-try { vm.runInContext(code, ctx, { timeout: 5000 }); } catch(e) {}
+try { vm.runInContext(code, ctx, { timeout: 5000 }); } catch(_) {}
 
 let pass = 0, fail = 0;
 function t(name, fn){
