@@ -23,7 +23,7 @@ function makeShim(){
     return r;
   }
   return {
-    open(name, version){
+    open(_name, _version){
       const r = { onsuccess:null, onerror:null, onupgradeneeded:null,
         result: { objectStoreNames:{contains:()=>true},
           createObjectStore(){return {}},
