@@ -32,6 +32,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # 2026-05-24: data-freshness-monitor と同じ落とし穴を踏まないよう
+      #   drill ラベルを冪等に作成。既存ラベルへの create は exit 1 だが
+      #   || true で吸収。
+      - name: Ensure drill label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          gh label create "drill" \
+            --color "0e8a16" \
+            --description "Notification reachability drill" \
+            --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true
+
       - name: Create drill issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

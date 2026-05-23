@@ -93,6 +93,27 @@ jobs:
           gh workflow run scrape-all.yml --ref main --repo "${GITHUB_REPOSITORY}" || \
             echo "::warning::scrape-all dispatch failed (may already be queued)"
 
+      # Bootstrap labels (idempotent): repo に該当 label が無いと
+      #   gh issue create --label が HTTP 422 で fail し、step が exit 1 →
+      #   workflow 全体が failure 通知になる事故が 2026-05-23 に発生。
+      # gh label create は既存ラベルだと exit 1 を返すが、ここでは || true で
+      # 冪等化。色 d93f0b = GitHub の標準 red。
+      - name: Ensure stale-data labels exist
+        if: steps.check.outputs.result == 'stale'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target.name }}
+        run: |
+          set -uo pipefail
+          gh label create "stale-data" \
+            --color "d93f0b" \
+            --description "Data freshness SLO violation (umbrella)" \
+            --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true
+          gh label create "stale-data:${TARGET}" \
+            --color "d93f0b" \
+            --description "Stale data target=${TARGET}" \
+            --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true
+
       # Stale 方向: issue を起票 (重複抑止 + fail-closed)
       - name: Open issue if stale
         if: steps.check.outputs.result == 'stale'
