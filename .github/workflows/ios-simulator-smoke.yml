@@ -28,23 +28,53 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: List available iOS Simulator runtimes
-        run: xcrun simctl list runtimes
-
-      - name: Boot iOS 17 Simulator (iPhone 15)
+      - name: List available iOS Simulator runtimes & devicetypes
         run: |
-          set -e
-          DEVICE_NAME="iPhone 15"
-          # 利用可能な最新の iOS runtime を選ぶ
+          echo "=== runtimes ==="
+          xcrun simctl list runtimes
+          echo "=== devicetypes (iPhone のみ抜粋) ==="
+          xcrun simctl list devicetypes | grep -E "iPhone" || true
+
+      - name: Boot iOS Simulator (iPhone, latest available)
+        # 2026-05-24: 旧版は `iPhone 15` 固定 + 失敗時 `|| true` で UDID が空のまま
+        #   下流 step (`xcrun simctl openurl ""` 等) が必ず失敗する構造だった。
+        #   macos-latest が macOS 15 / Xcode 16 へ移行して iPhone 15 が
+        #   devicetypes から消えた / iOS runtime が pre-install されていない等の
+        #   ケースで silent failure → 2分台での fail。
+        # 改善:
+        #   - DEVICE 候補リストを順に試す (iPhone 16 > 15 > 14 > 13)
+        #   - RUNTIME が取れなかったら明示的に fail (xcrun --version 含めて diag)
+        #   - UDID が空なら fail-fast、後続 step を走らせない
+        run: |
+          set -euo pipefail
+          # 利用可能な最新の iOS runtime を選ぶ (identifier フィールド = 最終列)
           RUNTIME=$(xcrun simctl list runtimes | grep -E "^iOS [0-9]+\.[0-9]+" | tail -1 | awk '{print $NF}')
-          echo "Using runtime: $RUNTIME"
-          UDID=$(xcrun simctl create "br-test" "$DEVICE_NAME" "$RUNTIME" || true)
-          if [ -z "$UDID" ]; then
-            UDID=$(xcrun simctl list devices "$DEVICE_NAME" --json | python3 -c "import sys,json; d=json.load(sys.stdin); [print(dev['udid']) for runs in d['devices'].values() for dev in runs if dev['name']=='br-test']" | head -1)
+          if [ -z "$RUNTIME" ]; then
+            echo "::error::No iOS runtime available on this runner"
+            xcrun --version
+            sw_vers
+            exit 1
           fi
-          echo "Booting UDID=$UDID"
-          xcrun simctl boot "$UDID" || true
-          echo "BR_SIM_UDID=$UDID" >> $GITHUB_ENV
+          echo "::notice::Using runtime: $RUNTIME"
+
+          UDID=""
+          for DEVICE_NAME in "iPhone 16" "iPhone 15" "iPhone 14" "iPhone 13"; do
+            echo "trying device: $DEVICE_NAME"
+            if NEW_UDID=$(xcrun simctl create "br-test" "$DEVICE_NAME" "$RUNTIME" 2>/dev/null); then
+              UDID="$NEW_UDID"
+              echo "::notice::created $DEVICE_NAME UDID=$UDID"
+              break
+            fi
+          done
+
+          if [ -z "$UDID" ]; then
+            echo "::error::All device candidates failed; runtime=$RUNTIME"
+            xcrun simctl list devicetypes | grep -E "iPhone" || true
+            exit 1
+          fi
+
+          xcrun simctl boot "$UDID"
+          echo "BR_SIM_UDID=$UDID" >> "$GITHUB_ENV"
 
       - name: Start static HTTP server
         run: |
