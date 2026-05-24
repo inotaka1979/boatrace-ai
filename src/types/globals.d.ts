@@ -81,4 +81,5 @@ interface BoatRaceGlobalAPI {
   // app.js に残置している utility (src/ 外で定義)
   cacheKey: (url: string) => string;
   reportError: (info: { type?: string; message?: string; [k: string]: unknown }) => void;
+  todayStr: () => string;
 }
