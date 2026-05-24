@@ -359,9 +359,15 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
     const r = (results.results || []).find(x =>
       x.race_stadium_number === sid && x.race_number === rno
     );
-    // race_technique_number が無い (=未確定) で window 内 → スクレイプ対象
-    const finished = r && r.race_technique_number != null;
-    if (finished) continue;
+    // 2026-05-24: 完了判定を厳格化。
+    //   - race_technique_number が set されている (= 着順は取得済)
+    //   - **かつ** 3 連単 payout が取得済 (= 払戻も取得済)
+    //   この両方が揃って初めて scrape skip。着順だけで payout 空のレースは
+    //   再 scrape 対象 (「3連単的中だが払戻未取得」の警告解消)。
+    const hasTechnique = r && r.race_technique_number != null;
+    const hasPayouts = r && r.payouts
+      && Array.isArray(r.payouts.trifecta) && r.payouts.trifecta.length > 0;
+    if (hasTechnique && hasPayouts) continue;
     scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r, closedAt: p.race_closed_at });
   }
   // FIFO (古い順): 古いレースほど結果が確定している確率が高く + backlog drain 保証
@@ -383,7 +389,32 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
     if (parsed.race_technique_number == null) continue;   // 結果ページがまだ無い
     if (t.rPtr) {
       // 上流 results 配列内のエントリをマージで上書き
-      Object.assign(t.rPtr, parsed);
+      // 2026-05-24 (致命): payouts を smart merge する。
+      //   Object.assign(t.rPtr, parsed) は parsed.payouts (empty arrays) で
+      //   openapi の payouts を上書きしていた → 「3連単的中だが払戻未取得」
+      //   の警告が大量発生していた (常滑/多摩川 等)。
+      //   payouts は Worker 側 parse が空でない種別のみ更新、空なら openapi
+      //   保持。
+      const rPtr = t.rPtr;
+      const oldPayouts = rPtr.payouts || {};
+      Object.assign(rPtr, parsed);
+      if (parsed.payouts && oldPayouts) {
+        const mergedPayouts = {};
+        const types = ['trifecta','trio','exacta','quinella','quinella_place','win','place'];
+        for (const k of types) {
+          const newArr = parsed.payouts[k];
+          const oldArr = oldPayouts[k];
+          // Worker parse が値ありならそれを採用、empty なら openapi 残存値を優先
+          if (Array.isArray(newArr) && newArr.length > 0) {
+            mergedPayouts[k] = newArr;
+          } else if (Array.isArray(oldArr) && oldArr.length > 0) {
+            mergedPayouts[k] = oldArr;
+          } else {
+            mergedPayouts[k] = newArr || [];
+          }
+        }
+        rPtr.payouts = mergedPayouts;
+      }
     } else {
       // results 配列に追加
       (results.results || (results.results = [])).push(parsed);
