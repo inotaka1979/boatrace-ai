@@ -1,0 +1,94 @@
+name: Train GBDT model
+
+# Tier 3 (2026-05-24): GBDT (Gradient Boosted Decision Trees) を monthly に学習し
+# data/db/gbdt_model.json を更新する workflow。
+#
+# 実 ML を有効化する条件 (placeholder ではなく真の学習):
+#   - boatrace_history が 5000 件以上に蓄積 (train_gbdt.py の --min-races 既定値)
+#   - それ未満は placeholder JSON が出力され、JS 側 _blendGBDTPrediction は no-op
+#
+# 起動方法:
+#   - workflow_dispatch (手動): いつでも実行可能、--dry-run も指定可
+#   - schedule: 当初は **無効化** (cron コメントアウト)。データ蓄積後に有効化。
+#
+# 安全性:
+#   - GBDT_ENABLE_CRON secret が "true" の時のみ cron 経由で起動 (誤発火防止)
+#   - 出力 JSON が schema 通りでない場合は commit せず exit 1
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'collect 件数のみ表示 (学習しない)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      min_races:
+        description: '最低サンプル数 (既定 5000)'
+        required: false
+        default: '5000'
+  # 将来有効化用 (現状コメントアウト):
+  # schedule:
+  #   - cron: '0 19 1 * *'  # 毎月 1 日 19:00 UTC = JST 04:00
+
+permissions:
+  contents: read
+
+concurrency:
+  group: train-gbdt
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install ML deps
+        run: |
+          pip install scikit-learn==1.5.2 numpy==2.1.3
+
+      - name: Train (or dry-run)
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python3 scripts/train_gbdt.py --dry-run --min-races "${{ inputs.min_races }}"
+          else
+            python3 scripts/train_gbdt.py --min-races "${{ inputs.min_races }}"
+          fi
+
+      - name: Verify output schema
+        if: inputs.dry_run != 'true'
+        run: |
+          python3 -c "
+          import json, sys
+          d = json.load(open('data/db/gbdt_model.json'))
+          assert d.get('schema') == 'br_gbdt_v1', f'wrong schema: {d.get(\"schema\")}'
+          assert d.get('feature_dim') == 24, f'wrong feature_dim: {d.get(\"feature_dim\")}'
+          assert isinstance(d.get('trees'), list)
+          print(f'OK: n_trees={len(d[\"trees\"])} n_train={d.get(\"n_train\")} placeholder={d.get(\"_meta\",{}).get(\"placeholder\")}')
+          "
+
+      - name: Commit & Push
+        if: inputs.dry_run != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/db/gbdt_model.json
+          if git diff --staged --quiet; then
+            echo "::notice::no model changes to commit"
+            exit 0
+          fi
+          git commit -m "gbdt: train $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main

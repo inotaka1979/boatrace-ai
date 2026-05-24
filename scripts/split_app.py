@@ -220,6 +220,8 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_SCORE_BOAT',
     # Platt scaling / featureStats は学習 (results 受信時) と設定画面のみで呼ばれる。
     'ANALYSIS_CALIBRATION',
+    # Tier 3 (2026-05-24): GBDT runtime はレース予測時のみ呼ばれる
+    'ANALYSIS_GBDT_RUNTIME',
     # 成績タブ render (renderStats + renderStatsChart) は成績タブ open 時のみ。
     'REPORTING_STATS_PAGE',
     # predict 系はレース詳細を開いた時のみ。critical 起動には不要。

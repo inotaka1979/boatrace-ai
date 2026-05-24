@@ -120,6 +120,31 @@ function predictRace(sid, raceNum) {
   });
   var l2probs = l2Predict(features6);
 
+  // Tier 3 (2026-05-24): GBDT 第 3 層の blend (model が placeholder なら no-op)
+  //   _blendGBDTPrediction は ENABLE_GBDT + n_train >= GBDT_MIN_TRAIN を内部で check
+  //   結果は logit 空間で blend されるため、ここでは softmax 適用前の確率を一度
+  //   logit 化してから blend → softmax で再正規化する。
+  if (typeof _blendGBDTPrediction === 'function' && typeof TUNING !== 'undefined'
+        && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
+    try {
+      var l2logits = l2probs.map(function (p) {
+        var clipped = Math.min(0.9999, Math.max(0.0001, p));
+        return Math.log(clipped / (1 - clipped));
+      });
+      var blended = _blendGBDTPrediction(l2logits, features6, TUNING.PREDICTION.GBDT_BLEND_WEIGHT);
+      if (Array.isArray(blended) && blended.length === l2probs.length) {
+        // softmax で再正規化 (Σ=1)
+        var maxL = -Infinity;
+        for (var bi = 0; bi < blended.length; bi++) if (blended[bi] > maxL) maxL = blended[bi];
+        var sumE = 0;
+        var expL = blended.map(function (l) { var e = Math.exp(l - maxL); sumE += e; return e; });
+        if (sumE > 0) l2probs = expL.map(function (e) { return e / sumE; });
+      }
+    } catch (e) {
+      // GBDT 失敗は致命にしない (L1+L2 のみで続行)
+    }
+  }
+
   // PB-8: Bayesian shrinkage で L1/L2 融合比を連続化
   //       α = N0 / (N0 + n)  ─ n が 0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）
   //       N0=300 は「L1 を 300 サンプル相当として信用する」事前

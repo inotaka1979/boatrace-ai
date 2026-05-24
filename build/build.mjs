@@ -125,6 +125,7 @@ async function main() {
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
     { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
     { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
+    { marker: 'ANALYSIS_GBDT_RUNTIME', src: 'analysis/gbdt_runtime.js' },     // Tier 3 (2026-05-24) GBDT 評価ランタイム
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
     { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
@@ -162,6 +163,7 @@ async function main() {
     const sources = [
       'utils/math.js',
       'analysis/calibration.js',
+      'analysis/gbdt_runtime.js', // Tier 3 (2026-05-24): GBDT runtime
       'analysis/l2_features.js',
       'analysis/score_boat.js',
       'analysis/predict_scenarios.js',
