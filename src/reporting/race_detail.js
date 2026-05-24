@@ -166,9 +166,17 @@ function openRace(sid, rn) {
   // Result
   var resHtml = '';
   if (result && result.isFinished && result.results && result.results.length > 0) {
-    var places = result.results.slice().sort(function (a, b) {
-      return a.place - b.place;
-    });
+    // 2026-05-24 fix: places.length < 3 で places[2].racer_boat_number が
+    //   TypeError → openRace が途中 throw して詳細画面が完成しない事故。
+    //   stadium_pages.js の D8 fix と同じパターン。filter + slice で防御。
+    var _rawPlaces = Array.isArray(result.results) ? result.results : [];
+    var places = _rawPlaces
+      .filter(function (p) {
+        return p && Number.isFinite(p.place) && p.racer_boat_number;
+      })
+      .sort(function (a, b) {
+        return a.place - b.place;
+      });
     resHtml = '<div class="result-box"><div class="result-title">レース結果</div>';
     resHtml += '<div class="result-places">';
     places.slice(0, 3).forEach(function (p) {
@@ -197,7 +205,9 @@ function openRace(sid, rn) {
         }
       });
     }
-    if (pred) {
+    // 2026-05-24 fix: places.length >= 3 のときのみ 的中判定
+    //   (1-2 着までしか取れていない部分 result では 3 連単判定不能)
+    if (pred && places.length >= 3) {
       var actualCombo =
         places[0].racer_boat_number + '-' + places[1].racer_boat_number + '-' + places[2].racer_boat_number;
       var hit = pred.trifecta.some(function (t) {
@@ -209,6 +219,10 @@ function openRace(sid, rn) {
         '">' +
         (hit ? '3連単 的中!' : '不的中') +
         '</div>';
+    } else if (pred && places.length < 3) {
+      resHtml +=
+        '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">' +
+        '結果データ取得中 (着順 ' + places.length + '/3 件)</div>';
     }
     resHtml += '</div>';
   }

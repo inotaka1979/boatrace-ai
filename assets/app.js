@@ -7776,7 +7776,10 @@ async function _loadNextOpen(){
     document.getElementById("detailWeather").innerHTML = weatherHtml;
     var resHtml = "";
     if (result && result.isFinished && result.results && result.results.length > 0) {
-      var places = result.results.slice().sort(function(a, b) {
+      var _rawPlaces = Array.isArray(result.results) ? result.results : [];
+      var places = _rawPlaces.filter(function(p) {
+        return p && Number.isFinite(p.place) && p.racer_boat_number;
+      }).sort(function(a, b) {
         return a.place - b.place;
       });
       resHtml = '<div class="result-box"><div class="result-title">\u30EC\u30FC\u30B9\u7D50\u679C</div>';
@@ -7797,12 +7800,14 @@ async function _loadNextOpen(){
           }
         });
       }
-      if (pred) {
+      if (pred && places.length >= 3) {
         var actualCombo = places[0].racer_boat_number + "-" + places[1].racer_boat_number + "-" + places[2].racer_boat_number;
         var hit = pred.trifecta.some(function(t) {
           return t.combo === actualCombo;
         });
         resHtml += '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' + (hit ? "hit" : "miss") + '">' + (hit ? "3\u9023\u5358 \u7684\u4E2D!" : "\u4E0D\u7684\u4E2D") + "</div>";
+      } else if (pred && places.length < 3) {
+        resHtml += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">\u7D50\u679C\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D (\u7740\u9806 ' + places.length + "/3 \u4EF6)</div>";
       }
       resHtml += "</div>";
     }
