@@ -154,6 +154,11 @@ async function main() {
   async function generateWorkerTwinSynced() {
     // 結合順: math (依存なし) → calibration (math 参照) → l2_features (calibration 参照)
     //         → score_boat (l2_features 参照) → predict_scenarios → predict_race
+    // 2026-05-24 v2: utils/features.js を末尾に追加。
+    //   l2_features.js の inline getL2Features は dead code (本流は
+    //   features.js の FEATURE_PIPELINE)。worker context でも同じく
+    //   features.js が globalThis.getL2Features を上書きすることで、
+    //   12→24 dim 拡張時に worker 側を二重メンテせず済む。
     const sources = [
       'utils/math.js',
       'analysis/calibration.js',
@@ -161,6 +166,7 @@ async function main() {
       'analysis/score_boat.js',
       'analysis/predict_scenarios.js',
       'analysis/predict_race.js',
+      'utils/features.js', // ← v2: pipeline override (must be last)
     ];
     let concatenated = '';
     for (const rel of sources) {
@@ -313,11 +319,11 @@ async function main() {
   //   - worker_predictor を必要時のみ register (現状は startup 直後 register)
   //  詳細は docs/architecture.md § 5 ビルドパイプライン参照。
   const BUDGETS = [
-    { path: 'assets/app-critical.min.js', max: 92000,  level: 'fail' },   // lazy chunk loader 込み
+    { path: 'assets/app-critical.min.js', max: 96000,  level: 'fail' },   // v2 (24 dim) features 含む
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
     { path: 'assets/app-rest-stats.min.js',  max: 20000, level: 'warn' },  // 成績 + バックテスト sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
-    { path: 'assets/worker_predictor.js', max: 80000,  level: 'warn' },   // twin auto-gen 後 (~77KB)
+    { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
   let budgetFail = false;
   for (const b of BUDGETS) {
