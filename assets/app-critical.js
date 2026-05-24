@@ -1301,6 +1301,12 @@ var TUNING = Object.freeze({
     STACKING_MODE: 'shrinkage',  // PB-5: 'shrinkage' | 'residual'（既定は線形融合）
     PLATT_MIN_SAMPLES: 200,      // Platt fit に必要な履歴最低件数
     ZSCORE_WARMUP_N: 100,        // z-score 適用開始までの観測数
+    // Tier 3 (2026-05-24): GBDT 第 3 層
+    //   gbdt_model.json (n_train >= GBDT_MIN_TRAIN) があれば _blendGBDTPrediction
+    //   が L1+L2 logit に blend する。placeholder 中は何もしない (safety)。
+    ENABLE_GBDT: true,           // 既定 ON: model 側 n_train で gating されるため安全
+    GBDT_BLEND_WEIGHT: 0.3,      // GBDT 寄与の割合 (1-w)*L1L2 + w*GBDT
+    GBDT_MIN_TRAIN: 5000,        // model.n_train がこの未満なら blend を見送り
   }),
 });
 
@@ -1485,6 +1491,13 @@ try {
   console.log('[Epic18] crossOriginIsolated=' + capabilities.has('cross_origin_isolated')
     + ' SABAvailable=' + capabilities.has('shared_array_buffer'));
 } catch(_){}
+
+// Tier 3 (2026-05-24): GBDT model loader — data/db/gbdt_model.json を取得
+//   src/analysis/gbdt_runtime.js (analysis 層) は no-fetch-in-analysis 規約のため、
+//   IO は app.js 側に置く (community_weights と同じパターン)。
+//   結果は globalThis._gbdtModel に格納 → _blendGBDTPrediction が参照。
+var _gbdtModel = null;
+/* MOVED: function loadGBDTModel */
 
 // Epic 17 (P2-6) + Epic 21: 階層的 federated learning — global + per-stadium 重みを blend
 //   起動時に data/db/community_weights.json を取得し、in-memory に保持
@@ -3069,6 +3082,8 @@ var CLASS_COURSE_MULT = [
 //   bundle 失敗時の fallback として旧本体を残置（数値出力は厳密に同一）。
 
 // P3 L-06/L-10: 旧 softmax 実装は撤去、上部の共通実装（Number.isFinite ガード付き）を利用
+
+
 
 
 

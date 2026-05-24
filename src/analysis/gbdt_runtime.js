@@ -136,31 +136,11 @@ function _blendGBDTPrediction(currentLogits, features6, weight) {
   return out;
 }
 
-/**
- * data/db/gbdt_model.json を fetch して global state に load する。
- * loadDeferredData フェーズで呼ばれる想定 (現状は scaffold のため未配線)。
- */
-async function loadGBDTModel() {
-  try {
-    const ts = '?t=' + Date.now();
-    const resp = await fetch('data/db/gbdt_model.json' + ts);
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    if (!json || json.schema !== 'br_gbdt_v1') return null;
-    if (json.feature_dim !== _g.FEATURE_DIM) {
-      console.warn('[gbdt] feature_dim mismatch — ignoring model', json.feature_dim, '!=', _g.FEATURE_DIM);
-      return null;
-    }
-    _g._gbdtModel = json;
-    return json;
-  } catch (e) {
-    console.warn('[gbdt] load failed:', e);
-    return null;
-  }
-}
+// 注: data/db/gbdt_model.json を fetch する loadGBDTModel は no-fetch-in-analysis
+//   ルールのため assets/app.js 側に置く (community_weights と同じパターン)。
+//   本ファイルは pure compute (tree traversal + blend) のみに限定する設計。
 
 // globalThis export
 _g._traverseTree = _traverseTree;
 _g.gbdtPredictLogits = gbdtPredictLogits;
 _g._blendGBDTPrediction = _blendGBDTPrediction;
-_g.loadGBDTModel = loadGBDTModel;
