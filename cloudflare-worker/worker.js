@@ -41,7 +41,12 @@ const CORS = {
 // 展示窓: 締切時刻の 30 分前 〜 5 分後 (この間に boatrace.jp に展示データ有)
 const EXHIBITION_WINDOW_BEFORE_MIN = 30;
 const EXHIBITION_WINDOW_AFTER_MIN  = 5;
-const MAX_HTML_SCRAPES_PER_RUN     = 12;   // CPU/subrequest budget 安全圏
+// 2026-05-24: 12 → 24 へ (= 同時開催最大場数)。CF subrequest 上限 50/invocation:
+//   3 openapi fetch + 3 KV writes + exhibition(24) + results(24) = 54 → 50 超
+//   → exhibition と results に分けて 20 ずつ (実測 fail なら 18 に下げる)。
+// 旧 12 だと 1 run で 12 races しか処理できず、ピーク (12 場同時開催 + モーニング場
+// 蓄積) で starve していた。
+const MAX_HTML_SCRAPES_PER_RUN     = 20;
 
 function jsonResponse(obj, opts = {}) {
   return new Response(JSON.stringify(obj), {
@@ -331,8 +336,13 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
     if (finished) continue;
     scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r });
   }
-  // 締切が新しい順 (すぐ終わったレースは結果ページが既に存在する可能性高)
-  scrapeTargets.sort((a, b) => (a.rPtr?.race_closed_at < b.rPtr?.race_closed_at ? 1 : -1));
+  // 2026-05-24 fix: 古い順 (FIFO) に sort。
+  //   旧版: 新しい順 (a < b → 1 = b 優先) で「すぐ終わったレースは結果ページが既に
+  //   存在する可能性高」と推測していたが、実測では古いレースが backlog に溜まり
+  //   starve する現象を観測 (モーニング場・デイ場の早い R が長時間 0/12R 表示)。
+  //   古いレース ほど結果が既に確定している (boatrace.jp に HTML が存在する) 確率が
+  //   高い上、古いものから処理すれば backlog が確実に drain される。
+  scrapeTargets.sort((a, b) => (a.rPtr?.race_closed_at < b.rPtr?.race_closed_at ? -1 : 1));
   const picks = scrapeTargets.slice(0, MAX_HTML_SCRAPES_PER_RUN);
   let mergedCount = 0;
   const settled = await Promise.allSettled(
