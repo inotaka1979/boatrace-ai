@@ -244,6 +244,7 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
   while ((tm = tbodyRe.exec(html)) !== null) tbodies.push(tm[1]);
 
   const placesSeen = new Set();
+  const boatsSeen = new Set();
   for (const tbody of tbodies) {
     const trM = /<tr[^>]*>([\s\S]*?)<\/tr>/.exec(tbody);
     if (!trM) continue;
@@ -257,7 +258,11 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
     const boatNum = toHalfWidthInt(tds[1]);
     if (!(place >= 1 && place <= 6) || !(boatNum >= 1 && boatNum <= 6)) continue;
     if (placesSeen.has(place)) continue;   // 同 place 重複防止
+    if (boatsSeen.has(boatNum)) continue;  // 2026-05-24: 同 boat の重複も防止
+                                            //  (payouts / 技術 tbody を誤認すると同艇が
+                                            //   複数 place に出現する事故 — 常滑 7R 実例)
     placesSeen.add(place);
+    boatsSeen.add(boatNum);
     let name = tds.length > 2 ? tds[2] : '';
     // selOr 内 span にレーサー番号 "4199" 等が含まれる場合があるので除去
     name = name.replace(/\s*\d{4,5}\s*/, '').trim();
@@ -271,7 +276,26 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
     });
     if (placesSeen.size >= 6) break;
   }
-  if (out.boats.length > 0) out.race_technique_number = 1;
+
+  // 2026-05-24 (致命): parse sanity check。
+  //   レース完走判定 (race_technique_number=1) は以下を満たす場合のみ:
+  //   - boats.length >= 3 (上位 3 着まで取得済)
+  //   - place=1 (1着) が含まれる (技術タイプ "逃げ" 等は 1着必須)
+  //   満たさない場合は parse 失敗扱い (race_technique_number=null) で、
+  //   Worker は KV に書かない / openapi の最新を待つ。
+  //   これにより常滑 7R で観測された「2着 5, 3着 5, 1着 欠落」のような
+  //   garbage data が KV に居座る事故を防止。
+  const hasFirstPlace = out.boats.some(b => b.racer_place_number === 1);
+  if (out.boats.length >= 3 && hasFirstPlace) {
+    out.race_technique_number = 1;
+  } else {
+    // parse 不完全 → 結果未確定扱い、書き込まない
+    out.race_technique_number = null;
+    if (out.boats.length > 0) {
+      // diag フィールド (KV には保存されないが Worker log で原因追跡)
+      out._parse_partial = { boats: out.boats.length, places: Array.from(placesSeen) };
+    }
+  }
 
   // 払戻テーブル: tbody 内の <tr> で <th> + <td>×2 を含むもの
   for (const tbody of tbodies) {
@@ -451,10 +475,16 @@ function mergeKVOverOpenapi(openapiResults, kvResults) {
     openapiByKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
   }
   // KV の finished entries を openapi 側に上書き / 追加
-  let preserved = 0, added = 0;
+  let preserved = 0, added = 0, rejected = 0;
   for (const kvr of kvResults.results) {
     if (!kvr || kvr.race_stadium_number == null || kvr.race_number == null) continue;
     if (kvr.race_technique_number == null) continue; // unfinished は無視
+    // 2026-05-24: KV に bogus データ (重複艇 / 1着欠落 / boats < 3) が
+    //   居座っていた場合は preserve しない (常滑 7R で観測された事故対策)。
+    if (!_isValidResult(kvr)) {
+      rejected++;
+      continue;
+    }
     const key = `${kvr.race_stadium_number}-${kvr.race_number}`;
     const open = openapiByKey.get(key);
     if (open) {
@@ -470,8 +500,28 @@ function mergeKVOverOpenapi(openapiResults, kvResults) {
       added++;
     }
   }
-  openapiResults._kv_merge = { preserved, added };
+  openapiResults._kv_merge = { preserved, added, rejected };
   return openapiResults;
+}
+
+// 2026-05-24: result entry が valid か判定 (sanity check)
+//   - boats.length >= 3
+//   - 1着が含まれる
+//   - 艇番に重複が無い
+function _isValidResult(r) {
+  if (!r || !Array.isArray(r.boats)) return false;
+  if (r.boats.length < 3) return false;
+  let hasFirst = false;
+  const seen = new Set();
+  for (const b of r.boats) {
+    if (!b) continue;
+    if (b.racer_place_number === 1) hasFirst = true;
+    if (b.racer_boat_number != null) {
+      if (seen.has(b.racer_boat_number)) return false; // 重複艇
+      seen.add(b.racer_boat_number);
+    }
+  }
+  return hasFirst;
 }
 
 // -----------------------------------------------------------------------
