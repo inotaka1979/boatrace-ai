@@ -90,9 +90,10 @@ var STADIUM_WIND_PROFILE = {
 var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
 var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
 
-var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5];
+// v2 (2026-05-24): 12 → 24 拡張、追加 12 weights は 0 init (assets/app.js と同期)
+var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5,0,0,0,0,0,0,0,0,0,0,0,0];
 var L2_BIAS=0;
-var FEATURE_DIM = 12;
+var FEATURE_DIM = 24;
 var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[1]||0.55),
   Math.log(COURSE_WIN_RATE[2]||0.14),
@@ -1204,6 +1205,211 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   }
   globalThis.predictRace = predictRace;
 
+  const FEATURE_VERSION = 2;
+  const FEATURE_DIM_FEATURES = 24;
+  function _windCourse(ctx) {
+    if (!ctx.weather) return 0;
+    const ws = ctx.weather.wind_speed || ctx.weather.race_wind || 0;
+    const wd = ctx.weather.wind_direction || ctx.weather.race_wind_direction_number || 0;
+    const isHead = wd >= 7 && wd <= 11;
+    if (isHead && ctx.course === 1) return -ws / 10;
+    if (isHead && ctx.course >= 4) return ws / 20;
+    return 0;
+  }
+  function _etComp(ctx) {
+    if (ctx.etRank <= 1 && ctx.st > 0 && ctx.st <= 0.1) return 1;
+    if (ctx.etRank >= 4 && ctx.st >= 0.15) return -1;
+    return 0;
+  }
+  function _formScore(ctx) {
+    return ctx.form ? ctx.form.score / 10 : 0;
+  }
+  function _tiltAlign(ctx) {
+    const c = ctx.course, t = ctx.tilt;
+    if (c <= 2 && t <= -0.5) return 1;
+    if (c >= 4 && t >= 0.5) return 1;
+    if (c <= 2 && t >= 0.5 || c >= 4 && t <= -0.5) return -1;
+    return 0;
+  }
+  function _waveCourse(ctx) {
+    if (!ctx.weather) return 0;
+    const wh = ctx.weather.wave_height || ctx.weather.race_wave || 0;
+    if (ctx.course === 1) return -wh / 10;
+    if (ctx.course >= 4) return wh / 20;
+    return 0;
+  }
+  const TIDE_PHASE_COURSE_BIAS = Object.freeze({
+    high: [0, 0.1, 0.05, 0, -0.05, -0.1, -0.1],
+    low: [0, -0.1, -0.05, 0, 0.05, 0.1, 0.1],
+    rising: [0, 0.05, 0, 0, 0, -0.05, -0.05],
+    falling: [0, -0.05, 0, 0, 0, 0.05, 0.05]
+  });
+  function _tidePhaseCourse(ctx) {
+    const extras = ctx.extras;
+    if (!extras) return 0;
+    const helpers = ctx.helpers || {};
+    const classify = helpers.classifyTidePhase || globalThis.classifyTidePhase;
+    const tideData2 = helpers.tideData || globalThis.tideData;
+    if (typeof classify !== "function" || !tideData2 || !tideData2.stadiums) return 0;
+    const entry = tideData2.stadiums[String(ctx.sid)];
+    if (!entry || entry.type !== "saltwater") return 0;
+    const hour = extras.raceHour;
+    if (hour == null) return 0;
+    const phase = classify(entry, hour);
+    if (!phase) return 0;
+    const row = TIDE_PHASE_COURSE_BIAS[phase];
+    return row && row[ctx.course] || 0;
+  }
+  function _pairwiseH2H(ctx) {
+    const extras = ctx.extras;
+    if (!extras || !Array.isArray(extras.allBoats)) return 0;
+    const helpers = ctx.helpers || {};
+    const pwScore = helpers.pairwiseScore || globalThis.pairwiseScore;
+    if (typeof pwScore !== "function") return 0;
+    const oppRids = [];
+    for (let i = 0; i < extras.allBoats.length; i++) {
+      const ob = extras.allBoats[i];
+      const orid = ob && ob.racer_number;
+      if (orid && orid !== ctx.rid) oppRids.push(orid);
+    }
+    if (oppRids.length === 0) return 0;
+    const r = pwScore(ctx.rid, ctx.sid, oppRids);
+    return r && Number.isFinite(r.score) ? r.score / 2 : 0;
+  }
+  function _classFieldSpread(ctx) {
+    const extras = ctx.extras;
+    if (!extras || !Array.isArray(extras.allBoats) || extras.allBoats.length < 2) return 0;
+    const classes = [];
+    for (let i = 0; i < extras.allBoats.length; i++) {
+      const cn = extras.allBoats[i] && extras.allBoats[i].racer_class_number;
+      if (cn != null) classes.push(cn);
+    }
+    if (classes.length < 2) return 0;
+    let sum = 0;
+    for (let i = 0; i < classes.length; i++) sum += classes[i];
+    const mean = sum / classes.length;
+    let varSum = 0;
+    for (let i = 0; i < classes.length; i++) varSum += (classes[i] - mean) ** 2;
+    return Math.sqrt(varSum / classes.length) / 2;
+  }
+  function _motorFieldRank(ctx) {
+    const extras = ctx.extras;
+    if (!extras || !Array.isArray(extras.allBoats) || extras.allBoats.length < 2) return 0.5;
+    const myMotor = ctx.pf(ctx.boat.racer_assigned_motor_top_2_percent);
+    if (!Number.isFinite(myMotor) || myMotor === 0) return 0.5;
+    let rank = 1;
+    for (let i = 0; i < extras.allBoats.length; i++) {
+      const om = ctx.pf(extras.allBoats[i].racer_assigned_motor_top_2_percent);
+      if (Number.isFinite(om) && om > myMotor) rank++;
+    }
+    return rank / 6;
+  }
+  function _recentWinRate(ctx) {
+    const helpers = ctx.helpers || {};
+    const racerDB2 = helpers.racerDB || globalThis.racerDB;
+    if (!racerDB2 || !racerDB2[ctx.rid]) return 0;
+    const recent = racerDB2[ctx.rid].recentResults;
+    if (!Array.isArray(recent) || recent.length < 5) return 0;
+    const slice = recent.slice(-10);
+    let wins = 0;
+    for (let i = 0; i < slice.length; i++) {
+      if (slice[i] === 1) wins++;
+    }
+    return wins / slice.length;
+  }
+  const FEATURE_PIPELINE = Object.freeze([
+    // v1 (index 0..11) — 既存重み互換のため順序維持
+    { name: "natWinPct", fn: (ctx) => ctx.pf(ctx.boat.racer_national_top_1_percent) / 10 },
+    { name: "motorRate", fn: (ctx) => ctx.pf(ctx.boat.racer_assigned_motor_top_2_percent) / 100 },
+    { name: "etRankNorm", fn: (ctx) => (ctx.etRank + 1) / 6 },
+    { name: "courseNorm", fn: (ctx) => ctx.course / 6 },
+    { name: "classNorm", fn: (ctx) => (ctx.boat.racer_class_number || 3) / 4 },
+    { name: "windCourse", fn: _windCourse },
+    { name: "racerCWR", fn: (ctx) => ctx.racerCWR || ctx.pf(ctx.boat.racer_national_top_1_percent) / 100 },
+    { name: "stRankNorm", fn: (ctx) => (ctx.stRank + 1) / 6 },
+    { name: "etComp", fn: _etComp },
+    { name: "formScore", fn: _formScore },
+    { name: "tiltAlign", fn: _tiltAlign },
+    { name: "stadCWR", fn: (ctx) => ctx.stadCWR },
+    // v2 (index 12..23) — 当初 weights=0 から学習開始
+    { name: "localWinPct", fn: (ctx) => ctx.pf(ctx.boat.racer_local_top_1_percent) / 10 },
+    { name: "localTop2Pct", fn: (ctx) => ctx.pf(ctx.boat.racer_local_top_2_percent) / 100 },
+    { name: "weightZ", fn: (ctx) => {
+      const w = ctx.pf(ctx.boat.racer_weight);
+      if (!w) return 0;
+      return Math.max(-3, Math.min(3, (w - 52) / 2));
+    } },
+    { name: "ageNorm", fn: (ctx) => {
+      const a = ctx.pf(ctx.boat.racer_age);
+      if (!a) return 0.5;
+      return Math.max(0, Math.min(1, a / 60));
+    } },
+    { name: "weightAdjust", fn: (ctx) => {
+      const myPv = ctx.myPv || {};
+      return ctx.pf(myPv.racer_weight_adjustment) / 5;
+    } },
+    { name: "tiltRaw", fn: (ctx) => ctx.tilt },
+    // ctx.tilt は既に pf 済
+    { name: "waveCourse", fn: _waveCourse },
+    { name: "tidePhaseCourse", fn: _tidePhaseCourse },
+    { name: "pairwiseH2H", fn: _pairwiseH2H },
+    { name: "classFieldSpread", fn: _classFieldSpread },
+    { name: "motorFieldRank", fn: _motorFieldRank },
+    { name: "recentWinRate", fn: _recentWinRate }
+  ]);
+  function buildL2Features(boat, preview, weather, etRank, stRank, sid, helpers, extras) {
+    const h = helpers || {};
+    const pf2 = h.pf || ((v) => parseFloat(v) || 0);
+    const course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
+    const rid = boat.racer_number || 0;
+    const racerCWR = h.getRacerCourseWinRate ? h.getRacerCourseWinRate(rid, course) : null;
+    const stadCWR = h.getStadiumCourseWinRate ? h.getStadiumCourseWinRate(String(sid), course) : 0;
+    const myPv = preview || {};
+    const st = myPv.racer_start_timing != null ? pf2(myPv.racer_start_timing) : 99;
+    const tilt = myPv.racer_tilt_adjustment != null ? pf2(myPv.racer_tilt_adjustment) : pf2(myPv.racer_tilt);
+    const form = h.getRacerForm ? h.getRacerForm(rid) : null;
+    const ctx = {
+      boat,
+      preview,
+      weather,
+      etRank,
+      stRank,
+      sid,
+      course,
+      rid,
+      racerCWR,
+      stadCWR,
+      myPv,
+      st,
+      tilt,
+      form,
+      pf: pf2,
+      helpers: h,
+      extras: extras || null
+    };
+    const out = new Array(FEATURE_PIPELINE.length);
+    for (let i = 0; i < FEATURE_PIPELINE.length; i++) {
+      const v = FEATURE_PIPELINE[i].fn(ctx);
+      out[i] = Number.isFinite(v) ? v : 0;
+    }
+    return out;
+  }
+  globalThis.FEATURE_VERSION = FEATURE_VERSION;
+  globalThis.FEATURE_DIM_FEATURES = FEATURE_DIM_FEATURES;
+  globalThis.FEATURE_PIPELINE = FEATURE_PIPELINE;
+  globalThis.buildL2Features = buildL2Features;
+  globalThis.getL2Features = function(boat, preview, weather, etRank, stRank, sid, extras) {
+    return buildL2Features(boat, preview, weather, etRank, stRank, sid, {
+      pf: typeof globalThis.pf === "function" ? globalThis.pf : null,
+      getRacerCourseWinRate: globalThis.getRacerCourseWinRate,
+      getStadiumCourseWinRate: globalThis.getStadiumCourseWinRate,
+      getRacerForm: globalThis.getRacerForm,
+      pairwiseScore: globalThis.pairwiseScore,
+      classifyTidePhase: globalThis.classifyTidePhase,
+      tideData: globalThis.tideData,
+      racerDB: globalThis.racerDB
+    }, extras);
+  };
 })();
 
 /* BUILD:WORKER_TWIN_SYNCED:END */

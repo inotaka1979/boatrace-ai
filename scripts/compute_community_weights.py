@@ -40,8 +40,10 @@ STADIUM_DB_PATH = ROOT / "data" / "db" / "stadiumDB.json"
 FL_UPLOADS_DIR = ROOT / "data" / "db" / "fl_uploads"   # Epic 24
 OUTPUT = ROOT / "data" / "db" / "community_weights.json"
 
-FEATURE_DIM = 12
-INIT_WEIGHTS = [3.0, 1.5, -1.0, -4.0, -1.5, 0.5, 4.0, -0.8, 1.0, 1.5, 0.3, 3.5]
+# v2 (2026-05-24): 12 → 24 拡張 (assets/app.js L2_INIT_WEIGHTS と同期)
+FEATURE_DIM = 24
+INIT_WEIGHTS = [3.0, 1.5, -1.0, -4.0, -1.5, 0.5, 4.0, -0.8, 1.0, 1.5, 0.3, 3.5,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 LR0 = 0.05
 LR_TAU = 5000.0
 LAMBDA = 1e-4
@@ -63,7 +65,13 @@ def softmax(logits: list[float]) -> list[float]:
 
 
 def get_l2_features(boat: dict, preview: dict | None, racer_db: dict, stadium_db: dict, sid: str, et_rank: int, st_rank: int) -> list[float]:
-    """assets/app.js getL2Features と同等の 12 次元特徴量計算。"""
+    """assets/app.js getL2Features と同等の 24 次元特徴量計算 (v2)。
+
+    server side (cron) は preview 詳細 / pairwise / tide / 個人 recentResults を
+    持たないため、v2 追加特徴量 (index 12..23) は 0 fallback とする。
+    結果: community weights は v1 領域 (index 0..11) のみ学習。
+    v2 領域はクライアント側ローカル学習で発見する設計。
+    """
     course = (preview or {}).get("racer_course_number") or boat.get("racer_boat_number") or 1
     rid = str(boat.get("racer_number") or 0)
     rdb = (racer_db.get("racers") or {}).get(rid) or {}
@@ -98,6 +106,19 @@ def get_l2_features(boat: dict, preview: dict | None, racer_db: dict, stadium_db
     elif (course <= 2 and tilt >= 0.5) or (course >= 4 and tilt <= -0.5):
         tilt_align = -1.0
 
+    # v2 追加特徴量 (server side では推定不能のため全て 0):
+    #   localWinPct (12)  - boat に local 勝率なし
+    #   localTop2Pct (13) - 同上
+    #   weightZ (14)      - boat に weight なし
+    #   ageNorm (15)      - boat に age なし
+    #   weightAdjust (16) - preview に詳細なし
+    #   tiltRaw (17)      - preview に詳細なし (旧 tilt_align で代替済)
+    #   waveCourse (18)   - weather 情報なし
+    #   tidePhaseCourse (19) - tide DB なし
+    #   pairwiseH2H (20)  - pairwiseDB はクライアント側のみ
+    #   classFieldSpread (21) - 計算可能だが現状省略
+    #   motorFieldRank (22)   - 同上
+    #   recentWinRate (23)    - racer_db に recentResults なし
     return [
         nat_win / 10.0,
         motor_rate / 100.0,
@@ -111,6 +132,8 @@ def get_l2_features(boat: dict, preview: dict | None, racer_db: dict, stadium_db
         0.0,  # formScore は server 側で recentResults を持たないので 0
         tilt_align,
         stad_cwr,
+        # v2 追加 (index 12..23)
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     ]
 
 

@@ -74,9 +74,17 @@ function arraysEqual(a, b){
 }
 
 console.log('[FEATURE_PIPELINE 構造]');
-t('FEATURE_DIM_FEATURES === 12', ctx.FEATURE_DIM_FEATURES === 12);
-t('FEATURE_PIPELINE.length === 12', ctx.FEATURE_PIPELINE.length === 12);
-t('FEATURE_VERSION === 1', ctx.FEATURE_VERSION === 1);
+// v2 (2026-05-24): 12 → 24 拡張
+t('FEATURE_DIM_FEATURES === 24', ctx.FEATURE_DIM_FEATURES === 24);
+t('FEATURE_PIPELINE.length === 24', ctx.FEATURE_PIPELINE.length === 24);
+t('FEATURE_VERSION === 2', ctx.FEATURE_VERSION === 2);
+// v1 互換: index 0..11 の spec 名が保たれているか (重み互換に必須)
+const v1Names = ['natWinPct','motorRate','etRankNorm','courseNorm','classNorm','windCourse',
+                 'racerCWR','stRankNorm','etComp','formScore','tiltAlign','stadCWR'];
+v1Names.forEach((n, i) => {
+  t(`v1 spec[${i}].name === '${n}' (backward-compat)`,
+    ctx.FEATURE_PIPELINE[i] && ctx.FEATURE_PIPELINE[i].name === n);
+});
 
 console.log('');
 console.log('[新旧 getL2Features 数値同一性]');
@@ -112,12 +120,23 @@ const samples = [
   ],
 ];
 
+// v2: 新パイプラインは 24 要素を返す。旧 12 要素実装 (l2_features.js inline) との
+// 比較は先頭 12 要素のみ (v1 互換性検証)。後半 12 要素 (v2 追加) は別途検証。
 samples.forEach((args, i) => {
   const newOut = ctx.getL2Features.apply(null, args);
   const oldOut = ctx.getL2Features_OLD.apply(null, args);
-  const eq = arraysEqual(newOut, oldOut);
-  t(`sample ${i+1}: 新パイプラインと旧実装の数値完全一致`,
+  // 新は 24 要素、旧は 12 要素を期待
+  t(`sample ${i+1}: 新出力 length === 24`, newOut.length === 24);
+  t(`sample ${i+1}: 旧出力 length === 12`, oldOut.length === 12);
+  // v1 互換: 先頭 12 要素は旧と完全一致
+  const newV1 = newOut.slice(0, 12);
+  const eq = arraysEqual(newV1, oldOut);
+  t(`sample ${i+1}: 先頭 12 要素は旧 getL2Features と完全一致 (v1 backward-compat)`,
     eq.ok || (console.log(`  diff at idx=${eq.idx}: new=${eq.a} old=${eq.b}`), false));
+  // v2 追加領域は finite
+  const v2Region = newOut.slice(12, 24);
+  t(`sample ${i+1}: v2 領域 (index 12..23) 全要素 finite`,
+    v2Region.every(v => Number.isFinite(v)));
 });
 
 console.log('');

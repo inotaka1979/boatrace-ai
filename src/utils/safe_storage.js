@@ -14,7 +14,7 @@
 
 'use strict';
 
-const FEATURE_DIM = 12;
+const FEATURE_DIM = 24; // v2 (2026-05-24): 12 → 24 拡張
 const ERROR_BUF_MAX = 100;
 
 // P1-C3: localStorage キー正規一覧（参照用カタログ）
@@ -287,7 +287,7 @@ function reportError(payload) {
 //   起動時に boot から `_runMigrations()` を呼び、CURRENT_SCHEMA まで段階適用する。
 //   各 migration は idempotent（多重実行しても無害）に書くこと。
 const SCHEMA_KEY = 'boatrace_schema_version';
-const CURRENT_SCHEMA = 2;
+const CURRENT_SCHEMA = 3;
 const MIGRATIONS = {
   // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
   2: function () {
@@ -301,6 +301,46 @@ const MIGRATIONS = {
     } catch (_) {
       /* migration 失敗は致命にしない、次回再試行 */
     }
+  },
+  // v2→v3 (2026-05-24): FEATURE_DIM 12 → 24 拡張に伴う localStorage 移行
+  //   - boatrace_weights: 12 要素 → 24 要素 (新 12 weights = 0 init)
+  //   - boatrace_featurestats: mean[12] / m2[12] → mean[24] / m2[24]
+  //     mean は 0 padding、m2 は **1.0 padding** (z-score の divide by zero 防止 —
+  //     学習が進むまで identity transform 同等に動作)
+  //   既存 weights/stats が壊れない後方互換が最重要 (致命: R1/R2 リスク回避)
+  3: function () {
+    // weights migration
+    try {
+      const wRaw = localStorage.getItem('boatrace_weights');
+      if (wRaw) {
+        const w = JSON.parse(wRaw);
+        if (Array.isArray(w) && w.length === 12) {
+          const newW = w.slice();
+          for (let i = 0; i < 12; i++) newW.push(0);
+          localStorage.setItem('boatrace_weights', JSON.stringify(newW));
+        }
+      }
+    } catch (_) {}
+    // featurestats migration
+    try {
+      const fRaw = localStorage.getItem('boatrace_featurestats');
+      if (fRaw) {
+        const f = JSON.parse(fRaw);
+        if (f && Array.isArray(f.mean) && f.mean.length === 12
+                && Array.isArray(f.m2) && f.m2.length === 12) {
+          const newMean = f.mean.slice();
+          const newM2 = f.m2.slice();
+          for (let i = 0; i < 12; i++) {
+            newMean.push(0);
+            newM2.push(1); // ← variance=1 for safe z-score (divide by zero 防止)
+          }
+          // n は保持 (旧 warmup 完了状態を維持)
+          localStorage.setItem('boatrace_featurestats', JSON.stringify({
+            mean: newMean, m2: newM2, n: f.n,
+          }));
+        }
+      }
+    } catch (_) {}
   },
 };
 function _runMigrations() {

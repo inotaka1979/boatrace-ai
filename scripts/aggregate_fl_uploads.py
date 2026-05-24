@@ -37,7 +37,7 @@ from io_utils import atomic_write_json  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "db" / "fl_uploads"
 SCHEMA = "br_fl_upload_v1"
-FEATURE_DIM = 12
+FEATURE_DIM = 24  # v2 (2026-05-24): 12 → 24 拡張 (assets/app.js と同期)
 MAX_ISSUES = 100   # 一度に処理する上限
 
 JSON_BLOCK_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
