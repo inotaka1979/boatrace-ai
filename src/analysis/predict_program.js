@@ -78,9 +78,11 @@ function predictRaceProgram(sid, raceNum) {
       classNum: l1s.classNum,
     };
   });
-  // PB-6: Platt scaling（番組予想にも同じく適用）
+  // PB-6 + Tier 2: 統一 calibration (Platt/Isotonic auto-select、場別あり)
   finalProbs.forEach(function (p) {
-    p.prob = _applyPlattCalibration(p.prob);
+    p.prob = (typeof _applyCalibration === 'function')
+      ? _applyCalibration(p.prob, sid)
+      : _applyPlattCalibration(p.prob, sid);
   });
   // P1-A4: F/L 1着確率乗数（番組予想にも適用）
   finalProbs.forEach(function (p) {

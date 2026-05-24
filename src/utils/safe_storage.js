@@ -135,6 +135,28 @@ function _validateLS(key, value) {
       if (!Number.isFinite(value.a) || !Number.isFinite(value.b)) return null;
       if (Math.abs(value.a) > 10 || Math.abs(value.b) > 10) return null;
       return value;
+    case 'boatrace_platt_perstadium':
+      // 2026-05-24 (Tier 2): { sid: { a, b, n, fittedAt } }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      if (Object.keys(value).length > 30) return null; // 24 場 + 余裕
+      for (var sid in value) {
+        var ps = value[sid];
+        if (!ps || typeof ps !== 'object') return null;
+        if (!Number.isFinite(ps.a) || !Number.isFinite(ps.b)) return null;
+        if (Math.abs(ps.a) > 10 || Math.abs(ps.b) > 10) return null;
+      }
+      return value;
+    case 'boatrace_isotonic':
+      // 2026-05-24 (Tier 2): { points: [{x, y}, ...], fittedAt, n }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      if (!Array.isArray(value.points)) return null;
+      if (value.points.length > 100) return null; // PAV 後の breakpoints は通常 < 20
+      for (var i = 0; i < value.points.length; i++) {
+        var pt = value.points[i];
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+        if (pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1) return null;
+      }
+      return value;
     default:
       return value;
   }
