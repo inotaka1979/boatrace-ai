@@ -35,7 +35,9 @@
       "hits2": 1,
       "stake": 600,
       "payout": 1200,
-      "payout3": 880
+      "payout3": 880,
+      "roi": 2,
+      "roiCI": null
     },
     "4": {
       "sid": 4,
@@ -45,7 +47,9 @@
       "hits2": 0,
       "stake": 400,
       "payout": 0,
-      "payout3": 0
+      "payout3": 0,
+      "roi": 0,
+      "roiCI": null
     },
     "12": {
       "sid": 12,
@@ -55,7 +59,9 @@
       "hits2": 1,
       "stake": 1000,
       "payout": 6060,
-      "payout3": 4200
+      "payout3": 4200,
+      "roi": 6.06,
+      "roiCI": null
     }
   },
   "dailyROI": {

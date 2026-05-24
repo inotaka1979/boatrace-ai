@@ -3138,13 +3138,16 @@ function pf(v){return parseFloat(v)||0}
             hits2: 0,
             stake: 0,
             payout: 0,
-            payout3: 0
+            payout3: 0,
+            // Tier 2 (2026-05-24): Bootstrap CI 用に per-race (stake, payout) を保持
+            races: []
           };
         const ss = byStadium[sid];
         ss.n++;
         ss.stake += stake;
         ss.payout += payout;
         ss.payout3 += h.payout3 || 0;
+        if (ss.races) ss.races.push({ stake, payout });
         if (h.trifecta_hit) ss.hits3++;
         if (h.exacta_hit) ss.hits2++;
       }
@@ -3177,6 +3180,12 @@ function pf(v){return parseFloat(v)||0}
     const stdR = Math.sqrt(varR);
     const sharpe = stdR > 0 ? meanR / stdR : 0;
     const calibration = _computeCalibrationMetrics(ledger);
+    for (const sid in byStadium) {
+      const ss = byStadium[sid];
+      ss.roi = ss.stake > 0 ? ss.payout / ss.stake : 0;
+      ss.roiCI = _bootstrapROICI(ss.races || [], 1e3);
+      delete ss.races;
+    }
     return {
       samples: ledger.length,
       totalBets,
@@ -3222,6 +3231,62 @@ function pf(v){return parseFloat(v)||0}
       note: "\u6642\u7CFB\u5217\u9806\u3067 warmup \u5F8C\u306E\u30EC\u30FC\u30B9\u306E\u307F\u8A55\u4FA1\u3002\u5B8C\u5168\u306A forward-chain \u518D\u5B66\u7FD2\u306B\u306F\u30EC\u30FC\u30B9\u6642\u70B9\u306E features \u4FDD\u5B58\u304C\u5FC5\u8981"
     };
   }
+  function _bootstrapROICI(races, nResamples) {
+    nResamples = nResamples || 1e3;
+    if (!Array.isArray(races) || races.length < 10) return null;
+    const n = races.length;
+    const rois = new Array(nResamples);
+    let seed = Date.now() >>> 0 | 1;
+    const _rand = function() {
+      seed = seed * 1664525 + 1013904223 >>> 0;
+      return seed / 4294967295;
+    };
+    for (let r = 0; r < nResamples; r++) {
+      let sumStake = 0;
+      let sumPayout = 0;
+      for (let i = 0; i < n; i++) {
+        const idx = Math.floor(_rand() * n);
+        sumStake += races[idx].stake;
+        sumPayout += races[idx].payout;
+      }
+      rois[r] = sumStake > 0 ? sumPayout / sumStake : 0;
+    }
+    rois.sort(function(a, b) {
+      return a - b;
+    });
+    const loIdx = Math.floor(nResamples * 0.025);
+    const hiIdx = Math.ceil(nResamples * 0.975) - 1;
+    return { lo: rois[loIdx], hi: rois[hiIdx], n };
+  }
+  function _computeReliabilityBins(entries) {
+    const bins = [];
+    for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
+    entries.forEach(function(h) {
+      if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+      const winner = h.actual[0];
+      const probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      for (let b = 1; b <= 6; b++) {
+        const p = probs[b];
+        if (!Number.isFinite(p) || p <= 0 || p >= 1) continue;
+        const binIdx = Math.min(9, Math.floor(p * 10));
+        bins[binIdx].sum += p;
+        bins[binIdx].n += 1;
+        if (b === winner) bins[binIdx].hit += 1;
+      }
+    });
+    return bins.map(function(b, i) {
+      return {
+        binStart: i / 10,
+        binEnd: (i + 1) / 10,
+        avgP: b.n > 0 ? b.sum / b.n : 0,
+        actRate: b.n > 0 ? b.hit / b.n : 0,
+        n: b.n
+      };
+    });
+  }
   function _computeCalibrationMetrics(entries) {
     let logLossSum = 0, brierSum = 0, n = 0;
     const bins = [];
@@ -3262,6 +3327,8 @@ function pf(v){return parseFloat(v)||0}
   _g.runBacktestEngine = runBacktestEngine;
   _g.runForwardChainBacktest = runForwardChainBacktest;
   _g._computeCalibrationMetrics = _computeCalibrationMetrics;
+  _g._bootstrapROICI = _bootstrapROICI;
+  _g._computeReliabilityBins = _computeReliabilityBins;
 })();
 
 /* BUILD:ANALYSIS_BACKTEST:END */
@@ -3321,6 +3388,7 @@ function runBacktest(){
     dh += '</div></div>';
 
     // B17 (2026-05-17): 場別集計テーブル
+    // Tier 2 (2026-05-24): Bootstrap 95% CI を併記して「systematically losing 場」を判別可能に
     var stadArr = [];
     for(var ssid in r.byStadium) stadArr.push(r.byStadium[ssid]);
     if(stadArr.length > 0){
@@ -3330,22 +3398,81 @@ function runBacktest(){
       });
       stadArr.sort(function(a,b){ return b.roi - a.roi; });
       dh += '<div class="card"><div class="p-12">';
-      dh += '<div class="card-title">場別 (回収率順)</div>';
-      dh += '<table class="text-w-full-12"><thead><tr><th>場</th><th>R数</th><th>3連的中</th><th>投資</th><th>払戻</th><th>回収率</th></tr></thead><tbody>';
+      dh += '<div class="card-title">場別 (回収率順 + 95% CI)</div>';
+      dh += '<table class="text-w-full-12"><thead><tr><th>場</th><th>R数</th><th>的中</th><th>回収率</th><th>95% CI</th><th>判定</th></tr></thead><tbody>';
       stadArr.forEach(function(ss){
         var roiPct = (ss.roi * 100).toFixed(0);
         var roiClass = ss.roi >= 1.0 ? 'recovery-positive' : (ss.roi >= 0.8 ? '' : 'recovery-negative');
+        var ciStr = '—', verdict = '<span style="color:var(--text-dim)">N 不足</span>';
+        if(ss.roiCI){
+          var lo = (ss.roiCI.lo * 100).toFixed(0);
+          var hi = (ss.roiCI.hi * 100).toFixed(0);
+          ciStr = '['+lo+'%, '+hi+'%]';
+          // CI が完全に 1.0 (100%) 未満なら統計的に「負け確実」 → avoid
+          // CI が完全に 1.0 (100%) 超なら統計的に「勝ち確実」 → favor (現実的にはほぼ起きない)
+          if(ss.roiCI.hi < 1.0)
+            verdict = '<span style="color:var(--danger);font-weight:700">🚫 avoid</span>';
+          else if(ss.roiCI.lo > 1.0)
+            verdict = '<span style="color:var(--success);font-weight:700">⭐ favor</span>';
+          else
+            verdict = '<span style="color:var(--text-dim)">未確定</span>';
+        }
         dh += '<tr><td><b>'+escText(ss.name)+'</b></td>'
             + '<td class="ta-r">'+ss.n+'</td>'
             + '<td class="ta-r">'+ss.hits3+' ('+(ss.hitRate3*100).toFixed(0)+'%)</td>'
-            + '<td class="ta-r">¥'+ss.stake.toLocaleString()+'</td>'
-            + '<td class="ta-r">¥'+ss.payout.toLocaleString()+'</td>'
-            + '<td class="ta-r '+roiClass+'">'+roiPct+'%</td></tr>';
+            + '<td class="ta-r '+roiClass+'">'+roiPct+'%</td>'
+            + '<td class="ta-r" style="font-size:10px">'+ciStr+'</td>'
+            + '<td class="ta-r">'+verdict+'</td></tr>';
       });
       dh += '</tbody></table>';
-      dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">※ 期間中に予想履歴がある場のみ表示、回収率の高い順にソート</div>';
+      dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+         + '※ 95% CI は Bootstrap (1000 リサンプリング) で算出。<b>🚫 avoid</b>= CI 全域が 100% 未満 (統計的に負け)。<b>⭐ favor</b>= CI 全域が 100% 超 (公営競技の控除率 25% を超える勝ち、ほぼ起きない)。N&lt;10 件は CI 算出不能。</div>';
       dh += '</div></div>';
     }
+
+    // Tier 2 (2026-05-24): Reliability diagram (calibration plot)
+    // 予測確率 (X) vs 実際の的中率 (Y) を 10 bin で表示。対角線が完全校正。
+    // 「70% 当たると言ったレースは本当に 70% 当たっているか」を可視化。
+    try {
+      var binsArr = _computeReliabilityBins(history);
+      var binCount = 0;
+      binsArr.forEach(function(b){ if(b.n > 0) binCount++; });
+      if(binCount >= 3){
+        dh += '<div class="card"><div class="p-12">';
+        dh += '<div class="card-title">📊 Reliability Diagram (確率校正検証)</div>';
+        dh += '<div style="font-size:11px;color:var(--text-sub);margin-bottom:8px">予測確率 (X) vs 実際の 1 着率 (Y)。対角線 (= 完全校正) に近いほど予測精度が高い。bars 上の点を結ぶ線が対角を <b>下回る</b>=過信 (overconfident)、<b>上回る</b>=過小評価。</div>';
+        // 簡易 ASCII chart (Chart.js 動的 import より軽量)
+        dh += '<table class="text-w-full-12" style="font-size:11px"><thead><tr><th>予測 bin</th><th>件数</th><th>平均予測%</th><th>実 1 着率%</th><th>差分</th><th>視覚</th></tr></thead><tbody>';
+        binsArr.forEach(function(b){
+          if(b.n === 0) return;
+          var label = (b.binStart*100).toFixed(0)+'-'+(b.binEnd*100).toFixed(0)+'%';
+          var predPct = (b.avgP*100).toFixed(1);
+          var actPct = (b.actRate*100).toFixed(1);
+          var diff = (b.actRate - b.avgP) * 100;
+          var diffStr = (diff >= 0 ? '+' : '') + diff.toFixed(1) + '%';
+          var diffColor = Math.abs(diff) < 5 ? 'var(--success)' : Math.abs(diff) < 15 ? 'var(--warn)' : 'var(--danger)';
+          // 視覚: bar 風 (実 1 着率を bin の左端から伸ばす)
+          var barWidth = Math.min(100, b.actRate * 100);
+          var diagonal = (b.binStart + b.binEnd) * 50; // bin の中央が完全校正なら何 % か
+          var bar = '<div style="position:relative;height:14px;background:#f5f5f5;border-radius:2px;overflow:hidden">'
+            + '<div style="position:absolute;left:0;top:0;height:100%;width:'+barWidth+'%;background:linear-gradient(90deg,#2196F3,#4CAF50);opacity:.7"></div>'
+            + '<div style="position:absolute;left:'+diagonal+'%;top:0;width:2px;height:100%;background:#000"></div>'
+            + '</div>';
+          dh += '<tr><td><b>'+label+'</b></td>'
+              + '<td class="ta-r">'+b.n+'</td>'
+              + '<td class="ta-r">'+predPct+'%</td>'
+              + '<td class="ta-r">'+actPct+'%</td>'
+              + '<td class="ta-r" style="color:'+diffColor+';font-weight:700">'+diffStr+'</td>'
+              + '<td style="min-width:120px">'+bar+'</td></tr>';
+        });
+        dh += '</tbody></table>';
+        dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+           + '※ 黒い縦線=完全校正点、青緑バー=実 1 着率。差分が ±5% 以内なら校正良好、±15% 超は要再校正。<br>'
+           + '※ 「設定→確率校正 (Platt) 再校正」で改善可能。'
+           + '</div>';
+        dh += '</div></div>';
+      }
+    } catch(e){}
 
     detailsDiv.innerHTML = dh;
   }, 50);

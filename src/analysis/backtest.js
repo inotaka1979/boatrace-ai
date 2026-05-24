@@ -58,7 +58,7 @@ function _btParseDate(yyyymmdd) {
  *   maxDrawdown: number;
  *   sharpe: number;
  *   byType: Record<string, { n: number; hits: number; payout: number }>;
- *   byStadium: Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number }>;
+ *   byStadium: Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number; roi?: number; roiCI?: { lo: number; hi: number; n: number } | null; races?: Array<{ stake: number; payout: number }> }>;
  *   dailyROI: Record<string, { stake: number; payout: number; n: number }>;
  *   period: number;
  *   logLoss: number;
@@ -109,7 +109,7 @@ function runBacktestEngine(history, opt) {
     ana: { n: 0, hits: 0, payout: 0 },
   };
   // B17 (2026-05-17): 場別集計を追加。回収率順で表示可能なよう sid -> 集計の dict を構築
-  /** @type {Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number }>} */
+  /** @type {Record<number, { sid: number; name: string; n: number; hits3: number; hits2: number; stake: number; payout: number; payout3: number; roi?: number; roiCI?: { lo: number; hi: number; n: number } | null; races?: Array<{ stake: number; payout: number }> }>} */
   const byStadium = {};
 
   ledger.sort(function (/** @type {any} */ a, /** @type {any} */ b) {
@@ -144,12 +144,15 @@ function runBacktestEngine(history, opt) {
           stake: 0,
           payout: 0,
           payout3: 0,
+          // Tier 2 (2026-05-24): Bootstrap CI 用に per-race (stake, payout) を保持
+          races: [],
         };
       const ss = byStadium[sid];
       ss.n++;
       ss.stake += stake;
       ss.payout += payout;
       ss.payout3 += h.payout3 || 0;
+      if (ss.races) ss.races.push({ stake: stake, payout: payout });
       if (h.trifecta_hit) ss.hits3++;
       if (h.exacta_hit) ss.hits2++;
     }
@@ -194,6 +197,20 @@ function runBacktestEngine(history, opt) {
 
   // PB-10: log loss / Brier / ECE（mark_probs を保存している履歴のみ）
   const calibration = _computeCalibrationMetrics(ledger);
+
+  // Tier 2 (2026-05-24): 場別 ROI の Bootstrap 95% CI。
+  //   ROI = payout/stake は 1 回の高配当で大きく振れるため通常の平均±SE では
+  //   信頼区間が歪む (歪度が大きい)。Bootstrap (1000 リサンプリング) で実 ROI
+  //   分布から 2.5 / 97.5 パーセンタイルを取り、「avoid (CI 完全 < 1.0)」 /
+  //   「favor (CI 完全 > 1.0)」 / 「未確定 (CI が 1.0 を跨ぐ)」を判別可能に。
+  //   サンプル < 10 件は CI 幅が広すぎるため CI=null (UI 側で「N 不足」表示)。
+  for (const sid in byStadium) {
+    const ss = byStadium[sid];
+    ss.roi = ss.stake > 0 ? ss.payout / ss.stake : 0;
+    ss.roiCI = _bootstrapROICI(ss.races || [], 1000);
+    // races 配列は CI 計算後は不要、payload 軽量化のため削除
+    delete ss.races;
+  }
 
   return {
     samples: ledger.length,
@@ -259,6 +276,82 @@ function runForwardChainBacktest(history, opt) {
  * @param {Array<any>} entries
  * @returns {{ logLoss: number; brier: number; ece: number; n: number }}
  */
+/**
+ * Tier 2: 場別 ROI の Bootstrap 95% CI 計算 (1000 リサンプリング既定)。
+ *
+ * @param {Array<{stake: number; payout: number}>} races - 場内の (stake, payout) ペア
+ * @param {number} [nResamples=1000] - bootstrap 回数
+ * @returns {{lo: number; hi: number; n: number} | null}
+ *   サンプル < 10 件は CI 幅が広すぎ意味が無いため null を返す。
+ */
+function _bootstrapROICI(races, nResamples) {
+  nResamples = nResamples || 1000;
+  if (!Array.isArray(races) || races.length < 10) return null;
+  const n = races.length;
+  /** @type {number[]} */
+  const rois = new Array(nResamples);
+  // 簡易 LCG seed (Date.now ベースで session 毎に異なる、ただし同一 session 内で再現性あり)
+  let seed = (Date.now() >>> 0) | 1;
+  const _rand = function () {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+  for (let r = 0; r < nResamples; r++) {
+    let sumStake = 0;
+    let sumPayout = 0;
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(_rand() * n);
+      sumStake += races[idx].stake;
+      sumPayout += races[idx].payout;
+    }
+    rois[r] = sumStake > 0 ? sumPayout / sumStake : 0;
+  }
+  rois.sort(function (a, b) { return a - b; });
+  const loIdx = Math.floor(nResamples * 0.025);
+  const hiIdx = Math.ceil(nResamples * 0.975) - 1;
+  return { lo: rois[loIdx], hi: rois[hiIdx], n: n };
+}
+
+/**
+ * Tier 2: Reliability diagram (calibration plot) 用の bin 詳細を返す。
+ * 既存の _computeCalibrationMetrics と並列に、UI 描画用の per-bin 数値を出す。
+ *
+ * @param {Array<any>} entries - boatrace_history (mark_probs を持つもののみ)
+ * @returns {Array<{binStart: number; binEnd: number; avgP: number; actRate: number; n: number}>}
+ *   binStart..binEnd は予測確率の範囲 (0..0.1, 0.1..0.2, ..., 0.9..1.0)
+ *   avgP = bin 内予測確率平均、actRate = bin 内実 1 着率
+ */
+function _computeReliabilityBins(entries) {
+  /** @type {Array<{ sum: number; hit: number; n: number }>} */
+  const bins = [];
+  for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
+  entries.forEach(function (h) {
+    if (!h.actual || !h.actual.length || !Array.isArray(h.mark_probs)) return;
+    const winner = h.actual[0];
+    /** @type {Record<number, number>} */
+    const probs = {};
+    h.mark_probs.forEach(function (mp) { probs[mp.boat] = mp.prob; });
+    // 各 6 艇それぞれを bin に振り分け、勝者かどうかで hit 判定
+    for (let b = 1; b <= 6; b++) {
+      const p = probs[b];
+      if (!Number.isFinite(p) || p <= 0 || p >= 1) continue;
+      const binIdx = Math.min(9, Math.floor(p * 10));
+      bins[binIdx].sum += p;
+      bins[binIdx].n += 1;
+      if (b === winner) bins[binIdx].hit += 1;
+    }
+  });
+  return bins.map(function (b, i) {
+    return {
+      binStart: i / 10,
+      binEnd: (i + 1) / 10,
+      avgP: b.n > 0 ? b.sum / b.n : 0,
+      actRate: b.n > 0 ? b.hit / b.n : 0,
+      n: b.n,
+    };
+  });
+}
+
 function _computeCalibrationMetrics(entries) {
   let logLossSum = 0,
     brierSum = 0,
@@ -310,3 +403,6 @@ _g._btParseDate = _btParseDate;
 _g.runBacktestEngine = runBacktestEngine;
 _g.runForwardChainBacktest = runForwardChainBacktest;
 _g._computeCalibrationMetrics = _computeCalibrationMetrics;
+// Tier 2 (2026-05-24) UI 駆動関数
+_g._bootstrapROICI = _bootstrapROICI;
+_g._computeReliabilityBins = _computeReliabilityBins;
