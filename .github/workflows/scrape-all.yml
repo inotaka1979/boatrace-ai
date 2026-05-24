@@ -29,8 +29,13 @@ on:
       - '.github/workflows/scrape-all.yml'
   schedule:
     # D3a (2026-05-17): 5 分→30 分間隔。Worker が主データ供給、本 cron はアーカイブ。
-    #   UTC 23,0-13 = JST 08-22 (15 hours)、30 分毎 = 30 commits/日
-    - cron: '0,30 23,0-13 * * *'
+    # 2026-05-24: 8:00 JST 開始 → 8:30 JST 開始へ。理由:
+    #   - 上流 boatraceopenapi が朝の today.json を published するのが 8:30-8:45 JST
+    #   - 8:00 JST tick は no-change → no-commit で空振り、GHA 分の無駄
+    #   - モーニング場の 1R (8:30 JST 開始) は 8:30 cron で間に合う
+    #   - JST 8:30 のみ → 9:00-22:30 を 30 分毎、で 2 行に分割
+    - cron: '30 23 * * *'        # JST 8:30 (UTC 23:30)
+    - cron: '0,30 0-13 * * *'    # JST 9:00-22:30 every 30 min (UTC 0-13)
 
 permissions:
   contents: read
