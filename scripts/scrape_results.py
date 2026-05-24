@@ -194,7 +194,20 @@ def main() -> None:
     try:
         prog = fetch_json(PROG_API)
     except Exception as e:
-        log.error("Programs fetch failed: %s", e)
+        # 2026-05-24: programs fetch 失敗時も既存 results を保持しつつ updated_at を
+        #   refresh する (旧版は早期 return で何も書かず、freshness monitor から見ると
+        #   ファイルが昨日のまま固定 = stale 検知が常時 fire するバグ)。
+        log.error("Programs fetch failed: %s — preserving existing results, refreshing updated_at", e)
+        existing = {}
+        try:
+            with open(OUTPUT, "r", encoding="utf-8") as f:
+                existing = json.load(f) or {}
+        except Exception:
+            existing = {}
+        existing["updated_at"] = utc_iso_seconds()
+        existing.setdefault("results", [])
+        existing.setdefault("_meta", {})["fetch_error"] = str(e)[:200]
+        atomic_write_json(OUTPUT, existing)
         return
 
     programs = prog.get("programs", [])
