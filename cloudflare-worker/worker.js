@@ -422,6 +422,54 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs) {
 }
 
 // -----------------------------------------------------------------------
+// 2026-05-24 (致命バグ修正): KV に保存された "finished" 結果を openapi が
+//   巻き戻すのを防ぐ。openapi は時々古いスナップショットを返したり、
+//   一時的に race_technique_number=null に戻ったり、レース entry 自体が
+//   消えたりする。Worker が素朴に openapi で KV を上書きすると、UI 側で
+//   「9/12R → 5/12R」のように完了レースが減ってしまう。
+//
+// ルール: KV の race_technique_number が non-null (= 結果確定済) なら、
+//   openapi が同じレースで null や 不在 を返しても KV 版を保持。
+//   openapi が NEW 情報 (KV に無いレース、または KV では null だが
+//   openapi で finished) を持っていれば取り込む。
+// -----------------------------------------------------------------------
+function mergeKVOverOpenapi(openapiResults, kvResults) {
+  if (!kvResults || !Array.isArray(kvResults.results)) return openapiResults;
+  if (!openapiResults || !Array.isArray(openapiResults.results)) {
+    // openapi が空 / 壊れ → KV のままを返す
+    return kvResults;
+  }
+  // openapi の races を key 化
+  const openapiByKey = new Map();
+  for (const r of openapiResults.results) {
+    if (!r || r.race_stadium_number == null || r.race_number == null) continue;
+    openapiByKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
+  }
+  // KV の finished entries を openapi 側に上書き / 追加
+  let preserved = 0, added = 0;
+  for (const kvr of kvResults.results) {
+    if (!kvr || kvr.race_stadium_number == null || kvr.race_number == null) continue;
+    if (kvr.race_technique_number == null) continue; // unfinished は無視
+    const key = `${kvr.race_stadium_number}-${kvr.race_number}`;
+    const open = openapiByKey.get(key);
+    if (open) {
+      // openapi にも entry あり: KV が finished で openapi が unfinished なら KV 優先
+      if (open.race_technique_number == null) {
+        Object.assign(open, kvr);
+        preserved++;
+      }
+      // openapi も finished の場合は openapi 側を尊重 (より新しい上流データ)
+    } else {
+      // openapi に entry 無し: KV の finished を保持
+      openapiResults.results.push(kvr);
+      added++;
+    }
+  }
+  openapiResults._kv_merge = { preserved, added };
+  return openapiResults;
+}
+
+// -----------------------------------------------------------------------
 // Cron で呼ばれる。openapi + boatrace.jp 直スクレイプを統合して KV に格納
 // -----------------------------------------------------------------------
 async function refreshAll(env) {
@@ -433,6 +481,36 @@ async function refreshAll(env) {
   catch (e) { out.programs = { ok: false, error: String(e).slice(0,200) }; }
   try { results  = await fetchUpstream(UPSTREAM.results);  out.results  = { ok: true }; }
   catch (e) { out.results  = { ok: false, error: String(e).slice(0,200) }; }
+
+  // 2026-05-24: openapi 巻き戻り対策 — KV に既存 finished があれば preserve
+  if (env.BOATRACE_KV && results) {
+    try {
+      const rawKv = await env.BOATRACE_KV.get(KV_KEYS.results);
+      if (rawKv) {
+        const kvWrapped = JSON.parse(rawKv);
+        if (kvWrapped && kvWrapped.data) {
+          // 日跨ぎ判定: KV の updated_at が昨日 (JST) なら preserve しない
+          //   (前日 results を本日 results にマージしてしまう事故防止)
+          let sameDay = true;
+          try {
+            const kvDate = new Date(kvWrapped.updated_at);
+            const now = new Date();
+            const kvJstDay = new Date(kvDate.getTime() + 9*60*60*1000).toISOString().slice(0,10);
+            const nowJstDay = new Date(now.getTime() + 9*60*60*1000).toISOString().slice(0,10);
+            sameDay = (kvJstDay === nowJstDay);
+          } catch (_) { sameDay = true; }
+          if (sameDay) {
+            results = mergeKVOverOpenapi(results, kvWrapped.data);
+            out.results.kv_preserved = results._kv_merge || null;
+          } else {
+            out.results.kv_skip = 'day_change';
+          }
+        }
+      }
+    } catch (e) {
+      out.results.kv_merge_err = String(e).slice(0, 100);
+    }
+  }
 
   const nowMs = Date.now();
   // boatrace.jp 直スクレイプで展示データを補完
@@ -458,7 +536,11 @@ async function refreshAll(env) {
   if (env.BOATRACE_KV) {
     if (previews) { try { await kvWrite(env, KV_KEYS.previews, previews); out.previews.kv_ok=true; } catch(e) { out.previews.kv_err=String(e).slice(0,100); } }
     if (programs) { try { await kvWrite(env, KV_KEYS.programs, programs); out.programs.kv_ok=true; } catch(e) { out.programs.kv_err=String(e).slice(0,100); } }
-    if (results)  { try { await kvWrite(env, KV_KEYS.results,  results);  out.results.kv_ok=true;  } catch(e) { out.results.kv_err=String(e).slice(0,100);  } }
+    if (results)  {
+      // 2026-05-24: 内部診断フィールド _kv_merge を KV/レスポンスから除外
+      if (results._kv_merge) delete results._kv_merge;
+      try { await kvWrite(env, KV_KEYS.results,  results);  out.results.kv_ok=true;  } catch(e) { out.results.kv_err=String(e).slice(0,100);  }
+    }
   }
   return out;
 }
