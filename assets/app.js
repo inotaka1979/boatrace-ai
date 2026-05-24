@@ -2967,7 +2967,18 @@ function pf(v){return parseFloat(v)||0}
     }
     const arr = apiJson[key];
     const result = {};
+    let todayIso = null;
+    try {
+      if (typeof _g.todayStr === "function") {
+        const t = _g.todayStr();
+        if (t && t.length === 8) {
+          todayIso = t.slice(0, 4) + "-" + t.slice(4, 6) + "-" + t.slice(6, 8);
+        }
+      }
+    } catch (_) {
+    }
     arr.forEach(function(item) {
+      if (todayIso && item.race_date && item.race_date !== todayIso) return;
       const sid = String(item.race_stadium_number);
       const rn = String(item.race_number);
       if (!result[sid]) result[sid] = {};

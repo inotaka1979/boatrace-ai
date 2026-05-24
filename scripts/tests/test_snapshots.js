@@ -145,6 +145,11 @@ const programsFixture = loadFixture('programs-sample.json');
 const previewsFixture = loadFixture('previews-sample.json');
 const resultsFixture  = loadFixture('results-sample.json');
 
+// 2026-05-25: indexByStadiumRace に race_date == 今日 JST フィルタを追加したため、
+//   テスト中は fixture の race_date "2026-05-21" を today として固定する。
+//   テスト独立性確保 (本日の date に依存しない再現性)。
+ctx.todayStr = function () { return '20260521'; };
+
 snapshot('discovery_indexByStadiumRace_programs',
   ctx.indexByStadiumRace(programsFixture, 'programs'));
 

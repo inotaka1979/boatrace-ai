@@ -190,7 +190,23 @@ function indexByStadiumRace(apiJson, key) {
   const arr = apiJson[key];
   /** @type {Record<string, Record<string, unknown>>} */
   const result = {};
+  // 2026-05-25: upstream openapi が朝早く refresh しきれていない時、
+  //   today.json に **昨日の race_date が残る** 事故 (5/25 朝に 5/24 の
+  //   多摩川/三国/尼崎 等が "12/12R 終了" として表示される)。
+  //   client 側で race_date == 今日 JST のみを通すフィルタを追加。
+  //   upstream が refresh されたら自動で fresh データに切替わる。
+  let todayIso = null;
+  try {
+    if (typeof _g.todayStr === 'function') {
+      const t = _g.todayStr(); // YYYYMMDD
+      if (t && t.length === 8) {
+        todayIso = t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6, 8);
+      }
+    }
+  } catch (_) { /* fall back: フィルタなし */ }
   arr.forEach(function (/** @type {any} */ item) {
+    // race_date フィールドがある場合、今日 JST と一致しないものは除外
+    if (todayIso && item.race_date && item.race_date !== todayIso) return;
     const sid = String(item.race_stadium_number);
     const rn = String(item.race_number);
     if (!result[sid]) result[sid] = {};
