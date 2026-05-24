@@ -321,6 +321,10 @@ async function scrapeRaceresult(sid, rno, hd, raceDate) {
 
 // 終了済かつ openapi が race_technique_number=null のレースを scrape
 async function mergeBoatraceJpResults(programs, results, nowMs) {
+  // 2026-05-24 fix2: openapi の results entry には race_closed_at が無いため、
+  //   旧コードの sort `a.rPtr?.race_closed_at` は常に undefined < undefined === false
+  //   で **sort が事実上 noop** (FIFO が機能していなかった)。programs から取った
+  //   race_closed_at を target に直接 attach して sort する。
   const scrapeTargets = [];
   for (const p of (programs.programs || [])) {
     const sid = p.race_stadium_number, rno = p.race_number;
@@ -334,15 +338,16 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
     // race_technique_number が無い (=未確定) で window 内 → スクレイプ対象
     const finished = r && r.race_technique_number != null;
     if (finished) continue;
-    scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r });
+    scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r, closedAt: p.race_closed_at });
   }
-  // 2026-05-24 fix: 古い順 (FIFO) に sort。
-  //   旧版: 新しい順 (a < b → 1 = b 優先) で「すぐ終わったレースは結果ページが既に
-  //   存在する可能性高」と推測していたが、実測では古いレースが backlog に溜まり
-  //   starve する現象を観測 (モーニング場・デイ場の早い R が長時間 0/12R 表示)。
-  //   古いレース ほど結果が既に確定している (boatrace.jp に HTML が存在する) 確率が
-  //   高い上、古いものから処理すれば backlog が確実に drain される。
-  scrapeTargets.sort((a, b) => (a.rPtr?.race_closed_at < b.rPtr?.race_closed_at ? -1 : 1));
+  // FIFO (古い順): 古いレースほど結果が確定している確率が高く + backlog drain 保証
+  scrapeTargets.sort((a, b) => {
+    const ca = a.closedAt || '';
+    const cb = b.closedAt || '';
+    if (ca < cb) return -1;
+    if (ca > cb) return 1;
+    return 0;
+  });
   const picks = scrapeTargets.slice(0, MAX_HTML_SCRAPES_PER_RUN);
   let mergedCount = 0;
   const settled = await Promise.allSettled(
