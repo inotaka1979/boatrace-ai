@@ -453,8 +453,8 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         if (!Array.isArray(value)) return null;
         const expectedLen = typeof L2_INIT_WEIGHTS !== "undefined" ? L2_INIT_WEIGHTS.length : 12;
         if (value.length !== expectedLen) return null;
-        for (let i = 0; i < value.length; i++) {
-          if (!Number.isFinite(value[i]) || Math.abs(value[i]) > 1e3) return null;
+        for (let i2 = 0; i2 < value.length; i2++) {
+          if (!Number.isFinite(value[i2]) || Math.abs(value[i2]) > 1e3) return null;
         }
         return value;
       case "boatrace_history":
@@ -471,14 +471,34 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         if (!Array.isArray(value.mean) || value.mean.length !== FEATURE_DIM) return null;
         if (!Array.isArray(value.m2) || value.m2.length !== FEATURE_DIM) return null;
         if (typeof value.n !== "number" || !Number.isFinite(value.n) || value.n < 0) return null;
-        for (let i = 0; i < FEATURE_DIM; i++) {
-          if (!Number.isFinite(value.mean[i]) || !Number.isFinite(value.m2[i])) return null;
+        for (let i2 = 0; i2 < FEATURE_DIM; i2++) {
+          if (!Number.isFinite(value.mean[i2]) || !Number.isFinite(value.m2[i2])) return null;
         }
         return value;
       case "boatrace_platt":
         if (!value || typeof value !== "object" || Array.isArray(value)) return null;
         if (!Number.isFinite(value.a) || !Number.isFinite(value.b)) return null;
         if (Math.abs(value.a) > 10 || Math.abs(value.b) > 10) return null;
+        return value;
+      case "boatrace_platt_perstadium":
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        if (Object.keys(value).length > 30) return null;
+        for (var sid in value) {
+          var ps = value[sid];
+          if (!ps || typeof ps !== "object") return null;
+          if (!Number.isFinite(ps.a) || !Number.isFinite(ps.b)) return null;
+          if (Math.abs(ps.a) > 10 || Math.abs(ps.b) > 10) return null;
+        }
+        return value;
+      case "boatrace_isotonic":
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        if (!Array.isArray(value.points)) return null;
+        if (value.points.length > 100) return null;
+        for (var i = 0; i < value.points.length; i++) {
+          var pt = value.points[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+          if (pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1) return null;
+        }
         return value;
       default:
         return value;
@@ -1213,6 +1233,35 @@ var _plattCoeffs = (function(){
   if(raw && Number.isFinite(raw.a) && Number.isFinite(raw.b)
         && Number.isFinite(raw.fittedAt)){ return raw; }
   return { a: 1.0, b: 0.0, fittedAt: 0, n: 0 };
+})();
+
+// 2026-05-24 (Tier 2): 場別 Platt 係数 — 各場 100 サンプル以上で個別校正
+//   構造: { sid: { a, b, n, fittedAt }, ... }
+//   _applyPlattCalibration(p, sid) が場別 → global の順で参照
+var _plattCoeffsByStadium = (function(){
+  var raw = _bootParseLS('boatrace_platt_perstadium', null);
+  if(raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  return {};
+})();
+
+// 2026-05-24 (Tier 2): Isotonic 校正 breakpoints
+//   構造: { points: [{x, y}, ...], fittedAt, n } | null
+//   PAV (pool adjacent violators) で fit、apply 時は線形補間
+var _isotonicCoeffs = (function(){
+  var raw = _bootParseLS('boatrace_isotonic', null);
+  if(raw && Array.isArray(raw.points) && raw.points.length >= 2) return raw;
+  return null;
+})();
+
+// 2026-05-24 (Tier 2): 採用する校正手法 — 'platt' | 'isotonic' | 'none'
+//   _chooseCalibrationMethod が held-out log loss で auto-select
+//   既定 'platt' (従来挙動を維持)
+var _calibrationMethod = (function(){
+  try {
+    var raw = localStorage.getItem('boatrace_calib_method');
+    if(raw === 'platt' || raw === 'isotonic' || raw === 'none') return raw;
+  } catch(_){}
+  return 'platt';
 })();
 
 // PB-5: Stacking 重み — L2 が L1 logit を補正する係数

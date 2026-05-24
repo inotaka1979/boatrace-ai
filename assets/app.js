@@ -448,8 +448,8 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         if (!Array.isArray(value)) return null;
         const expectedLen = typeof L2_INIT_WEIGHTS !== "undefined" ? L2_INIT_WEIGHTS.length : 12;
         if (value.length !== expectedLen) return null;
-        for (let i = 0; i < value.length; i++) {
-          if (!Number.isFinite(value[i]) || Math.abs(value[i]) > 1e3) return null;
+        for (let i2 = 0; i2 < value.length; i2++) {
+          if (!Number.isFinite(value[i2]) || Math.abs(value[i2]) > 1e3) return null;
         }
         return value;
       case "boatrace_history":
@@ -466,14 +466,34 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         if (!Array.isArray(value.mean) || value.mean.length !== FEATURE_DIM) return null;
         if (!Array.isArray(value.m2) || value.m2.length !== FEATURE_DIM) return null;
         if (typeof value.n !== "number" || !Number.isFinite(value.n) || value.n < 0) return null;
-        for (let i = 0; i < FEATURE_DIM; i++) {
-          if (!Number.isFinite(value.mean[i]) || !Number.isFinite(value.m2[i])) return null;
+        for (let i2 = 0; i2 < FEATURE_DIM; i2++) {
+          if (!Number.isFinite(value.mean[i2]) || !Number.isFinite(value.m2[i2])) return null;
         }
         return value;
       case "boatrace_platt":
         if (!value || typeof value !== "object" || Array.isArray(value)) return null;
         if (!Number.isFinite(value.a) || !Number.isFinite(value.b)) return null;
         if (Math.abs(value.a) > 10 || Math.abs(value.b) > 10) return null;
+        return value;
+      case "boatrace_platt_perstadium":
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        if (Object.keys(value).length > 30) return null;
+        for (var sid in value) {
+          var ps = value[sid];
+          if (!ps || typeof ps !== "object") return null;
+          if (!Number.isFinite(ps.a) || !Number.isFinite(ps.b)) return null;
+          if (Math.abs(ps.a) > 10 || Math.abs(ps.b) > 10) return null;
+        }
+        return value;
+      case "boatrace_isotonic":
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        if (!Array.isArray(value.points)) return null;
+        if (value.points.length > 100) return null;
+        for (var i = 0; i < value.points.length; i++) {
+          var pt = value.points[i];
+          if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return null;
+          if (pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1) return null;
+        }
         return value;
       default:
         return value;
@@ -1208,6 +1228,35 @@ var _plattCoeffs = (function(){
   if(raw && Number.isFinite(raw.a) && Number.isFinite(raw.b)
         && Number.isFinite(raw.fittedAt)){ return raw; }
   return { a: 1.0, b: 0.0, fittedAt: 0, n: 0 };
+})();
+
+// 2026-05-24 (Tier 2): 場別 Platt 係数 — 各場 100 サンプル以上で個別校正
+//   構造: { sid: { a, b, n, fittedAt }, ... }
+//   _applyPlattCalibration(p, sid) が場別 → global の順で参照
+var _plattCoeffsByStadium = (function(){
+  var raw = _bootParseLS('boatrace_platt_perstadium', null);
+  if(raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  return {};
+})();
+
+// 2026-05-24 (Tier 2): Isotonic 校正 breakpoints
+//   構造: { points: [{x, y}, ...], fittedAt, n } | null
+//   PAV (pool adjacent violators) で fit、apply 時は線形補間
+var _isotonicCoeffs = (function(){
+  var raw = _bootParseLS('boatrace_isotonic', null);
+  if(raw && Array.isArray(raw.points) && raw.points.length >= 2) return raw;
+  return null;
+})();
+
+// 2026-05-24 (Tier 2): 採用する校正手法 — 'platt' | 'isotonic' | 'none'
+//   _chooseCalibrationMethod が held-out log loss で auto-select
+//   既定 'platt' (従来挙動を維持)
+var _calibrationMethod = (function(){
+  try {
+    var raw = localStorage.getItem('boatrace_calib_method');
+    if(raw === 'platt' || raw === 'isotonic' || raw === 'none') return raw;
+  } catch(_){}
+  return 'platt';
 })();
 
 // PB-5: Stacking 重み — L2 が L1 logit を補正する係数
@@ -4989,9 +5038,16 @@ var CLASS_COURSE_MULT = [
     }
     return out;
   }
-  function _applyPlattCalibration(p) {
+  function _applyPlattCalibration(p, sid) {
     if (!TUNING.PREDICTION.ENABLE_PLATT) return p;
     var a = _plattCoeffs.a, b = _plattCoeffs.b;
+    if (sid != null && typeof _plattCoeffsByStadium === "object" && _plattCoeffsByStadium) {
+      var ps = _plattCoeffsByStadium[String(sid)];
+      if (ps && Number.isFinite(ps.a) && Number.isFinite(ps.b) && ps.n >= 100) {
+        a = ps.a;
+        b = ps.b;
+      }
+    }
     if (a === 1 && b === 0) return p;
     var clipped = Math.min(0.9999, Math.max(1e-4, p));
     var logit = Math.log(clipped / (1 - clipped));
@@ -4999,6 +5055,29 @@ var CLASS_COURSE_MULT = [
     if (z > 30) return 1;
     if (z < -30) return 0;
     return 1 / (1 + Math.exp(-z));
+  }
+  function _applyIsotonicCalibration(p) {
+    if (!_isotonicCoeffs || !Array.isArray(_isotonicCoeffs.points)) return p;
+    var pts = _isotonicCoeffs.points;
+    if (pts.length < 2) return p;
+    if (p <= pts[0].x) return pts[0].y;
+    if (p >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+    var lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) {
+      var mid = lo + hi >> 1;
+      if (pts[mid].x <= p) lo = mid;
+      else hi = mid;
+    }
+    var dx = pts[hi].x - pts[lo].x;
+    if (dx <= 0) return pts[lo].y;
+    var t = (p - pts[lo].x) / dx;
+    return pts[lo].y + t * (pts[hi].y - pts[lo].y);
+  }
+  function _applyCalibration(p, sid) {
+    var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
+    if (method === "isotonic") return _applyIsotonicCalibration(p);
+    if (method === "none") return p;
+    return _applyPlattCalibration(p, sid);
   }
   function _stackedPredict(features6, l1probs) {
     if (TUNING.PREDICTION.STACKING_MODE !== "residual") return l1probs;
@@ -5043,55 +5122,172 @@ var CLASS_COURSE_MULT = [
     var pairs = _extractPlattPairs(history);
     if (pairs.length < 100) return null;
     var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
+    var globalResult;
     if (w) {
-      return new Promise(function(resolve) {
+      globalResult = await new Promise(function(resolve) {
         var onMsg = function(e) {
           if (!e.data || e.data.type !== "platt_refit_done") return;
           w.removeEventListener("message", onMsg);
-          var r = e.data.result;
-          if (!r) {
-            resolve(null);
-            return;
-          }
-          _plattCoeffs = { a: r.a, b: r.b, fittedAt: Date.now(), n: r.n };
-          safeSet("boatrace_platt", _plattCoeffs);
-          resolve(_plattCoeffs);
+          resolve(e.data.result);
         };
         w.addEventListener("message", onMsg);
         w.postMessage({ type: "platt_refit", samples: pairs });
       });
     }
-    var bestA = 1, bestB = 0, bestLoss = Infinity;
-    for (var a = 0.5; a <= 2; a += 0.1) {
-      for (var b = -1; b <= 1; b += 0.1) {
-        var loss = 0;
-        for (var i = 0; i < pairs.length; i++) {
-          var pi = pairs[i];
-          var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
-          var logit = Math.log(clipped / (1 - clipped));
-          var z = a * logit + b;
-          var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
-          pp = Math.min(0.9999, Math.max(1e-4, pp));
-          loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+    if (!globalResult) {
+      var bestA = 1, bestB = 0, bestLoss = Infinity;
+      for (var a = 0.5; a <= 2; a += 0.1) {
+        for (var b = -1; b <= 1; b += 0.1) {
+          var loss = 0;
+          for (var i = 0; i < pairs.length; i++) {
+            var pi = pairs[i];
+            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
+            var logit = Math.log(clipped / (1 - clipped));
+            var z = a * logit + b;
+            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
+            pp = Math.min(0.9999, Math.max(1e-4, pp));
+            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+          }
+          if (loss < bestLoss) {
+            bestLoss = loss;
+            bestA = a;
+            bestB = b;
+          }
         }
-        if (loss < bestLoss) {
-          bestLoss = loss;
-          bestA = a;
-          bestB = b;
+      }
+      globalResult = { a: bestA, b: bestB, n: pairs.length };
+    }
+    _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
+    safeSet("boatrace_platt", _plattCoeffs);
+    try {
+      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+      safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
+    } catch (_) {
+    }
+    try {
+      var iso = _refitIsotonicCalibration(history);
+      if (iso) {
+        _isotonicCoeffs = iso;
+        safeSet("boatrace_isotonic", _isotonicCoeffs);
+      }
+    } catch (_) {
+    }
+    try {
+      var chosen = _chooseCalibrationMethod(history);
+      _calibrationMethod = chosen;
+      try {
+        localStorage.setItem("boatrace_calib_method", chosen);
+      } catch (_) {
+      }
+    } catch (_) {
+    }
+    return _plattCoeffs;
+  }
+  function _refitIsotonicCalibration(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 200) return null;
+    pairs.sort(function(a, b) {
+      return a.p - b.p;
+    });
+    var blocks = pairs.map(function(pi) {
+      return { x: pi.p, sumY: pi.y, sumX: pi.p, count: 1 };
+    });
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (var i = 0; i < blocks.length - 1; i++) {
+        var meanI = blocks[i].sumY / blocks[i].count;
+        var meanJ = blocks[i + 1].sumY / blocks[i + 1].count;
+        if (meanI > meanJ) {
+          blocks[i].sumY += blocks[i + 1].sumY;
+          blocks[i].sumX += blocks[i + 1].sumX;
+          blocks[i].count += blocks[i + 1].count;
+          blocks.splice(i + 1, 1);
+          changed = true;
+          if (i > 0) i--;
         }
       }
     }
-    _plattCoeffs = { a: bestA, b: bestB, fittedAt: Date.now(), n: pairs.length };
-    safeSet("boatrace_platt", _plattCoeffs);
-    return _plattCoeffs;
+    var points = blocks.map(function(b) {
+      return { x: b.sumX / b.count, y: b.sumY / b.count };
+    });
+    var compressed = [];
+    for (var k = 0; k < points.length; k++) {
+      if (k > 0 && k < points.length - 1 && Math.abs(points[k].y - points[k - 1].y) < 1e-9 && Math.abs(points[k].y - points[k + 1].y) < 1e-9) {
+        continue;
+      }
+      compressed.push(points[k]);
+    }
+    return { points: compressed, fittedAt: Date.now(), n: pairs.length };
+  }
+  function _refitPerStadiumPlatt(history) {
+    if (!Array.isArray(history)) return {};
+    var bySid = {};
+    history.forEach(function(h) {
+      if (!h || !h.stadium) return;
+      var sid2 = String(h.stadium);
+      if (!bySid[sid2]) bySid[sid2] = [];
+      bySid[sid2].push(h);
+    });
+    var out = {};
+    for (var sid in bySid) {
+      var subPairs = _extractPlattPairs(bySid[sid]);
+      if (subPairs.length < 100) continue;
+      var bestA = 1, bestB = 0, bestLoss = Infinity;
+      for (var a = 0.5; a <= 2; a += 0.1) {
+        for (var b = -1; b <= 1; b += 0.1) {
+          var loss = 0;
+          for (var i = 0; i < subPairs.length; i++) {
+            var pi = subPairs[i];
+            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
+            var logit = Math.log(clipped / (1 - clipped));
+            var z = a * logit + b;
+            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
+            pp = Math.min(0.9999, Math.max(1e-4, pp));
+            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+          }
+          if (loss < bestLoss) {
+            bestLoss = loss;
+            bestA = a;
+            bestB = b;
+          }
+        }
+      }
+      out[sid] = { a: bestA, b: bestB, n: subPairs.length, fittedAt: Date.now() };
+    }
+    return out;
+  }
+  function _chooseCalibrationMethod(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 300) return "platt";
+    var split = Math.floor(pairs.length * 0.8);
+    var heldOut = pairs.slice(split);
+    if (heldOut.length < 50) return "platt";
+    var plattLoss = 0, isoLoss = 0;
+    var iso = _isotonicCoeffs;
+    for (var i = 0; i < heldOut.length; i++) {
+      var pi = heldOut[i];
+      var pPlatt = _applyPlattCalibration(pi.p);
+      var pIso = iso ? _applyIsotonicCalibration(pi.p) : pi.p;
+      pPlatt = Math.min(0.9999, Math.max(1e-4, pPlatt));
+      pIso = Math.min(0.9999, Math.max(1e-4, pIso));
+      plattLoss += pi.y ? -Math.log(pPlatt) : -Math.log(1 - pPlatt);
+      isoLoss += pi.y ? -Math.log(pIso) : -Math.log(1 - pIso);
+    }
+    return isoLoss < plattLoss ? "isotonic" : "platt";
   }
   globalThis._initFeatureStats = _initFeatureStats;
   globalThis._updateFeatureStats = _updateFeatureStats;
   globalThis._normalizeFeatures = _normalizeFeatures;
   globalThis._applyPlattCalibration = _applyPlattCalibration;
+  globalThis._applyIsotonicCalibration = _applyIsotonicCalibration;
+  globalThis._applyCalibration = _applyCalibration;
   globalThis._stackedPredict = _stackedPredict;
   globalThis._extractPlattPairs = _extractPlattPairs;
   globalThis._refitPlattCoeffs = _refitPlattCoeffs;
+  globalThis._refitIsotonicCalibration = _refitIsotonicCalibration;
+  globalThis._refitPerStadiumPlatt = _refitPerStadiumPlatt;
+  globalThis._chooseCalibrationMethod = _chooseCalibrationMethod;
 })();
 
 /* BUILD:ANALYSIS_CALIBRATION:END */
@@ -5334,7 +5530,7 @@ var _workerHeavyLoaded = false;
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = _applyPlattCalibration(p.prob);
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
     });
     finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {
@@ -5548,7 +5744,7 @@ var _workerHeavyLoaded = false;
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = _applyPlattCalibration(p.prob);
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
     });
     finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {

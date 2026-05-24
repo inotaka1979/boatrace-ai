@@ -88,7 +88,7 @@
         ss.stake += stake;
         ss.payout += payout;
         ss.payout3 += h.payout3 || 0;
-        ss.races.push({ stake, payout });
+        if (ss.races) ss.races.push({ stake, payout });
         if (h.trifecta_hit) ss.hits3++;
         if (h.exacta_hit) ss.hits2++;
       }
@@ -124,7 +124,7 @@
     for (const sid in byStadium) {
       const ss = byStadium[sid];
       ss.roi = ss.stake > 0 ? ss.payout / ss.stake : 0;
-      ss.roiCI = _bootstrapROICI(ss.races, 1e3);
+      ss.roiCI = _bootstrapROICI(ss.races || [], 1e3);
       delete ss.races;
     }
     return {

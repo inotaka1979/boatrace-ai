@@ -153,7 +153,11 @@ function predictRace(sid, raceNum) {
   // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
   //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
   finalProbs.forEach(function (p) {
-    p.prob = _applyPlattCalibration(p.prob);
+    // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
+    //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
+    p.prob = (typeof _applyCalibration === 'function')
+      ? _applyCalibration(p.prob, sid)
+      : _applyPlattCalibration(p.prob, sid);
   });
   // P1-A4: F/L ペナルティを 1着確率乗数として post-hoc 適用
   //   既存の score 減点 (-25/-15/-5) は L1 段階の減衰、本層は確率の心理的補正:

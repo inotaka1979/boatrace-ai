@@ -1,0 +1,23 @@
+{
+  "schema": "br_gbdt_v1",
+  "feature_dim": 24,
+  "feature_version": 2,
+  "n_classes": 6,
+  "trees": [],
+  "n_trees": 0,
+  "learning_rate": 0.1,
+  "fitted_at": "2026-05-24T00:00:00Z",
+  "n_train": 0,
+  "_meta": {
+    "placeholder": true,
+    "note": "Tier 3 scaffold. scripts/train_gbdt.py (将来実装) が 5000+ races の蓄積後に GitHub Actions 経由で本ファイルを上書きする。それまで n_trees=0 で _blendGBDTPrediction は no-op に。",
+    "activation_criteria": [
+      "boatrace_history が 5000 件以上に蓄積されること",
+      "scripts/requirements.txt に lightgbm + numpy 追加",
+      "scripts/train_gbdt.py の TODO を実装",
+      ".github/workflows/train-gbdt.yml の cron 有効化",
+      "settings タブに ENABLE_GBDT トグル追加",
+      "predict_race.js に _blendGBDTPrediction 呼出を配線"
+    ]
+  }
+}
