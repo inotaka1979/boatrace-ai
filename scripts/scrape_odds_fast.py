@@ -213,14 +213,41 @@ def get_finished():
         log.warning("get_finished: load failed (%s) — fallback to empty set", e)
     return finished
 
+def _preserve_with_timestamp(reason: str) -> None:
+    """2026-05-28: programs 取得失敗 / no-programs 時、既存 OUTPUT を保持しつつ
+    updated_at だけ refresh する。freshness monitor 連続 stale alert 防止 +
+    _meta.fetch_error にエラー記録。
+    """
+    existing = {}
+    try:
+        if os.path.exists(OUTPUT):
+            with open(OUTPUT, "r", encoding="utf-8") as f:
+                existing = json.load(f) or {}
+    except Exception:
+        existing = {}
+    existing["updated_at"] = utc_iso_seconds()
+    existing.setdefault("odds", [])
+    existing.setdefault("_meta", {})["fetch_error"] = reason[:200]
+    atomic_write_json(OUTPUT, existing)
+    log.info("preserved existing %s with refreshed updated_at (reason=%s)", OUTPUT, reason[:80])
+
+
 async def async_main():
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     log.info("Fetching programs...")
-    async with aiohttp.ClientSession() as session:
-        async with session.get(PROGRAMS_URL, headers={"User-Agent": USER_AGENTS[0]}, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            prog = await r.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(PROGRAMS_URL, headers={"User-Agent": USER_AGENTS[0]}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                prog = await r.json()
+    except Exception as e:
+        log.error("Programs fetch failed: %s", e)
+        _preserve_with_timestamp("programs fetch failed: " + str(e)[:200])
+        return
     programs = prog.get("programs", [])
-    if not programs: log.info("No programs"); return
+    if not programs:
+        log.info("No programs")
+        _preserve_with_timestamp("no programs today")
+        return
     races = set(); date_str = ""
     for p in programs:
         s, r = p.get("race_stadium_number"), p.get("race_number")

@@ -75,6 +75,25 @@ async def fetch_programs(session: aiohttp.ClientSession):
     return data
 
 
+def _preserve_with_timestamp(reason: str) -> None:
+    """2026-05-28: programs 取得完全失敗時、既存 OUTPUT を保持しつつ updated_at
+    だけ refresh する。freshness monitor の連続 stale alert を防ぐ + 何が
+    起きたかを _meta.fetch_error に記録。
+    """
+    existing = {}
+    try:
+        if os.path.exists(OUTPUT):
+            with open(OUTPUT, "r", encoding="utf-8") as f:
+                existing = json.load(f) or {}
+    except Exception:
+        existing = {}
+    existing["updated_at"] = utc_iso_seconds()
+    existing.setdefault("previews", [])
+    existing.setdefault("_meta", {})["fetch_error"] = reason[:200]
+    atomic_write_json(OUTPUT, existing)
+    log.info("preserved existing %s with refreshed updated_at (reason=%s)", OUTPUT, reason[:80])
+
+
 def _load_programs_cache():
     """fetch_programs 失敗時のフォールバック: ディスクキャッシュから programs を読込。
     キャッシュが今日 (JST) のデータでなければ None を返す。
@@ -566,6 +585,12 @@ async def async_main():
             if prog:
                 log.info("using programs cache from disk (OpenAPI unreachable)")
             else:
+                # 2026-05-28: programs 取得完全失敗時も updated_at を refresh する
+                #   (旧版は早期 return で何も書かず、ローカル data が 13 時間以上
+                #   止まる事故が発生 → freshness monitor 連続 alert)。
+                #   既存 file を保持しつつ timestamp だけ更新、_meta.fetch_error
+                #   にエラーを記録。
+                _preserve_with_timestamp("programs fetch failed: " + str(e)[:200])
                 return
 
     closing_map, date_str, programs = parse_closing_times(prog)
