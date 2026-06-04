@@ -658,28 +658,50 @@ async function refreshAll(env) {
   return out;
 }
 
+// rt-fix (2026-06-04): silent-halt 対策の中核。
+//   旧版は「KV にデータがあれば、それが何時間古くても無条件で返す」ため、
+//   cron / KV write が失敗 (例: 無料枠 1000 writes/日 の枯渇) すると
+//   /api/* が古い KV を 200 で返し続け、クライアントが永久に stale 表示になった。
+//   新版は KV の updated_at を見て、STALE_MS より古ければ上流 openapi を
+//   live fetch (Cloudflare edge cache 経由 = KV write 枠を一切消費しない) して
+//   fresh を返す。これにより KV write が完全に止まっても /api/* は fresh を返す。
+const SERVE_STALE_MS = 12 * 60 * 1000; // KV がこれより古ければ live fetch に切替 (cron は 5 分間隔)
+
 async function serveFromKV(env, kind) {
-  // D9 (2026-05-17): wrapped.updated_at をレスポンス先頭に merge する。
-  //   旧版は data 部だけ返していたため、PWA 側の鮮度診断が j.updated_at を
-  //   null と判定し「取得失敗」と表示される事故 (実際はデータ正常) が発生。
-  //   既存配列フィールド (previews/programs/results) には触れないので
-  //   既存 caller との互換は維持される。
+  // D9 (2026-05-17): wrapped.updated_at をレスポンス先頭に merge して
+  //   PWA 側の鮮度診断 (j.updated_at) が正しく読めるようにする。
+  let kvWrapped = null;
   try {
     const raw = await env.BOATRACE_KV.get(KV_KEYS[kind]);
-    if (raw) {
-      const wrapped = JSON.parse(raw);
-      const merged = { updated_at: wrapped.updated_at, ...wrapped.data };
-      return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
-    }
+    if (raw) kvWrapped = JSON.parse(raw);
   } catch (e) {
     console.error('KV read failed:', e);
   }
+
+  // KV が十分新しければ (= cron が正常に書けている) それを返す。
+  //   boatrace.jp 直スクレイプの exhibition/results merge を含むリッチ版。
+  if (kvWrapped && kvWrapped.updated_at && kvWrapped.data) {
+    const ageMs = Date.now() - new Date(kvWrapped.updated_at).getTime();
+    if (ageMs >= 0 && ageMs < SERVE_STALE_MS) {
+      const merged = { updated_at: kvWrapped.updated_at, ...kvWrapped.data };
+      return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
+    }
+  }
+
+  // KV が無い or STALE (cron/KV write 失敗時の silent-halt を回避):
+  //   上流 openapi を live fetch (edge cache、write 枠不要) して fresh を返す。
   try {
     const data = await fetchUpstream(UPSTREAM[kind]);
-    if (env.BOATRACE_KV) kvWrite(env, KV_KEYS[kind], data).catch(()=>{});
+    // 取得できたら KV 更新も試みる (diff-write なので変化時のみ、失敗は無視)
+    if (env.BOATRACE_KV) kvWrite(env, KV_KEYS[kind], data).catch(() => {});
     const merged = { updated_at: new Date().toISOString(), ...data };
     return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
   } catch (e) {
+    // live fetch も失敗 → 最後の手段として stale KV を返す (502 より stale の方がマシ)
+    if (kvWrapped && kvWrapped.data) {
+      const merged = { updated_at: kvWrapped.updated_at, ...kvWrapped.data, _stale: true };
+      return jsonResponse(merged, { cacheControl: 'public, max-age=15' });
+    }
     return jsonResponse({ error: String(e) }, { status: 502, cacheControl: 'no-store' });
   }
 }
