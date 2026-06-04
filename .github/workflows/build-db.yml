@@ -36,11 +36,24 @@ jobs:
           set -euo pipefail
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
+          git config rebase.autoStash true
           git add data/
           # REDESIGN.md Phase 1: silent success 撲滅
           if git diff --staged --quiet; then
             echo "::notice::no data changes to commit"
           else
             git commit -m "db: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
+            REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+            # rt-fix P0-3: commit-first + rebase --abort retry で衝突時の commit 喪失を防止
+            pushed=0
+            for i in 1 2 3 4 5; do
+              git fetch "$REMOTE" main
+              if git rebase FETCH_HEAD; then
+                if git push "$REMOTE" HEAD:main; then echo "db push ok ($i)"; pushed=1; break; fi
+              else
+                git rebase --abort || true
+              fi
+              sleep $((RANDOM % 5 + i))
+            done
+            if [ "$pushed" -ne 1 ]; then echo "::error::db push failed after 5 attempts"; exit 1; fi
           fi

@@ -101,21 +101,31 @@ jobs:
           set -euo pipefail
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
-          git pull --rebase origin main || true
-          # data + index.html (prerender skeleton 化後も safe) を staging
-          git add data/ index.html || true
+          # 2026-06-04 (rt-fix P0-2/3): commit-first + rebase --abort で
+          #   「rebase 衝突→exit 1→commit 喪失」を根絶。
+          #   index.html (prerender) は git add 対象から除外し、唯一の
+          #   非マージ衝突源を排除（index.html は skeleton + JS render で表示）。
+          git config rebase.autoStash true
+          git add data/
           if git diff --staged --quiet; then
             echo "::notice::no data changes to commit"
             exit 0
           fi
           git commit -m "scrape: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          for i in 1 2 3; do
-            if git push "$REMOTE" HEAD:main; then
-              echo "push ok (attempt $i)"
-              exit 0
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then
+                echo "push ok (attempt $i)"
+                exit 0
+              fi
+              echo "push rejected (attempt $i) — refetch & retry"
+            else
+              echo "rebase conflict (attempt $i) — abort & retry (data files are append-only/regenerated)"
+              git rebase --abort || true
             fi
-            echo "push rejected (attempt $i) — rebase & retry"
-            git pull --rebase "$REMOTE" main || exit 1
+            sleep $((RANDOM % 5 + i))
           done
+          echo "::error::push failed after 5 attempts"
           exit 1

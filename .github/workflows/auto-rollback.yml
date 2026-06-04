@@ -13,9 +13,13 @@ name: Auto Rollback on Stale Data
 
 on:
   workflow_dispatch:
+  # 2026-06-04 (rt-fix P2-7): auto-rollback は stale 時に「より古いデータへ巻き戻し」
+  #   ＋第4の push writer として競合を増幅していた。scrape-all の :00/:30 push と
+  #   同時刻に発火していたため :15/:45 へ退避し、push も commit-first 化して
+  #   競合を緩和する。判定ロジック（両 stale かつ過去 fresh）は維持。
   schedule:
-    # JST 08:00–22:55 を 30 分間隔
-    - cron: '*/30 23,0-13 * * *'
+    # JST 08:15–22:45 を 30 分間隔（:00/:30 の scrape-all push と非同時刻化）
+    - cron: '15,45 23,0-13 * * *'
 
 permissions:
   contents: read
@@ -124,4 +128,17 @@ jobs:
           fi
           git commit -m "auto-rollback: restore data/ to HEAD~${REVERT_COUNT} due to stale data $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git push "$REMOTE" HEAD:main
+          # rt-fix P2-7: 単発 push を rebase --abort 付き retry に（競合時の silent fail 防止）
+          git config rebase.autoStash true
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then
+                echo "rollback push ok (attempt $i)"; exit 0
+              fi
+            else
+              git rebase --abort || true
+            fi
+            sleep $((RANDOM % 5 + i))
+          done
+          echo "::error::rollback push failed after 5 attempts"; exit 1

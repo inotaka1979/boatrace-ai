@@ -41,6 +41,16 @@ jobs:
           - name: results
             url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
             max_age_min: 360
+          # rt-fix P2-8 (2026-06-04): クライアント主系である Cloudflare Worker /api/* を
+          #   監視対象に追加。従来は data/*.json（GHA アーカイブ系）のみ監視で、
+          #   Worker KV が古くなっても誰も気づかず silent halt していた。
+          #   Worker は {updated_at, data} を返すため check_freshness.py がそのまま使える。
+          - name: worker-previews
+            url: https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/previews
+            max_age_min: 60
+          - name: worker-programs
+            url: https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs
+            max_age_min: 180
     steps:
       - uses: actions/checkout@v6
         with:

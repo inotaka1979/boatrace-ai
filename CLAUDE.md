@@ -837,3 +837,33 @@ var _featureStats = (function(){
 - bac8d6e: 診断オーバーレイに SW STATE / NET PROBES / LS PROBE / IN-MEMORY TRACE を一括追加
 - 6bb7018: setupDelegation / openStadium に in-memory trace 埋込み（真因特定の決定打）
 - **55a3046: 真因確定 — `_initFeatureStats` のインライン化** ⭐
+
+## 修正履歴 (2026-06-04: rt-fix — リアルタイム更新の多角的改善 9 手)
+
+専門家 3 名（インフラ / Cloudflare Worker / クライアント PWA）の多角的診断で、
+「リアルタイム更新が全然できない」が **3 層同時障害**であることを特定し 9 手で解消。
+詳細設計: `docs/RT_FIX_リアルタイム更新改善設計書.md`。
+
+### 層① パイプライン（約30%の配信失敗を解消）
+- P0-2: scrape-all の `git add` から index.html 除外、scrape_all.py の prerender タスク撤去。
+  唯一の非マージ衝突源を排除（index.html は skeleton + JS render）。
+- P0-3: 全 push を commit-first + `rebase --abort` + `rebase.autoStash` + jitter retry に。
+  rebase 衝突で commit を喪失する致命欠陥を根絶（scrape-all / refresh-next-open / build-db / auto-rollback）。
+- P2-7: cron 同時刻解消（refresh-next-open :00→:20、auto-rollback :00/:30→:15/:45）。
+
+### 層② Cloudflare Worker（silent halt を解消）
+- PB-6→PB(rt) P1-6: kvWrite を「内容変化時のみ put」に。無料枠 948/1000/日 の枯渇を構造解消。
+- P2-8: data-freshness-monitor に Worker /api/previews・/api/programs を監視追加（従来 Worker 無監視）。
+
+### 層③ クライアント（「届いても古く見える」を解消）
+- P0-1: 鮮度バッジを「データ世代(updated_at)」→「最終 fetch 成功時刻(_lastFetchOkAt)」に。
+  正常稼働で常時「30分前」と誤表示していた最大の体感要因を解消。データ世代 40 分超は併記で正直表示。
+- P1-4: 90秒ポーリングを Promise.allSettled 並列化（最悪 24s+ → 約 8s）。
+- P1-5: fetchWithFallback の timeout 短縮（Worker 8s→4s、openapi 15s→8s）。Worker 沈黙時の体感劣化を解消。
+  自前 data/*.json は openapi と別スキーマ（previews=races キー / programs 未配信）のため代替不採用、P2-9 で恒久対応。
+
+### P2-9（恒久・未実装）: data 専用 orphan ブランチ分離
+push 競合の原理的解消。GitHub Pages publish source の手動変更が必要なため設計書に手順記載し委譲。
+
+### 検証
+- 34/34 テストステップ全 PASS、build:check 緑（正規 cwd=build/）、lint 0 errors、worker.js 構文 OK。

@@ -80,6 +80,18 @@ function _mapToWorkerUrl(openapiUrl) {
 }
 
 /**
+ * rt-fix P0-1 (2026-06-04): いずれかの系から fetch が成功した瞬間の時刻を記録。
+ *   鮮度バッジ「📡 X分前」はこの「最終 fetch 成功時刻」を表示する。
+ *   従来はデータ世代(updated_at, 約30分間隔)を表示しており、正常稼働でも
+ *   常時「10〜30分前」と古く見え「更新されない」と誤認させていた。
+ */
+function _markFetchOk() {
+  try {
+    _g._lastFetchOkAt = Date.now();
+  } catch (_) {}
+}
+
+/**
  * 単発 fetch + JSON parse。capabilities.makeTimeoutSignal で iOS Safari 旧版
  * (AbortSignal.timeout 非対応) を吸収。
  * @param {string} url
@@ -106,54 +118,56 @@ function _fetchOne(url, timeoutMs) {
 function fetchWithFallback(url) {
   const baseUrl = url.split('?')[0];
   const workerUrl = _mapToWorkerUrl(baseUrl);
-  // Tier 1: Worker /api/* (Cloudflare KV、~ 5 分鮮度、GHA 独立)
-  const primary = workerUrl
-    ? _fetchOne(workerUrl + '?_=' + Date.now(), 8000)
-    : Promise.reject(new Error('no-worker-mapping'));
-  return primary
-    .then(function (d) {
-      _setApiHealth(baseUrl, 'ok');
-      try {
-        const serialized = JSON.stringify({ data: d, time: Date.now() });
-        if (serialized.length <= BC_MAX_BYTES) {
-          localStorage.setItem(_g.cacheKey(baseUrl), serialized);
-        }
-      } catch (_) {}
-      return d;
-    })
-    .catch(function (workerErr) {
-      // Tier 2: openapi 直接 (Worker 失敗時)
-      if (workerErr && workerErr.message !== 'no-worker-mapping') {
-        console.warn('[fetch] worker miss, falling back to openapi:', workerErr.message);
+
+  // 成功時の共通処理: health=ok、最終 fetch 成功時刻を記録、localStorage に snapshot
+  function _onOk(d) {
+    _setApiHealth(baseUrl, 'ok');
+    _markFetchOk(); // rt-fix P0-1
+    try {
+      const serialized = JSON.stringify({ data: d, time: Date.now() });
+      if (serialized.length <= BC_MAX_BYTES) {
+        localStorage.setItem(_g.cacheKey(baseUrl), serialized);
       }
-      return _fetchOne(url, 15000)
-        .then(function (d) {
-          try {
-            const serialized = JSON.stringify({ data: d, time: Date.now() });
-            if (serialized.length <= BC_MAX_BYTES) {
-              localStorage.setItem(_g.cacheKey(baseUrl), serialized);
+    } catch (_) {}
+    return d;
+  }
+
+  // rt-fix P1-5 (2026-06-04): 3 段 fallback。
+  //   Tier 1: Worker /api/* (KV、~5 分鮮度、最速・GHA 独立)  ← timeout 8s→4s に短縮
+  //   Tier 2: openapi 直接 (上流公式、~30 分)               ← timeout 15s→8s に短縮
+  //   Tier 3: localStorage cache (10 min まで)
+  // 注: 自前 GitHub Pages data/*.json は openapi と別スキーマ（previews は `races` キー、
+  //     programs は未配信）のためドロップイン代替にできない。Worker は内部で
+  //     boatrace.jp を直スクレイプするため openapi 障害時の独立系を既に持つ。
+  //     timeout 短縮で「Worker 沈黙時に毎回長く待つ」体感劣化を防止する。
+  const primary = workerUrl
+    ? _fetchOne(workerUrl + '?_=' + Date.now(), 4000)
+    : Promise.reject(new Error('no-worker-mapping'));
+
+  return primary.then(_onOk).catch(function (workerErr) {
+    // Tier 2: openapi 直接 (Worker 失敗時)
+    if (workerErr && workerErr.message !== 'no-worker-mapping') {
+      console.warn('[fetch] worker miss, falling back to openapi:', workerErr.message);
+    }
+    return _fetchOne(url, 8000)
+      .then(_onOk)
+      .catch(function (e) {
+        console.warn('API error:', baseUrl, e.message);
+        // Tier 3: localStorage cache (10 min まで)
+        try {
+          const c = localStorage.getItem(_g.cacheKey(baseUrl));
+          if (c) {
+            const o = JSON.parse(c);
+            if (Date.now() - o.time < 600000) {
+              _setApiHealth(baseUrl, 'cached');
+              return o.data;
             }
-          } catch (_) {}
-          _setApiHealth(baseUrl, 'ok');
-          return d;
-        })
-        .catch(function (e) {
-          console.warn('API error:', baseUrl, e.message);
-          // Tier 3: localStorage cache (10 min まで)
-          try {
-            const c = localStorage.getItem(_g.cacheKey(baseUrl));
-            if (c) {
-              const o = JSON.parse(c);
-              if (Date.now() - o.time < 600000) {
-                _setApiHealth(baseUrl, 'cached');
-                return o.data;
-              }
-            }
-          } catch (_) {}
-          _setApiHealth(baseUrl, 'fail');
-          return null;
-        });
-    });
+          }
+        } catch (_) {}
+        _setApiHealth(baseUrl, 'fail');
+        return null;
+      });
+  });
 }
 
 /**
@@ -318,6 +332,8 @@ function _filterStalePreviews(raw) {
 _g.BC_MAX_BYTES = BC_MAX_BYTES;
 _g.WORKER_BASE = WORKER_BASE;
 _g._apiHealth = _apiHealth;
+// rt-fix P0-1: 最終 fetch 成功時刻（epoch ms）。鮮度バッジが参照。
+if (typeof _g._lastFetchOkAt !== 'number') _g._lastFetchOkAt = 0;
 _g._setApiHealth = _setApiHealth;
 _g._mapToWorkerUrl = _mapToWorkerUrl;
 _g._fetchOne = _fetchOne;
