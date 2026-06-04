@@ -10,10 +10,12 @@ name: Refresh Next Open + Prerender (frequent)
 #   日替わり境界・場切替頻度を考慮して JST 5 時刻に増やす。
 on:
   schedule:
+    # 2026-06-04 (rt-fix P2-7): scrape-all の :00/:30 push と衝突しないよう
+    #   :00 発火を :20 にずらす（同時刻 push race を回避）。
     - cron: '15 0 * * *'    # JST 09:15（朝、レース開始前）
-    - cron: '0 1 * * *'     # JST 10:00（場切替後）
-    - cron: '0 4 * * *'     # JST 13:00（昼）
-    - cron: '0 8 * * *'     # JST 17:00（夕方）
+    - cron: '20 1 * * *'    # JST 10:20（場切替後）
+    - cron: '20 4 * * *'    # JST 13:20（昼）
+    - cron: '20 8 * * *'    # JST 17:20（夕方）
     - cron: '15 12 * * *'   # JST 21:15（夜、翌日反映）
   workflow_dispatch:
 
@@ -49,6 +51,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 2026-06-04 (rt-fix P0-3): commit-first + rebase --abort で衝突時の commit 喪失を防止。
+          git config rebase.autoStash true
           git add data/schedule/next_open.json
           if git diff --staged --quiet; then
             echo "No changes."
@@ -56,12 +60,19 @@ jobs:
           fi
           git commit -m "next_open: refresh ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
           REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          for i in 1 2 3; do
-            if git push "$REMOTE" HEAD:main; then
-              echo "push ok (attempt $i)"
-              exit 0
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then
+                echo "push ok (attempt $i)"
+                exit 0
+              fi
+              echo "push rejected (attempt $i) — refetch & retry"
+            else
+              echo "rebase conflict (attempt $i) — abort & retry"
+              git rebase --abort || true
             fi
-            echo "push rejected (attempt $i) — pulling and retrying..."
-            git pull --rebase "$REMOTE" main || exit 1
+            sleep $((RANDOM % 5 + i))
           done
+          echo "::error::push failed after 5 attempts"
           exit 1

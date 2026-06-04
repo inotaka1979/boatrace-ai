@@ -2896,6 +2896,12 @@ function pf(v){return parseFloat(v)||0}
     if (openapiUrl.indexOf("/results/v2/today.json") >= 0) return WORKER_BASE + "/api/results";
     return null;
   }
+  function _markFetchOk() {
+    try {
+      _g._lastFetchOkAt = Date.now();
+    } catch (_) {
+    }
+  }
   function _fetchOne(url, timeoutMs) {
     const signal = _g.capabilities.makeTimeoutSignal(timeoutMs || 1e4);
     return fetch(url, { signal, cache: "no-store" }).then(function(r) {
@@ -2906,9 +2912,9 @@ function pf(v){return parseFloat(v)||0}
   function fetchWithFallback(url) {
     const baseUrl = url.split("?")[0];
     const workerUrl = _mapToWorkerUrl(baseUrl);
-    const primary = workerUrl ? _fetchOne(workerUrl + "?_=" + Date.now(), 8e3) : Promise.reject(new Error("no-worker-mapping"));
-    return primary.then(function(d) {
+    function _onOk(d) {
       _setApiHealth(baseUrl, "ok");
+      _markFetchOk();
       try {
         const serialized = JSON.stringify({ data: d, time: Date.now() });
         if (serialized.length <= BC_MAX_BYTES) {
@@ -2917,21 +2923,13 @@ function pf(v){return parseFloat(v)||0}
       } catch (_) {
       }
       return d;
-    }).catch(function(workerErr) {
+    }
+    const primary = workerUrl ? _fetchOne(workerUrl + "?_=" + Date.now(), 4e3) : Promise.reject(new Error("no-worker-mapping"));
+    return primary.then(_onOk).catch(function(workerErr) {
       if (workerErr && workerErr.message !== "no-worker-mapping") {
         console.warn("[fetch] worker miss, falling back to openapi:", workerErr.message);
       }
-      return _fetchOne(url, 15e3).then(function(d) {
-        try {
-          const serialized = JSON.stringify({ data: d, time: Date.now() });
-          if (serialized.length <= BC_MAX_BYTES) {
-            localStorage.setItem(_g.cacheKey(baseUrl), serialized);
-          }
-        } catch (_) {
-        }
-        _setApiHealth(baseUrl, "ok");
-        return d;
-      }).catch(function(e) {
+      return _fetchOne(url, 8e3).then(_onOk).catch(function(e) {
         console.warn("API error:", baseUrl, e.message);
         try {
           const c = localStorage.getItem(_g.cacheKey(baseUrl));
@@ -3066,6 +3064,7 @@ function pf(v){return parseFloat(v)||0}
   _g.BC_MAX_BYTES = BC_MAX_BYTES;
   _g.WORKER_BASE = WORKER_BASE;
   _g._apiHealth = _apiHealth;
+  if (typeof _g._lastFetchOkAt !== "number") _g._lastFetchOkAt = 0;
   _g._setApiHealth = _setApiHealth;
   _g._mapToWorkerUrl = _mapToWorkerUrl;
   _g._fetchOne = _fetchOne;
@@ -3111,24 +3110,45 @@ function pf(v){return parseFloat(v)||0}
   function _renderFreshness() {
     const el = document.getElementById("dataFreshness");
     if (!el) return;
-    const latest = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
-    if (!latest) {
+    const now = Date.now();
+    const fetchAt = _g._lastFetchOkAt || 0;
+    const dataGen = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
+    if (!fetchAt && !dataGen) {
       el.textContent = "";
       return;
     }
-    const todayJst = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
-    const dataDate = new Date(latest + 9 * 36e5).toISOString().slice(0, 10);
-    if (dataDate !== todayJst) {
-      el.innerHTML = '<span style="color:#BDBDBD">\u{1F4A4} \u672C\u65E5\u30C7\u30FC\u30BF\u53D6\u5F97\u5F85\u3061</span>';
-      return;
+    const todayJst = new Date(now + 9 * 36e5).toISOString().slice(0, 10);
+    if (dataGen) {
+      const dataDate = new Date(dataGen + 9 * 36e5).toISOString().slice(0, 10);
+      if (dataDate !== todayJst) {
+        el.innerHTML = '<span style="color:#BDBDBD">\u{1F4A4} \u672C\u65E5\u30C7\u30FC\u30BF\u53D6\u5F97\u5F85\u3061</span>';
+        return;
+      }
     }
-    const sec = Math.max(0, Math.floor((Date.now() - latest) / 1e3));
+    function _ago(ms) {
+      const sec = Math.max(0, Math.floor(ms / 1e3));
+      if (sec < 60) return sec + "\u79D2\u524D";
+      if (sec < 3600) return Math.floor(sec / 60) + "\u5206\u524D";
+      return Math.floor(sec / 3600) + "\u6642\u9593\u524D";
+    }
     let label;
-    if (sec < 60) label = sec + "\u79D2\u524D";
-    else if (sec < 3600) label = Math.floor(sec / 60) + "\u5206\u524D";
-    else label = Math.floor(sec / 3600) + "\u6642\u9593\u524D";
-    const color = sec < 180 ? "#A5D6A7" : sec < 600 ? "#FFCC80" : "#FF8A80";
-    el.innerHTML = '<span style="color:' + color + '">\u{1F4E1} ' + label + "</span>";
+    let color;
+    if (fetchAt) {
+      const fsec = Math.floor((now - fetchAt) / 1e3);
+      label = "\u{1F4E1} " + _ago(now - fetchAt);
+      color = fsec < 180 ? "#A5D6A7" : fsec < 600 ? "#FFCC80" : "#FF8A80";
+    } else {
+      label = "\u{1F4E1} " + _ago(now - dataGen);
+      color = "#A5D6A7";
+    }
+    let note = "";
+    if (dataGen) {
+      const genMin = Math.floor((now - dataGen) / 6e4);
+      if (genMin >= 40) {
+        note = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u30C7\u30FC\u30BF\u66F4\u65B0\u5F85\u3061(' + (genMin < 120 ? genMin + "\u5206" : Math.floor(genMin / 60) + "\u6642\u9593") + ")</span>";
+      }
+    }
+    el.innerHTML = '<span style="color:' + color + '">' + label + "</span>" + note;
   }
   _g._renderApiHealthBanner = _renderApiHealthBanner;
   _g._renderFreshness = _renderFreshness;
@@ -9840,11 +9860,24 @@ setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
 setManagedInterval(async function(){
   try{
     var t=Date.now();
-    var rawP=await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
+    // rt-fix P1-4 (2026-06-04): programs/previews/results/odds/local-previews を並列 fetch。
+    //   従来は直列 await で、Worker 沈黙時に各 4-8s 待ちが累積し 1 周が 24s+ に
+    //   膨らんでレース直前の体感が死んでいた。Promise.allSettled で最悪 ~8s に短縮。
+    var _localOdds=fetch('data/odds/today.json?t='+t).then(function(o){return o.ok?o.json():null;}).catch(function(){return null;});
+    var _localPv=fetch('data/previews/today.json?t='+t).then(function(p){return p.ok?p.json():null;}).catch(function(){return null;});
+    var _settled=await Promise.allSettled([
+      fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t),
+      fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t),
+      fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t),
+      _localOdds,
+      _localPv
+    ]);
+    function _val(i){ return _settled[i].status==='fulfilled'?_settled[i].value:null; }
+    var rawP=_val(0);
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); _noteTodayDataFromRaw(rawP,'programs'); }
-    var rawPv=_filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
+    var rawPv=_filterStalePreviews(_val(1));
     if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
-    var rawR=await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
+    var rawR=_val(2);
     if(rawR){
       resultData=indexResults(rawR);
       _noteUpdatedAt(rawR.updated_at);
@@ -9853,20 +9886,15 @@ setManagedInterval(async function(){
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
-    try{
-      var o=await fetch('data/odds/today.json?t='+t);
-      if(o.ok){ var od=await o.json(); oddsData=od; _noteUpdatedAt(od.updated_at); }
-    }catch(e){}
+    var od=_val(3);
+    if(od){ oddsData=od; _noteUpdatedAt(od.updated_at); }
     // F5: 自前 previews を merge して finished/result を反映
     // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
-    try{
-      var p=await fetch('data/previews/today.json?t='+t);
-      if(p.ok){
-        var pd=await p.json();
-        if(_shouldApplyLocalMerge(pd)) _applyLiveDataMerge(pd);
-        _noteUpdatedAt(pd.updated_at);
-      }
-    }catch(e){}
+    var pd=_val(4);
+    if(pd){
+      if(_shouldApplyLocalMerge(pd)) _applyLiveDataMerge(pd);
+      _noteUpdatedAt(pd.updated_at);
+    }
     // B12 (2026-05-16): 日中に新たに終了したレースを history に backfill。
     //   旧仕様は _backfillTodayPredictions を初回 load + 「更新」ボタン押下時のみ
     //   実行していたため、ユーザがアプリを開きっぱなしだと成績トラッカーが

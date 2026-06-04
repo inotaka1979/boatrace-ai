@@ -68,9 +68,36 @@ async function fetchUpstream(url) {
   return await res.json();
 }
 
+// rt-fix P1-6 (2026-06-04): KV write を「内容が変化した時のみ」に変更。
+//   Cloudflare 無料枠 = 1000 writes/日。従来は毎 refresh で無条件 put し
+//   948/日と上限に貼り付いていた → わずかな超過で put が throw → catch 握り潰し
+//   → KV が古いまま /api/* が古いデータを 200 で返し続ける silent halt の主因。
+//   data 部分（updated_at を除く）を前回値と比較し、同一なら put をスキップする。
+//   これにより深夜帯など変化の少ない時間の write を大幅削減し、枠に余裕を作る。
 async function kvWrite(env, key, data) {
-  const wrapped = { updated_at: new Date().toISOString(), data };
-  await env.BOATRACE_KV.put(key, JSON.stringify(wrapped), { expirationTtl: 86400 * 2 });
+  const now = new Date().toISOString();
+  const newBody = JSON.stringify(data);
+  let changed = true;
+  try {
+    const prev = await env.BOATRACE_KV.get(key);
+    if (prev) {
+      const prevObj = JSON.parse(prev);
+      if (prevObj && JSON.stringify(prevObj.data) === newBody) {
+        changed = false;
+      }
+    }
+  } catch (_) {
+    // 比較失敗時は安全側で書き込む
+    changed = true;
+  }
+  const wrapped = { updated_at: now, data, _kv_skipped: !changed };
+  if (changed) {
+    await env.BOATRACE_KV.put(key, JSON.stringify({ updated_at: now, data }), {
+      expirationTtl: 86400 * 2,
+    });
+  }
+  // 鮮度監視は各キーに保存済みの updated_at（serveFromKV が返す）で行うため、
+  // ここで別キーへ書き込む必要はない（write 枠を消費しない）。
   return wrapped;
 }
 

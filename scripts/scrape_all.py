@@ -145,6 +145,9 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     h, m = now.hour, now.minute
 
     if force_all:
+        # 2026-06-04 (rt-fix P0-2): prerender は index.html を書き換え、
+        #   複数 workflow の push を非マージ衝突させる唯一の原因だったため
+        #   scrape の commit 対象から除外（index.html は skeleton + JS render）。
         return [
             ("racedata", _scrape_racedata),
             ("schedule(quick)", _scrape_schedule_quick),
@@ -152,7 +155,6 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
             ("odds", _scrape_odds),
             ("previews", _scrape_previews),
             ("results", _scrape_results),
-            ("prerender", _prerender_top),
         ]
 
     # racedata stale 時の優先実行: GHA job timeout (25 min) と odds の timeout
@@ -163,7 +165,6 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     if racedata_stale:
         tasks.append(("racedata", _scrape_racedata))
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
-        tasks.append(("prerender", _prerender_top))
 
     # 共通: race hours (JST 08-22) は odds + previews を毎 tick
     if 8 <= h <= 22:
@@ -186,7 +187,6 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         and not _is_fresh_today("data/schedule/next_open.json", now)
     ):
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
-        tasks.append(("prerender", _prerender_top))
 
     # tide: JST 07:30-09:30 で「今日のデータでなければ取る」
     tide_window = (h == 7 and m >= 30) or h == 8 or (h == 9 and m < 30)

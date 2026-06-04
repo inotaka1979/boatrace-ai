@@ -66,6 +66,8 @@ interface BoatRaceGlobalAPI {
   _renderFreshness: () => void;
   _dataLatestUpdatedAt: number;
   _dataTodayConfirmedAt: number;
+  /** rt-fix P0-1: 最終 fetch 成功時刻 (epoch ms)。鮮度バッジが参照。 */
+  _lastFetchOkAt: number;
 
   // analysis layer (src/analysis/backtest.js)
   _btParseDate: (s: string | null | undefined) => Date | null;

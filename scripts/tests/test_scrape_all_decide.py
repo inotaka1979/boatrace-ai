@@ -117,13 +117,17 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
     def test_old_racedata_window_09_30_picks_up(self):
         tasks = self._at(9, 30)
         self.assertIn("racedata", tasks)
-        self.assertIn("prerender", tasks)
+        # rt-fix P0-2 (2026-06-04): prerender は index.html を書き換え、
+        #   複数 workflow の push を非マージ衝突させる唯一の原因だったため
+        #   scrape-all の commit 対象から除外した。
+        self.assertNotIn("prerender", tasks)
 
     def test_delayed_cron_09_58_picks_up(self):
         # OLD bug: h==9 and 28<=m<=35 missed this minute
         tasks = self._at(9, 58)
         self.assertIn("racedata", tasks)
-        self.assertIn("prerender", tasks)
+        # rt-fix P0-2: prerender は scrape-all から分離済
+        self.assertNotIn("prerender", tasks)
 
     def test_delayed_cron_12_45_picks_up(self):
         # OLD bug: h==12 and m<5 missed this minute
@@ -181,9 +185,10 @@ class TestDecideTasksIdempotency(unittest.TestCase):
             "odds",
             "previews",
             "results",
-            "prerender",
         ):
             self.assertIn(expected, tasks)
+        # rt-fix P0-2: prerender は scrape-all から分離 (index.html 衝突源の除去)
+        self.assertNotIn("prerender", tasks)
 
 
 if __name__ == "__main__":
