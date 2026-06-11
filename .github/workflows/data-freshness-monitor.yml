@@ -32,15 +32,21 @@ jobs:
       fail-fast: false
       matrix:
         target:
+          # rt-fix2 P2-A (2026-06-11): SLO の二層化。
+          #   実測で GitHub は本リポジトリの schedule を 1 workflow あたり 4-6 回/日に
+          #   間引いており（5 分毎宣言の本 monitor 自身も実発火は設計比 ~3%）、
+          #   data/*.json (GHA scrape 経路) を 30-60 分 SLO で監視するのは
+          #   「構造的に守れない SLO への誤警報スパム」(#93/#100) でしかなかった。
+          #   data/* はアーカイブ SLO (24h)、リアルタイム SLO は Worker /api/* に課す。
           - name: odds
             url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/odds/today.json
-            max_age_min: 30
+            max_age_min: 1440
           - name: previews
             url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/previews/today.json
-            max_age_min: 60
+            max_age_min: 1440
           - name: results
             url: https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/results/today.json
-            max_age_min: 360
+            max_age_min: 1440
           # rt-fix P2-8 (2026-06-04): クライアント主系である Cloudflare Worker /api/* を
           #   監視対象に追加。従来は data/*.json（GHA アーカイブ系）のみ監視で、
           #   Worker KV が古くなっても誰も気づかず silent halt していた。
@@ -68,7 +74,22 @@ jobs:
           if ! curl -sS --fail --max-time 5 --retry 4 --retry-delay 2 \
                -H "Cache-Control: no-cache" \
                "${{ matrix.target.url }}" -o "$OUT"; then
-            echo "result=fetch_failed" >> "$GITHUB_OUTPUT"
+            # rt-fix2 P2-A (2026-06-11): fetch 失敗の silent hole を封鎖。
+            #   worker-* (リアルタイム主系) は到達不能自体が SLO 違反なので stale 扱いで
+            #   issue 起票・dispatch につなげる。data/* (アーカイブ) は従来通り様子見。
+            case "${{ matrix.target.name }}" in
+              worker-*)
+                echo "result=stale" >> "$GITHUB_OUTPUT"
+                {
+                  echo "msg<<__EOF__"
+                  echo "FETCH FAILED url=${{ matrix.target.url }} (worker unreachable = realtime SLO violation)"
+                  echo "__EOF__"
+                } >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "result=fetch_failed" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
             exit 0
           fi
           set +e
