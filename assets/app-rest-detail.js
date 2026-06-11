@@ -4,162 +4,6 @@
 // page_router.js の _ensureRaceDetailChunk() が race click 時に動的 load。
 'use strict';
 
-/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:START */
-"use strict";
-(() => {
-  // ../src/reporting/race_detail_prediction.js
-  function _renderRaceDetailPrediction(ctx) {
-    var sid = ctx.sid, rn = ctx.rn, race = ctx.race, pred = ctx.pred;
-    var preview = ctx.preview, result = ctx.result, popularity = ctx.popularity, raceOdds = ctx.raceOdds;
-    var predHtml = "";
-    var progPred = predictRaceProgram(sid, parseInt(rn));
-    var boats = race && race.boats ? race.boats : [];
-    if (progPred) {
-      predHtml += '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
-      predHtml += '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">\u756A\u7D44\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u51FA\u8D70\u8868\u30C7\u30FC\u30BF\u306E\u307F</span></div>';
-      progPred.marks.forEach(function(m, i) {
-        if (i >= 4) return;
-        var boatInfo = boats.find(function(b) {
-          return b.racer_boat_number === m.boat;
-        });
-        var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
-        var probPct = Math.round(m.prob * 100);
-        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
-        predHtml += boatBadge(m.boat);
-        predHtml += "<span>" + escText(nm) + "</span>";
-        predHtml += '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + "%</span>";
-        predHtml += "</div>";
-      });
-      var progTypeIcon = progPred.raceType === "honmei" ? "\u26A1" : progPred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + progTypeIcon + progPred.typeLabel + "  \u4FE1\u983C\u5EA6: " + progPred.confidence + "%</div>";
-      if (progPred.marks[0].reasons && progPred.marks[0].reasons.length > 0) {
-        predHtml += '<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
-        progPred.marks[0].reasons.slice(0, 3).forEach(function(r) {
-          predHtml += "<div>\u30FB" + escText(r) + "</div>";
-        });
-        predHtml += "</div>";
-      }
-      predHtml += "</div>";
-    }
-    var hasRealPreview = false;
-    if (preview && preview.boats) {
-      for (var pk in preview.boats) {
-        if (preview.boats[pk] && (preview.boats[pk].racer_exhibition_time || 0) > 0) {
-          hasRealPreview = true;
-          break;
-        }
-      }
-    }
-    predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
-    predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
-    if (hasRealPreview && pred) {
-      var diff = comparePredictions(progPred, pred);
-      pred.marks.forEach(function(m, i) {
-        if (i >= 4) return;
-        var boatInfo = boats.find(function(b) {
-          return b.racer_boat_number === m.boat;
-        });
-        var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
-        var probPct = Math.round(m.prob * 100);
-        var change = diff ? diff.changes.find(function(c) {
-          return c.boat === m.boat;
-        }) : null;
-        var diffStr = "";
-        if (change && change.rankDiff !== 0) {
-          var p = Math.round(change.probDiff * 100);
-          var pSign = p > 0 ? "+" : p < 0 ? "" : "";
-          var arrow = change.rankDiff > 0 ? "\u2191" : "\u2193";
-          var color = change.rankDiff > 0 ? "#43A047" : "#E53935";
-          diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p + "%</span>";
-        }
-        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
-        predHtml += boatBadge(m.boat);
-        predHtml += "<span>" + escText(nm) + "</span>";
-        predHtml += '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + "%</span>";
-        predHtml += diffStr;
-        predHtml += "</div>";
-      });
-      var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%</div>";
-      if (pred.scenarios) {
-        var scen = pred.scenarios;
-        var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };
-        var scenStr = "";
-        Object.keys(scen).forEach(function(k) {
-          if (scen[k] >= 0.05) {
-            var pct = (scen[k] * 100).toFixed(0);
-            scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k] + "</b> " + pct + "%</span>";
-          }
-        });
-        predHtml += '<div style="font-size:10px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">\u60F3\u5B9A\u5C55\u958B: ' + scenStr + "</div>";
-      }
-      if (diff) {
-        var hasChange = diff.changes.some(function(c) {
-          return c.rankDiff !== 0;
-        });
-        if (hasChange) {
-          predHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
-          predHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">\u5C55\u793A\u306B\u3088\u308B\u5909\u52D5</div>';
-          diff.changes.forEach(function(c) {
-            if (c.rankDiff > 0) {
-              var reasons = c.addedReasons.length > 0 ? c.addedReasons.slice(0, 2).join(", ") : "\u5C55\u793A\u597D\u8ABF";
-              predHtml += '<div style="color:#2E7D32">\u2191 ' + c.boat + "\u53F7\u8247: " + escText(reasons) + "</div>";
-            } else if (c.rankDiff < 0) {
-              var risks = c.addedRisks.length > 0 ? c.addedRisks.slice(0, 2).join(", ") : "\u5C55\u793A\u4E0D\u8ABF";
-              predHtml += '<div style="color:#C62828">\u2193 ' + c.boat + "\u53F7\u8247: " + escText(risks) + "</div>";
-            }
-          });
-          if (diff.typeChanged) {
-            predHtml += '<div style="color:#D84315;font-weight:700;margin-top:4px">\u26A0 ' + diff.progType + " \u2192 " + diff.liveType + " \u306B\u5909\u5316</div>";
-          }
-          predHtml += "</div>";
-        }
-      }
-      if (popularity && pred.marks.length > 0) {
-        var aiTop = pred.marks[0].boat;
-        var popTop = popularity[0] ? popularity[0].boat : 0;
-        if (aiTop !== popTop && popTop > 0) {
-          predHtml += '<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI\u4E88\u60F3\u25CE' + aiTop + "\u53F7\u8247 vs 1\u756A\u4EBA\u6C17" + popTop + "\u53F7\u8247 -- \u9006\u5F35\u308A\u6CE8\u76EE</div>";
-        }
-      }
-    } else {
-      var _finished = !!(result && result.isFinished);
-      predHtml += '<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
-      if (_finished) {
-        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u{1F4CB}</div>';
-        predHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">\u5C55\u793A\u30C7\u30FC\u30BF\u672A\u53D6\u5F97\u306E\u30EC\u30FC\u30B9\u3067\u3059</div>';
-        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u5C55\u793A\u7A93\u6642\u523B\u306B\u30B9\u30AF\u30EC\u30A4\u30D7\u304C\u5C4A\u304B\u305A\u3001\u76F4\u524D\u4E88\u60F3\u306F\u751F\u6210\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F<br>\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3068<b>\u30EC\u30FC\u30B9\u7D50\u679C</b>\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044</div>';
-      } else {
-        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u23F3</div>';
-        predHtml += '<div style="font-size:13px;font-weight:700">\u5C55\u793A\u822A\u8D70\u306E\u53CD\u6620\u5F85\u3061</div>';
-        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u30EC\u30FC\u30B9\u958B\u59CB\u7D04 15 \u5206\u524D\u306E\u5C55\u793A\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059<br>\u305D\u308C\u307E\u3067\u306F\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3092\u3054\u53C2\u7167\u304F\u3060\u3055\u3044</div>';
-      }
-      predHtml += "</div>";
-    }
-    predHtml += "</div>";
-    predHtml += _renderRaceDetailBets({
-      sid,
-      rn,
-      race,
-      pred,
-      progPred,
-      hasRealPreview,
-      raceOdds
-    });
-    if (typeof _renderPairwiseSummary === "function" && race && race.boats) {
-      var pwHtml = _renderPairwiseSummary(race.boats);
-      if (pwHtml) predHtml += pwHtml;
-    }
-    document.getElementById("detailPrediction").innerHTML = predHtml;
-  }
-  globalThis._renderRaceDetailPrediction = _renderRaceDetailPrediction;
-})();
-
-/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:END */
-
-
 /* BUILD:REPORTING_RACE_DETAIL:START */
 "use strict";
 (() => {
@@ -632,6 +476,162 @@
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_BOATS:END */
+
+
+/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_prediction.js
+  function _renderRaceDetailPrediction(ctx) {
+    var sid = ctx.sid, rn = ctx.rn, race = ctx.race, pred = ctx.pred;
+    var preview = ctx.preview, result = ctx.result, popularity = ctx.popularity, raceOdds = ctx.raceOdds;
+    var predHtml = "";
+    var progPred = predictRaceProgram(sid, parseInt(rn));
+    var boats = race && race.boats ? race.boats : [];
+    if (progPred) {
+      predHtml += '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
+      predHtml += '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">\u756A\u7D44\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u51FA\u8D70\u8868\u30C7\u30FC\u30BF\u306E\u307F</span></div>';
+      progPred.marks.forEach(function(m, i) {
+        if (i >= 4) return;
+        var boatInfo = boats.find(function(b) {
+          return b.racer_boat_number === m.boat;
+        });
+        var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
+        var probPct = Math.round(m.prob * 100);
+        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        predHtml += boatBadge(m.boat);
+        predHtml += "<span>" + escText(nm) + "</span>";
+        predHtml += '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + "%</span>";
+        predHtml += "</div>";
+      });
+      var progTypeIcon = progPred.raceType === "honmei" ? "\u26A1" : progPred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
+      predHtml += '<div class="note-orange">' + progTypeIcon + progPred.typeLabel + "  \u4FE1\u983C\u5EA6: " + progPred.confidence + "%</div>";
+      if (progPred.marks[0].reasons && progPred.marks[0].reasons.length > 0) {
+        predHtml += '<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
+        progPred.marks[0].reasons.slice(0, 3).forEach(function(r) {
+          predHtml += "<div>\u30FB" + escText(r) + "</div>";
+        });
+        predHtml += "</div>";
+      }
+      predHtml += "</div>";
+    }
+    var hasRealPreview = false;
+    if (preview && preview.boats) {
+      for (var pk in preview.boats) {
+        if (preview.boats[pk] && (preview.boats[pk].racer_exhibition_time || 0) > 0) {
+          hasRealPreview = true;
+          break;
+        }
+      }
+    }
+    predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
+    predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
+    if (hasRealPreview && pred) {
+      var diff = comparePredictions(progPred, pred);
+      pred.marks.forEach(function(m, i) {
+        if (i >= 4) return;
+        var boatInfo = boats.find(function(b) {
+          return b.racer_boat_number === m.boat;
+        });
+        var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
+        var probPct = Math.round(m.prob * 100);
+        var change = diff ? diff.changes.find(function(c) {
+          return c.boat === m.boat;
+        }) : null;
+        var diffStr = "";
+        if (change && change.rankDiff !== 0) {
+          var p = Math.round(change.probDiff * 100);
+          var pSign = p > 0 ? "+" : p < 0 ? "" : "";
+          var arrow = change.rankDiff > 0 ? "\u2191" : "\u2193";
+          var color = change.rankDiff > 0 ? "#43A047" : "#E53935";
+          diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p + "%</span>";
+        }
+        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        predHtml += boatBadge(m.boat);
+        predHtml += "<span>" + escText(nm) + "</span>";
+        predHtml += '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + "%</span>";
+        predHtml += diffStr;
+        predHtml += "</div>";
+      });
+      var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
+      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%</div>";
+      if (pred.scenarios) {
+        var scen = pred.scenarios;
+        var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };
+        var scenStr = "";
+        Object.keys(scen).forEach(function(k) {
+          if (scen[k] >= 0.05) {
+            var pct = (scen[k] * 100).toFixed(0);
+            scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k] + "</b> " + pct + "%</span>";
+          }
+        });
+        predHtml += '<div style="font-size:10px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">\u60F3\u5B9A\u5C55\u958B: ' + scenStr + "</div>";
+      }
+      if (diff) {
+        var hasChange = diff.changes.some(function(c) {
+          return c.rankDiff !== 0;
+        });
+        if (hasChange) {
+          predHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
+          predHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">\u5C55\u793A\u306B\u3088\u308B\u5909\u52D5</div>';
+          diff.changes.forEach(function(c) {
+            if (c.rankDiff > 0) {
+              var reasons = c.addedReasons.length > 0 ? c.addedReasons.slice(0, 2).join(", ") : "\u5C55\u793A\u597D\u8ABF";
+              predHtml += '<div style="color:#2E7D32">\u2191 ' + c.boat + "\u53F7\u8247: " + escText(reasons) + "</div>";
+            } else if (c.rankDiff < 0) {
+              var risks = c.addedRisks.length > 0 ? c.addedRisks.slice(0, 2).join(", ") : "\u5C55\u793A\u4E0D\u8ABF";
+              predHtml += '<div style="color:#C62828">\u2193 ' + c.boat + "\u53F7\u8247: " + escText(risks) + "</div>";
+            }
+          });
+          if (diff.typeChanged) {
+            predHtml += '<div style="color:#D84315;font-weight:700;margin-top:4px">\u26A0 ' + diff.progType + " \u2192 " + diff.liveType + " \u306B\u5909\u5316</div>";
+          }
+          predHtml += "</div>";
+        }
+      }
+      if (popularity && pred.marks.length > 0) {
+        var aiTop = pred.marks[0].boat;
+        var popTop = popularity[0] ? popularity[0].boat : 0;
+        if (aiTop !== popTop && popTop > 0) {
+          predHtml += '<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI\u4E88\u60F3\u25CE' + aiTop + "\u53F7\u8247 vs 1\u756A\u4EBA\u6C17" + popTop + "\u53F7\u8247 -- \u9006\u5F35\u308A\u6CE8\u76EE</div>";
+        }
+      }
+    } else {
+      var _finished = !!(result && result.isFinished);
+      predHtml += '<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
+      if (_finished) {
+        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u{1F4CB}</div>';
+        predHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">\u5C55\u793A\u30C7\u30FC\u30BF\u672A\u53D6\u5F97\u306E\u30EC\u30FC\u30B9\u3067\u3059</div>';
+        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u5C55\u793A\u7A93\u6642\u523B\u306B\u30B9\u30AF\u30EC\u30A4\u30D7\u304C\u5C4A\u304B\u305A\u3001\u76F4\u524D\u4E88\u60F3\u306F\u751F\u6210\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F<br>\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3068<b>\u30EC\u30FC\u30B9\u7D50\u679C</b>\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044</div>';
+      } else {
+        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u23F3</div>';
+        predHtml += '<div style="font-size:13px;font-weight:700">\u5C55\u793A\u822A\u8D70\u306E\u53CD\u6620\u5F85\u3061</div>';
+        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u30EC\u30FC\u30B9\u958B\u59CB\u7D04 15 \u5206\u524D\u306E\u5C55\u793A\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059<br>\u305D\u308C\u307E\u3067\u306F\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3092\u3054\u53C2\u7167\u304F\u3060\u3055\u3044</div>';
+      }
+      predHtml += "</div>";
+    }
+    predHtml += "</div>";
+    predHtml += _renderRaceDetailBets({
+      sid,
+      rn,
+      race,
+      pred,
+      progPred,
+      hasRealPreview,
+      raceOdds
+    });
+    if (typeof _renderPairwiseSummary === "function" && race && race.boats) {
+      var pwHtml = _renderPairwiseSummary(race.boats);
+      if (pwHtml) predHtml += pwHtml;
+    }
+    document.getElementById("detailPrediction").innerHTML = predHtml;
+  }
+  globalThis._renderRaceDetailPrediction = _renderRaceDetailPrediction;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL_PREDICTION:END */
 
 
 /* BUILD:REPORTING_RACE_DETAIL_BETS:START */
