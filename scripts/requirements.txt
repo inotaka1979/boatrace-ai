@@ -1,7 +1,7 @@
 # PA-6: バージョン pin（再現性確保 + 自動セキュリティ監査向け）
 # 更新時は dependabot PR レビュー → CI 緑確認 → merge
 requests==2.34.2
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
 lxml==6.1.1
 aiohttp==3.13.5
 lhafile==0.3.1
