@@ -29,13 +29,19 @@ on:
       - '.github/workflows/scrape-all.yml'
   schedule:
     # D3a (2026-05-17): 5 分→30 分間隔。Worker が主データ供給、本 cron はアーカイブ。
-    # 2026-05-24: 8:00 JST 開始 → 8:30 JST 開始へ。理由:
-    #   - 上流 boatraceopenapi が朝の today.json を published するのが 8:30-8:45 JST
-    #   - 8:00 JST tick は no-change → no-commit で空振り、GHA 分の無駄
-    #   - モーニング場の 1R (8:30 JST 開始) は 8:30 cron で間に合う
-    #   - JST 8:30 のみ → 9:00-22:30 を 30 分毎、で 2 行に分割
-    - cron: '30 23 * * *'        # JST 8:30 (UTC 23:30)
-    - cron: '0,30 0-13 * * *'    # JST 9:00-22:30 every 30 min (UTC 0-13)
+    # rt-fix2 P2-B (2026-06-11): 30 分毎宣言 → 1 日 6 アンカーへ「正直化」。
+    #   実測 (6/7-6/11) で GitHub は本リポジトリの schedule を 1 workflow あたり
+    #   4-6 回/日しか発火させず（30 分毎宣言でも設計比 13-21%）、宣言密度と実発火数は
+    #   無相関だった。密な宣言はキュー滞留チケットの数時間遅れ消化・cancelled run・
+    #   「30 分毎のはずなのに」という誤った期待を生むだけなので、実態に合わせた
+    #   アンカーに削減する。リアルタイム供給は Cloudflare Worker /api/* が担い、
+    #   本 workflow は履歴アーカイブ + 障害時 fallback (B18 dispatch で catch-up 可)。
+    - cron: '30 23 * * *'        # JST 8:30 (UTC 23:30) 朝イチ・上流 publish 後
+    - cron: '0 1 * * *'          # JST 10:00
+    - cron: '0 4 * * *'          # JST 13:00
+    - cron: '0 7 * * *'          # JST 16:00
+    - cron: '0 10 * * *'         # JST 19:00
+    - cron: '0 13 * * *'         # JST 22:00 ナイター終盤
 
 permissions:
   contents: read

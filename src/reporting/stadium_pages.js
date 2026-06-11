@@ -384,7 +384,45 @@ function openStadium(sid) {
   document.getElementById('racesList').innerHTML = html;
   document.getElementById('raceSummary').innerHTML = '';
 
+  // rt-fix2 P1-A' (2026-06-11): 締切が近いレースの実時間オッズを先回り取得。
+  //   bulk オッズ (data/odds/today.json) は GHA cron 間引きで数時間 stale になるため、
+  //   /odds-proxy (edge cache 15s) で「締切 40 分以内・未確定」の直近 3 レースだけ
+  //   live 取得しておく。取得後は oddsData.updated_at が進み、90 秒 poll の
+  //   renderKey 変化で一覧が再描画され、買い目/EV が実時間オッズで再計算される。
+  _prefetchLiveOddsForUpcoming(sid);
+
   showPage('races');
+}
+
+function _prefetchLiveOddsForUpcoming(sid) {
+  try {
+    if (typeof _kickOffLiveOddsRefresh !== 'function') return;
+    var races = typeof programData !== 'undefined' && programData ? programData[sid] : null;
+    if (!races) return;
+    // race_closed_at は JST 壁時計 "YYYY-MM-DD HH:MM" — JST の分に直して比較
+    var jst = new Date(Date.now() + 9 * 3600000);
+    var nowMin = jst.getUTCHours() * 60 + jst.getUTCMinutes();
+    var candidates = [];
+    for (var rn in races) {
+      var race = races[rn];
+      if (!race || !race.race_closed_at) continue;
+      var rs = typeof resultData !== 'undefined' && resultData && resultData[sid] && resultData[sid][rn];
+      if (rs && /** @type {any} */ (rs).isFinished) continue;
+      var hm = String(race.race_closed_at).split(' ')[1];
+      if (!hm) continue;
+      var hp = hm.split(':');
+      var closeMin = parseInt(hp[0], 10) * 60 + parseInt(hp[1], 10);
+      if (!Number.isFinite(closeMin)) continue;
+      var delta = closeMin - nowMin;
+      if (delta >= -2 && delta <= 40) candidates.push({ rn: rn, delta: delta });
+    }
+    candidates.sort(function (a, b) {
+      return a.delta - b.delta;
+    });
+    candidates.slice(0, 3).forEach(function (c) {
+      _kickOffLiveOddsRefresh(sid, c.rn);
+    });
+  } catch (_) {}
 }
 
 // globalThis export

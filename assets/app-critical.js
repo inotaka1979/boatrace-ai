@@ -3697,7 +3697,39 @@ var _backfillTimer = null;
     html += "</tbody></table>";
     document.getElementById("racesList").innerHTML = html;
     document.getElementById("raceSummary").innerHTML = "";
+    _prefetchLiveOddsForUpcoming(sid);
     showPage("races");
+  }
+  function _prefetchLiveOddsForUpcoming(sid) {
+    try {
+      if (typeof _kickOffLiveOddsRefresh !== "function") return;
+      var races = typeof programData !== "undefined" && programData ? programData[sid] : null;
+      if (!races) return;
+      var jst = new Date(Date.now() + 9 * 36e5);
+      var nowMin = jst.getUTCHours() * 60 + jst.getUTCMinutes();
+      var candidates = [];
+      for (var rn in races) {
+        var race = races[rn];
+        if (!race || !race.race_closed_at) continue;
+        var rs = typeof resultData !== "undefined" && resultData && resultData[sid] && resultData[sid][rn];
+        if (rs && /** @type {any} */
+        rs.isFinished) continue;
+        var hm = String(race.race_closed_at).split(" ")[1];
+        if (!hm) continue;
+        var hp = hm.split(":");
+        var closeMin = parseInt(hp[0], 10) * 60 + parseInt(hp[1], 10);
+        if (!Number.isFinite(closeMin)) continue;
+        var delta = closeMin - nowMin;
+        if (delta >= -2 && delta <= 40) candidates.push({ rn, delta });
+      }
+      candidates.sort(function(a, b) {
+        return a.delta - b.delta;
+      });
+      candidates.slice(0, 3).forEach(function(c) {
+        _kickOffLiveOddsRefresh(sid, c.rn);
+      });
+    } catch (_) {
+    }
   }
   globalThis.renderStadiums = renderStadiums;
   globalThis.openStadium = openStadium;
@@ -3962,6 +3994,24 @@ var _dataTodayConfirmedAt = 0;  // epoch ms (今日の race_date を確認した
 // → BUILD:REPORTING_STATUS_BANNER bundle 経由で globalThis に export 済
 setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
 
+// rt-fix2 P0-A (2026-06-11): オッズ snapshot の単調性ガード付きマージ。
+//   従来は 90秒/300秒 poll が `oddsData = 取得JSON` と無条件全置換していたため、
+//   /odds-proxy で取得した実時間オッズ (race 単位 _live_at 付き) が最大 90 秒後に
+//   数時間前の GitHub Pages snapshot で巻き戻されていた。
+//   ルール: (1) snapshot が現 oddsData より古ければ捨てる
+//          (2) 採用時も _live_at が snapshot より新しいレースは温存
+/* MOVED: function _mergeOddsSnapshot */
+
+// rt-fix2 P0-D (2026-06-11): previewData の展示退行防止マージ。
+//   Worker の live 縮退パス (_source:'live') は exhibition merge 無しの素 openapi を
+//   返すため、90秒毎の全置換で「展示が出たり消えたり」していた。
+//   レース単位で展示タイム保有艇数を比較し、新データの方が貧しければ旧を温存する。
+/* MOVED: function _previewRichness */
+/* MOVED: function _mergePreviewIndex */
+
+// rt-fix2 P0-B: 前回 auto-render 時のデータ世代 (無変化なら再描画しない)
+var _lastAutoRenderKey = '';
+
 setManagedInterval(async function(){
   try{
     var t=Date.now();
@@ -3981,7 +4031,8 @@ setManagedInterval(async function(){
     var rawP=_val(0);
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); _noteTodayDataFromRaw(rawP,'programs'); }
     var rawPv=_filterStalePreviews(_val(1));
-    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
+    // rt-fix2 P0-D: 全置換ではなく展示退行防止マージ (live 縮退の素データで上書きしない)
+    if(rawPv){ previewData=_mergePreviewIndex(indexPreviews(rawPv)); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
     var rawR=_val(2);
     if(rawR){
       resultData=indexResults(rawR);
@@ -3992,7 +4043,8 @@ setManagedInterval(async function(){
       updateHistoryWithResults();
     }
     var od=_val(3);
-    if(od){ oddsData=od; _noteUpdatedAt(od.updated_at); }
+    // rt-fix2 P0-A: 無条件全置換 (oddsData=od) をやめ単調性ガード付きマージへ
+    if(od){ _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }
     // F5: 自前 previews を merge して finished/result を反映
     // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
     var pd=_val(4);
@@ -4017,6 +4069,28 @@ setManagedInterval(async function(){
         }
       } catch(e){ console.warn('auto-backfill error:', e); }
     }
+    // rt-fix2 P0-B (2026-06-11): poll で更新したデータを表示中ページの DOM へ反映。
+    //   従来はメモリ更新のみで、トップ/レース一覧は suspend 前の表示のまま
+    //   「鮮度バッジは緑なのに中身が古い」という UX 矛盾が起きていた
+    //   (visibilitychange 復帰時はこの poll 関数が即時 1 回呼ばれるため復帰も対象)。
+    //   データ世代が前回 render と同じ時はスキップし、無駄な再描画を避ける。
+    //   pageDetail は openRace 全再描画が flicker するため除外
+    //   (オッズ表は _kickOffLiveOddsRefresh / updateOddsUI が部分更新する)。
+    try{
+      var _rk=(rawP&&rawP.updated_at||'')+'|'+(rawPv&&rawPv.updated_at||'')+'|'+
+              (rawR&&rawR.updated_at||'')+'|'+(oddsData&&oddsData.updated_at||'');
+      if(_rk!==_lastAutoRenderKey){
+        _lastAutoRenderKey=_rk;
+        var _pg=document.querySelector('.page.active');
+        if(_pg && _pg.id==='pageTop' && typeof renderStadiums==='function'){
+          renderStadiums();
+        } else if(_pg && _pg.id==='pageRaces' && currentStadium && typeof openStadium==='function'){
+          var _sy=window.scrollY;
+          openStadium(currentStadium);
+          window.scrollTo(0,_sy);
+        }
+      }
+    }catch(e){}
     _renderFreshness();
   }catch(e){console.warn('Auto refresh error:',e)}
 }, 90000);   // F2: 90 秒
@@ -4130,7 +4204,8 @@ async function forceRefresh(){
     }
     try{
       var o = await fetch('data/odds/today.json?t='+t, {cache:'no-store'});
-      if(o.ok){ var od=await o.json(); oddsData=od; oddsLastFetched=Date.now(); _noteUpdatedAt(od.updated_at); }
+      // rt-fix2 P0-A: 単調性ガード付きマージ (live 取得分の巻き戻り防止)
+      if(o.ok){ var od=await o.json(); _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }
     }catch(e){}
     // 自前 previews を merge（finished/result の最新化）
     // D4a: local が 20 分以上古い場合は skip (Worker の方が新しい)
@@ -4661,4 +4736,28 @@ function _noteTodayDataFromRaw(raw, key){
   var dataIso = s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
   var todayJst = new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   if(dataIso === todayJst) _dataTodayConfirmedAt = Date.now();
+}
+
+function _mergeOddsSnapshot(snap){
+  if(!snap || !Array.isArray(snap.odds)) return;
+  if(!oddsData || !Array.isArray(oddsData.odds) || !oddsData.odds.length){
+    oddsData = snap; oddsLastFetched = Date.now(); return;
+  }
+  var curT = Date.parse(oddsData.updated_at || 0) || 0;
+  var newT = Date.parse(snap.updated_at || 0) || 0;
+  if(newT < curT) return;   // 古い snapshot で巻き戻さない
+  var keep = {};
+  oddsData.odds.forEach(function(o){
+    if(o && o._live_at && o._live_at > newT) keep[o.stadium + '-' + o.race] = o;
+  });
+  var merged = snap.odds.map(function(o){
+    var k = o.stadium + '-' + o.race;
+    return keep[k] ? keep[k] : o;
+  });
+  Object.keys(keep).forEach(function(k){
+    var found = merged.some(function(o){ return (o.stadium + '-' + o.race) === k; });
+    if(!found) merged.push(keep[k]);
+  });
+  oddsData = { updated_at: snap.updated_at, scrape_stats: snap.scrape_stats, odds: merged };
+  oddsLastFetched = Date.now();
 }

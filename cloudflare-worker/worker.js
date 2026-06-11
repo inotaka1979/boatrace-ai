@@ -74,18 +74,31 @@ async function fetchUpstream(url) {
 //   → KV が古いまま /api/* が古いデータを 200 で返し続ける silent halt の主因。
 //   data 部分（updated_at を除く）を前回値と比較し、同一なら put をスキップする。
 //   これにより深夜帯など変化の少ない時間の write を大幅削減し、枠に余裕を作る。
-async function kvWrite(env, key, data) {
+// rt-fix2 (2026-06-11): 差分比較を「前回値の全文 get + JSON.parse + 再 stringify」
+//   から「metadata のハッシュ比較」に変更。旧方式は MB 級 JSON の parse/stringify を
+//   cron 1 回に 3 キー分実行し、無料プランの CPU 10ms/invocation を超過して
+//   scheduled が途中 kill される（= cron 登録済みなのに KV が更新されない）リスクが
+//   あった。新方式は新 data の stringify 1 回 + FNV-1a ハッシュのみ。
+//   metadata には hash / wrote_at / src を載せ、/health が cron 生死を外形観測できる。
+function _fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+async function kvWrite(env, key, data, src) {
   const now = new Date().toISOString();
   const newBody = JSON.stringify(data);
+  const newHash = _fnv1a(newBody);
   let changed = true;
   try {
-    const prev = await env.BOATRACE_KV.get(key);
-    if (prev) {
-      const prevObj = JSON.parse(prev);
-      if (prevObj && JSON.stringify(prevObj.data) === newBody) {
-        changed = false;
-      }
-    }
+    // 本文は stream で受けて読まずに捨てる（metadata 比較のみ、CPU を消費しない）
+    const prev = await env.BOATRACE_KV.getWithMetadata(key, { type: 'stream' });
+    if (prev && prev.metadata && prev.metadata.hash === newHash) changed = false;
+    if (prev && prev.value && prev.value.cancel) prev.value.cancel().catch(() => {});
   } catch (_) {
     // 比較失敗時は安全側で書き込む
     changed = true;
@@ -94,9 +107,10 @@ async function kvWrite(env, key, data) {
   if (changed) {
     await env.BOATRACE_KV.put(key, JSON.stringify({ updated_at: now, data }), {
       expirationTtl: 86400 * 2,
+      metadata: { hash: newHash, wrote_at: now, src: src || 'cron' },
     });
   }
-  // 鮮度監視は各キーに保存済みの updated_at（serveFromKV が返す）で行うため、
+  // 鮮度監視は各キーに保存済みの updated_at（serveFromKV が返す）+ metadata で行うため、
   // ここで別キーへ書き込む必要はない（write 枠を消費しない）。
   return wrapped;
 }
@@ -692,9 +706,20 @@ async function serveFromKV(env, kind) {
   //   上流 openapi を live fetch (edge cache、write 枠不要) して fresh を返す。
   try {
     const data = await fetchUpstream(UPSTREAM[kind]);
-    // 取得できたら KV 更新も試みる (diff-write なので変化時のみ、失敗は無視)
-    if (env.BOATRACE_KV) kvWrite(env, KV_KEYS[kind], data).catch(() => {});
-    const merged = { updated_at: new Date().toISOString(), ...data };
+    // rt-fix2 (2026-06-11): results は opportunistic write しない。
+    //   素の openapi results で KV を上書きすると、cron が boatrace.jp 直スクレイプで
+    //   先取りした確定結果を mergeKVOverOpenapi (巻き戻り対策) を経由せず破壊するため。
+    if (env.BOATRACE_KV && kind !== 'results') {
+      kvWrite(env, KV_KEYS[kind], data, 'serve').catch(() => {});
+    }
+    // rt-fix2 (2026-06-11): updated_at の偽装をやめる。
+    //   旧版は fetch 時刻 (now) を updated_at に刻んでいたため、上流 openapi 自体が
+    //   約 30 分間隔更新なのに「数秒前のデータ」の顔をして返り、クライアントの
+    //   正直な stale 表示 (rt-fix P0-1) と cron 死亡検知の両方を打ち消していた。
+    //   data 側の updated_at (真のデータ世代) を温存し、fetch 時刻は fetched_at に分離。
+    //   _source:'live' は「exhibition merge 無しの縮退モード」のマーカー。
+    const merged = { ...data, fetched_at: new Date().toISOString(), _source: 'live' };
+    if (!merged.updated_at) merged.updated_at = merged.fetched_at;
     return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
   } catch (e) {
     // live fetch も失敗 → 最後の手段として stale KV を返す (502 より stale の方がマシ)
@@ -724,12 +749,51 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS, 'access-control-max-age': '86400' } });
     }
     if (url.pathname === '/health') {
-      return jsonResponse({
+      // rt-fix2 (2026-06-11): /health を「KV の鮮度と cron 生死が外形観測できる」形に拡張。
+      //   旧版は ok/time/kv_bound のみで、KV が空でも cron が死んでいても 200 を返し、
+      //   deploy 検証も外部監視も騙される構造だった。
+      //   - keys[kind] = { updated_at, age_sec, wrote_at, src } (metadata は put と同時更新)
+      //   - src='cron' の最終 wrote_at が cron の生存証跡 (serve は縮退時の opportunistic write)
+      //   - ?strict=1 なら、いずれかのキーが max_age_sec 超過で HTTP 500
+      //     → healthchecks.io / UptimeRobot 等の無料外形監視をそのまま張れる
+      const strict = url.searchParams.get('strict') === '1';
+      const maxAgeSec = parseInt(url.searchParams.get('max_age_sec') || '1800', 10);
+      const out = {
         ok: true,
         time: new Date().toISOString(),
         mode: 'scrape-engine-v3-with-html-scrape',
         kv_bound: !!env.BOATRACE_KV,
-      });
+        keys: {},
+      };
+      if (env.BOATRACE_KV) {
+        for (const kind of ['previews', 'programs', 'results']) {
+          try {
+            const prev = await env.BOATRACE_KV.getWithMetadata(KV_KEYS[kind], { type: 'stream' });
+            if (prev && prev.value && prev.value.cancel) prev.value.cancel().catch(() => {});
+            const meta = (prev && prev.metadata) || {};
+            const wroteAt = meta.wrote_at || null;
+            out.keys[kind] = {
+              wrote_at: wroteAt,
+              age_sec: wroteAt ? Math.round((Date.now() - new Date(wroteAt).getTime()) / 1000) : null,
+              src: meta.src || null,
+              exists: !!(prev && prev.value),
+            };
+          } catch (e) {
+            out.keys[kind] = { error: String(e).slice(0, 80) };
+          }
+        }
+        if (strict) {
+          const bad = Object.entries(out.keys).filter(
+            ([, v]) => v.age_sec == null || v.age_sec > maxAgeSec
+          );
+          if (bad.length) {
+            out.ok = false;
+            out.stale_keys = bad.map(([k]) => k);
+            return jsonResponse(out, { status: 500, cacheControl: 'no-store' });
+          }
+        }
+      }
+      return jsonResponse(out, { cacheControl: 'no-store' });
     }
     if (url.pathname === '/api/previews') return serveFromKV(env, 'previews');
     if (url.pathname === '/api/programs') return serveFromKV(env, 'programs');

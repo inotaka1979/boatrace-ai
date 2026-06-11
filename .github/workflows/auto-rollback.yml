@@ -13,13 +13,16 @@ name: Auto Rollback on Stale Data
 
 on:
   workflow_dispatch:
-  # 2026-06-04 (rt-fix P2-7): auto-rollback は stale 時に「より古いデータへ巻き戻し」
-  #   ＋第4の push writer として競合を増幅していた。scrape-all の :00/:30 push と
-  #   同時刻に発火していたため :15/:45 へ退避し、push も commit-first 化して
-  #   競合を緩和する。判定ロジック（両 stale かつ過去 fresh）は維持。
-  schedule:
-    # JST 08:15–22:45 を 30 分間隔（:00/:30 の scrape-all push と非同時刻化）
-    - cron: '15,45 23,0-13 * * *'
+  # 2026-06-11 (rt-fix2 P0-C): schedule を凍結（workflow_dispatch のみ残置）。
+  #   実測（run 27342906494 ほか 6/9-6/11 で 4 回）で本 workflow は
+  #   「stale(>120分) と past-fresh(<240分) の閾値矛盾」により、120-240 分帯では
+  #   現 HEAD と同鮮度のデータへ無意味に revert し、直前の next_open refresh
+  #   (commit 5da0b65 → 89c2ccd) など唯一の新データを破壊していた。
+  #   現在の stale の原因は「GitHub schedule 間引きで新データが来ない」であり、
+  #   巻き戻しでは原理的に直らない。設計前提（stale = 悪い commit が live）が
+  #   崩れているため、必要時のみ手動 dispatch する。
+  # schedule:
+  #   - cron: '15,45 23,0-13 * * *'
 
 permissions:
   contents: read
