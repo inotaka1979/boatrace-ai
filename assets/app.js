@@ -6279,7 +6279,13 @@ function _cleanStaleHistoryToday(){
     if(h.date !== today) return true;            // 今日扱い以外はそのまま
     if(!h.actual || h.actual.length === 0) return true; // 予想のみで結果未出は touch しない
     var res = resultData[h.stadium] && resultData[h.stadium][h.race];
-    if(!res) return false;                       // 今日の resultData に存在しない = 古い
+    // rt-fix2-hotfix (2026-06-11): 旧版は「resultData にこのレースが居ない」だけで
+    //   actual あり確定済み履歴を削除していた。Worker live 縮退や上流 openapi の
+    //   揺らぎで一瞬 resultData から消えた瞬間に確定履歴を破壊するため、
+    //   ユーザー報告「開き直したら結果が減る」が発生していた。
+    //   localStorage の actual あり履歴を真の source として保護し、削除しない。
+    //   下の race_date チェックは「API が前日結果を返した時の汚染防止」として維持。
+    if(!res) return true;
     var rdate = (res.race_date||'').replace(/-/g,'');
     return !rdate || rdate === today;
   });
