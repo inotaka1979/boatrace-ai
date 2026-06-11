@@ -4400,14 +4400,20 @@ async function _yieldToMain(){
 
 function _shouldApplyLocalMerge(localData){
   if(!localData || !Array.isArray(localData.races)) return false;
-  if(!localData.updated_at) return true;   // 時刻不明 → 安全側 (merge する)
-  var ts = Date.parse(localData.updated_at);
-  if(isNaN(ts)) return true;
-  var ageMin = (Date.now() - ts) / 60000;
-  if(ageMin > 20){
-    try { console.log('[merge] skip stale local data ('+ageMin.toFixed(0)+'min old, Worker should be newer)'); } catch(_){}
-    return false;
-  }
+  // rt-fix3 (2026-06-11): 旧 20 分しきい値を撤廃。
+  //   旧版は「Worker が常に新しい」前提で 20 分超の local data を skip していたが、
+  //   GHA cron 間引き (実測 4-6 回/日) で data/previews/today.json が日常的に
+  //   30-60 分超 stale になる。一方で確定結果 (finished+result.places) は
+  //   Worker /api/previews には乗らないため、skip した瞬間「全レース終了したのに
+  //   画面が更新されない」体感が発生していた (ユーザー報告 2026-06-11)。
+  //   _applyLiveDataMerge 内に十分な保護がある:
+  //     (1) liveDate===todayDate の日付ガード (前日データは弾く)
+  //     (2) 展示タイム / ST / チルトは「>0 / 非 null の時だけ上書き」
+  //         → Worker の richer data を local stale で退行させない (more-info-wins)
+  //     (3) 既存 finished+today の result は _shouldOverwrite=false で上書きしない
+  //         → 確定済み結果の巻き戻りも起きない
+  //   よって age での skip は不要。Worker 主系が新しい時間帯は merge が no-op に
+  //   近くなるだけで実害なし。
   return true;
 }
 
