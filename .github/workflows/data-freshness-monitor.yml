@@ -58,7 +58,7 @@ jobs:
             url: https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs
             max_age_min: 180
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v6
