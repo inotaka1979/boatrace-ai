@@ -24,7 +24,7 @@ jobs:
     steps:
       # FIX: 他 workflow に合わせて persist-credentials:false に統一。
       # token は push step で env 経由のみ注入する。
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-python@v6
