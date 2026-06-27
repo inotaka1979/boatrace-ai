@@ -3520,7 +3520,14 @@ var _backfillTimer = null;
           });
           if (rd && rd.day) dayInfo = rd.day + "\u65E5\u76EE";
         }
-        var nextRaceInfo = nextRn ? nextRn + "R" : "\u7D42\u4E86";
+        var nextRaceInfo;
+        if (nextRn) {
+          var _ncClosed = stadium[nextRn] && stadium[nextRn].race_closed_at;
+          var _ncHm = _ncClosed ? (String(_ncClosed).split(" ")[1] || "").slice(0, 5) : "";
+          nextRaceInfo = _ncHm ? nextRn + "R " + _ncHm : nextRn + "R";
+        } else {
+          nextRaceInfo = "\u7D42\u4E86";
+        }
         html += '<div class="stadium-card active-stadium" data-sid="' + sid + '" role="button" tabindex="0" data-action="openStadium" data-arg-sid="' + sid + '"><span class="stadium-grade ' + grade.cls + '">' + grade.name + '</span><span class="stadium-name">' + name + '</span><span class="stadium-status">' + doneCount + "/" + totalRaces + 'R</span><span class="stadium-day">' + (dayInfo || "&nbsp;") + '</span><span class="stadium-day">' + nextRaceInfo + "</span></div>";
       } else {
         var iso = typeof _nextOpenMap === "object" && _nextOpenMap ? _nextOpenMap[sid] || "" : "";

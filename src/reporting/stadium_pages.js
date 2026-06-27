@@ -87,7 +87,15 @@ function renderStadiums() {
         if (rd && rd.day) dayInfo = rd.day + '日目';
       }
 
-      var nextRaceInfo = nextRn ? nextRn + 'R' : '終了';
+      // rt-fix3 (2026-06-27): 他サイト同様、現在(次)レースに締切時刻も併記（例「6R 18:02」）。
+      var nextRaceInfo;
+      if (nextRn) {
+        var _ncClosed = stadium[nextRn] && stadium[nextRn].race_closed_at;
+        var _ncHm = _ncClosed ? (String(_ncClosed).split(' ')[1] || '').slice(0, 5) : '';
+        nextRaceInfo = _ncHm ? nextRn + 'R ' + _ncHm : nextRn + 'R';
+      } else {
+        nextRaceInfo = '終了';
+      }
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
       // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
