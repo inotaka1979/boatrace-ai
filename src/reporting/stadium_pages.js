@@ -45,6 +45,15 @@ function renderStadiums() {
   //   新版: HTML 文字列 join + 1 回 innerHTML = 1 reflow
   //   PG-6 の event delegation が data-sid を受けるため onclick 不要
   var html = '';
+  // rt-fix3 (2026-06-27): 現在レース判定を「結果(results)到着」だけでなく「締切時刻経過」も併用。
+  //   results データは上流ミラーの遅延で実レースより数レース遅れることがあり、それに依存すると
+  //   「次レース」ポインタが実際より後ろにずれる（例: 実 6R なのに 3R 表示）。boatrace.jp 等の
+  //   サイト同様、race_closed_at(締切) を過ぎたレースは消化済とみなしてリアルタイムに進める。
+  var _nowMs = Date.now();
+  function _closedMs(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || '');
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
+  }
   for (var id = 1; id <= 24; id++) {
     var sid = String(id);
     var name = STADIUMS[id];
@@ -54,11 +63,17 @@ function renderStadiums() {
         return parseInt(a) - parseInt(b);
       });
       var totalRaces = raceNums.length;
+      // 消化済 = 結果到着 OR 締切経過。次レース = 最初の未消化レース（時刻ベースで実レースに追従）。
       var doneCount = 0;
-      if (resultData && resultData[sid]) {
-        raceNums.forEach(function (rn) {
-          if (resultData[sid][rn] && resultData[sid][rn].isFinished) doneCount++;
-        });
+      var nextRn = null;
+      for (var rj = 0; rj < raceNums.length; rj++) {
+        var rnc = raceNums[rj];
+        var rsc = resultData && resultData[sid] && resultData[sid][rnc];
+        var finC = !!(rsc && /** @type {any} */ (rsc).isFinished);
+        var clMs = _closedMs(stadium[rnc] && stadium[rnc].race_closed_at);
+        var doneC = finC || (clMs != null && clMs <= _nowMs);
+        if (doneC) doneCount++;
+        else if (nextRn === null) nextRn = rnc;
       }
       var firstRace = stadium[raceNums[0]];
       var gradeNum = firstRace ? firstRace.race_grade_number || 5 : 5;
@@ -72,18 +87,7 @@ function renderStadiums() {
         if (rd && rd.day) dayInfo = rd.day + '日目';
       }
 
-      var nextRaceInfo = '';
-      var nextRn = null;
-      for (var ri = 0; ri < raceNums.length; ri++) {
-        var rnCheck = raceNums[ri];
-        var isDone = resultData && resultData[sid] && resultData[sid][rnCheck] && resultData[sid][rnCheck].isFinished;
-        if (!isDone) {
-          nextRn = rnCheck;
-          break;
-        }
-      }
-      if (nextRn) nextRaceInfo = nextRn + 'R';
-      else nextRaceInfo = '終了';
+      var nextRaceInfo = nextRn ? nextRn + 'R' : '終了';
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
       // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
