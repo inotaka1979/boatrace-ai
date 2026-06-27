@@ -1,0 +1,60 @@
+name: Schedule Debug Dump (temporary)
+
+# 一時デバッグ: boatrace.jp の月間スケジュール HTML 構造を repo へ採取する。
+# scrape_schedule.py の解析が現行 HTML と噛み合わず current.json の日付が壊れているため、
+# 実 HTML を確認してパーサを修正する目的。手動実行のみ。修正完了後に撤去する。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ym:
+        description: '対象年月 (例: 202606)。空なら当月'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schedule-debug
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - name: Dump schedule HTML structure
+        run: python scripts/debug_schedule_dump.py "${{ github.event.inputs.ym }}"
+      - name: Commit dump
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f data/schedule/_debug_raw.html data/schedule/_debug_structure.txt
+          if git diff --staged --quiet; then
+            echo "no debug output to commit"; exit 0
+          fi
+          git commit -m "debug: schedule HTML dump $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then echo "push ok"; exit 0; fi
+            else
+              git rebase --abort || true
+            fi
+            sleep $((RANDOM % 5 + i))
+          done
+          echo "::error::push failed"; exit 1
