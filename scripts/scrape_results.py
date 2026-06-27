@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / FIX: JST aware
 from http_utils import fetch_text, fetch_json  # PC-1: HTTP 共通化
 from io_utils import atomic_write_json, quality_header  # P0-8 / P1-B4
+from programs_source import load_local_official_programs  # 公式移行 Phase 2
 
 # P1-C2: print → logging 統一（cron log の level 制御を可能にする）
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
@@ -191,8 +192,14 @@ def main() -> None:
     _t_start = time.monotonic()  # P1-B4: 品質ヘッダ用
 
     log.info("Fetching today's programs...")
+    # 公式移行 Phase 2: ローカル公式 programs (JST 当日・非空) を優先。別日/欠落なら openapi。
+    prog = load_local_official_programs()
+    if prog:
+        log.info("using official local programs (boatrace.jp 由来, %d races)",
+                 len(prog.get("programs", [])))
     try:
-        prog = fetch_json(PROG_API)
+        if prog is None:
+            prog = fetch_json(PROG_API)
     except Exception as e:
         # 2026-05-24: programs fetch 失敗時も既存 results を保持しつつ updated_at を
         #   refresh する (旧版は早期 return で何も書かず、freshness monitor から見ると

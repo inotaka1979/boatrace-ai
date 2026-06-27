@@ -2594,6 +2594,10 @@ window.addEventListener('unhandledrejection', function(e){
     if (openapiUrl.indexOf("/results/v2/today.json") >= 0) return WORKER_BASE + "/api/results";
     return null;
   }
+  function _mapToOfficialUrl(openapiUrl) {
+    if (openapiUrl.indexOf("/programs/v2/today.json") >= 0) return "data/programs/today.json";
+    return null;
+  }
   function _markFetchOk() {
     try {
       _g._lastFetchOkAt = Date.now();
@@ -2623,10 +2627,7 @@ window.addEventListener('unhandledrejection', function(e){
       return d;
     }
     const primary = workerUrl ? _fetchOne(workerUrl + "?_=" + Date.now(), 4e3) : Promise.reject(new Error("no-worker-mapping"));
-    return primary.then(_onOk).catch(function(workerErr) {
-      if (workerErr && workerErr.message !== "no-worker-mapping") {
-        console.warn("[fetch] worker miss, falling back to openapi:", workerErr.message);
-      }
+    function _openapiThenCache() {
       return _fetchOne(url, 8e3).then(_onOk).catch(function(e) {
         console.warn("API error:", baseUrl, e.message);
         try {
@@ -2642,6 +2643,24 @@ window.addEventListener('unhandledrejection', function(e){
         }
         _setApiHealth(baseUrl, "fail");
         return null;
+      });
+    }
+    return primary.then(_onOk).catch(function(workerErr) {
+      if (workerErr && workerErr.message !== "no-worker-mapping") {
+        console.warn("[fetch] worker miss:", workerErr.message);
+      }
+      const officialUrl = _mapToOfficialUrl(baseUrl);
+      if (!officialUrl) return _openapiThenCache();
+      return _fetchOne(officialUrl + "?_=" + Date.now(), 5e3).then(function(d) {
+        if (!d || !Array.isArray(d.programs) || d.programs.length === 0) {
+          throw new Error("official-empty");
+        }
+        return _onOk(d);
+      }).catch(function(offErr) {
+        if (offErr && offErr.message !== "official-empty") {
+          console.warn("[fetch] official miss, falling back to openapi:", offErr.message);
+        }
+        return _openapiThenCache();
       });
     });
   }

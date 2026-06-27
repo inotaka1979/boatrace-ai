@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds, jst_now  # P2 D-02 / FIX: date_str fallback
 from http_utils import fetch_text, fetch_json, DEFAULT_HEADERS  # PC-1
+from programs_source import load_local_official_programs  # 公式移行 Phase 2
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 BASE_URL = "https://www.boatrace.jp/owpc/pc/race"
@@ -287,8 +288,13 @@ def main() -> None:
     os.makedirs(os.path.dirname(OUTPUT_RACEDATA), exist_ok=True)
 
     print("Fetching today's programs...")
+    # 公式移行 Phase 2: ローカル公式 programs (JST 当日・非空) を優先。別日/欠落なら openapi。
+    prog = load_local_official_programs()
+    if prog:
+        print(f"using official local programs (boatrace.jp 由来, {len(prog.get('programs', []))} races)")
     try:
-        prog = fetch_json(PROGRAMS_URL)
+        if prog is None:
+            prog = fetch_json(PROGRAMS_URL)
     except Exception as e:
         print(f"Failed: {e}")
         return

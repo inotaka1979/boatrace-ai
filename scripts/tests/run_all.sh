@@ -99,6 +99,10 @@ step "Fan handbook parser tests (P2-8)" \
 step "Official programs parser tests" \
      "python3 -m unittest scripts.tests.test_programs_parse -v"
 
+# 公式移行 Phase 2: ローカル公式 programs ローダ（wrong-day ガード）
+step "Official programs source loader tests" \
+     "python3 -m unittest scripts.tests.test_programs_source -v"
+
 # Epic 12 (P1-B1): 特徴量パイプラインの新旧同一性
 step "Features pipeline regression tests (P1-B1)" \
      "node scripts/tests/test_features_pipeline.js"
