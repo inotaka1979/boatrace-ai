@@ -13,6 +13,13 @@ on:
       - '.github/workflows/refresh-day-label.yml'
       - 'scripts/refresh_day_label.py'
       - 'scripts/scrape_racedata.py'
+  schedule:
+    # rt-fix3 (2026-06-28): 日付ロールオーバー後、scrape-all の racedata 更新(JST 09:30)前の
+    #   朝に day_label を本日基準へ更新する（前日の◯日目が残るのを防ぐ）。GitHub の間引きが
+    #   あるため複数アンカーを置く。
+    - cron: '0 22 * * *'   # JST 07:00
+    - cron: '0 23 * * *'   # JST 08:00
+    - cron: '30 23 * * *'  # JST 08:30
 
 permissions:
   contents: read

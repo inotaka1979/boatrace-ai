@@ -35,14 +35,17 @@ def main() -> int:
             print(f"racedata load failed ({ex}) — start fresh")
     rd = d.get("racedata") or []
 
-    # 本日の開催全場 + 各場の最小レース番号 + 日付
+    # 本日の開催全場 + 各場の最小レース番号 + 日付（必ず programs=本日基準。
+    #   rt-fix3 (2026-06-28): 旧版は racedata.race_date を date_str に使っていたが、
+    #   日付ロールオーバー直後は racedata が前日のままで、前日の出走表を引いて day_label が
+    #   1 日古くなる不具合があった。date_str は必ず本日の programs から決める。）
     try:
         prog = fetch_json(PROGRAMS_URL)
     except Exception as ex:
         print(f"programs fetch failed: {ex}")
         prog = {"programs": []}
     programs = prog.get("programs") or []
-    date_str = str(d.get("race_date") or "").replace("-", "")
+    date_str = ""
     venues: dict = {}
     for p in programs:
         sid = p.get("race_stadium_number")
@@ -52,6 +55,18 @@ def main() -> int:
         if not date_str:
             date_str = str(p.get("race_date") or "").replace("-", "")
         venues[sid] = min(venues.get(sid, rno), rno)
+    # programs が取れない場合のみ racedata の race_date を使う
+    if not date_str:
+        date_str = str(d.get("race_date") or "").replace("-", "")
+
+    # racedata が前日のもの（race_date != 本日）なら、day_label 用に作り直す。
+    #   前日の entry が残っていると古い day_label を表示してしまうため。
+    rd_date = str(d.get("race_date") or "").replace("-", "")
+    if date_str and rd_date and rd_date != date_str:
+        print(f"racedata is stale (race_date={rd_date} != today={date_str}) — rebuild for day_label")
+        rd = []
+        d["racedata"] = rd
+        d["race_date"] = date_str
 
     by_sid: dict = {}
     for e in rd:
