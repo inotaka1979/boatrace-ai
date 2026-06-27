@@ -385,7 +385,7 @@ async function scrapeRaceresult(sid, rno, hd, raceDate) {
 }
 
 // 終了済かつ openapi が race_technique_number=null のレースを scrape
-async function mergeBoatraceJpResults(programs, results, nowMs) {
+async function mergeBoatraceJpResults(programs, results, nowMs, maxScrapes = MAX_HTML_SCRAPES_PER_RUN) {
   // 2026-05-24 fix2: openapi の results entry には race_closed_at が無いため、
   //   旧コードの sort `a.rPtr?.race_closed_at` は常に undefined < undefined === false
   //   で **sort が事実上 noop** (FIFO が機能していなかった)。programs から取った
@@ -419,7 +419,7 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
     if (ca > cb) return 1;
     return 0;
   });
-  const picks = scrapeTargets.slice(0, MAX_HTML_SCRAPES_PER_RUN);
+  const picks = scrapeTargets.slice(0, maxScrapes);
   let mergedCount = 0;
   const settled = await Promise.allSettled(
     picks.map(t => scrapeRaceresult(t.sid, t.rno, t.hd, t.raceDate).then(parsed => ({ t, parsed })))
@@ -695,6 +695,7 @@ const SERVE_STALE_MS = 12 * 60 * 1000; // KV がこれより古ければ live fe
 //   cron と競合しない。
 const MAX_ONDEMAND_SCRAPES = 3;
 let _ondemandExhibitionAt = 0;
+let _ondemandResultsAt = 0;
 
 async function boundedOnDemandExhibition(env, previews, nowMs) {
   try {
@@ -706,6 +707,29 @@ async function boundedOnDemandExhibition(env, previews, nowMs) {
     // 何も補完できなければ書かない (KV write 枠の節約 + kvWrite のハッシュ diff も効く)
     if (stats && stats.merged > 0) {
       await kvWrite(env, KV_KEYS.previews, previews, 'ondemand');
+    }
+  } catch (_) {
+    // 失敗は無視（次回 poll / cron 復帰で回復）
+  }
+}
+
+// rt-fix3 (2026-06-27): 結果(results)のオンデマンド補完。
+//   「結果が出た後の更新が遅い」対策。openapi results ミラーは ~30 分遅延し、cron の
+//   boatrace.jp 直スクレイプ(mergeBoatraceJpResults)が追いつかない時間帯がある。
+//   /api/results が stale(=cron が書けていない)の時、締切直後で未確定のレースを少数だけ
+//   boatrace.jp raceresult から直スクレイプして KV に反映する。次の poll で確定結果が当たる。
+//   既存 finished を巻き戻さない安全マージ(mergeBoatraceJpResults は payouts smart merge、
+//   未確定のみ追加)なので KV 退行は起きない。
+async function boundedOnDemandResults(env, results, nowMs) {
+  try {
+    if (nowMs - _ondemandResultsAt < 3 * 60 * 1000) return; // debounce (isolate-local)
+    _ondemandResultsAt = nowMs;
+    if (!results || !Array.isArray(results.results)) return;
+    const programs = await fetchUpstream(UPSTREAM.programs);
+    const stats = await mergeBoatraceJpResults(programs, results, nowMs, MAX_ONDEMAND_SCRAPES);
+    if (stats && stats.merged > 0) {
+      if (results._kv_merge) delete results._kv_merge;
+      await kvWrite(env, KV_KEYS.results, results, 'ondemand');
     }
   } catch (_) {
     // 失敗は無視（次回 poll / cron 復帰で回復）
@@ -747,6 +771,11 @@ async function serveFromKV(env, kind, ctx) {
     //   バックグラウンドで実行して KV をリッチ化（cron 死亡時でも展示を提供）。
     if (env.BOATRACE_KV && kind === 'previews' && ctx && typeof ctx.waitUntil === 'function') {
       ctx.waitUntil(boundedOnDemandExhibition(env, data, Date.now()));
+    }
+    // rt-fix3: results が stale なら、締切直後で未確定のレースを少数だけ boatrace.jp から
+    //   直スクレイプして KV に反映（「結果が出た後の更新が遅い」対策）。次の poll で確定が当たる。
+    if (env.BOATRACE_KV && kind === 'results' && ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(boundedOnDemandResults(env, data, Date.now()));
     }
     // rt-fix2 (2026-06-11): updated_at の偽装をやめる。
     //   旧版は fetch 時刻 (now) を updated_at に刻んでいたため、上流 openapi 自体が
