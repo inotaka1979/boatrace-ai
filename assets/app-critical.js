@@ -4135,7 +4135,11 @@ setManagedInterval(async function(){
     //   叩いて KV 再生成を促す（refreshAll は KV write + scrape を伴うため必ずレート制限）。
     //   programs/previews/results の cache-bust 再取得は本 poll の ?_= で既に毎回実施済。
     try{
-      var _gen=Math.max(_dataLatestUpdatedAt||0,_dataTodayConfirmedAt||0);
+      // rt-fix3 fix: データ世代は updated_at(_dataLatestUpdatedAt) のみで判定する。
+      //   旧実装は Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt) だったが、
+      //   _dataTodayConfirmedAt は「今日のデータを確認した壁時計時刻(≒now)」のため
+      //   (now-_gen)≒0 となり 25 分判定が永久に発火せず、自己復旧トリガが死んでいた。
+      var _gen=_dataLatestUpdatedAt||0;
       if(_gen && (Date.now()-_gen)/60000 >= 25){
         var _le=globalThis._lastEscalateAt||0;
         if(Date.now()-_le >= 300000){
