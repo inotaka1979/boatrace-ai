@@ -3489,6 +3489,12 @@ var _backfillTimer = null;
       var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || "");
       return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
     }
+    var _rdToday = false;
+    if (raceData && raceData.race_date) {
+      var _rdDate = String(raceData.race_date).replace(/-/g, "");
+      var _tday = typeof todayStr === "function" ? todayStr() : "";
+      _rdToday = !!(_tday && _rdDate === _tday);
+    }
     for (var id = 1; id <= 24; id++) {
       var sid = String(id);
       var name = STADIUMS[id];
@@ -3514,7 +3520,7 @@ var _backfillTimer = null;
         var gradeNum = firstRace ? firstRace.race_grade_number || 5 : 5;
         var grade = GRADE_CLASS[gradeNum] || GRADE_CLASS[5];
         var dayInfo = "";
-        if (raceData && raceData.racedata) {
+        if (_rdToday && raceData && raceData.racedata) {
           var rd = raceData.racedata.find(function(r) {
             return r.stadium === parseInt(sid);
           });

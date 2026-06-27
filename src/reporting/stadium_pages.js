@@ -54,6 +54,15 @@ function renderStadiums() {
     var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || '');
     return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
   }
+  // rt-fix3 (2026-06-28): racedata が「今日」のものか判定。前日の racedata が残っていると
+  //   day_label(◯日目) が 1 日古く出る（朝、scrape-all の racedata 更新前）ため、
+  //   race_date が今日 JST と一致する時のみ day_label を表示する。
+  var _rdToday = false;
+  if (raceData && raceData.race_date) {
+    var _rdDate = String(raceData.race_date).replace(/-/g, '');
+    var _tday = typeof todayStr === 'function' ? todayStr() : '';
+    _rdToday = !!(_tday && _rdDate === _tday);
+  }
   for (var id = 1; id <= 24; id++) {
     var sid = String(id);
     var name = STADIUMS[id];
@@ -82,7 +91,7 @@ function renderStadiums() {
       // rt-fix3 (2026-06-27): 「◯日目」は出走表(racelist)タブ由来の day_label
       //   （初日 / N日目 / 最終日）を直接表示。月間カレンダー解析(壊れている)には依存しない。
       var dayInfo = '';
-      if (raceData && raceData.racedata) {
+      if (_rdToday && raceData && raceData.racedata) {
         var rd = raceData.racedata.find(function (r) {
           return r.stadium === parseInt(sid);
         });
