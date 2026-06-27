@@ -118,6 +118,13 @@ jobs:
           #   非マージ衝突源を排除（index.html は skeleton + JS render で表示）。
           git config rebase.autoStash true
           git add data/
+          # rt-fix3 (2026-06-27): data/schedule/next_open.json は refresh-next-open.yml の
+          #   単独所有。scrape-all もこれを commit すると、両ワークフローが同一の再生成 JSON を
+          #   別々に書くため rebase 衝突が「固定化」し、abort+retry を 5 回繰り返しても解消せず
+          #   push が連続失敗 → アーカイブが更新停止する（実障害: 06-26 15:22 以降 push fail 継続、
+          #   data/ が ~20h stale）。scrape-all 側では commit 対象から外し、二重書込を解消する。
+          #   （scrape_all.py の schedule(quick) は next_open.json のみ生成するため実害なし。）
+          git reset -q -- data/schedule/next_open.json 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "::notice::no data changes to commit"
             exit 0
