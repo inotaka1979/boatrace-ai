@@ -25,6 +25,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds  # P2 D-02 / D-10
+from programs_source import load_local_official_programs  # 公式移行 Phase 2
 
 # ---------------------------------------------------------------------------
 # 定数
@@ -573,10 +574,17 @@ async def async_main():
     log.info("Smart scraper start: %s", now.strftime("%H:%M:%S JST"))
 
     # Phase 1: 番組データ取得 → 締切時刻マップ
+    # 公式移行 Phase 2: scrape_programs.py が先に生成したローカル公式 programs を優先。
+    #   JST 当日・非空のときのみ採用し、別日/欠落なら openapi にフォールバック。
+    #   これで openapi の race_date が前日のまま残っても別日をスクレイプしない。
     async with aiohttp.ClientSession() as session:
-        prog = None
+        prog = load_local_official_programs()
+        if prog:
+            log.info("using official local programs (boatrace.jp 由来, %d races)",
+                     len(prog.get("programs", [])))
         try:
-            prog = await fetch_programs(session)
+            if prog is None:
+                prog = await fetch_programs(session)
         except Exception as e:
             log.error("Failed to fetch programs: %s", e)
             # OpenAPI 障害時はディスクキャッシュにフォールバック → DNS が復旧する間も
