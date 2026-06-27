@@ -73,11 +73,49 @@ def main() -> int:
                     f"href='{href}' text='{txt}'"
                 )
 
+    # --- racelist(出走表)ページからも「◯日目」表記の在り処を採取 ---
+    #   節間成績はこのページから取れている（scrape_racedata.py）。日目も同ページ header にある想定。
+    try:
+        prog = __import__("http_utils").fetch_json(
+            "https://boatraceopenapi.github.io/programs/v2/today.json"
+        )
+        progs = prog.get("programs") or []
+        pick = progs[0] if progs else None
+        if pick:
+            jcd = str(pick.get("race_stadium_number")).zfill(2)
+            rno = pick.get("race_number") or 1
+            hd = str(pick.get("race_date") or "").replace("-", "")
+            rl_url = f"https://www.boatrace.jp/owpc/pc/race/racelist?rno={rno}&jcd={jcd}&hd={hd}"
+            print(f"fetch racelist {rl_url}")
+            rl_html = fetch_text(rl_url)
+            with open(os.path.join(OUT_DIR, "_debug_racelist.html"), "w", encoding="utf-8") as f:
+                f.write(rl_html)
+            lines.append(f"\n=== racelist {rl_url} (len={len(rl_html)}) ===")
+            # 「日目」「初日」「最終日」周辺の文脈を抽出
+            for kw in ["日目", "初日", "最終日", "節"]:
+                pos = 0
+                hits = 0
+                while hits < 4:
+                    i = rl_html.find(kw, pos)
+                    if i < 0:
+                        break
+                    ctx = rl_html[max(0, i - 80) : i + 20].replace("\n", " ")
+                    lines.append(f" [{kw}] ...{ctx}...")
+                    pos = i + 1
+                    hits += 1
+            rlsoup = BeautifulSoup(rl_html, "html.parser")
+            # 日付/節情報がありそうな要素の class を列挙
+            for sel in [".heading2_title", ".title16_titleDetail", ".tab3", ".contentsTitle"]:
+                for el in rlsoup.select(sel)[:3]:
+                    lines.append(f" sel {sel}: '{el.get_text(' ', strip=True)[:60]}'")
+    except Exception as e:
+        lines.append(f"\nracelist dump failed: {e}")
+
     struct_path = os.path.join(OUT_DIR, "_debug_structure.txt")
     with open(struct_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     print(f"wrote {struct_path} ({len(lines)} lines)")
-    print("\n".join(lines[:60]))
+    print("\n".join(lines[:80]))
     return 0
 
 
