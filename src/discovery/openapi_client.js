@@ -328,9 +328,31 @@ function _filterStalePreviews(raw) {
   return { previews: filtered, updated_at: raw.updated_at };
 }
 
+// rt-fix3 P0-6 (2026-06-27): アプリ内 Worker 死活検知（discovery 層 = ネットワーク IO 担当）。
+//   Worker の cron / KV が静かに止まると /api/* が stale を返し続けるが、/health?strict=1 は
+//   KV 鮮度超過で HTTP 500 を返すため外形検知できる。5 分毎に叩き、500/失敗なら
+//   _workerHealthy=false にして reporting 層の _renderApiHealthBanner にバナー表示させる。
+//   フォールバック（openapi 直 + オンデマンドオッズ）は既に主経路なので機能は継続する。
+function _probeWorkerHealth() {
+  try {
+    if (typeof fetch !== 'function') return;
+    fetch(WORKER_BASE + '/health?strict=1&max_age_sec=1800', { cache: 'no-store' })
+      .then(function (r) {
+        _g._workerHealthy = r.ok;
+      })
+      .catch(function () {
+        _g._workerHealthy = false;
+      })
+      .then(function () {
+        if (typeof _g._renderApiHealthBanner === 'function') _g._renderApiHealthBanner();
+      });
+  } catch (_) {}
+}
+
 // globalThis export — 冒頭で定義済の _g 経由で Window インタフェースに整合
 _g.BC_MAX_BYTES = BC_MAX_BYTES;
 _g.WORKER_BASE = WORKER_BASE;
+_g._probeWorkerHealth = _probeWorkerHealth;
 _g._apiHealth = _apiHealth;
 // rt-fix P0-1: 最終 fetch 成功時刻（epoch ms）。鮮度バッジが参照。
 if (typeof _g._lastFetchOkAt !== 'number') _g._lastFetchOkAt = 0;

@@ -375,21 +375,13 @@ function openRace(sid, rn) {
 
   showPage('detail');
 
-  // FIX: GH Pages のオッズが古い時 (>5min)、Cloudflare Worker 経由で
-  //   boatrace.jp から実時間オッズを取得して oddsData に上書き＆再描画。
-  //   throttle / inflight ガードで重複呼出を抑止。
+  // rt-fix3 P0-2 (2026-06-27): 閲覧中レースは常に live オッズ取得を試みる。
+  //   従来は bulk oddsData.updated_at が 5 分以内なら skip だったが、bulk 全体が新しくても
+  //   「いま開いたこの 1 レース」が live オッズを持つとは限らない（bulk は GH Pages 由来で
+  //   cron 間引きにより数時間 stale のことも）。_kickOffLiveOddsRefresh は 30s/レース throttle
+  //   + in-flight dedupe 済、/odds-proxy は edge cache 15s なので常時発火で安全。
   try {
-    var _shouldLive = false;
-    if (!oddsData || !oddsData.updated_at) {
-      _shouldLive = true;
-    } else {
-      var _t = Date.parse(oddsData.updated_at);
-      if (!isNaN(_t)) {
-        var _ageMin = (Date.now() - _t) / 60000;
-        if (_ageMin >= 5) _shouldLive = true;
-      }
-    }
-    if (_shouldLive) _kickOffLiveOddsRefresh(sid, rn);
+    _kickOffLiveOddsRefresh(sid, rn);
   } catch (_) {}
 }
 

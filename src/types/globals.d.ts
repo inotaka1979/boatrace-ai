@@ -68,6 +68,10 @@ interface BoatRaceGlobalAPI {
   _dataTodayConfirmedAt: number;
   /** rt-fix P0-1: 最終 fetch 成功時刻 (epoch ms)。鮮度バッジが参照。 */
   _lastFetchOkAt: number;
+  /** rt-fix3 P0-6: Worker /health?strict=1 の死活結果 (true=正常 / false=stale/down)。 */
+  _workerHealthy?: boolean;
+  /** rt-fix3 P0-6: アプリ内 Worker 死活プローブ (discovery 層, 5 分毎)。 */
+  _probeWorkerHealth: () => void;
 
   // analysis layer (src/analysis/backtest.js)
   _btParseDate: (s: string | null | undefined) => Date | null;

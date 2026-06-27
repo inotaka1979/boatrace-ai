@@ -466,7 +466,9 @@ async function mergeBoatraceJpResults(programs, results, nowMs) {
 }
 
 // 展示窓内かつ openapi が boats 空のレースを抽出し、boatrace.jp 直スクレイプ
-async function mergeBoatraceJpExhibition(programs, previews, nowMs) {
+//   maxScrapes: 1 invocation で許す HTML スクレイプ上限。cron は MAX_HTML_SCRAPES_PER_RUN(20)、
+//   オンデマンド (serveFromKV 経由) は MAX_ONDEMAND_SCRAPES(3) を渡して CPU を厳格に抑える。
+async function mergeBoatraceJpExhibition(programs, previews, nowMs, maxScrapes = MAX_HTML_SCRAPES_PER_RUN) {
   const scrapeTargets = [];
   const progByKey = new Map();
   for (const p of (programs.programs || [])) {
@@ -493,7 +495,7 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs) {
     const cb = progByKey.get(`${b.sid}-${b.rno}`).race_closed_at;
     return ca < cb ? -1 : 1;
   });
-  const picks = scrapeTargets.slice(0, MAX_HTML_SCRAPES_PER_RUN);
+  const picks = scrapeTargets.slice(0, maxScrapes);
 
   let mergedCount = 0;
   // 並列 fetch (Cloudflare のサブリクエスト最大 50 件以内)
@@ -681,7 +683,36 @@ async function refreshAll(env) {
 //   fresh を返す。これにより KV write が完全に止まっても /api/* は fresh を返す。
 const SERVE_STALE_MS = 12 * 60 * 1000; // KV がこれより古ければ live fetch に切替 (cron は 5 分間隔)
 
-async function serveFromKV(env, kind) {
+// rt-fix3 P1-1 (2026-06-27): 展示の Worker cron 非依存化。
+//   従来 boatrace.jp 直スクレイプ (展示マージ) は cron(refreshAll) でしか走らず、
+//   Cloudflare 無料枠の CPU 10ms 超過などで cron が静かに kill されると、KV が stale 化し
+//   /api/previews は openapi 縮退 (_source:'live', 展示なし ~30 分) に落ちたまま誰も気付けない。
+//   対策: KV が stale で live fetch する分岐 (= cron が書けていない兆候) のときに、
+//   ctx.waitUntil で「ごく少数 (MAX_ONDEMAND_SCRAPES)」の展示スクレイプを発火し、
+//   結果を KV に書き戻す。レスポンスはブロックせず即返し、次の閲覧/poll でリッチ KV が当たる。
+//   デバウンス: isolate ローカルのタイムスタンプ + 書込後 KV が SERVE_STALE_MS 新鮮化する
+//   自然な抑制で、同時閲覧者による scrape storm を防ぐ。cron 死亡時のみ動くため KV write 枠も
+//   cron と競合しない。
+const MAX_ONDEMAND_SCRAPES = 3;
+let _ondemandExhibitionAt = 0;
+
+async function boundedOnDemandExhibition(env, previews, nowMs) {
+  try {
+    if (nowMs - _ondemandExhibitionAt < 5 * 60 * 1000) return; // debounce (isolate-local)
+    _ondemandExhibitionAt = nowMs;
+    if (!previews || !Array.isArray(previews.previews)) return;
+    const programs = await fetchUpstream(UPSTREAM.programs);
+    const stats = await mergeBoatraceJpExhibition(programs, previews, nowMs, MAX_ONDEMAND_SCRAPES);
+    // 何も補完できなければ書かない (KV write 枠の節約 + kvWrite のハッシュ diff も効く)
+    if (stats && stats.merged > 0) {
+      await kvWrite(env, KV_KEYS.previews, previews, 'ondemand');
+    }
+  } catch (_) {
+    // 失敗は無視（次回 poll / cron 復帰で回復）
+  }
+}
+
+async function serveFromKV(env, kind, ctx) {
   // D9 (2026-05-17): wrapped.updated_at をレスポンス先頭に merge して
   //   PWA 側の鮮度診断 (j.updated_at) が正しく読めるようにする。
   let kvWrapped = null;
@@ -711,6 +742,11 @@ async function serveFromKV(env, kind) {
     //   先取りした確定結果を mergeKVOverOpenapi (巻き戻り対策) を経由せず破壊するため。
     if (env.BOATRACE_KV && kind !== 'results') {
       kvWrite(env, KV_KEYS[kind], data, 'serve').catch(() => {});
+    }
+    // rt-fix3 P1-1: previews が stale (= cron が書けていない) なら、少数の展示スクレイプを
+    //   バックグラウンドで実行して KV をリッチ化（cron 死亡時でも展示を提供）。
+    if (env.BOATRACE_KV && kind === 'previews' && ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(boundedOnDemandExhibition(env, data, Date.now()));
     }
     // rt-fix2 (2026-06-11): updated_at の偽装をやめる。
     //   旧版は fetch 時刻 (now) を updated_at に刻んでいたため、上流 openapi 自体が
@@ -795,9 +831,9 @@ export default {
       }
       return jsonResponse(out, { cacheControl: 'no-store' });
     }
-    if (url.pathname === '/api/previews') return serveFromKV(env, 'previews');
-    if (url.pathname === '/api/programs') return serveFromKV(env, 'programs');
-    if (url.pathname === '/api/results')  return serveFromKV(env, 'results');
+    if (url.pathname === '/api/previews') return serveFromKV(env, 'previews', ctx);
+    if (url.pathname === '/api/programs') return serveFromKV(env, 'programs', ctx);
+    if (url.pathname === '/api/results')  return serveFromKV(env, 'results', ctx);
     if (url.pathname === '/api/refresh-now') {
       if (!env.BOATRACE_KV) return jsonResponse({ error: 'KV not bound' }, { status: 500 });
       const r = await refreshAll(env);

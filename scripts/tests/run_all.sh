@@ -168,6 +168,10 @@ step "Clearwing snapshot tests" \
 step "Clearwing deprecated pattern detector" \
      "node scripts/tests/test_deprecated_patterns.js"
 
+# 19) rt-fix3 (2026-06-27): 鮮度バッジがデータ世代基準で stale を隠さないこと
+step "Status banner freshness semantics (rt-fix3)" \
+     "node scripts/tests/test_status_banner_freshness.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

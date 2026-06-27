@@ -5,6 +5,11 @@ name: Scrape All (unified - archive role)
 #   新: アーカイブ専用 (30 分間隔)。リアルタイムデータは Cloudflare Worker /api/* が担当。
 #       本 workflow は GitHub Pages の data/*.json を履歴保管・障害時 fallback として維持。
 #
+# rt-fix3 (2026-06-27): オッズもクライアント側でオンデマンド化 (Worker /odds-proxy)。
+#   data/odds/today.json は cold-start / fallback の種に降格し、表示中レースの EV/買い目は
+#   実時間オッズで計算される。本 cron の発火頻度（GitHub の間引きで 4-6 回/日）が
+#   ユーザー体感の鮮度を律速しない設計になった。即時更新は workflow_dispatch を使う。
+#
 #   スクリプト構成 (scrape_all.py 内の JST 時刻分岐):
 #   - 常時 (8-22 JST):    odds + previews (アーカイブ)
 #   - 30 分境界:           results

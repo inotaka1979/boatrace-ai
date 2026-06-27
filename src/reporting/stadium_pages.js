@@ -419,8 +419,19 @@ function _prefetchLiveOddsForUpcoming(sid) {
     candidates.sort(function (a, b) {
       return a.delta - b.delta;
     });
-    candidates.slice(0, 3).forEach(function (c) {
-      _kickOffLiveOddsRefresh(sid, c.rn);
+    // rt-fix3 P0-1 (2026-06-27): 締切間近 3 レース固定 → ウィンドウ内全レースへ拡張。
+    //   bulk オッズ (data/odds/today.json) は GHA cron 間引きで数時間 stale になるため、
+    //   これを唯一の供給源にすると一覧の EV/買い目が古いオッズで計算される。/odds-proxy
+    //   (edge cache 15s, クライアント解析, KV write ゼロ) で締切ウィンドウ内 (-2..+40分) の
+    //   未確定レースを全件 live 取得し、bulk は cold-start / fallback に降格する。
+    //   一斉発火を避けるため 400ms 間隔で stagger（_kickOffLiveOddsRefresh は 30s/レース
+    //   throttle + in-flight dedupe 済なので再入安全）。90 秒 poll からも再呼出される。
+    candidates.forEach(function (c, i) {
+      setTimeout(function () {
+        try {
+          _kickOffLiveOddsRefresh(sid, c.rn);
+        } catch (_) {}
+      }, i * 400);
     });
   } catch (_) {}
 }

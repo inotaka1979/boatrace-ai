@@ -31,34 +31,46 @@ function _renderApiHealthBanner() {
     if (health[k] === 'fail') fails.push(k);
     else if (health[k] === 'cached') cached.push(k);
   }
-  if (fails.length === 0 && cached.length === 0) {
+  // rt-fix3 P0-6: Worker 死活（/health?strict=1）の結果も併せて表示する。
+  const workerDown = _g._workerHealthy === false;
+  if (fails.length === 0 && cached.length === 0 && !workerDown) {
     banner.style.display = 'none';
     return;
   }
   const parts = [];
+  if (workerDown) parts.push('リアルタイム配信が停止中 — 直接取得に切替済み');
   if (fails.length) parts.push('API取得失敗: ' + fails.join('/'));
   if (cached.length) parts.push('キャッシュ使用中: ' + cached.join('/'));
   msg.textContent = parts.join(' / ') + ' — 表示が古い可能性があります';
   banner.style.display = 'block';
 }
 
-// rt-fix P0-1 (2026-06-04): 鮮度バッジの意味論を修正。
-//   旧: 「📡 X分前」= データ世代(updated_at, 約30分間隔) を表示 →
-//       正常稼働でも常に「10〜30分前」と古く見え「更新されない」と誤認させていた。
-//   新: 「📡 X分前」= 最終 fetch 成功時刻(_lastFetchOkAt) を表示 →
-//       アプリが今もデータを取りに行けていることを正直に示す。
-//       加えて、データ世代(updated_at) が著しく古い場合のみ「(更新待ち)」を併記し、
-//       実際のデータ停止も隠さず可視化する（honest staleness）。
+// rt-fix3 (2026-06-27): 鮮度バッジを「データ世代」基準に戻す（最重要修正）。
+//   rt-fix P0-1 (2026-06-04) は主表示を _lastFetchOkAt（fetch 成功時刻）にしたが、
+//   Worker が stale な KV を 200 で返すケースでは「fetch 成功＝緑」のまま中身は
+//   数十分〜数時間古い、という「緑なのに古い」誤認を生み、ユーザーの「更新されない」
+//   体感の主因になっていた。新仕様:
+//     - 主表示 = データ世代(updated_at) の経過時間（＝データの新しさの真値）。
+//       色も世代基準（緑<15分 / 黄<40分 / 赤≥40分、上流 openapi ~30分間隔に較正）。
+//     - _lastFetchOkAt は「接続が生きているか」の副次インジケータに降格。
+//   回帰防止: scripts/tests/test_status_banner_freshness.js が stale 隠蔽を禁止する。
 function _renderFreshness() {
   const el = document.getElementById('dataFreshness');
   if (!el) return;
   const now = Date.now();
-  const fetchAt = _g._lastFetchOkAt || 0; // 最終 fetch 成功時刻
+  const fetchAt = _g._lastFetchOkAt || 0; // 最終 fetch 成功時刻（接続生存）
   const dataGen = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0); // データ世代
 
   if (!fetchAt && !dataGen) {
     el.textContent = '';
     return;
+  }
+
+  function _ago(ms) {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    if (sec < 60) return sec + '秒前';
+    if (sec < 3600) return Math.floor(sec / 60) + '分前';
+    return Math.floor(sec / 3600) + '時間前';
   }
 
   // データ世代が今日 (JST) でなければ「本日データ取得待ち」（cron 未実行 / 開催前）
@@ -71,40 +83,31 @@ function _renderFreshness() {
     }
   }
 
-  // 主表示 = 最終 fetch 成功からの経過（アプリの生存）
-  function _ago(ms) {
-    const sec = Math.max(0, Math.floor(ms / 1000));
-    if (sec < 60) return sec + '秒前';
-    if (sec < 3600) return Math.floor(sec / 60) + '分前';
-    return Math.floor(sec / 3600) + '時間前';
-  }
-
+  // 主表示 = データ世代の経過時間（＝実際のデータの新しさ。これを偽らない）
   let label;
   let color;
-  if (fetchAt) {
-    const fsec = Math.floor((now - fetchAt) / 1000);
-    label = '📡 ' + _ago(now - fetchAt);
-    // fetch が新しいほど緑。polling は 90 秒間隔なので 180s 超で黄、600s 超で赤。
-    color = fsec < 180 ? '#A5D6A7' : fsec < 600 ? '#FFCC80' : '#FF8A80';
-  } else {
-    // _lastFetchOkAt 未設定（初回描画前）はデータ世代で代替表示
-    label = '📡 ' + _ago(now - dataGen);
-    color = '#A5D6A7';
-  }
-
-  // 正直なデータ世代表示: データソースの更新が 40 分以上停止していたら併記。
-  let note = '';
   if (dataGen) {
     const genMin = Math.floor((now - dataGen) / 60000);
-    if (genMin >= 40) {
-      note =
-        '<span style="color:#FFCC80;font-size:0.85em"> ・データ更新待ち(' +
-        (genMin < 120 ? genMin + '分' : Math.floor(genMin / 60) + '時間') +
-        ')</span>';
-    }
+    label = '🕒 ' + _ago(now - dataGen);
+    color = genMin < 15 ? '#A5D6A7' : genMin < 40 ? '#FFCC80' : '#FF8A80';
+  } else {
+    label = '🕒 取得中';
+    color = '#BDBDBD';
   }
 
-  el.innerHTML = '<span style="color:' + color + '">' + label + '</span>' + note;
+  // 副次 = 接続状態（アプリが今もデータを取りに行けているか）
+  let conn = '';
+  if (fetchAt) {
+    const fsec = Math.floor((now - fetchAt) / 1000);
+    conn =
+      fsec < 300
+        ? '<span style="color:#81C784;font-size:0.85em"> ・📡接続OK</span>'
+        : '<span style="color:#FF8A80;font-size:0.85em"> ・📡接続不調(' + _ago(now - fetchAt) + ')</span>';
+  } else {
+    conn = '<span style="color:#FFCC80;font-size:0.85em"> ・📡未接続</span>';
+  }
+
+  el.innerHTML = '<span style="color:' + color + '">' + label + '</span>' + conn;
 }
 
 // globalThis export — 冒頭の _g 経由で Window インタフェースに整合

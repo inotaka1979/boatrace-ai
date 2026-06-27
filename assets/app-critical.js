@@ -2759,8 +2759,22 @@ window.addEventListener('unhandledrejection', function(e){
     }
     return { previews: filtered, updated_at: raw.updated_at };
   }
+  function _probeWorkerHealth() {
+    try {
+      if (typeof fetch !== "function") return;
+      fetch(WORKER_BASE + "/health?strict=1&max_age_sec=1800", { cache: "no-store" }).then(function(r) {
+        _g._workerHealthy = r.ok;
+      }).catch(function() {
+        _g._workerHealthy = false;
+      }).then(function() {
+        if (typeof _g._renderApiHealthBanner === "function") _g._renderApiHealthBanner();
+      });
+    } catch (_) {
+    }
+  }
   _g.BC_MAX_BYTES = BC_MAX_BYTES;
   _g.WORKER_BASE = WORKER_BASE;
+  _g._probeWorkerHealth = _probeWorkerHealth;
   _g._apiHealth = _apiHealth;
   if (typeof _g._lastFetchOkAt !== "number") _g._lastFetchOkAt = 0;
   _g._setApiHealth = _setApiHealth;
@@ -2795,11 +2809,13 @@ window.addEventListener('unhandledrejection', function(e){
       if (health[k] === "fail") fails.push(k);
       else if (health[k] === "cached") cached.push(k);
     }
-    if (fails.length === 0 && cached.length === 0) {
+    const workerDown = _g._workerHealthy === false;
+    if (fails.length === 0 && cached.length === 0 && !workerDown) {
       banner.style.display = "none";
       return;
     }
     const parts = [];
+    if (workerDown) parts.push("\u30EA\u30A2\u30EB\u30BF\u30A4\u30E0\u914D\u4FE1\u304C\u505C\u6B62\u4E2D \u2014 \u76F4\u63A5\u53D6\u5F97\u306B\u5207\u66FF\u6E08\u307F");
     if (fails.length) parts.push("API\u53D6\u5F97\u5931\u6557: " + fails.join("/"));
     if (cached.length) parts.push("\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D: " + cached.join("/"));
     msg.textContent = parts.join(" / ") + " \u2014 \u8868\u793A\u304C\u53E4\u3044\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059";
@@ -2815,6 +2831,12 @@ window.addEventListener('unhandledrejection', function(e){
       el.textContent = "";
       return;
     }
+    function _ago(ms) {
+      const sec = Math.max(0, Math.floor(ms / 1e3));
+      if (sec < 60) return sec + "\u79D2\u524D";
+      if (sec < 3600) return Math.floor(sec / 60) + "\u5206\u524D";
+      return Math.floor(sec / 3600) + "\u6642\u9593\u524D";
+    }
     const todayJst = new Date(now + 9 * 36e5).toISOString().slice(0, 10);
     if (dataGen) {
       const dataDate = new Date(dataGen + 9 * 36e5).toISOString().slice(0, 10);
@@ -2823,30 +2845,24 @@ window.addEventListener('unhandledrejection', function(e){
         return;
       }
     }
-    function _ago(ms) {
-      const sec = Math.max(0, Math.floor(ms / 1e3));
-      if (sec < 60) return sec + "\u79D2\u524D";
-      if (sec < 3600) return Math.floor(sec / 60) + "\u5206\u524D";
-      return Math.floor(sec / 3600) + "\u6642\u9593\u524D";
-    }
     let label;
     let color;
-    if (fetchAt) {
-      const fsec = Math.floor((now - fetchAt) / 1e3);
-      label = "\u{1F4E1} " + _ago(now - fetchAt);
-      color = fsec < 180 ? "#A5D6A7" : fsec < 600 ? "#FFCC80" : "#FF8A80";
-    } else {
-      label = "\u{1F4E1} " + _ago(now - dataGen);
-      color = "#A5D6A7";
-    }
-    let note = "";
     if (dataGen) {
       const genMin = Math.floor((now - dataGen) / 6e4);
-      if (genMin >= 40) {
-        note = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u30C7\u30FC\u30BF\u66F4\u65B0\u5F85\u3061(' + (genMin < 120 ? genMin + "\u5206" : Math.floor(genMin / 60) + "\u6642\u9593") + ")</span>";
-      }
+      label = "\u{1F552} " + _ago(now - dataGen);
+      color = genMin < 15 ? "#A5D6A7" : genMin < 40 ? "#FFCC80" : "#FF8A80";
+    } else {
+      label = "\u{1F552} \u53D6\u5F97\u4E2D";
+      color = "#BDBDBD";
     }
-    el.innerHTML = '<span style="color:' + color + '">' + label + "</span>" + note;
+    let conn = "";
+    if (fetchAt) {
+      const fsec = Math.floor((now - fetchAt) / 1e3);
+      conn = fsec < 300 ? '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK</span>' : '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>";
+    } else {
+      conn = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u672A\u63A5\u7D9A</span>';
+    }
+    el.innerHTML = '<span style="color:' + color + '">' + label + "</span>" + conn;
   }
   _g._renderApiHealthBanner = _renderApiHealthBanner;
   _g._renderFreshness = _renderFreshness;
@@ -3725,8 +3741,13 @@ var _backfillTimer = null;
       candidates.sort(function(a, b) {
         return a.delta - b.delta;
       });
-      candidates.slice(0, 3).forEach(function(c) {
-        _kickOffLiveOddsRefresh(sid, c.rn);
+      candidates.forEach(function(c, i) {
+        setTimeout(function() {
+          try {
+            _kickOffLiveOddsRefresh(sid, c.rn);
+          } catch (_) {
+          }
+        }, i * 400);
       });
     } catch (_) {
     }
@@ -3993,6 +4014,11 @@ var _dataTodayConfirmedAt = 0;  // epoch ms (今日の race_date を確認した
 // _renderFreshness は src/reporting/status_banner.js に移動 (Phase 2d)
 // → BUILD:REPORTING_STATUS_BANNER bundle 経由で globalThis に export 済
 setManagedInterval(_renderFreshness, 10000);   // 10秒ごとに表示更新
+// rt-fix3 P0-6 (2026-06-27): Worker 死活を 5 分毎に検知（起動直後に 1 回 + 以降 5 分間隔）。
+if(typeof _probeWorkerHealth==='function'){
+  setManagedInterval(_probeWorkerHealth, 300000);
+  setTimeout(function(){ try{ _probeWorkerHealth(); }catch(_){} }, 3000);
+}
 
 // rt-fix2 P0-A (2026-06-11): オッズ snapshot の単調性ガード付きマージ。
 //   従来は 90秒/300秒 poll が `oddsData = 取得JSON` と無条件全置換していたため、
@@ -4088,6 +4114,31 @@ setManagedInterval(async function(){
           var _sy=window.scrollY;
           openStadium(currentStadium);
           window.scrollTo(0,_sy);
+        }
+      }
+    }catch(e){}
+    // rt-fix3 P0-1 (2026-06-27): 一覧/詳細を閲覧中は、締切が近づくレースの live オッズを
+    //   90 秒毎に継続取得する（openStadium 時の 1 回だけでは閲覧中に締切が近づくレースを
+    //   取りこぼす）。_prefetchLiveOddsForUpcoming 内で 400ms stagger + 30s throttle 済。
+    try{
+      var _apg=document.querySelector('.page.active');
+      if(_apg && (_apg.id==='pageRaces'||_apg.id==='pageDetail') && currentStadium
+         && typeof _prefetchLiveOddsForUpcoming==='function'){
+        _prefetchLiveOddsForUpcoming(currentStadium);
+      }
+    }catch(e){}
+    // rt-fix3 P0-5 (2026-06-27): データ世代が大きく停滞したら自動復旧。
+    //   Worker cron / KV が静かに止まると /api/* が stale を返し続け、誰も気付けない。
+    //   データ世代が 25 分以上古い場合のみ、Worker /api/refresh-now を 5 分 1 回まで
+    //   叩いて KV 再生成を促す（refreshAll は KV write + scrape を伴うため必ずレート制限）。
+    //   programs/previews/results の cache-bust 再取得は本 poll の ?_= で既に毎回実施済。
+    try{
+      var _gen=Math.max(_dataLatestUpdatedAt||0,_dataTodayConfirmedAt||0);
+      if(_gen && (Date.now()-_gen)/60000 >= 25){
+        var _le=globalThis._lastEscalateAt||0;
+        if(Date.now()-_le >= 300000){
+          globalThis._lastEscalateAt=Date.now();
+          try{ fetch((globalThis.WORKER_BASE||'')+'/api/refresh-now',{cache:'no-store'}).catch(function(){}); }catch(e){}
         }
       }
     }catch(e){}
