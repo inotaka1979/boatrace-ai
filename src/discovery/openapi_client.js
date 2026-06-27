@@ -329,16 +329,22 @@ function _filterStalePreviews(raw) {
 }
 
 // rt-fix3 P0-6 (2026-06-27): アプリ内 Worker 死活検知（discovery 層 = ネットワーク IO 担当）。
-//   Worker の cron / KV が静かに止まると /api/* が stale を返し続けるが、/health?strict=1 は
-//   KV 鮮度超過で HTTP 500 を返すため外形検知できる。5 分毎に叩き、500/失敗なら
-//   _workerHealthy=false にして reporting 層の _renderApiHealthBanner にバナー表示させる。
-//   フォールバック（openapi 直 + オンデマンドオッズ）は既に主経路なので機能は継続する。
+//   非 strict の /health で「Worker が到達可能で ok:true か」だけを判定し、到達不能/エラー時のみ
+//   _workerHealthy=false にしてバナー表示する。
+//   注: 当初 /health?strict=1 を使ったが、strict は programs(朝1回しか更新されない静的キー)の
+//   wrote_at が常に 30 分超で 500 を返すため、Worker が正常稼働中でも「停止中」を誤表示し、
+//   再試行しても消えない不具合になっていた（kvWrite は内容変化時のみ書込むため wrote_at が古い）。
+//   実データの古さは鮮度バッジ(updated_at 基準) が正直に表示する。cron の真の死活検知は
+//   Worker 側の cron ハートビート（/health の cron_age_sec）＋外部死活監視に委ねる。
 function _probeWorkerHealth() {
   try {
     if (typeof fetch !== 'function') return;
-    fetch(WORKER_BASE + '/health?strict=1&max_age_sec=1800', { cache: 'no-store' })
+    fetch(WORKER_BASE + '/health', { cache: 'no-store' })
       .then(function (r) {
-        _g._workerHealthy = r.ok;
+        return r.ok ? r.json() : null;
+      })
+      .then(function (j) {
+        _g._workerHealthy = !!(j && j.ok);
       })
       .catch(function () {
         _g._workerHealthy = false;

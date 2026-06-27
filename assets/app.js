@@ -3065,8 +3065,10 @@ function pf(v){return parseFloat(v)||0}
   function _probeWorkerHealth() {
     try {
       if (typeof fetch !== "function") return;
-      fetch(WORKER_BASE + "/health?strict=1&max_age_sec=1800", { cache: "no-store" }).then(function(r) {
-        _g._workerHealthy = r.ok;
+      fetch(WORKER_BASE + "/health", { cache: "no-store" }).then(function(r) {
+        return r.ok ? r.json() : null;
+      }).then(function(j) {
+        _g._workerHealthy = !!(j && j.ok);
       }).catch(function() {
         _g._workerHealthy = false;
       }).then(function() {
@@ -3129,7 +3131,7 @@ function pf(v){return parseFloat(v)||0}
     if (!el) return;
     const now = Date.now();
     const fetchAt = _g._lastFetchOkAt || 0;
-    const dataGen = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
+    const dataGen = _g._dataLatestUpdatedAt || 0;
     if (!fetchAt && !dataGen) {
       el.textContent = "";
       return;

@@ -59,7 +59,11 @@ function _renderFreshness() {
   if (!el) return;
   const now = Date.now();
   const fetchAt = _g._lastFetchOkAt || 0; // 最終 fetch 成功時刻（接続生存）
-  const dataGen = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0); // データ世代
+  // rt-fix3 fix: データ世代は updated_at(=_dataLatestUpdatedAt) のみ。
+  //   旧実装は Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt) としていたが、
+  //   _dataTodayConfirmedAt は「今日のデータを確認した壁時計時刻(=ほぼ now)」のため
+  //   常に「0秒前」になり、stale を隠すという当初の不具合を再発させていた。
+  const dataGen = _g._dataLatestUpdatedAt || 0; // 真のデータ世代 (updated_at)
 
   if (!fetchAt && !dataGen) {
     el.textContent = '';
