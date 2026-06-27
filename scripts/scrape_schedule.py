@@ -188,8 +188,15 @@ def _compute_next_open(stadium_dates: dict[str, list[str]],
     return out
 
 
-def _is_current_fresh(max_age_days: int = 14) -> bool:
-    """current.json が存在し、updated_at が max_age_days 以内なら True。"""
+def _is_current_fresh(max_age_days: int = 2) -> bool:
+    """current.json が存在し、updated_at が max_age_days 以内なら True。
+
+    rt-fix3 (2026-06-27): 既定を 14→2 日に短縮。current.json はフルスケジュール
+    (各場の開催日一覧) の元データで、ここから next_open.json を算出する。14 日許容だと
+    終了済/予定変更の場の開催日が next_open に残り、「非開催なのに本日開催」と誤表示する
+    主因になっていた。フル fetch は refresh-next-open.yml が全取得モードで定期的に呼ぶため、
+    2 日以内に current.json が自動で再取得される。
+    """
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", OUTPUT_FILE)
     if not os.path.exists(p):
         return False

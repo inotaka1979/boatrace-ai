@@ -40,8 +40,14 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
-      - name: Refresh next_open.json
-        run: python scripts/scrape_schedule.py --quick
+      - name: Refresh schedule (current.json) + next_open.json
+        # rt-fix3 (2026-06-27): --quick (next_open のみ再計算) → フル取得モードに変更。
+        #   current.json が _is_current_fresh (2 日) を超えていればフルスケジュールを再取得し、
+        #   以内なら next_open のみ再計算 (HTTP なし)。従来 current.json のフル取得は
+        #   scrape-racedata.yml の月1回のみで、最大 14 日古いスケジュールから next_open を算出して
+        #   「非開催なのに本日開催」と誤表示する主因になっていた。本 workflow は 1 日 5 回走るため
+        #   日次で current.json が最新化される。
+        run: python scripts/scrape_schedule.py
       # Path B (2026-05-16): prerender_top.py を撤去。
       # index.html は skeleton CSS で常時表示、JS render が今日のデータで上書き。
       # → 「場が昨日のまま」の根本原因 (prerender 古さ) を構造的に解消。
@@ -53,7 +59,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 2026-06-04 (rt-fix P0-3): commit-first + rebase --abort で衝突時の commit 喪失を防止。
           git config rebase.autoStash true
-          git add data/schedule/next_open.json
+          # rt-fix3: current.json (フルスケジュール) も commit 対象に追加（本 workflow が単独所有）。
+          git add data/schedule/next_open.json data/schedule/current.json
           if git diff --staged --quiet; then
             echo "No changes."
             exit 0
