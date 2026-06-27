@@ -383,6 +383,28 @@ def main() -> None:
             "racedata": all_data,
         })
 
+    # rt-fix3 (2026-06-27): day_label backfill。
+    #   再開ロジックで「全レース取得済み」の場は再 scrape されないため day_label が付かない。
+    #   既存データに day_label が無い場をのみ、出走表を 1 回だけ引いて全 entry に後付けする。
+    #   （1 場 1 fetch。当日内の再実行でもトップに「◯日目」が出るようにする）
+    by_sid: dict[int, list[dict]] = {}
+    for e in all_data:
+        by_sid.setdefault(e.get("stadium"), []).append(e)
+    for sid, entries in by_sid.items():
+        if sid is None or any(e.get("day_label") for e in entries):
+            continue
+        jcd = f"{sid:02d}"
+        rno0 = entries[0].get("race", 1)
+        try:
+            _, day_label = scrape_racelist(jcd, rno0, date_str)
+        except Exception:
+            day_label = None
+        if day_label:
+            for e in entries:
+                e["day_label"] = day_label
+            print(f"  Stadium {sid}: day_label backfilled = {day_label}")
+        time.sleep(INTERVAL)
+
     # FIX (2026-05-16): 旧版は 1,636 選手 × (0.5s sleep + 0.3s sleep + timeout 20s × 2 attempts)
     # = 約 50 分かかり 30 分 timeout を超過 → racedata が 9 日間更新されない事故。
     # 未取得分のみ並列 8 で取得し、上限 400 件 / budget 600s でハードガード。
