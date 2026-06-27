@@ -7764,11 +7764,13 @@ function _formatNextOpen(iso){
   //   すべての iso が past 扱いになる。ここでは ISO 形式 (YYYY-MM-DD) に揃える。
   var t = (typeof todayStr === 'function') ? todayStr() : '';
   var todayIso = (t && /^\d{8}$/.test(t)) ? (t.slice(0,4)+'-'+t.slice(4,6)+'-'+t.slice(6,8)) : '';
-  // FIX: data 更新が止まると past iso が混入し空文字 return → 場カードに何も
-  //   表示されず「一部しか表示されない」とユーザに見える。past の場合は
-  //   「次節未定」と表示してデータが古い旨を伝える。
-  if(todayIso && iso < todayIso) return '次節未定';
-  if(iso === todayIso) return '本日開催';
+  // rt-fix3 (2026-06-27): _formatNextOpen は「非開催(グレー)の場」専用に呼ばれる。
+  //   非開催の場は定義上「本日開催」ではありえない（開催中ならプログラムに載りアクティブ=青）。
+  //   スケジュールデータ(current.json→next_open.json)が古いと、本来終了済/非開催の場の
+  //   next_open に今日や過去日付が残り、「次節なのに本日開催」という矛盾表示になっていた。
+  //   → 今日・過去の next_open は stale とみなし日付ラベルを出さない（カードは「次節」のみ）。
+  //     未来日付のみ「M/D(曜)」を表示する。
+  if(todayIso && iso <= todayIso) return '';
   var wd = '日月火水木金土'[d.getDay()];
   return d.getMonth()+1 + '/' + d.getDate() + '(' + wd + ')';
 }
