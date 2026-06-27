@@ -3484,6 +3484,11 @@ var _backfillTimer = null;
       for (var sid in programData) activeIds[sid] = true;
     }
     var html = "";
+    var _nowMs = Date.now();
+    function _closedMs(s) {
+      var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || "");
+      return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
+    }
     for (var id = 1; id <= 24; id++) {
       var sid = String(id);
       var name = STADIUMS[id];
@@ -3494,10 +3499,16 @@ var _backfillTimer = null;
         });
         var totalRaces = raceNums.length;
         var doneCount = 0;
-        if (resultData && resultData[sid]) {
-          raceNums.forEach(function(rn) {
-            if (resultData[sid][rn] && resultData[sid][rn].isFinished) doneCount++;
-          });
+        var nextRn = null;
+        for (var rj = 0; rj < raceNums.length; rj++) {
+          var rnc = raceNums[rj];
+          var rsc = resultData && resultData[sid] && resultData[sid][rnc];
+          var finC = !!(rsc && /** @type {any} */
+          rsc.isFinished);
+          var clMs = _closedMs(stadium[rnc] && stadium[rnc].race_closed_at);
+          var doneC = finC || clMs != null && clMs <= _nowMs;
+          if (doneC) doneCount++;
+          else if (nextRn === null) nextRn = rnc;
         }
         var firstRace = stadium[raceNums[0]];
         var gradeNum = firstRace ? firstRace.race_grade_number || 5 : 5;
@@ -3509,18 +3520,7 @@ var _backfillTimer = null;
           });
           if (rd && rd.day) dayInfo = rd.day + "\u65E5\u76EE";
         }
-        var nextRaceInfo = "";
-        var nextRn = null;
-        for (var ri = 0; ri < raceNums.length; ri++) {
-          var rnCheck = raceNums[ri];
-          var isDone = resultData && resultData[sid] && resultData[sid][rnCheck] && resultData[sid][rnCheck].isFinished;
-          if (!isDone) {
-            nextRn = rnCheck;
-            break;
-          }
-        }
-        if (nextRn) nextRaceInfo = nextRn + "R";
-        else nextRaceInfo = "\u7D42\u4E86";
+        var nextRaceInfo = nextRn ? nextRn + "R" : "\u7D42\u4E86";
         html += '<div class="stadium-card active-stadium" data-sid="' + sid + '" role="button" tabindex="0" data-action="openStadium" data-arg-sid="' + sid + '"><span class="stadium-grade ' + grade.cls + '">' + grade.name + '</span><span class="stadium-name">' + name + '</span><span class="stadium-status">' + doneCount + "/" + totalRaces + 'R</span><span class="stadium-day">' + (dayInfo || "&nbsp;") + '</span><span class="stadium-day">' + nextRaceInfo + "</span></div>";
       } else {
         var iso = typeof _nextOpenMap === "object" && _nextOpenMap ? _nextOpenMap[sid] || "" : "";
