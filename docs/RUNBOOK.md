@@ -99,7 +99,65 @@ crontab -l
 
 ---
 
-## 8. PAT を再設定したい場合（NG）
+## 8. リアルタイム更新アーキテクチャ（rt-fix3, 2026-06-27）
+
+### 8.1 データ供給の真の経路（重要）
+PWA が画面に表示するデータの鮮度は **以下だけ**で決まる。`data/*.json`（GitHub Pages）は
+**ホットパスではなく fallback / アーカイブ**である。
+
+| データ | 主系 | 副系 | 最終手段 |
+|--------|------|------|----------|
+| programs/previews/results | Cloudflare Worker `/api/*`（KV, 5分・展示込み） | openapi github.io（~30分） | localStorage(<10分) |
+| オッズ（表示中レース） | Worker `/odds-proxy`（boatrace.jp 直, edge cache 15s, **オンデマンド**） | `data/odds/today.json`（GH Pages） | — |
+
+- オッズは rt-fix3 で **オンデマンド主系化**。一覧を開く / 90秒 poll / 詳細を開くたびに、
+  締切ウィンドウ内（-2〜+40分）のレースへ `/odds-proxy` を発火（`_prefetchLiveOddsForUpcoming`）。
+  → `data/odds/today.json` が cron 間引きで数時間 stale でも、表示中の EV/買い目は実時間オッズで計算される。
+- Worker cron が死んでも、`serveFromKV` が openapi を live fetch し、さらに `/api/previews` 閲覧時に
+  **少数の展示スクレイプをオンデマンド実行**（`boundedOnDemandExhibition`, 上限3）するため展示も供給継続。
+
+### 8.2 Worker 死活監視（最重要・恒久対策の要）
+
+**(A) 外部死活監視 — 必須・ユーザー手動（5分）**
+- https://healthchecks.io か UptimeRobot（無料）に登録し、以下を **5分間隔**で監視:
+  ```
+  https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1&max_age_sec=1800
+  ```
+- HTTP 200 = 正常。**HTTP 500 = KV が 30分以上 stale（cron 死亡の兆候）→ メール通知**。
+- これが Worker cron の静かな死を「分単位」で検知する唯一確実な手段。アプリ内検知・GHA watchdog は
+  間引き/タイミングで遅れるため、外部監視が最後の砦。
+
+**(B) アプリ内自動検知 — 実装済（コード）**
+- PWA は 5分毎に `/health?strict=1` を叩き、500/失敗時に画面上部へ
+  「リアルタイム配信が停止中 — 直接取得に切替済み」バナーを表示（機能は fallback で継続）。
+
+**(C) GHA watchdog — 実装済（backstop）**
+- `.github/workflows/worker-watchdog.yml` が `/health?strict=1` を叩き、500 なら
+  `/api/refresh-now` を呼んで KV 再生成を促す。schedule 間引きの影響を受けるため backstop 扱い。
+
+### 8.3 Worker が完全停止した時の復旧手順
+1. `/health` を確認: `curl 'https://boatrace-scrape-trigger.inotaka1979.workers.dev/health'`
+   - 200 が返るが `keys.*.age_sec` が大きい → cron 死亡。`/api/refresh-now` を 1 回叩く。
+   - そもそも応答しない → Worker 自体停止。Cloudflare ダッシュボードを確認。
+2. **Cloudflare ダッシュボード確認（ユーザー手動・最重要）**:
+   - Workers > boatrace-scrape-trigger > Settings > Triggers > **Cron Events** で発火履歴。
+   - **Observability で CPU time が 10ms を超えていないか**（超過すると scheduled が途中 kill）。
+     超過時は `MAX_HTML_SCRAPES_PER_RUN`（worker.js）を下げる。
+3. cron を再登録するには再デプロイ: `cloudflare-worker/**` を変更して push（`deploy-worker.yml` 自動デプロイ）、
+   または Actions タブから "Deploy Cloudflare Worker" を手動 dispatch。
+4. repo secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` が有効か確認（失効するとデプロイ不可）。
+
+### 8.4 GitHub Actions schedule は信頼しない
+- GitHub の schedule cron は本リポジトリで **1 workflow あたり 4-6 回/日**しか発火せず、数時間の空白が出る
+  （宣言密度と無相関。config では直せない既知の制約）。`scrape-all` は **アーカイブ + 障害時 fallback** と割り切る。
+- 即時にデータを更新したい時は **`workflow_dispatch`（間引かれない）**:
+  ```bash
+  gh workflow run scrape-all.yml -f force_all=true
+  ```
+
+---
+
+## 9. PAT を再設定したい場合（NG）
 
 **禁止**。PAT は P0 で撤去済み。クライアント (PWA) から GitHub API を直接叩く設計は二度と復活させない。
 GitHub Actions の dispatch が必要なら、ローカル CLI / GitHub CLI 経由で行う:

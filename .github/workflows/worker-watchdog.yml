@@ -1,0 +1,70 @@
+name: Worker Watchdog (self-heal)
+
+# rt-fix3 P2-1 (2026-06-27): Cloudflare Worker の死活を叩き、KV が stale (cron 死亡の兆候)
+#   なら /api/refresh-now を呼んで KV 再生成を促す能動的セルフヒール（backstop）。
+#
+#   注意: GitHub schedule は本リポジトリで 1 workflow あたり 4-6 回/日に間引かれるため、
+#   これは「保険」であり主系ではない。Worker cron 死亡を分単位で検知する主系は
+#   外部死活監視 (healthchecks.io / UptimeRobot で /health?strict=1 を 5 分監視 → メール)。
+#   docs/RUNBOOK.md §8.2 参照。
+#
+#   secrets 不要（公開エンドポイントを curl するだけ）。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7 0-13 * * *'    # JST 9-22 帯に毎時 1 回程度（実際は間引かれる）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe /health and self-heal
+        run: |
+          set -uo pipefail
+          BASE="https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+          HEALTH="$BASE/health?strict=1&max_age_sec=1800"
+
+          probe() {
+            curl -sS -m 15 -o /tmp/health.json -w "%{http_code}" "$HEALTH" || echo "000"
+          }
+
+          status=$(probe)
+          echo "health status: $status"
+          cat /tmp/health.json 2>/dev/null || true
+          echo ""
+
+          if [ "$status" = "200" ]; then
+            echo "✅ Worker KV is fresh — nothing to do"
+            exit 0
+          fi
+
+          echo "⚠️ Worker stale/down (HTTP $status) — triggering /api/refresh-now"
+          rn=$(curl -sS -m 60 -o /tmp/refresh.json -w "%{http_code}" "$BASE/api/refresh-now" || echo "000")
+          echo "refresh-now status: $rn"
+          head -c 500 /tmp/refresh.json 2>/dev/null || true
+          echo ""
+
+          # 再生成後に Cloudflare が反映するまで少し待ってから再 probe
+          sleep 10
+          status2=$(probe)
+          echo "health status after refresh: $status2"
+          cat /tmp/health.json 2>/dev/null || true
+          echo ""
+
+          if [ "$status2" = "200" ]; then
+            echo "✅ recovered via /api/refresh-now"
+            exit 0
+          fi
+
+          # 復旧しない場合は非ゼロ終了で Actions に可視化（外部監視が主系の通知）。
+          echo "::error::Worker still stale after refresh-now (HTTP $status2). cron/CPU の確認が必要 — docs/RUNBOOK.md §8.3"
+          exit 1

@@ -323,7 +323,10 @@ async function main() {
   const BUDGETS = [
     // rt-fix2 (2026-06-11): 96000 → 98000。オッズ巻き戻りガード + 展示退行防止マージ +
     //   poll 後のページ再描画 (P0-A/B/D) を 90 秒 poll (critical) に追加した分 (+1.2KB)。
-    { path: 'assets/app-critical.min.js', max: 98000,  level: 'fail' },   // v2 (24 dim) features 含む
+    // rt-fix3 (2026-06-27): 98000 → 99500。鮮度バッジのデータ世代基準化 (P0-4) +
+    //   stale 自動復旧 (P0-5) + Worker 死活検知 (P0-6) + オンデマンドオッズ全レース化 (P0-1)
+    //   を critical に追加 (実測 +1.3KB)。LCP 影響は ~99KB に対し 0.1% 未満で無視可能。
+    { path: 'assets/app-critical.min.js', max: 99500,  level: 'fail' },   // v2 (24 dim) features 含む
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
     { path: 'assets/app-rest-stats.min.js',  max: 20000, level: 'warn' },  // 成績 + バックテスト sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
