@@ -1,0 +1,76 @@
+name: Scrape Programs (official)
+
+# 公式移行 Phase 2 (2026-06-28): boatrace.jp 出走表から openapi 互換の
+#   data/programs/today.json を生成する専用ワークフロー。
+#
+# なぜ scrape-all と分けるか:
+#   scrape-all の schedule は GitHub に 1 日 4-6 回へ間引かれ、programs 生成窓
+#   (JST 8:30) に確実に発火する保証が無い（programs が「日次 1 回」生成なのに
+#   throttle で抜ける日があると、Worker/クライアント/各 scraper が openapi
+#   フォールバックのままになる）。番組表は日次ほぼ静的なので、push(マージ)で必ず
+#   1 回 + 朝の複数アンカーで冗長に生成し、生成の確実性を担保する。
+#   重い全 scraper を含む scrape-all とは独立に、軽量・高頻度で回せる。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/scrape-programs.yml'
+      - 'scripts/scrape_programs.py'
+      - 'scripts/programs_source.py'
+  schedule:
+    # 朝の複数アンカー（GitHub の間引き対策で冗長化）。programs は当日分が未生成なら
+    #   毎回生成、生成済みなら scrape_programs 側の出力差分が無く commit されないだけ。
+    - cron: '0 22 * * *'   # JST 07:00
+    - cron: '30 22 * * *'  # JST 07:30
+    - cron: '0 23 * * *'   # JST 08:00
+    - cron: '30 23 * * *'  # JST 08:30
+    - cron: '0 1 * * *'    # JST 10:00（朝に全て間引かれた日の保険）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scrape-programs
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - name: Generate official programs
+        run: python scripts/scrape_programs.py
+      - name: Commit & Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/programs/today.json
+          if git diff --staged --quiet; then
+            echo "::notice::no programs change to commit"; exit 0
+          fi
+          git commit -m "programs: official scrape $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then echo "push ok"; exit 0; fi
+            else
+              git rebase --abort || true
+            fi
+            sleep $((RANDOM % 5 + i))
+          done
+          echo "::error::push failed"; exit 1
