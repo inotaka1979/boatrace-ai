@@ -3065,8 +3065,10 @@ function pf(v){return parseFloat(v)||0}
   function _probeWorkerHealth() {
     try {
       if (typeof fetch !== "function") return;
-      fetch(WORKER_BASE + "/health?strict=1&max_age_sec=1800", { cache: "no-store" }).then(function(r) {
-        _g._workerHealthy = r.ok;
+      fetch(WORKER_BASE + "/health", { cache: "no-store" }).then(function(r) {
+        return r.ok ? r.json() : null;
+      }).then(function(j) {
+        _g._workerHealthy = !!(j && j.ok);
       }).catch(function() {
         _g._workerHealthy = false;
       }).then(function() {
@@ -3129,7 +3131,7 @@ function pf(v){return parseFloat(v)||0}
     if (!el) return;
     const now = Date.now();
     const fetchAt = _g._lastFetchOkAt || 0;
-    const dataGen = Math.max(_g._dataLatestUpdatedAt || 0, _g._dataTodayConfirmedAt || 0);
+    const dataGen = _g._dataLatestUpdatedAt || 0;
     if (!fetchAt && !dataGen) {
       el.textContent = "";
       return;
@@ -10098,7 +10100,11 @@ setManagedInterval(async function(){
     //   叩いて KV 再生成を促す（refreshAll は KV write + scrape を伴うため必ずレート制限）。
     //   programs/previews/results の cache-bust 再取得は本 poll の ?_= で既に毎回実施済。
     try{
-      var _gen=Math.max(_dataLatestUpdatedAt||0,_dataTodayConfirmedAt||0);
+      // rt-fix3 fix: データ世代は updated_at(_dataLatestUpdatedAt) のみで判定する。
+      //   旧実装は Math.max(_dataLatestUpdatedAt, _dataTodayConfirmedAt) だったが、
+      //   _dataTodayConfirmedAt は「今日のデータを確認した壁時計時刻(≒now)」のため
+      //   (now-_gen)≒0 となり 25 分判定が永久に発火せず、自己復旧トリガが死んでいた。
+      var _gen=_dataLatestUpdatedAt||0;
       if(_gen && (Date.now()-_gen)/60000 >= 25){
         var _le=globalThis._lastEscalateAt||0;
         if(Date.now()-_le >= 300000){

@@ -776,6 +776,12 @@ export default {
       return;
     }
     const r = await refreshAll(env);
+    // rt-fix3 (2026-06-27): cron 生存ハートビート。内容変化に関わらず毎 run 1 write。
+    //   /health?strict=1 はこれ (cron_age_sec) で cron 死活を判定する。
+    //   データキー (programs 等) の wrote_at は kvWrite が「内容変化時のみ」更新するため、
+    //   静的な programs では常に古くなり strict が false positive (Worker 正常でも 500) を
+    //   返していた。cron 専用ハートビートに分離して誤検知を恒久解消する。
+    try { await env.BOATRACE_KV.put('health:heartbeat', new Date().toISOString()); } catch (_) {}
     console.log('refresh:', JSON.stringify(r));
   },
 
@@ -818,13 +824,19 @@ export default {
             out.keys[kind] = { error: String(e).slice(0, 80) };
           }
         }
+        // rt-fix3 (2026-06-27): cron 死活は専用ハートビートで判定する。
+        //   データキー (とくに programs は朝1回しか変化しない) の wrote_at で strict 判定すると、
+        //   Worker / cron が正常でも午後には必ず 500 になる false positive があったため。
+        let cronHb = null;
+        try { cronHb = await env.BOATRACE_KV.get('health:heartbeat'); } catch (_) {}
+        out.cron_heartbeat = cronHb;
+        out.cron_age_sec = cronHb ? Math.round((Date.now() - new Date(cronHb).getTime()) / 1000) : null;
         if (strict) {
-          const bad = Object.entries(out.keys).filter(
-            ([, v]) => v.age_sec == null || v.age_sec > maxAgeSec
-          );
-          if (bad.length) {
+          // cron が maxAgeSec 以内に走っていれば healthy。ハートビート未生成 (旧 Worker /
+          //   一度も cron 未実行) や maxAgeSec 超過なら 500。
+          if (out.cron_age_sec == null || out.cron_age_sec > maxAgeSec) {
             out.ok = false;
-            out.stale_keys = bad.map(([k]) => k);
+            out.reason = out.cron_age_sec == null ? 'cron_heartbeat_missing' : 'cron_heartbeat_stale';
             return jsonResponse(out, { status: 500, cacheControl: 'no-store' });
           }
         }

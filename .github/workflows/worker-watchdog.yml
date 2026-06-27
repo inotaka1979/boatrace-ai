@@ -31,7 +31,9 @@ jobs:
         run: |
           set -uo pipefail
           BASE="https://boatrace-scrape-trigger.inotaka1979.workers.dev"
-          HEALTH="$BASE/health?strict=1&max_age_sec=1800"
+          # strict=1 は cron ハートビート (cron_age_sec) で判定。夜間 cron は 30 分間隔のため
+          # 余裕を見て 2400s(40分)。これより古い = cron 停止の兆候。
+          HEALTH="$BASE/health?strict=1&max_age_sec=2400"
 
           probe() {
             curl -sS -m 15 -o /tmp/health.json -w "%{http_code}" "$HEALTH" || echo "000"
