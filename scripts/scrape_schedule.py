@@ -174,15 +174,20 @@ def _merge_stadium_dates(*per_stadium_dicts) -> dict[str, list[str]]:
 
 def _compute_next_open(stadium_dates: dict[str, list[str]],
                        today_iso: str) -> dict[str, str]:
-    """各場の「今日以降で最初の開催日」を返す。
+    """各場の「今日より後で最初の開催日（＝次回開催日）」を返す。
 
-    当日開催中の場は今日の日付になる（24場とも next_open に含まれ得る）。
-    対象外の場は欠落。
+    rt-fix3 (2026-06-27): 判定を `>= today` → `> today`（今日を除外）に変更。
+    next_open.json はトップ画面の「非開催(グレー)カード」専用に消費される（開催中の場は
+    プログラムから active=青で描画され next_open を使わない）。従来は当日開催予定を today で
+    返していたため、上流の月間スケジュールが「今日開催」と載せていてもプログラム未掲載でグレーの
+    場に「今日」が入り、クライアント側ガードで日付が出ない／矛盾表示になっていた。非開催カードに
+    とって意味があるのは「次に開催する未来日」なので、今日を除いた最初の未来日を返す。
+    対象外（未来日が無い）の場は欠落。
     """
     out: dict[str, str] = {}
     for sid, dates in stadium_dates.items():
         for d in dates:
-            if d >= today_iso:
+            if d > today_iso:
                 out[sid] = d
                 break
     return out
