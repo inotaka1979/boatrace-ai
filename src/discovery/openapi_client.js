@@ -79,6 +79,15 @@ function _mapToWorkerUrl(openapiUrl) {
   return null; // Worker でカバーされない URL (過去日付 等) は openapi 直
 }
 
+// 公式移行 Phase 2 (2026-06-28): 自前公式 data/* への map。
+//   programs は scrape_programs.py が boatrace.jp 由来で openapi 互換に生成し、GitHub Pages
+//   (本アプリと同一 origin) に配信。Worker 不通時、openapi(非公式ミラー)より前に自前公式を
+//   試す中間 tier。previews/results は data/* が別スキーマのため当面 map しない（null）。
+function _mapToOfficialUrl(openapiUrl) {
+  if (openapiUrl.indexOf('/programs/v2/today.json') >= 0) return 'data/programs/today.json';
+  return null;
+}
+
 /**
  * rt-fix P0-1 (2026-06-04): いずれかの系から fetch が成功した瞬間の時刻を記録。
  *   鮮度バッジ「📡 X分前」はこの「最終 fetch 成功時刻」を表示する。
@@ -144,16 +153,13 @@ function fetchWithFallback(url) {
     ? _fetchOne(workerUrl + '?_=' + Date.now(), 4000)
     : Promise.reject(new Error('no-worker-mapping'));
 
-  return primary.then(_onOk).catch(function (workerErr) {
-    // Tier 2: openapi 直接 (Worker 失敗時)
-    if (workerErr && workerErr.message !== 'no-worker-mapping') {
-      console.warn('[fetch] worker miss, falling back to openapi:', workerErr.message);
-    }
+  // Tier 3: openapi 直接 + Tier 4: localStorage cache（共通の最終段）。
+  function _openapiThenCache() {
     return _fetchOne(url, 8000)
       .then(_onOk)
       .catch(function (e) {
         console.warn('API error:', baseUrl, e.message);
-        // Tier 3: localStorage cache (10 min まで)
+        // Tier 4: localStorage cache (10 min まで)
         try {
           const c = localStorage.getItem(_g.cacheKey(baseUrl));
           if (c) {
@@ -166,6 +172,29 @@ function fetchWithFallback(url) {
         } catch (_) {}
         _setApiHealth(baseUrl, 'fail');
         return null;
+      });
+  }
+
+  return primary.then(_onOk).catch(function (workerErr) {
+    if (workerErr && workerErr.message !== 'no-worker-mapping') {
+      console.warn('[fetch] worker miss:', workerErr.message);
+    }
+    // 公式移行 Phase 2: Tier 2 = 自前公式 data/*（programs のみ、openapi 互換・同一 origin）。
+    //   空/壊れは次段 (openapi) へ。非公式ミラーより前に公式を優先する。
+    const officialUrl = _mapToOfficialUrl(baseUrl);
+    if (!officialUrl) return _openapiThenCache();
+    return _fetchOne(officialUrl + '?_=' + Date.now(), 5000)
+      .then(function (/** @type {any} */ d) {
+        if (!d || !Array.isArray(d.programs) || d.programs.length === 0) {
+          throw new Error('official-empty');
+        }
+        return _onOk(d);
+      })
+      .catch(function (offErr) {
+        if (offErr && offErr.message !== 'official-empty') {
+          console.warn('[fetch] official miss, falling back to openapi:', offErr.message);
+        }
+        return _openapiThenCache();
       });
   });
 }

@@ -28,6 +28,14 @@ const UPSTREAM = {
   programs: 'https://boatraceopenapi.github.io/programs/v2/today.json',
   results:  'https://boatraceopenapi.github.io/results/v2/today.json',
 };
+// 公式移行 Phase 2 (2026-06-28): 番組表(programs)のベースを「自前公式 data/* → openapi」順に。
+//   scrape_programs.py が boatrace.jp 出走表から openapi 互換 programs を生成し repo に commit。
+//   raw.githubusercontent は commit 即時反映（Pages build lag 無し）。data-freshness-monitor も
+//   data/* を raw で読んでおり「データ真値」URL として既に確立済み。
+//   公式が空/別日/壊れ/取得失敗なら openapi に自動フォールバックし silent 劣化を防ぐ。
+const OFFICIAL = {
+  programs: 'https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/programs/today.json',
+};
 const KV_KEYS = {
   previews: 'previews:today',
   programs: 'programs:today',
@@ -66,6 +74,39 @@ async function fetchUpstream(url) {
   });
   if (!res.ok) throw new Error(`upstream ${res.status}: ${url}`);
   return await res.json();
+}
+
+// 公式移行 Phase 2: JST 当日 (YYYY-MM-DD)。
+function _jstDayIso(ms) {
+  return new Date((typeof ms === 'number' ? ms : Date.now()) + 9 * 3600000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+// programs ベースを「自前公式 data → openapi」の順で解決する。
+//   公式 data/programs/today.json が「非空の programs 配列 かつ race_date=JST当日」の時だけ
+//   採用し、それ以外（空/別日/壊れ/取得失敗）は openapi にフォールバックする。
+//   これにより番組表パーサが boatrace.jp の HTML 変更で壊れても予測が止まらない。
+async function fetchProgramsBase() {
+  try {
+    const off = await fetchUpstream(OFFICIAL.programs);
+    const arr = off && Array.isArray(off.programs) ? off.programs : [];
+    const dateOk = !off.race_date || off.race_date === _jstDayIso();
+    if (arr.length > 0 && dateOk) {
+      off._source_base = 'official';
+      return off;
+    }
+  } catch (_) {
+    // fall through to openapi
+  }
+  return await fetchUpstream(UPSTREAM.programs);
+}
+
+// kind 別ベース取得。programs のみ公式優先、previews/results は openapi（値は Worker の
+//   boatrace.jp 直スクレイプで補完されるため base はリスト/締切時刻取得用途）。
+async function fetchKindBase(kind) {
+  if (kind === 'programs') return await fetchProgramsBase();
+  return await fetchUpstream(UPSTREAM[kind]);
 }
 
 // rt-fix P1-6 (2026-06-04): KV write を「内容が変化した時のみ」に変更。
@@ -606,7 +647,7 @@ async function refreshAll(env) {
   let previews = null, programs = null, results = null;
   try { previews = await fetchUpstream(UPSTREAM.previews); out.previews = { ok: true }; }
   catch (e) { out.previews = { ok: false, error: String(e).slice(0,200) }; }
-  try { programs = await fetchUpstream(UPSTREAM.programs); out.programs = { ok: true }; }
+  try { programs = await fetchProgramsBase(); out.programs = { ok: true }; }
   catch (e) { out.programs = { ok: false, error: String(e).slice(0,200) }; }
   try { results  = await fetchUpstream(UPSTREAM.results);  out.results  = { ok: true }; }
   catch (e) { out.results  = { ok: false, error: String(e).slice(0,200) }; }
@@ -702,7 +743,7 @@ async function boundedOnDemandExhibition(env, previews, nowMs) {
     if (nowMs - _ondemandExhibitionAt < 5 * 60 * 1000) return; // debounce (isolate-local)
     _ondemandExhibitionAt = nowMs;
     if (!previews || !Array.isArray(previews.previews)) return;
-    const programs = await fetchUpstream(UPSTREAM.programs);
+    const programs = await fetchProgramsBase();
     const stats = await mergeBoatraceJpExhibition(programs, previews, nowMs, MAX_ONDEMAND_SCRAPES);
     // 何も補完できなければ書かない (KV write 枠の節約 + kvWrite のハッシュ diff も効く)
     if (stats && stats.merged > 0) {
@@ -725,7 +766,7 @@ async function boundedOnDemandResults(env, results, nowMs) {
     if (nowMs - _ondemandResultsAt < 3 * 60 * 1000) return; // debounce (isolate-local)
     _ondemandResultsAt = nowMs;
     if (!results || !Array.isArray(results.results)) return;
-    const programs = await fetchUpstream(UPSTREAM.programs);
+    const programs = await fetchProgramsBase();
     const stats = await mergeBoatraceJpResults(programs, results, nowMs, MAX_ONDEMAND_SCRAPES);
     if (stats && stats.merged > 0) {
       if (results._kv_merge) delete results._kv_merge;
@@ -760,7 +801,7 @@ async function serveFromKV(env, kind, ctx) {
   // KV が無い or STALE (cron/KV write 失敗時の silent-halt を回避):
   //   上流 openapi を live fetch (edge cache、write 枠不要) して fresh を返す。
   try {
-    const data = await fetchUpstream(UPSTREAM[kind]);
+    const data = await fetchKindBase(kind);
     // rt-fix2 (2026-06-11): results は opportunistic write しない。
     //   素の openapi results で KV を上書きすると、cron が boatrace.jp 直スクレイプで
     //   先取りした確定結果を mergeKVOverOpenapi (巻き戻り対策) を経由せず破壊するため。
