@@ -88,13 +88,14 @@ function renderStadiums() {
       }
 
       // rt-fix3 (2026-06-27): 他サイト同様、現在(次)レースに締切時刻も併記（例「6R 18:02」）。
+      //   全レースの締切が過ぎた（次レース無し）場合は他サイト同様「発売終了」表示。
       var nextRaceInfo;
       if (nextRn) {
         var _ncClosed = stadium[nextRn] && stadium[nextRn].race_closed_at;
         var _ncHm = _ncClosed ? (String(_ncClosed).split(' ')[1] || '').slice(0, 5) : '';
         nextRaceInfo = _ncHm ? nextRn + 'R ' + _ncHm : nextRn + 'R';
       } else {
-        nextRaceInfo = '終了';
+        nextRaceInfo = '発売終了';
       }
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
