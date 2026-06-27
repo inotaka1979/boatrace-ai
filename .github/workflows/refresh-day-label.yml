@@ -1,0 +1,62 @@
+name: Refresh Day Label
+
+# 既存 racedata に「◯日目」(day_label) を軽量 backfill する。
+# scrape-racedata の通常更新は 1 日 2 回かつ既取得スキップのため当日中に day_label が
+# 付かない。push(マージ)トリガーで「マージするだけで一度自動実行」されるようにする。
+# 手動実行(workflow_dispatch)も可。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/refresh-day-label.yml'
+      - 'scripts/refresh_day_label.py'
+      - 'scripts/scrape_racedata.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-day-label
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - name: Backfill day_label
+        run: python scripts/refresh_day_label.py
+      - name: Commit & Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/racedata/today.json
+          if git diff --staged --quiet; then
+            echo "::notice::no day_label change to commit"; exit 0
+          fi
+          git commit -m "racedata: day_label backfill $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then echo "push ok"; exit 0; fi
+            else
+              git rebase --abort || true
+            fi
+            sleep $((RANDOM % 5 + i))
+          done
+          echo "::error::push failed"; exit 1
