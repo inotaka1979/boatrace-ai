@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           git config user.name "Automated"
           git config user.email "actions@users.noreply.github.com"
-          git add -f data/schedule/_debug_raw.html data/schedule/_debug_structure.txt
+          git add -f data/schedule/_debug_raw.html data/schedule/_debug_structure.txt data/schedule/_debug_racelist.html
           if git diff --staged --quiet; then
             echo "no debug output to commit"; exit 0
           fi
