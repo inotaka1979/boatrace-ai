@@ -172,8 +172,17 @@ jobs:
           fi
           NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
           TITLE="[STALE] ${TARGET} データ古い (${NOW_JST})"
+          # rt-fix3 (2026-06-27): data/* はアーカイブ(フォールバック)。通知ノイズになるため
+          #   @メンション/アサインは worker-*(リアルタイム経路)のみ。data/* は記録用に起票のみ。
+          if [[ "$TARGET" == worker-* ]]; then
+            MENTION="@inotaka1979 ← データ鮮度 SLO 違反 (リアルタイム経路)"
+            ASSIGNEE_ARG="--assignee inotaka1979"
+          else
+            MENTION="データ鮮度 SLO 違反 (data/* アーカイブ=フォールバック。実害は通常なし。通知抑制)"
+            ASSIGNEE_ARG=""
+          fi
           BODY=$(cat <<EOF
-          @inotaka1979 ← データ鮮度 SLO 違反
+          ${MENTION}
 
           - target: \`${TARGET}\`
           - threshold: ${MAX_AGE_MIN} min
@@ -197,7 +206,7 @@ jobs:
             --title "$TITLE" \
             --label "$LABEL" \
             --label "stale-data" \
-            --assignee inotaka1979 \
+            $ASSIGNEE_ARG \
             --body "$BODY" \
             --repo "${GITHUB_REPOSITORY}"
 
@@ -225,9 +234,11 @@ jobs:
             exit 0
           fi
           NOW_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)"
+          # rt-fix3: data/* アーカイブは @メンションせず静かに close（通知ノイズ抑制）。
+          if [[ "$TARGET" == worker-* ]]; then MENTION="@inotaka1979 "; else MENTION=""; fi
           for N in $NUMS; do
             echo "::notice::closing #$N ($TARGET recovered)"
-            COMMENT="@inotaka1979 ✅ データ鮮度が回復しました (${NOW_JST})。
+            COMMENT="${MENTION}✅ データ鮮度が回復しました (${NOW_JST})。
             \`\`\`
             ${MSG}
             \`\`\`
