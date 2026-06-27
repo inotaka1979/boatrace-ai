@@ -31,6 +31,7 @@ on:
       - 'scripts/scrape_previews.py'
       - 'scripts/scrape_odds_fast.py'
       - 'scripts/scrape_results.py'
+      - 'scripts/scrape_programs.py'
       - '.github/workflows/scrape-all.yml'
   schedule:
     # D3a (2026-05-17): 5 分→30 分間隔。Worker が主データ供給、本 cron はアーカイブ。

@@ -95,6 +95,10 @@ step "Numerical stability tests (P1-Q11)" \
 step "Fan handbook parser tests (P2-8)" \
      "python3 scripts/tests/test_fan_handbook_parse.py"
 
+# 公式番組表パーサ（boatrace.jp racelist → openapi 互換 programs）回帰テスト
+step "Official programs parser tests" \
+     "python3 -m unittest scripts.tests.test_programs_parse -v"
+
 # Epic 12 (P1-B1): 特徴量パイプラインの新旧同一性
 step "Features pipeline regression tests (P1-B1)" \
      "node scripts/tests/test_features_pipeline.js"

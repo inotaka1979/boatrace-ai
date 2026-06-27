@@ -75,6 +75,12 @@ def _scrape_results() -> int:
     return _run_subprocess("scrape_results.py", timeout_sec=1500)
 
 
+def _scrape_programs() -> int:
+    # 公式 boatrace.jp racelist → openapi 互換 programs。10 場 × 12R ≒ 120 fetch。
+    #   番組表は日次でほぼ静的なため 1 日 1 回（朝）取れれば十分。
+    return _run_subprocess("scrape_programs.py", timeout_sec=1800)
+
+
 def _scrape_racedata() -> int:
     # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
     #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
@@ -149,8 +155,9 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         #   複数 workflow の push を非マージ衝突させる唯一の原因だったため
         #   scrape の commit 対象から除外（index.html は skeleton + JS render）。
         return [
-            ("racedata", _scrape_racedata),
             ("schedule(quick)", _scrape_schedule_quick),
+            ("programs", _scrape_programs),
+            ("racedata", _scrape_racedata),
             ("tide", _scrape_tide),
             ("odds", _scrape_odds),
             ("previews", _scrape_previews),
@@ -165,6 +172,13 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     if racedata_stale:
         tasks.append(("racedata", _scrape_racedata))
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
+
+    # programs（公式番組表）: 番組表は日次でほぼ静的。本日分が未取得なら朝の窓で 1 回取得。
+    #   一覧元の current.json を使うため schedule(quick) を先に確実に走らせる。
+    if racedata_window and not _is_fresh_today("data/programs/today.json", now):
+        if not any(name == "schedule(quick)" for name, _ in tasks):
+            tasks.append(("schedule(quick)", _scrape_schedule_quick))
+        tasks.append(("programs", _scrape_programs))
 
     # 共通: race hours (JST 08-22) は odds + previews を毎 tick
     if 8 <= h <= 22:
@@ -216,6 +230,7 @@ def main() -> int:
             "previews": _scrape_previews,
             "results": _scrape_results,
             "racedata": _scrape_racedata,
+            "programs": _scrape_programs,
             "schedule": _scrape_schedule_quick,
             "tide": _scrape_tide,
             "prerender": _prerender_top,
