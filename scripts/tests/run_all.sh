@@ -172,6 +172,10 @@ step "Clearwing deprecated pattern detector" \
 step "Status banner freshness semantics (rt-fix3)" \
      "node scripts/tests/test_status_banner_freshness.js"
 
+# 20) rt-fix3 (2026-06-27): 出走表タブからの「◯日目」抽出
+step "Day label extraction (rt-fix3)" \
+     "python3 -m unittest scripts.tests.test_day_label -v"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

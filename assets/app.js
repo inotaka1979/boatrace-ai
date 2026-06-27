@@ -7350,7 +7350,8 @@ function racerBadges(boat,form,divergence){
           var rd = raceData.racedata.find(function(r) {
             return r.stadium === parseInt(sid);
           });
-          if (rd && rd.day) dayInfo = rd.day + "\u65E5\u76EE";
+          if (rd && rd.day_label) dayInfo = rd.day_label;
+          else if (rd && rd.day) dayInfo = rd.day + "\u65E5\u76EE";
         }
         var nextRaceInfo;
         if (nextRn) {

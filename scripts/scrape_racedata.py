@@ -33,8 +33,34 @@ def fetch_html(url: str) -> str:
     """URL から HTML を取得（http_utils.fetch_text の alias）。"""
     return fetch_text(url)
 
-def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
-    """出走表ページから今節成績（直近 6 艇分）を取得する。
+_ZEN2HAN_DAY = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
+def _extract_day_label(soup) -> str | None:
+    """出走表ページのタブから「本日が今節の何日目か」のラベルを取得する。
+
+    boatrace.jp racelist のタブ構造:
+      <li class="is-active2"><span class="tab2_inner">6月27日<span>３日目</span></span></li>
+    アクティブ(is-active2)タブの内側 span が当日のラベル（初日 / N日目 / 最終日）。
+    全角数字は半角化して返す。取得できなければ None。
+    """
+    try:
+        active = soup.select_one("li.is-active2 .tab2_inner span")
+        if active is None:
+            # フォールバック: is-active2 直下テキストから「初日/N日目/最終日」を拾う
+            active = soup.select_one("li.is-active2")
+        if active is None:
+            return None
+        txt = active.get_text(" ", strip=True).translate(_ZEN2HAN_DAY)
+        import re as _re
+        m = _re.search(r"(初日|最終日|\d+日目)", txt)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def scrape_racelist(jcd: str, rno: int, date_str: str) -> tuple[list[dict], str | None]:
+    """出走表ページから今節成績（直近 6 艇分）と「◯日目」ラベルを取得する。
 
     boatrace.jp の HTML 構造（2026 時点）:
       - tbody.is-fs12 = 1 名分の 4 行 group
@@ -130,10 +156,10 @@ def scrape_racelist(jcd: str, rno: int, date_str: str) -> list[dict]:
                 }
             })
 
-        return boats
+        return boats, _extract_day_label(soup)
     except Exception as e:
         print(f"  Error scraping racelist: {e}")
-        return []
+        return [], None
 
 def scrape_beforeinfo(jcd: str, rno: int, date_str: str) -> dict[int, list[str]]:
     """直前情報ページから艇番→部品交換タグ配列のマップを取得する。"""
@@ -330,7 +356,7 @@ def main() -> None:
         print(f"  Stadium {sid}: scraping {len(pending)}/{len(race_nums)} races")
 
         for rn in pending:
-            boats = scrape_racelist(jcd, rn, date_str)
+            boats, day_label = scrape_racelist(jcd, rn, date_str)
             time.sleep(INTERVAL)
 
             parts = scrape_beforeinfo(jcd, rn, date_str)
@@ -339,11 +365,15 @@ def main() -> None:
             for b in boats:
                 b["parts_replaced"] = parts.get(b["boat_number"], [])
 
-            all_data.append({
+            entry = {
                 "stadium": sid,
                 "race": rn,
                 "boats": boats
-            })
+            }
+            # rt-fix3: 出走表タブから取得した「◯日目」ラベル（初日 / N日目 / 最終日）。
+            if day_label:
+                entry["day_label"] = day_label
+            all_data.append(entry)
 
         # Stadium 完了ごとに partial として保存 (timeout / network 障害耐性)
         atomic_write_json(OUTPUT_RACEDATA, {

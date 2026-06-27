@@ -79,12 +79,15 @@ function renderStadiums() {
       var gradeNum = firstRace ? firstRace.race_grade_number || 5 : 5;
       var grade = GRADE_CLASS[gradeNum] || GRADE_CLASS[5];
 
+      // rt-fix3 (2026-06-27): 「◯日目」は出走表(racelist)タブ由来の day_label
+      //   （初日 / N日目 / 最終日）を直接表示。月間カレンダー解析(壊れている)には依存しない。
       var dayInfo = '';
       if (raceData && raceData.racedata) {
         var rd = raceData.racedata.find(function (r) {
           return r.stadium === parseInt(sid);
         });
-        if (rd && rd.day) dayInfo = rd.day + '日目';
+        if (rd && rd.day_label) dayInfo = rd.day_label;
+        else if (rd && rd.day) dayInfo = rd.day + '日目'; // 後方互換
       }
 
       // rt-fix3 (2026-06-27): 他サイト同様、現在(次)レースに締切時刻も併記（例「6R 18:02」）。
