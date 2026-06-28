@@ -46,6 +46,13 @@ class TestNarutoCyokuzen(unittest.TestCase):
         self.assertEqual(b['turn_time'], 5.50)
         self.assertEqual(b['straight_time'], 6.93)
 
+    def test_header_driven_columns(self):
+        # 鳴門は 展示=col4/一周=col5/まわり足=col6/直線=col7。値の妥当域で列対応の正しさを確認。
+        for b in self.race['boats']:
+            self.assertTrue(6.0 <= b['ex_time'] <= 8.0, b)       # 展示(直線150m)
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)    # 一周
+            self.assertTrue(4.5 <= b['turn_time'] <= 8.0, b)     # まわり足
+
     def test_all_boats_lap_times(self):
         laps = [b['lap_time'] for b in self.race['boats']]
         self.assertEqual(laps, [35.97, 36.67, 36.90, 36.83, 37.34, 36.82])
@@ -53,11 +60,6 @@ class TestNarutoCyokuzen(unittest.TestCase):
     def test_turn_times(self):
         turns = [b['turn_time'] for b in self.race['boats']]
         self.assertEqual(turns, [5.50, 5.57, 5.50, 5.63, 6.36, 6.29])
-
-    def test_adjust_weight(self):
-        # 枠2=0.5, 枠4=1.5, 他は 0
-        adj = [b['adjust_weight'] for b in self.race['boats']]
-        self.assertEqual(adj, [0.0, 0.5, 0.0, 1.5, 0.0, 0.0])
 
     def test_has_times(self):
         self.assertTrue(S._has_times(self.race))

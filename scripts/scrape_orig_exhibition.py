@@ -34,7 +34,9 @@ OUTPUT = "data/orig_exhibition/today.json"
 #     同型サイトの他場は base を足すだけで流用できる。
 # 他形式(蒲郡=静的HTML+motor.js 等)は platform を追加実装して対応する。
 VENUES = {
-    14: {"platform": "ajax_yosou", "base": "https://www.n14.jp"},  # 鳴門
+    5: {"platform": "ajax_yosou", "base": "https://www.boatrace-tamagawa.com"},  # 多摩川
+    10: {"platform": "ajax_yosou", "base": "https://www.boatrace-mikuni.jp"},    # 三国
+    14: {"platform": "ajax_yosou", "base": "https://www.n14.jp"},                # 鳴門
 }
 
 
@@ -46,14 +48,44 @@ def _f(s):
         return 0.0
 
 
-def parse_naruto_cyokuzen(html, sid, rno):
-    """鳴門 cyokuzen HTML → {race_stadium_number,race_number,boats:[...]} | None。
+# 抽出する時刻フィールド(予想に効く)。体重/チルト/調整は boatrace.jp 側で取得済みのため対象外。
+_TIME_LABELS = {
+    "展示": "ex_time",        # 直線150m 展示タイム
+    "一周": "lap_time",       # 一周タイム
+    "まわり足": "turn_time",   # まわり足
+    "直線": "straight_time",  # 直線
+}
+_COL_RE = __import__("re").compile(r"^col\d+$")
 
-    「各タイム」表(ヘッダに 一周/まわり足/直線)を探し、col4-7 を抽出する。
-    展示前で値が出ていない場合は boats=[] か None。
+
+def _header_col_map(table):
+    """ヘッダ th から {field: colクラス} を作る。場により列構成が違うため動的に対応付ける。"""
+    mp = {}
+    for r in table.find_all("tr"):
+        ths = r.find_all("th")
+        if not ths:
+            continue
+        for th in ths:
+            label = th.get_text(strip=True)
+            field = _TIME_LABELS.get(label)
+            if not field or field in mp:
+                continue
+            single = [c for c in (th.get("class") or []) if _COL_RE.match(c)]
+            if single:
+                mp[field] = single[0]
+        # 全フィールド揃ったら終了
+        if len(mp) == len(_TIME_LABELS):
+            break
+    return mp
+
+
+def parse_naruto_cyokuzen(html, sid, rno):
+    """各場の cyokuzen(オリジナル展示)HTML → {race_stadium_number,race_number,boats} | None。
+
+    ヘッダ駆動で 展示/一周/まわり足/直線 の列を特定し、各艇(td.waku 行)から抽出する。
+    場により列構成(col4-7 / col5-8 等)が違っても正しく取れる。展示前で表が無ければ None。
     """
     soup = BeautifulSoup(html, "html.parser")
-    # 一周/まわり足/直線 を含むテーブルを特定
     target = None
     for tbl in soup.find_all("table"):
         txt = tbl.get_text()
@@ -63,9 +95,13 @@ def parse_naruto_cyokuzen(html, sid, rno):
     if target is None:
         return None
 
+    colmap = _header_col_map(target)
+    # 最低限 一周/まわり足/直線 の列が取れないと信頼できない
+    if not all(k in colmap for k in ("lap_time", "turn_time", "straight_time")):
+        return None
+
     boats = []
-    rows = target.find_all("tr")
-    for i, row in enumerate(rows):
+    for row in target.find_all("tr"):
         waku_td = row.find("td", class_="waku")
         if not waku_td:
             continue
@@ -75,26 +111,14 @@ def parse_naruto_cyokuzen(html, sid, rno):
             continue
         if not (1 <= waku <= 6):
             continue
-
-        def col(c):
-            td = row.find("td", class_=c)
-            return _f(td.get_text(strip=True)) if td else 0.0
-
-        # 調整重量は次行 col2
-        adj = 0.0
-        if i + 1 < len(rows):
-            sub = rows[i + 1].find("td", class_="col2")
-            if sub:
-                adj = _f(sub.get_text(strip=True))
-
-        boats.append({
-            "racer_boat_number": waku,
-            "ex_time": col("col4"),       # 展示(直線150m)タイム
-            "lap_time": col("col5"),      # 一周タイム
-            "turn_time": col("col6"),     # まわり足
-            "straight_time": col("col7"),  # 直線
-            "adjust_weight": adj,
-        })
+        rec = {"racer_boat_number": waku}
+        for field, colcls in colmap.items():
+            td = row.find("td", class_=colcls)
+            rec[field] = _f(td.get_text(strip=True)) if td else 0.0
+        # 欠けたフィールドは 0.0 で補完
+        for field in _TIME_LABELS.values():
+            rec.setdefault(field, 0.0)
+        boats.append(rec)
 
     if not boats:
         return None

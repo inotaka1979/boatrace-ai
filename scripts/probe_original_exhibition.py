@@ -20,11 +20,12 @@ from http_utils import fetch_bytes  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 
-# 検証対象(ユーザー提供 URL から base ドメインを抽出)。jcd: base
+# 検証対象(ユーザー提供 URL から base ドメインを抽出)。jcd: base。全24場(蒲郡7は静的+JSで別形式)。
 CANDIDATES = {
     1: "https://www.kiryu-kyotei.com",     # 桐生
     2: "https://www.boatrace-toda.jp",     # 戸田
     3: "https://www.boatrace-edogawa.com",  # 江戸川
+    4: "https://www.heiwajima.gr.jp",      # 平和島
     5: "https://www.boatrace-tamagawa.com",  # 多摩川
     6: "https://www.boatrace-hamanako.jp",  # 浜名湖
     8: "https://www.boatrace-tokoname.jp",  # 常滑
@@ -32,6 +33,17 @@ CANDIDATES = {
     10: "https://www.boatrace-mikuni.jp",  # 三国
     11: "https://www.boatrace-biwako.jp",  # びわこ
     12: "https://www.boatrace-suminoe.jp",  # 住之江
+    13: "https://www.boatrace-amagasaki.jp",  # 尼崎
+    15: "https://www.marugameboat.jp",     # 丸亀
+    16: "https://www.kojimaboat.jp",       # 児島
+    17: "https://www.boatrace-miyajima.com",  # 宮島
+    18: "https://www.boatrace-tokuyama.jp",  # 徳山
+    19: "https://www.boatrace-shimonoseki.jp",  # 下関
+    20: "https://www.wmb.jp",              # 若松
+    21: "https://www.boatrace-ashiya.com",  # 芦屋
+    22: "https://www.boatrace-fukuoka.com",  # 福岡
+    23: "https://www.boatrace-karatsu.jp",  # 唐津
+    24: "https://omurakyotei.jp",          # 大村
 }
 
 
