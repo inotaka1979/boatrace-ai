@@ -41,9 +41,9 @@ DATA_JS = {
 }
 
 
-def _save(url, name):
+def _save(url, name, headers=None):
     try:
-        raw = fetch_bytes(url, timeout=20, retries=1)
+        raw = fetch_bytes(url, timeout=20, retries=1, headers=headers)
         path = os.path.join(OUTDIR, name)
         with open(path, "wb") as f:
             f.write(raw)
@@ -77,10 +77,15 @@ def _discover_naruto():
     # ライブ進行中なので展示済みレースは populated。早い数レースを採取。
     saved = 1
     d = datetime.now(JST).strftime("%Y%m%d")
+    # AJAX エンドポイントは Referer / X-Requested-With が無いと空を返すため付与する。
+    ajax_headers = {
+        "Referer": "https://www.n14.jp/sp/",
+        "X-Requested-With": "XMLHttpRequest",
+    }
     for rno in range(1, 7):
         url = ("https://www.n14.jp/sp/ajax/ajax_yosou.php"
                f"?targetday={d}&race={rno}&req=cyokuzen&run=0")
-        if _save(url, f"naruto_cyokuzen_{rno:02d}.html"):
+        if _save(url, f"naruto_cyokuzen_{rno:02d}.html", headers=ajax_headers):
             saved += 1
     return saved
 
