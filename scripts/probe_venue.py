@@ -1,59 +1,56 @@
 #!/usr/bin/env python3
-"""残り場のオリジナル展示データ源を特定する汎用プローブ(対象は TARGETS で指定)。
+"""宮島(17) kaisai_reload.php の周回タイム(dt[8])を採取するプローブ。
 
-各場のJS(SPAのデータ注入元)や候補エンドポイントを採取し、一周/まわり足/直線の
-所在(json/xml/ajax/htm)を特定する。確認後撤去。対象を変えて使い回す。
+宮島は POST race_common/require/kaisai_reload.php {race,date} のレスポンスを
+'####' で split、dt[8]=周回タイム(オリジナル展示)。全12レースで POST し、
+dt[8] に 一周/まわり足/直線 が入るか確認、構造を採取する。確認後撤去。
 """
 import os
-import re
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from http_utils import fetch_bytes  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
-
-# (tag, url) を採取。JSはendpoint手がかり抽出、データURLは中身確認。
-def _targets(hd):
-    return [
-        # 宮島(17): SPA の race.js がデータ注入。endpoint を探す。
-        ("miyajima_racejs", "https://www.boatrace-miyajima.com/race_common/js/race20231019.js?1234"),
-    ]
+BASE = "https://www.boatrace-miyajima.com"
+URL = BASE + "/race_common/require/kaisai_reload.php"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
+ORIG = ("一周", "まわり足", "直線", "周回", "ターン")
 
 
-ORIG = ("一周", "まわり足", "直線", "周回")
-
-
-def _save(name, raw, note=""):
-    p = os.path.join(OUTDIR, name)
-    with open(p, "wb") as f:
-        f.write(raw)
-    print(f"      saved {p} ({len(raw)}B){note}")
+def _post(race, date):
+    data = urllib.parse.urlencode({"race": race, "date": date}).encode()
+    req = urllib.request.Request(URL, data=data, headers={
+        "User-Agent": UA, "Referer": BASE + "/",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return r.read().decode("utf-8", errors="replace")
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    for tag, url in _targets(hd):
+    saved = False
+    for rno in range(1, 13):
         try:
-            raw = fetch_bytes(url, timeout=15, retries=1,
-                              headers={"Referer": url.split("/race")[0] + "/"})
-            txt = raw.decode("utf-8", errors="replace")
+            resp = _post(rno, hd)
         except Exception as e:
-            print(f"{tag} FAIL: {str(e)[:70]}")
+            print(f"R{rno:2d} POST FAIL: {str(e)[:60]}")
             continue
-        cnt = " ".join(f"{m}={txt.count(m)}" for m in ORIG)
-        print(f"{tag} ({len(raw)}B) {cnt}")
-        _save(f"probe_{tag}.txt", raw)
-        # endpoint 手がかり
-        hints = set()
-        hints |= set(re.findall(r"[\"'][^\"']*\.(?:json|xml|php)[^\"']*[\"']", txt))
-        hints |= set(re.findall(r"/[a-zA-Z0-9_./]*(?:original|tenji|cyokuzen|orig|syuhkai)[a-zA-Z0-9_./]*", txt, re.I))
-        hints |= set(re.findall(r"(?:ajax|getJSON|fetch|load)\s*\([^)]{0,60}", txt, re.I))
-        for h in sorted(hints)[:30]:
-            print(f"     hint: {h[:120]}")
+        parts = resp.split("####")
+        dt8 = parts[8] if len(parts) > 8 else ""
+        cnt = " ".join(f"{m}={dt8.count(m)}" for m in ORIG)
+        print(f"R{rno:2d} parts={len(parts)} dt8({len(dt8)}B) {cnt}")
+        if not saved and len(dt8) > 50:
+            p = os.path.join(OUTDIR, f"miyajima_shukai_R{rno:02d}.html")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(dt8)
+            print(f"      saved {p}")
+            if any(m in dt8 for m in ORIG):
+                saved = True
     return 0
 
 
