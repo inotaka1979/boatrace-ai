@@ -703,7 +703,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   globalThis.getL2Features = getL2Features;
   globalThis.l2Predict = l2Predict;
   globalThis.l2Update = l2Update;
-  function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries) {
+  function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries, rno) {
     var score = 0;
     var reasons = [];
     var risks = [];
@@ -874,6 +874,40 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var ezAux = exhibitionZScore(etTime, sid);
       if (ezAux !== 0) score += -ezAux * 2 * decay;
       if (ezAux <= -1) reasons.push("\u5C55\u793A\u30BF\u30A4\u30E0\u5834\u76F8\u5BFE\u7684\u306B\u8D85\u901F(z=" + ezAux.toFixed(1) + ")");
+      var oeRace = ((typeof globalThis !== "undefined" && globalThis._origExhibIndex || {})[sid] || {})[rno] || null;
+      if (oeRace) {
+        var _oeRank = function(field) {
+          var arr = [];
+          for (var w in oeRace) {
+            var v = oeRace[w] && oeRace[w][field];
+            if (v > 0) arr.push({ w: parseInt(w, 10), v });
+          }
+          arr.sort(function(a, b) {
+            return a.v - b.v;
+          });
+          var rk = -1;
+          for (var i = 0; i < arr.length; i++) {
+            if (arr[i].w === bn) {
+              rk = i;
+              break;
+            }
+          }
+          return { rank: rk, n: arr.length };
+        };
+        var turnR = _oeRank("turn_time");
+        var lapR = _oeRank("lap_time");
+        if (turnR.n >= 4 && turnR.rank >= 0) {
+          var tb = turnR.rank === 0 ? 2.5 : turnR.rank === 1 ? 1.2 : turnR.rank >= turnR.n - 1 ? -1.5 : 0;
+          score += tb * decay;
+          if (turnR.rank === 0) reasons.push("\u307E\u308F\u308A\u8DB3\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+          else if (turnR.rank >= turnR.n - 1) risks.push("\u307E\u308F\u308A\u8DB3\u6700\u9045(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+        }
+        if (lapR.n >= 4 && lapR.rank >= 0) {
+          var lb = lapR.rank === 0 ? 1.5 : lapR.rank === 1 ? 0.8 : 0;
+          score += lb * decay;
+          if (lapR.rank === 0) reasons.push("\u4E00\u5468\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+        }
+      }
       if (myPv && myPv.racer_start_timing != null) {
         var st = pf(myPv.racer_start_timing);
         var absScore = st < 0 ? -6 : st <= 0.05 ? 4 : st <= 0.1 ? 2 : st >= 0.2 ? -2 : 0;
@@ -1191,7 +1225,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var l1scores = [];
     boats.forEach(function(b) {
       var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
-      var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries);
+      var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
       l1scores.push(s);
     });
     var l1total = l1scores.reduce(function(a, s) {

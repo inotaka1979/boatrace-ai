@@ -34,7 +34,7 @@ function predictRaceProgram(sid, raceNum) {
   var predictedEntries = predictEntryCourses(boats, sid);
   var l1scores = [];
   boats.forEach(function (b) {
-    var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries);
+    var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries, raceNum);
     l1scores.push(s);
   });
 

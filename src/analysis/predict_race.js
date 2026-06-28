@@ -86,7 +86,7 @@ function predictRace(sid, raceNum) {
   var l1scores = [];
   boats.forEach(function (b) {
     var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
-    var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries);
+    var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
     l1scores.push(s);
   });
 
