@@ -27,6 +27,30 @@ GAMAGORI = (
     "https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/"
     "recomend/recomend{d}{jcd:02d}{rno:02d}.htm"
 )
+BASE = "https://www.gamagori-kyotei.com"
+# recomend HTML の <div id> は空で、これらの per-day-per-venue JS データファイルを
+# sp_recomend.js が読んで埋める。出足/伸び/回り足は motor*.js に入っている。
+DATA_JS = {
+    "motor": "/asp/gamagori/kyogi/kyogihtml/js/motor{d}{jcd:02d}.js",
+    "comment": "/asp/gamagori/kyogi/kyogihtml/js/comment{d}{jcd:02d}.js",
+    "focus": "/asp/gamagori/kyogi/kyogihtml/js/focus{d}{jcd:02d}.js",
+    "weather": "/asp/gamagori/kyogi/kyogihtml/js/weather{d}{jcd:02d}.js",
+    # 展示タイム(一周/まわり足)を埋める制御スクリプト。データファイル名を特定するため取得。
+    "sp_recomend": "/js/sp_recomend.js",
+}
+
+
+def _save(url, name):
+    try:
+        raw = fetch_bytes(url, timeout=20, retries=1)
+        path = os.path.join(OUTDIR, name)
+        with open(path, "wb") as f:
+            f.write(raw)
+        print(f"saved {path} ({len(raw)} bytes) from {url}")
+        return True
+    except Exception as e:
+        print(f"  fetch fail {url}: {e}")
+        return False
 
 
 def main() -> int:
@@ -34,18 +58,15 @@ def main() -> int:
     d = datetime.now(JST).strftime("%Y%m%d")
     jcd = 7
     saved = 0
-    for rno in (1, 6, 12):
-        url = GAMAGORI.format(d=d, jcd=jcd, rno=rno)
-        try:
-            raw = fetch_bytes(url, timeout=20, retries=1)
-            path = os.path.join(OUTDIR, f"orig_exhibition_gamagori_{rno:02d}.html")
-            with open(path, "wb") as f:
-                f.write(raw)
-            print(f"saved {path} ({len(raw)} bytes) from {url}")
+    # 1) recomend HTML（静的テンプレ構造の確認用）
+    if _save(GAMAGORI.format(d=d, jcd=jcd, rno=6), "orig_exhibition_gamagori_06.html"):
+        saved += 1
+    # 2) JS データファイル（出足/伸び/回り足 等の実値）
+    for key, tmpl in DATA_JS.items():
+        url = BASE + tmpl.format(d=d, jcd=jcd)
+        if _save(url, f"orig_data_gamagori_{key}.js"):
             saved += 1
-        except Exception as e:
-            print(f"  jcd={jcd} rno={rno} fetch fail: {e}")
-    print(f"done: {saved} pages saved")
+    print(f"done: {saved} files saved")
     return 0
 
 
