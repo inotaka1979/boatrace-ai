@@ -1,0 +1,1437 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="cache-control" content="no-cache" />
+        <meta http-equiv="expires" content="0" />
+        <meta name="format-detection" content="telephone=no">
+        <meta name="viewport" content="width=720">
+
+        <title>情報サイト｜BOAT RACE蒲郡オフィシャルサイト</title>
+
+        <meta name="Keywords" content="BOAT RACE蒲郡,ボートレース,蒲郡,ナイター,動画,ライブ" />
+        <meta name="Description" content="BOAT RACE蒲郡が開催するレースの映像、オッズや見どころなどレースに関する様々な情報がご覧いただけます。" />
+        <link rel="apple-touch-icon-precomposed" href="/sp/apple-touch-icon-precomposed.png" />
+
+        <link rel="stylesheet" href="https://www.gamagori-kyotei.com/sp/css/reset.css" />
+        <link rel="stylesheet" href="https://www.gamagori-kyotei.com/sp/css/common.css" />
+        <link rel="stylesheet" href="https://www.gamagori-kyotei.com/sp/kyogi/css/kyogi.css" />
+
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery-1.8.3.min.js"></script>
+
+        <!-- 拡大時処理 -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/Zoomer.js"></script>
+
+        <!-- アドレスバー非表示 -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/HideAddressBar.js"></script>
+
+        <!-- ページスクロール -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.page-scroller.js"></script>
+
+        <!-- ドロップダウン -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.dropdown.js"></script>
+
+        <!-- アコーディオン -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.accordion.js"></script>
+
+        <!-- フォーム -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/custom-form-elements.js"></script>
+
+        <!-- タップ -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.taphover.js"></script>
+
+        <!-- timelineからの遷移時の処理 -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/js/kyogi_index.js"></script>
+
+        <!-- フリック -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/FlickReady.js"></script>
+        <link rel="stylesheet" href="https://www.gamagori-kyotei.com/sp/kyogi/css/owl.carousel.css" />
+        <link rel="stylesheet" href="https://www.gamagori-kyotei.com/sp/kyogi/css/owl.theme.css" />
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/owl.carousel_choku.js"></script>
+        <script type="text/javascript">
+            $(document).ready(function() {
+                $("#slide").owlCarousel({
+                    navigation : false,
+                    pagination : false,
+                    slideSpeed : 300,
+                    paginationSpeed : 300,
+                    singleItem : true,
+                    autoHeight : true
+                });
+            });
+        </script>
+
+                    <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/weather2026062807.js?var=202606281446071"></script>
+
+            <script type="text/javascript">
+            	var strWeatherHTML = '';
+
+            	if ( typeof funcweather == "function")  {
+            		if( funcweather(0) !== '' && funcweather(0) !== '0' ){
+
+            			strWeatherHTML = strWeatherHTML + "<div id=\"weather\" class=\"cf\">";
+            			strWeatherHTML = strWeatherHTML;
+
+            			strWeatherHTML = strWeatherHTML + "<div id=\"time\"><span>" + funcweather(0) + "R</span>終了時点</div>";
+
+            			if( funcweather(1) !== '' ){
+
+            				strWeatherHTML = strWeatherHTML + "<div id=\"info\"><img src=\"/sp/kyogi/images/weather0" + funcweather(1) + ".png\" width=\"80\" height=\"60\">";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "<div id=\"info\"><img src=\"/sp/kyogi/images/weather00.png\" width=\"80\" height=\"60\">";
+            			}
+
+            			if( funcweather(2) !== '' ){
+            				strWeatherHTML = strWeatherHTML + "<span>" + funcweather(2) + "℃</span>";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "<span>---</span>";
+            			}
+
+            			if( funcweather(6) !== '' ){
+            				strWeatherHTML = strWeatherHTML + "<img src=\"/sp/kyogi/images/weather_wave0" + funcweather(6) + ".png\" width=\"50\" height=\"60\">";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "<img src=\"/sp/kyogi/images/weather_wave03.png\" width=\"50\" height=\"60\">";
+            			}
+
+            			if( funcweather(3) !== '' ){
+            				strWeatherHTML = strWeatherHTML + "<span>" + funcweather(3) + "cm</span>";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "<span>---</span>";
+            			}
+
+            			if( funcweather(7) === '1' ){
+            				strWeatherHTML = strWeatherHTML + "<img src=\"/sp/kyogi/images/weather_wind01.png\" width=\"50\" height=\"60\">";
+            			}else if( funcweather(7) === '2' ){
+            				strWeatherHTML = strWeatherHTML + "<img src=\"/sp/kyogi/images/weather_wind02.png\" width=\"40\" height=\"60\">";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "<img src=\"/sp/kyogi/images/weather_wind03.png\" width=\"28\" height=\"60\">";
+            			}
+
+            			strWeatherHTML = strWeatherHTML + "<span>";
+
+            			if( funcweather(5) !== '' ){
+            				strWeatherHTML = strWeatherHTML + funcweather(5);
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "---";
+            			}
+
+
+            			if( funcweather(4) !== '' ){
+            				strWeatherHTML = strWeatherHTML + funcweather(4) + "m";
+            			}else{
+            				strWeatherHTML = strWeatherHTML + "---";
+            			}
+
+
+            			strWeatherHTML = strWeatherHTML + "</span></div>";
+            			strWeatherHTML = strWeatherHTML;
+            			strWeatherHTML = strWeatherHTML + "</div>";
+
+            		}
+
+            	}
+
+            </script>
+
+            <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/focus2026062807.js?var=202606281446071"></script>
+
+            <script type="text/javascript">
+
+            	var strfocusHTML = '';
+
+            	if ( ( typeof funcslit == "function" ) && ( typeof funcSD == "function" ) && ( typeof funcST == "function" ) )  {
+
+            		if( ( funcslit( '1', "1" ) !== '' ) && ( funcslit( '1', "2" ) !== '' ) && ( funcslit( '1', "3" ) !== '' ) && ( funcslit( '1', "4" ) !== '' ) && ( funcslit( '1', "5" ) !== '' ) && ( funcslit( '1', "6" ) !== '' ) && ( funcSD( '1', "1" ) !== '' ) && ( funcSD( '1', "2" ) !== '' ) && ( funcSD( '1', "3" ) !== '' ) && ( funcSD( '1', "4" ) !== '' ) && ( funcSD( '1', "5" ) !== '' ) && ( funcSD( '1', "6" ) !== '' ) ){
+
+            			strfocusHTML = strfocusHTML + '';
+            			strfocusHTML = strfocusHTML + "<h2 class=\"slit\">独自スリット予想</h2>";
+            			strfocusHTML = strfocusHTML + "<div id=\"slit\">";
+            			strfocusHTML = strfocusHTML + "<table>";
+            			strfocusHTML = strfocusHTML + "<tr>";
+            			strfocusHTML = strfocusHTML + "<td class=\"IN\">IN</td>";
+            			strfocusHTML = strfocusHTML + "<td>　</td>";
+            			strfocusHTML = strfocusHTML + "<td>　</td>";
+            			strfocusHTML = strfocusHTML + "</tr>";
+
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '1' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '1' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '1' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '1' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '1' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '1', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '1', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '1', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '1', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '2' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '2' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '2' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '2' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '2' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '2', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '2', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '2', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '2', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '3' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '3' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '3' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '3' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '3' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '3', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '3', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '3', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '3', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '4' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '4' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '4' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '4' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '4' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '4', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '4', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '4', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '4', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '5' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '5' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '5' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '5' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '5' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '5', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '5', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '5', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '5', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                                                    strfocusHTML = strfocusHTML + "<tr>";
+
+                            if( funcslit( '1', '6' ) !== '' ){
+                                if( funcSD( '1', funcslit( '1', '6' ) ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '6' ) ) + "</td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                                }
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
+                            }
+
+
+                            if( funcslit( '1', '6' ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '6' ) + ".png\" width=\"90\" height=\"56\" ";
+
+                                if( funcST( '1', '6', "2" ) !== '' ){
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '6', "2" ) + "px\"></td>";
+                                }else{
+                                    strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
+                                }
+
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"slit\"></td>";
+                            }
+
+                            if( funcST( '1', '6', "1" ) !== '' ){
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '6', "1" ) + "</td>";
+                            }else{
+                                strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
+                            }
+
+                            strfocusHTML = strfocusHTML + "</tr>";
+                        
+                        strfocusHTML = strfocusHTML + "<tr>";
+                        strfocusHTML = strfocusHTML + "<td class=\"OUT\">OUT</td>";
+                        strfocusHTML = strfocusHTML + "<td colspan=\"2\" class=\"course\"><div>選手コース別平均ST</div></td>";
+                        strfocusHTML = strfocusHTML + "</tr>";
+                        strfocusHTML = strfocusHTML + "</table>";
+                        strfocusHTML = strfocusHTML + "</div>";
+
+                    }
+                }
+            </script>
+
+            <script type="text/javascript">
+
+                var strYosoHTML = '';
+
+                if ( typeof funcTenkai == "function")  {
+                    if( funcTenkai( '1' ) !== '' ){
+                        strYosoHTML = strYosoHTML + "<h2 class=\"yoso\">レース展望</h2>";
+                        strYosoHTML = strYosoHTML + "<div id=\"yoso\">";
+                        strYosoHTML = strYosoHTML + funcTenkai( '1' );
+                        strYosoHTML = strYosoHTML + "</div>";
+                    }else{
+                        strYosoHTML = strYosoHTML + "<div class=\"nodata\">ただいま鋭意入力中!!</div>";
+                    }
+                }else{
+                    strYosoHTML = strYosoHTML + "<div class=\"nodata\">ただいま鋭意入力中!!</div>";
+                }
+
+            </script>
+
+            <script type="text/javascript">
+
+                var strKaimeHTML = '';
+                var strYoso1 = 0;
+                var strYoso2 = 0;
+                var strYoso3 = 0;
+                var strYoso4 = 0;
+
+                if ( ( typeof funcKaime == "function" ) && ( typeof funcyoso == "function" ) )  {
+
+                    if( funcKaime( '1' ) !== '' ){
+
+                        for( intLoopCountjs = 1 ; intLoopCountjs <= 6 ; intLoopCountjs = intLoopCountjs + 1){
+                            if( funcyoso( '1', ' + intLoopCountjs + ' ) === '1' ){
+                                strYoso4 = intLoopCountjs;
+                            }else if( funcyoso( '1', ' + intLoopCountjs + ' ) === '2' ){
+                                strYoso3 = intLoopCountjs;
+                            }else if( funcyoso( '1', ' + intLoopCountjs + ' ) === '3' ){
+                                strYoso2 = intLoopCountjs;
+                            }else if( funcyoso( '1', ' + intLoopCountjs + ' ) === '4' ){
+                                strYoso1 = intLoopCountjs;
+                            }
+                        }
+
+                        if( strYoso1 !== 0 && strYoso2 !== 0 && strYoso3 !== 0 && strYoso4 !== 0 ){
+
+                            strKaimeHTML = strKaimeHTML + "<h2 class=\"kaime\">激アツ!! 買い目はコレ!!</h2>";
+                            strKaimeHTML = strKaimeHTML + "<div id=\"kaime\">";
+
+                            if( funcKaime( '1' ) === '1' ){
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                            }else if( funcKaime( '1' ) === '2' ){
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime07.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                            }else if( funcKaime( '1' ) === '3' ){
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime07.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                                strKaimeHTML = strKaimeHTML + "<table>";
+                                strKaimeHTML = strKaimeHTML + "<tr>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso2 + ".png\" alt=\"" + strYoso2 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime09.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso3 + ".png\" alt=\"" + strYoso3 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime08.png\" width=\"28\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "<td><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso1 + ".png\" alt=\"" + strYoso1 + "\" width=\"40\" height=\"40\"><img src=\"/sp/kyogi/images/focus_kaime0" + strYoso4 + ".png\" alt=\"" + strYoso4 + "\" width=\"40\" height=\"40\"></td>";
+                                strKaimeHTML = strKaimeHTML + "</tr>";
+                                strKaimeHTML = strKaimeHTML + "</table>";
+
+                            }
+                            strKaimeHTML = strKaimeHTML + "</div>";
+
+                        }
+
+                    }
+
+                }
+            </script>
+
+
+            <script type="text/javascript">
+
+                var strAnaHTML = '';
+
+                if ( typeof funcAna == "function")  {
+
+                    if( ( ( funcAna( '1', "1" , "1" ) !== '' ) && ( funcAna( '1', "1" , "2" ) !== '' ) ) || ( ( funcAna( '1', "2" , "1" ) !== '' ) && ( funcAna( '1', "2" , "2" ) !== '' ) ) ){
+
+                        strAnaHTML = strAnaHTML + "<h2 class=\"ana\">プレミア!! 穴狙い!!</h2>";
+                        strAnaHTML = strAnaHTML + "<div id=\"ana\" class=\"cf\">";
+
+                        if( ( ( funcAna( '1', "1" , "1" ) !== '' ) && ( funcAna( '1', "1" , "2" ) !== '' ) ) ){
+
+                            strAnaHTML = strAnaHTML + "<table>";
+                            strAnaHTML = strAnaHTML + "<tr>";
+
+                            if( funcAna( '1', "1" , "1" ) === '1' ){
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">流　し</td>";
+                            }else if( funcAna( '1', "1" , "1" ) === '2' ){
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">ボックス</td>";
+                            }else{
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">---</td>";
+                            }
+
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "</tr>";
+                            strAnaHTML = strAnaHTML + "</table>";
+
+                        }
+
+                        if( ( ( funcAna( '1', "2" , "1" ) !== '' ) && ( funcAna( '1', "2" , "2" ) !== '' ) ) ){
+
+                            strAnaHTML = strAnaHTML + "<table>";
+                            strAnaHTML = strAnaHTML + "<tr>";
+
+                            if( funcAna( '1', "2" , "1" ) === '1' ){
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">流　し</td>";
+                            }else if( funcAna( '1', "2" , "1" ) === '2' ){
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">ボックス</td>";
+                            }else{
+                                strAnaHTML = strAnaHTML + "<td class=\"text\">---</td>";
+                            }
+
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
+                            strAnaHTML = strAnaHTML + "</tr>";
+                            strAnaHTML = strAnaHTML + "</table>";
+
+                        }
+
+                        strAnaHTML = strAnaHTML + "</div>";
+
+                    }
+                }
+
+            </script>
+        
+        <!-- セレクトボックスリンク -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/link.js"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/funcLiveTime.js"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/SmartAgentGetter.js"></script>
+        <!-- ヘッダーメニューボタン -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/js/contents_header_menu_assen.js"></script>
+
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.headermenu.js"></script>
+        <script type="text/javascript">
+
+        function funcDefaultSeledted(){
+        	document.racenum.select.options["0"].selected=true;
+        }
+        </script>
+
+        <!-- メッセージ -->
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.marquee.js"></script>
+        <script>
+
+            $(document).ready(function (){
+                $("#marquee").marquee({
+                    scrollSpeed: 6,
+                    showSpeed: 1000,
+                    pauseSpeed: 1000
+        	    });
+            });
+
+        </script>
+
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/KekkaRaceNum2026062807.js?var=202606281446071"></script>
+
+        <script type="text/javascript">
+
+        	var strNavHTML = '';
+
+        	if ( ( typeof funckekkaRacenum == "function" ) )  {
+        		if( "1" <= funckekkaRacenum() ) {
+
+        			strNavHTML = strNavHTML + "<li id=\"nav06\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/kekka/kekka202606280701.htm\">結果</a></li>";
+        		}else{
+        			strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280701.htm\">オッズ</a></li>";
+        		}
+        	}else{
+        		strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280701.htm\">オッズ</a></li>";
+        	}
+
+        </script>
+
+    </head>
+
+
+    <body>
+
+        <div id="touchBox"><!-- タッチイベント取得 -->
+
+            <div id="wrapper"><!-- wrapper start -->
+
+                <div class="split-box left-box">
+
+                    <div id="header_wrapper"><!-- header start -->
+                        <div id="header">
+
+                            <h1><a href="https://www.gamagori-kyotei.com/sp/index.htm"><div>BOAT RACE 蒲郡 07#</div></a></h1>
+
+                            <ul id="header_nav">
+
+                                <li id="live"><a href="javascript:void(0);" onClick="onClickLive( );"><div>ライブ</div></a></li>
+                                <li id="replay"><a href="javascript:void(0);"><div>リプレイ</div></a></li>
+                                <li id="vote"><a href="https://www.gamagori-kyotei.com/asp/log/gamagori_kyogi.php" target="_blank"><div>投票する</div></a></li>
+
+                            </ul>
+
+                            <div id="replay_menu">
+
+                                <ul>
+                                    <li><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/moviehtml/replay_list.htm?flag=3">今日のリプレイ</a></li>
+                                    <li><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/moviehtml/replay_tenji.htm">展示リプレイ</a></li>
+                                    <li><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/moviehtml/replay_list.htm?flag=1">過去6節 全レース</a></li>
+                                    <li><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/moviehtml/replay_final.htm">過去6年 優勝戦</a></li>
+                                </ul>
+
+                            </div>
+
+
+                            <div id="b_menu" class="tap tate">MENU</div>
+
+                        </div>
+                        <script type="text/javascript">
+                            // ヘッダーメニュー
+
+                        </script>
+                    </div><!-- header end -->
+
+
+                    <div id="main"><!-- main start -->
+                        <div id="race">
+                            <table>
+                                <tr>
+                                    <td class="date">6/28</td>
+                                    <td class="name">スポーツニッポン杯争奪蒲郡ボート大賞</td>
+                                    <td class="day">
+                                                                                                                                    最終日
+                                                                                    
+                                    </td>
+                                </tr>
+                            </table>
+
+                        </div>
+
+
+
+                        
+
+
+                        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/ticker07.js?var=20260628144607"></script>
+                        <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.ticker.js"></script>
+                        <script>
+                            if ( typeof funcTicker == "function")  {
+                                $(function(){
+                                    $(".ticker li").newsTicker({
+                                        type:"longitudinally",
+                                        delay:3000
+                                    });
+                                });
+                            }
+                        </script>
+                        <script type="text/javascript">
+                            if ( typeof funcTicker == "function")  {
+                                document.write(funcTicker());
+                            }
+                        </script>
+
+
+                        <div id="race_select" class="cf">
+
+                                                            <div id="back"></div>
+                            
+                            <div id="num_select">
+                                <form name="racenum">
+                                    <select id="select" name="select" class="styled">
+                                                                                                                                    <option value="1R" selected>1R</option>
+                                                                                                                                                                                <option value="2R">2R</option>
+                                                                                                                                                                                <option value="3R">3R</option>
+                                                                                                                                                                                <option value="4R">4R</option>
+                                                                                                                                                                                <option value="5R">5R</option>
+                                                                                                                                                                                <option value="6R">6R</option>
+                                                                                                                                                                                <option value="7R">7R</option>
+                                                                                                                                                                                <option value="8R">8R</option>
+                                                                                                                                                                                <option value="9R">9R</option>
+                                                                                                                                                                                <option value="10R">10R</option>
+                                                                                                                                                                                <option value="11R">11R</option>
+                                                                                                                                                                                <option value="12R">12R</option>
+                                                                                                                        </select>
+                                </form>
+                            </div>
+
+                                                            <div id="next"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/choku/choku202606280702.htm">next</a></div>
+                            
+                            <table>
+                                <tr>
+                                    
+                                                                            
+                                        <td class="class">一般戦
+                                    
+                                    <td class="dento"><span>発売<br>締切</span></td>
+                                    <td class="time">15:30</td>
+                                </tr>
+                            </table>
+
+                        </div>
+
+
+                        <div class="data cf"><!-- data start -->
+                                                            <div id="choku">
+
+                                    <ul id="tab_choku" class="cf">
+
+                                        <li id="tab01" class="tap"><div class="page2"></div></li>
+                                        <li id="tab02" class="tap"><div class="page1"></div></li>
+
+                                    </ul>
+
+
+                                    <div id="slide" class="owl-carousel owl-theme"><!-- slide start -->
+
+
+                                        <!--スタート展示-->
+                                        <div class="item">
+                                            <div class="nodata">ただいまデータはございません</div>
+                                        </div>
+
+
+                                        <!--直前情報-->
+                                        <div class="item">
+                                            <table class="ta_shusso">
+<tr>
+<th rowspan="2" class="header1" scope="col">枠<br>
+番</th>
+<th rowspan="2" class="name" scope="col">選手名<br>
+<span>登番（期）支部 / 年齢</span></th>
+<th rowspan="2"  scope="col">展示ﾀｲﾑ<br>
+チルト</th>
+<th rowspan="2"  scope="col">体重<br>
+調整</th>
+<th rowspan="2" scope="col">プロペラ</th>
+<th rowspan="2" scope="col">部品交換</th>
+</tr>
+<tr></tr>
+<!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r1">1</td>
+<td class="n1 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5346" class="name4">中村 紋夕梨</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">46.0</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n1 cho_number top_no_border">5346 (134期) 愛知 / 22</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"><span>+1.0</span></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r2">2</td>
+<td class="n2 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=4664" class="name4">東口 晃</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.2</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n2 cho_number top_no_border">4664 (109期) 福井 / 42</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r3">3</td>
+<td class="n3 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3870" class="name4">寺嶋 雄</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.1</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n3 cho_number top_no_border">3870 (79期) 福井 / 50</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r4">4</td>
+<td class="n4 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3538" class="name4">菊池 峰晴</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">53.6</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n4 cho_number top_no_border">3538 (69期) 群馬 / 58</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r5">5</td>
+<td class="n5 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5245" class="name4">倉富 大誠</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.5</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n5 cho_number top_no_border">5245 (130期) 愛知 / 24</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r6">6</td>
+<td class="n6 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5461" class="name4">板頭 里緒</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">48.8</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n6 cho_number top_no_border">5461 (138期) 三重 / 19</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr></table>
+                                        </div>
+
+
+                                        <!--前走成績-->
+                                        <div class="item">
+                                            <table class="ta_shusso">
+                                                <tr>
+                                                    <th rowspan="2" class="header1" scope="col">枠<br>
+                                                    番</th>
+                                                    <th rowspan="2" class="name" scope="col">選手名<br>
+                                                    <span>登番（期）支部 / 年齢</span></th>
+                                                    <th rowspan="2" scope="col"><span>出走回数</span><br>
+                                                    事故率</th>
+                                                    <th colspan="4" scope="col">前走成績</th>
+                                                </tr>
+                                                <tr>
+                                                    <th scope="col">R</th>
+                                                    <th class="cho_z_course" scope="col">コース</th>
+                                                    <th scope="col">ST</th>
+                                                    <th scope="col">成績</th>
+                                                </tr>
+                                                                                                                                                            <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r1">1</td>
+
+                                                            <td class="n1 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5346" class="name4">
+                                                                                                                                中村 紋夕梨
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">23</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n1 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0.09</td>
+                                                                                                                    </tr>
+                                                                                                                                                                                                                <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r2">2</td>
+
+                                                            <td class="n2 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=4664" class="name4">
+                                                                                                                                東口 晃
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">41</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n2 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0</td>
+                                                                                                                    </tr>
+                                                                                                                                                                                                                <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r3">3</td>
+
+                                                            <td class="n3 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3870" class="name4">
+                                                                                                                                寺嶋 雄
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">34</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n3 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0</td>
+                                                                                                                    </tr>
+                                                                                                                                                                                                                <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r4">4</td>
+
+                                                            <td class="n4 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3538" class="name4">
+                                                                                                                                菊池 峰晴
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">37</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n4 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0.32</td>
+                                                                                                                    </tr>
+                                                                                                                                                                                                                <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r5">5</td>
+
+                                                            <td class="n5 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5245" class="name4">
+                                                                                                                                倉富 大誠
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">41</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n5 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0.05</td>
+                                                                                                                    </tr>
+                                                                                                                                                                                                                <!-- ▼枠▼ -->
+                                                        <tr>
+                                                            <td rowspan="2" class="cho_waku r6">6</td>
+
+                                                            <td class="n6 bottom_no_border">
+                                                                                                                                    <a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5461" class="name4">
+                                                                                                                                板頭 里緒
+                                                            </a></td>
+
+                                                                                                                            <td class="cho_kaisu">24</td>
+                                                            
+                                                            
+                                                                                                                            <td rowspan="2" class="cho_z_R">---</td>
+                                                                <td rowspan="2" class="cho_z_course r">---</td>
+                                                                <td rowspan="2" class="cho_z_ST">---</td>
+                                                                <td rowspan="2" class="cho_z_seiseki">---<br>
+                                                                </td>
+                                                            
+                                                            </tr>
+                                                            <tr>
+                                                            <td class="n6 cho_number top_no_border"></td>
+
+                                                                                                                            <td class="cho_jiko">0</td>
+                                                                                                                    </tr>
+                                                                                                    
+                                            </table>
+                                        </div>
+
+
+                                    <!--スタート展示-->
+                                    <div class="item">
+                                        <div class="nodata">ただいまデータはございません</div>
+
+                                    </div>
+
+
+                                    <!--直前情報-->
+                                    <div class="item">
+                                        <table class="ta_shusso">
+<tr>
+<th rowspan="2" class="header1" scope="col">枠<br>
+番</th>
+<th rowspan="2" class="name" scope="col">選手名<br>
+<span>登番（期）支部 / 年齢</span></th>
+<th rowspan="2"  scope="col">展示ﾀｲﾑ<br>
+チルト</th>
+<th rowspan="2"  scope="col">体重<br>
+調整</th>
+<th rowspan="2" scope="col">プロペラ</th>
+<th rowspan="2" scope="col">部品交換</th>
+</tr>
+<tr></tr>
+<!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r1">1</td>
+<td class="n1 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5346" class="name4">中村 紋夕梨</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">46.0</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n1 cho_number top_no_border">5346 (134期) 愛知 / 22</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"><span>+1.0</span></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r2">2</td>
+<td class="n2 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=4664" class="name4">東口 晃</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.2</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n2 cho_number top_no_border">4664 (109期) 福井 / 42</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r3">3</td>
+<td class="n3 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3870" class="name4">寺嶋 雄</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.1</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n3 cho_number top_no_border">3870 (79期) 福井 / 50</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r4">4</td>
+<td class="n4 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=3538" class="name4">菊池 峰晴</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">53.6</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n4 cho_number top_no_border">3538 (69期) 群馬 / 58</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r5">5</td>
+<td class="n5 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5245" class="name4">倉富 大誠</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">52.5</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n5 cho_number top_no_border">5245 (130期) 愛知 / 24</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr><!-- ▼枠▼ -->
+<tr>
+<td rowspan="2" class="cho_waku r6">6</td>
+<td class="n6 bottom_no_border"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/sensyu.php?touban=5461" class="name4">板頭 里緒</a></td>
+<td class="cho_time"></td>
+<td class="cho_weight">48.8</td>
+<td rowspan="2" class="cho_pera">　</td>
+<td rowspan="2" class="cho_parts"></td>
+</tr>
+<tr>
+<td class="n6 cho_number top_no_border">5461 (138期) 三重 / 19</td>
+<td class="cho_tilt"></td>
+<td class="cho_adjust"></td></tr></table>
+                                    </div>
+
+                                    </div><!-- slide end -->
+                                    </div>
+                                    <!-- 天候情報 -->
+                                        <script type="text/javascript">document.write(strWeatherHTML);</script>
+                                        <div id="weather" class="cf">
+                                            <a href="/kyogi/weather/index.html" target="_blank">
+                                                <div class="w_link_tit">水面気象情報LIVE</div>
+                                            </a>
+                                        </div>
+                                    </div><!-- data end -->
+                                    <!-- フォーカス -->
+                                    <div id="focus">
+                                    <script type="text/javascript">document.write(strfocusHTML);</script>
+                                    <script type="text/javascript">document.write(strYosoHTML);</script>
+                                    <script type="text/javascript">document.write(strKaimeHTML);</script>
+                                    <script type="text/javascript">document.write(strAnaHTML);</script>
+                                </div><!-- フォーカス end -->
+                            
+                            <!-- データリンク -->
+			                <div id="link">
+			                    <dl class="accordion_box">
+			                        <dd>
+			                            <ul>
+			                                <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/BottomMenu07.js?var=20260628144607"></script>
+                                            <script type="text/javascript">
+                                                if ( typeof funcBottomMenu == "function")  {
+                                                    document.write(funcBottomMenu());
+                                                }else if( typeof funcBottomMenu_Non == "function")  {
+                                                    document.write(funcBottomMenu_Non());
+                                                }
+                                            </script>
+                                        </ul>
+                                    </dd>
+
+                                    <dd>
+                                        <ul>
+                                            <li><a href="https://www.gamagori-kyotei.com/sp/00help/00help.htm">ヘルプ</a></li>
+                                        </ul>
+                                    </dd>
+                                </dl>
+                            </div>
+                        </div><!-- main end -->
+
+
+			            <div id="footer"><!-- footer start -->
+			                <div id="page_top"><a href="#wrapper">▲ページ上部へ</a></div>
+			                <div id="b_top"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/index/index2026062807.htm">レースインデックス</a></div>
+                            <!----Footer----->
+                            <div class="footer">
+                                <div class="foot_header"></div>
+                                    <div id="nav2">
+                                        <div id="nav2_menu">
+                                            <!--MENU-->
+<script type="text/javascript" src="/js/contents_footer_menu_assengaiyo.js"></script>
+<script type="text/javascript" src="/asp/gamagori/sp/kyogi/kyogihtml/date/date.js"></script>
+<dl id="nav_list">
+<dt class="plus" id="nav01">レースガイド</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav01-1"><a href="/asp/gamagori/sp/contents/01cal/01cal.asp">開催日程</a></li>
+<li id="nav01-2"><a href="/asp/gamagori/sp/contents/01race/01race.asp">レースインフォメーション</a></li>
+<li id="nav01-3"><a href="/sp/01bmotor/01bmotor.htm">実況高橋アナのモーター太鼓判</a></li>
+<li id="nav01-4"><a href="/sp/01pdf/01pdf.htm">出走表PDF</a></li>
+<li id="nav01-5"><a href="/sp/g_jump/01history.htm"  target="_blank">モーター・ボート履歴</a></li>
+<li id="nav01-6"><a href="/sp/01data/01data.htm">データ集</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav02">イベント＆サービス情報</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav02-1"><a href="/asp/gamagori/sp/contents/02event/02event.asp">イベント＆ファンサービス</a></li>
+<!-- <li id="nav02-2"><a href="/asp/gamagori/sp/contents/02event/02pair.asp">ナイターペアボート</a></li> -->
+<li id="nav02-3"><a href="/sp/g_jump/e-jan.htm" target="_blank">e-じゃんカード会員</a></li>
+<li id="nav02-4"><a href="/sp/g_jump/gamapo.htm" target="_blank">蒲郡ムーンライトポイントクラブ</a></li>
+<li id="nav02-5"><a href="/sp/g_jump/02syusso.htm"  target="_blank">出走表配布場所</a></li>
+<li id="nav02-6"><a href="/sp/02service/02service.htm">レース映像＆予想情報</a></li>
+<li id="nav02-7"><a href="/sp/02tel/02tel.htm">TEL＆FAXサービス</a></li>
+<li id="nav02-8"><a href="/sp/02toto/02toto.htm">トトまるの部屋</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav03">施設＆アクセス情報</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav03-1"><a href="/sp/03guide/03guide.htm">フロアガイド</a></li>
+<li id="nav03-2"><a href="/sp/03seat/03seat.htm">指定席・レンタルルーム・プレミアムウイング</a></li>
+<li id="nav03-3"><a href="/sp/g_jump/03gourmet.htm" target="_blank">グルメ案内</a></li>
+<li id="nav03-7"><a href="/mooovi/" target="_blank">Moooviがまごおり</a></li>
+<li id="nav03-8"><a href="/mooovi/gruun.htm" target="_blank">Gruunがまごおり</a></li>
+<li id="nav03-4"><a href="/sp/03yoso/03yoso.htm">予想屋・専門紙の部屋</a></li>
+<li id="nav03-5"><a href="/sp/03access/03access.htm">交通アクセス</a></li>
+<li id="nav03-6"><a href="/sp/g_jump/kanko.htm" target="_blank">周辺観光</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav04">愛知支部選手</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav04-1"><a href="/sp/04racer/04racer.htm">選手名鑑</a></li>
+<li id="nav04-2"><a href="/sp/g_jump/04racer.htm" target="_blank">愛知支部 優勝カウント</a></li>
+<li id="nav04-3">
+<script type="text/javascript">
+	// 蒲郡概要書リンク
+	funcContentsFooterMenu( 1 );
+</script>
+あっせん情報[PDF]</a></li>
+</ul>
+</dd>
+</dl><!--accordion_box end-->
+
+
+<ul id="sub_nav" class="cf">
+<li id="btn01"><a href="/asp/gamagori/sp/kyogi/moviehtml/movie_live.htm">レースライブ</a></li>
+<li id="btn02">
+<script type="text/javascript">
+	// 競技情報トップリンク
+	funcTargetDate();
+</script>
+情報サイト</a></li>
+<li id="btn03"><a href="/sp/kyogi/replay.htm">リプレイ動画＆レース結果</a></li>
+<li id="btn04" class="yoko"><a href="/asp/log/gamagori_kyogi.php" target="_blank">インターネット投票</a></li>
+</ul>
+
+<ul id="sub_btn03" class="cf">
+<!-- <li id="btn01"><a href="/sp/g_jump/fb.htm">FACEBOOK</a></li>
+<li id="btn02"><a href="/sp/g_jump/twi.htm">TWITTER</a></li>
+<li id="btn03"><a href="/sp/g_jump/youtube.htm">YOUTUBE</a></li>
+<li id="btn04"><a href="https://line.me/R/ti/p/%40klb5597w">LINE@</a></li> -->
+<li id="btn01"><a href="/sp/g_jump/fb.htm" target="_blank">FACEBOOK</a></li>
+<li id="btn02"><a href="/sp/g_jump/twi.htm" target="_blank">TWITTER</a></li>
+<li id="btn03"><a href="/sp/g_jump/youtube.htm" target="_blank">YOUTUBE</a></li>
+<li id="btn04"><a href="/sp/g_jump/line.htm" target="_blank">LINE@</a></li>
+</ul>
+<ul id="sub_btn02" class="cf">
+<li id="btn01"><a href="/sp/00link/00link.htm">リンク集</a></li>
+<li id="btn02"><a href="/sp/00privacy/00privacy.htm">プライバシー<br class="yoko" />ポリシー</a></li>
+<li id="btn03">
+<script type="text/javascript">
+	// 蒲郡概要書リンク
+	funcContentsFooterMenu( 3 );
+</script>
+ボートレース<br class="yoko" />蒲郡概要書</a></li>
+<li id="btn01"><a href="/sp/00help/00help.htm">ヘルプ</a></li>
+<li id="btn02"><a href="/asp/gamagori/sp/contents/00voice/00voice.asp">お客様の声</a></li>
+<li id="btn03"><a href="/sp/g_jump/00faq.htm" target="_blank">よくある質問</a></li>
+</ul>
+<div class="clear"></div>
+
+<!--nav end-->
+                                        </div>
+
+                                    <div class="fsd">
+                                        <ul>
+                                            <li id="fsd_tel"><a href="tel:05035400507">050-3540-0507</a></li>
+                                        <li id="fsd_mail"><a href="https://secure.boatrace-sp.com/contact_form/07/input" target="_blank">お問い合わせフォーム</a></li>
+                                        </ul>
+                                    </div>
+                                    <div class="foot_logo"></div>
+                                </div>
+
+			                </div><!--/.footer-->
+
+			            </div><!-- footer end -->
+
+			            <div id="footer_space"></div>
+
+
+			            <div id="footer_nav" class="cf"><!-- footer_nav start -->
+
+			                <ul class="cf">
+
+			                    <li id="nav01"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/syusso/syusso202606280701.htm">出走表</a></li>
+
+
+                                <script type="text/javascript">
+                                    document.write(strNavHTML);
+                                </script>
+
+
+			                    <li id="nav03" class="active">直前＆スタ展</li>
+
+			                    <li id="nav04"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/kekka_all/kekka_all202606280701.htm">結果一覧</a></li>
+
+			                    <li id="nav05"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend202606280701.htm">蒲郡のおすすめ</a></li>
+
+
+			                </ul>
+
+			            </div><!-- footer_nav end -->
+
+
+			        </div><!--/.left-box-->
+
+                    <div class="split-box right-box">
+                        <div id="nav">
+                            <!--MENU-->
+<script type="text/javascript" src="/js/contents_footer_menu_assengaiyo.js"></script>
+<script type="text/javascript" src="/asp/gamagori/sp/kyogi/kyogihtml/date/date.js"></script>
+<dl id="nav_list">
+<dt class="plus" id="nav01">レースガイド</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav01-1"><a href="/asp/gamagori/sp/contents/01cal/01cal.asp">開催日程</a></li>
+<li id="nav01-2"><a href="/asp/gamagori/sp/contents/01race/01race.asp">レースインフォメーション</a></li>
+<li id="nav01-3"><a href="/sp/01bmotor/01bmotor.htm">実況高橋アナのモーター太鼓判</a></li>
+<li id="nav01-4"><a href="/sp/01pdf/01pdf.htm">出走表PDF</a></li>
+<li id="nav01-5"><a href="/sp/g_jump/01history.htm"  target="_blank">モーター・ボート履歴</a></li>
+<li id="nav01-6"><a href="/sp/01data/01data.htm">データ集</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav02">イベント＆サービス情報</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav02-1"><a href="/asp/gamagori/sp/contents/02event/02event.asp">イベント＆ファンサービス</a></li>
+<!-- <li id="nav02-2"><a href="/asp/gamagori/sp/contents/02event/02pair.asp">ナイターペアボート</a></li> -->
+<li id="nav02-3"><a href="/sp/g_jump/e-jan.htm" target="_blank">e-じゃんカード会員</a></li>
+<li id="nav02-4"><a href="/sp/g_jump/gamapo.htm" target="_blank">蒲郡ムーンライトポイントクラブ</a></li>
+<li id="nav02-5"><a href="/sp/g_jump/02syusso.htm"  target="_blank">出走表配布場所</a></li>
+<li id="nav02-6"><a href="/sp/02service/02service.htm">レース映像＆予想情報</a></li>
+<li id="nav02-7"><a href="/sp/02tel/02tel.htm">TEL＆FAXサービス</a></li>
+<li id="nav02-8"><a href="/sp/02toto/02toto.htm">トトまるの部屋</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav03">施設＆アクセス情報</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav03-1"><a href="/sp/03guide/03guide.htm">フロアガイド</a></li>
+<li id="nav03-2"><a href="/sp/03seat/03seat.htm">指定席・レンタルルーム・プレミアムウイング</a></li>
+<li id="nav03-3"><a href="/sp/g_jump/03gourmet.htm" target="_blank">グルメ案内</a></li>
+<li id="nav03-7"><a href="/mooovi/" target="_blank">Moooviがまごおり</a></li>
+<li id="nav03-8"><a href="/mooovi/gruun.htm" target="_blank">Gruunがまごおり</a></li>
+<li id="nav03-4"><a href="/sp/03yoso/03yoso.htm">予想屋・専門紙の部屋</a></li>
+<li id="nav03-5"><a href="/sp/03access/03access.htm">交通アクセス</a></li>
+<li id="nav03-6"><a href="/sp/g_jump/kanko.htm" target="_blank">周辺観光</a></li>
+</ul>
+</dd>
+<dt class="plus" id="nav04">愛知支部選手</dt>
+<dd>
+<ul class="menu_list">
+<li id="nav04-1"><a href="/sp/04racer/04racer.htm">選手名鑑</a></li>
+<li id="nav04-2"><a href="/sp/g_jump/04racer.htm" target="_blank">愛知支部 優勝カウント</a></li>
+<li id="nav04-3">
+<script type="text/javascript">
+	// 蒲郡概要書リンク
+	funcContentsFooterMenu( 1 );
+</script>
+あっせん情報[PDF]</a></li>
+</ul>
+</dd>
+</dl><!--accordion_box end-->
+
+
+<ul id="sub_nav" class="cf">
+<li id="btn01"><a href="/asp/gamagori/sp/kyogi/moviehtml/movie_live.htm">レースライブ</a></li>
+<li id="btn02">
+<script type="text/javascript">
+	// 競技情報トップリンク
+	funcTargetDate();
+</script>
+情報サイト</a></li>
+<li id="btn03"><a href="/sp/kyogi/replay.htm">リプレイ動画＆レース結果</a></li>
+<li id="btn04" class="yoko"><a href="/asp/log/gamagori_kyogi.php" target="_blank">インターネット投票</a></li>
+</ul>
+
+<ul id="sub_btn03" class="cf">
+<!-- <li id="btn01"><a href="/sp/g_jump/fb.htm">FACEBOOK</a></li>
+<li id="btn02"><a href="/sp/g_jump/twi.htm">TWITTER</a></li>
+<li id="btn03"><a href="/sp/g_jump/youtube.htm">YOUTUBE</a></li>
+<li id="btn04"><a href="https://line.me/R/ti/p/%40klb5597w">LINE@</a></li> -->
+<li id="btn01"><a href="/sp/g_jump/fb.htm" target="_blank">FACEBOOK</a></li>
+<li id="btn02"><a href="/sp/g_jump/twi.htm" target="_blank">TWITTER</a></li>
+<li id="btn03"><a href="/sp/g_jump/youtube.htm" target="_blank">YOUTUBE</a></li>
+<li id="btn04"><a href="/sp/g_jump/line.htm" target="_blank">LINE@</a></li>
+</ul>
+<ul id="sub_btn02" class="cf">
+<li id="btn01"><a href="/sp/00link/00link.htm">リンク集</a></li>
+<li id="btn02"><a href="/sp/00privacy/00privacy.htm">プライバシー<br class="yoko" />ポリシー</a></li>
+<li id="btn03">
+<script type="text/javascript">
+	// 蒲郡概要書リンク
+	funcContentsFooterMenu( 3 );
+</script>
+ボートレース<br class="yoko" />蒲郡概要書</a></li>
+<li id="btn01"><a href="/sp/00help/00help.htm">ヘルプ</a></li>
+<li id="btn02"><a href="/asp/gamagori/sp/contents/00voice/00voice.asp">お客様の声</a></li>
+<li id="btn03"><a href="/sp/g_jump/00faq.htm" target="_blank">よくある質問</a></li>
+</ul>
+<div class="clear"></div>
+
+<!--nav end-->
+                        </div>
+                    </div>
+
+		    </div><!-- wrapper end -->
+
+	    </div><!-- タッチイベント終了 -->
+
+        <script type="text/javascript">
+            funcZoomer();
+        </script>
+
+	</body>
+
+</html>
+
