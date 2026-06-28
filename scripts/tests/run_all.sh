@@ -103,6 +103,10 @@ step "Official programs parser tests" \
 step "Official programs source loader tests" \
      "python3 -m unittest scripts.tests.test_programs_source -v"
 
+# オリジナル展示(鳴門 一周/まわり足/直線)パーサ回帰テスト
+step "Original exhibition parser tests (naruto)" \
+     "python3 -m unittest scripts.tests.test_orig_exhibition_parse -v"
+
 # Epic 12 (P1-B1): 特徴量パイプラインの新旧同一性
 step "Features pipeline regression tests (P1-B1)" \
      "node scripts/tests/test_features_pipeline.js"
