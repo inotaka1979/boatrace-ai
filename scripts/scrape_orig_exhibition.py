@@ -47,11 +47,15 @@ C = "ajax_cyokuzen"
 #   {base}/race/xml/kaisai/{YYYYMMDD}/race_table_original_{RR}.xml を読む。
 #   XML record: teiban/ttime(展示)/rnd(一周)/cnr(まわり足)/str(直線)。
 T = "toda_xml"
+# platform "gamagori_recomend": 蒲郡型。recomend{date}{jcd}{RR}.htm(静的)の
+#   table.ta_recomend に コース/枠番/展示/一周/まわり足/直線。展示後に値が入る。
+G = "gamagori_recomend"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
+    7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     22: {"platform": C, "base": "https://www.boatrace-fukuoka.com"},   # 福岡(同ベンダー)
     5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
     6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
@@ -266,6 +270,52 @@ def parse_toda_original(xml_bytes, sid, rno):
     }
 
 
+def parse_gamagori_recomend(html, sid, rno):
+    """蒲郡型(recomend 予想紙htm)→ race dict | None。
+
+    table.ta_recomend のヘッダ: コース/枠番/展示ﾀｲﾑ/一周/まわり足/直線。
+    各行: td.cho_course(進入) / td.cho_waku(艇番) / td.ori_time×4
+      (展示, 一周, まわり足, 直線)。展示前は ori_time が '---' → 0.0。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    target = None
+    for tbl in soup.find_all("table"):
+        head = tbl.get_text()
+        if ("一周" in head) and ("まわり足" in head) and ("直線" in head):
+            target = tbl
+            break
+    if target is None:
+        return None
+    boats = []
+    for row in target.find_all("tr"):
+        waku_td = row.find("td", class_="cho_waku")
+        if not waku_td:
+            continue
+        try:
+            waku = int(waku_td.get_text(strip=True))
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= waku <= 6):
+            continue
+        ot = [td.get_text(strip=True) for td in row.find_all("td", class_="ori_time")]
+        ot += [""] * (4 - len(ot))  # 展示, 一周, まわり足, 直線
+        boats.append({
+            "racer_boat_number": waku,
+            "ex_time": _f(ot[0]),
+            "lap_time": _f(ot[1]),       # 一周
+            "turn_time": _f(ot[2]),      # まわり足
+            "straight_time": _f(ot[3]),  # 直線
+        })
+    if not boats:
+        return None
+    boats.sort(key=lambda b: b["racer_boat_number"])
+    return {
+        "race_stadium_number": int(sid),
+        "race_number": int(rno),
+        "boats": boats,
+    }
+
+
 def _has_times(race):
     """1 艇でも一周/まわり足/直線が入っていれば True(展示後)。"""
     return any(
@@ -403,6 +453,25 @@ def scrape_toda_xml(base, jcd, date_str):
     return out
 
 
+def scrape_gamagori_recomend(base, jcd, date_str):
+    """蒲郡型: recomend{YYYYMMDD}{jcd}{RR}.htm を全12R取得し、展示後のみ返す。"""
+    out = []
+    for rno in range(1, 13):
+        rid = f"{date_str}{jcd:02d}{rno:02d}"
+        url = (f"{base}/asp/gamagori/sp/kyogi/kyogihtml/recomend/"
+               f"recomend{rid}.htm")
+        try:
+            html = fetch_text(url, timeout=12, retries=1,
+                              headers={"Referer": base + "/"})
+        except Exception:
+            continue
+        race = parse_gamagori_recomend(html, jcd, rno)
+        if race and _has_times(race):
+            out.append(race)
+    out.sort(key=lambda r: r["race_number"])
+    return out
+
+
 def scrape_venue(jcd, cfg, date_str):
     """レジストリの platform に応じて場のオリジナル展示を取得する。"""
     if cfg["platform"] == "ajax_yosou":
@@ -411,6 +480,8 @@ def scrape_venue(jcd, cfg, date_str):
         return scrape_ajax_cyokuzen(cfg["base"], jcd, date_str)
     if cfg["platform"] == "toda_xml":
         return scrape_toda_xml(cfg["base"], jcd, date_str)
+    if cfg["platform"] == "gamagori_recomend":
+        return scrape_gamagori_recomend(cfg["base"], jcd, date_str)
     print(f"  jcd={jcd}: unknown platform {cfg['platform']}")
     return []
 
