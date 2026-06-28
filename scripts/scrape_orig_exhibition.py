@@ -28,13 +28,13 @@ from bs4 import BeautifulSoup  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTPUT = "data/orig_exhibition/today.json"
 
-NARUTO_AJAX = (
-    "https://www.n14.jp/sp/ajax/ajax_yosou.php"
-    "?targetday={d}&race={rno}&req=cyokuzen&run=0"
-)
-NARUTO_HEADERS = {
-    "Referer": "https://www.n14.jp/sp/",
-    "X-Requested-With": "XMLHttpRequest",
+# 場レジストリ: 場ごとに platform と base(ドメイン) を登録するだけで対応場を増やせる。
+#   platform "ajax_yosou": 鳴門型(n14.jp 系ベンダー)。/sp/ajax/ajax_yosou.php?req=cyokuzen を
+#     Referer/XHR 付きで叩き、「各タイム」表(col4-7)を parse_naruto_cyokuzen で解析。
+#     同型サイトの他場は base を足すだけで流用できる。
+# 他形式(蒲郡=静的HTML+motor.js 等)は platform を追加実装して対応する。
+VENUES = {
+    14: {"platform": "ajax_yosou", "base": "https://www.n14.jp"},  # 鳴門
 }
 
 
@@ -113,27 +113,40 @@ def _has_times(race):
     )
 
 
-def scrape_naruto(date_str):
-    """鳴門 全 12R の cyokuzen を取得し、値が入ったレースのみ返す。"""
+def scrape_ajax_yosou(base, jcd, date_str):
+    """ajax_yosou 形式(鳴門型)の全 12R を取得し、展示タイムが入ったレースのみ返す。"""
+    headers = {"Referer": base + "/sp/", "X-Requested-With": "XMLHttpRequest"}
     out = []
     for rno in range(1, 13):
-        url = NARUTO_AJAX.format(d=date_str, rno=rno)
+        url = (f"{base}/sp/ajax/ajax_yosou.php"
+               f"?targetday={date_str}&race={rno}&req=cyokuzen&run=0")
         try:
-            html = fetch_text(url, timeout=15, retries=1, headers=NARUTO_HEADERS)
-            race = parse_naruto_cyokuzen(html, 14, rno)
+            html = fetch_text(url, timeout=15, retries=1, headers=headers)
+            race = parse_naruto_cyokuzen(html, jcd, rno)
         except Exception as e:
-            print(f"  naruto {rno}R fail: {e}")
+            print(f"  jcd={jcd} {rno}R fail: {e}")
             race = None
         if race and _has_times(race):
             out.append(race)
     return out
 
 
+def scrape_venue(jcd, cfg, date_str):
+    """レジストリの platform に応じて場のオリジナル展示を取得する。"""
+    if cfg["platform"] == "ajax_yosou":
+        return scrape_ajax_yosou(cfg["base"], jcd, date_str)
+    print(f"  jcd={jcd}: unknown platform {cfg['platform']}")
+    return []
+
+
 def main() -> int:
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     date_str = datetime.now(JST).strftime("%Y%m%d")
     exhibition = []
-    exhibition.extend(scrape_naruto(date_str))
+    for jcd, cfg in VENUES.items():
+        races = scrape_venue(jcd, cfg, date_str)
+        print(f"  jcd={jcd} ({cfg['platform']}): {len(races)} races with times")
+        exhibition.extend(races)
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
         "race_date": f"{date_str[0:4]}-{date_str[4:6]}-{date_str[6:8]}",
