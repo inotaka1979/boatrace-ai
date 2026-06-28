@@ -37,6 +37,8 @@ VENUES = {
     5: {"platform": "ajax_yosou", "base": "https://www.boatrace-tamagawa.com"},  # 多摩川
     10: {"platform": "ajax_yosou", "base": "https://www.boatrace-mikuni.jp"},    # 三国
     14: {"platform": "ajax_yosou", "base": "https://www.n14.jp"},                # 鳴門
+    20: {"platform": "ajax_yosou", "base": "https://www.wmb.jp"},                # 若松
+    21: {"platform": "ajax_yosou", "base": "https://www.boatrace-ashiya.com"},   # 芦屋
 }
 
 

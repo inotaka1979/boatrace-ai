@@ -1,0 +1,68 @@
+name: Scrape Original Exhibition
+
+# 各場の「オリジナル展示」(一周/まわり足/直線 の実測タイム、boatrace.jp 全国版に無い)を
+# 取得して data/orig_exhibition/today.json を生成する。対応場は scrape_orig_exhibition.VENUES。
+# 展示はレース毎に締切 ~40-20 分前に出るため、レース時間帯(JST 9-21)に高頻度で回す。
+# 値が入ったレースのみ収録するので、未実施レースは自然に除外される。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/scrape-orig-exhibition.yml'
+      - 'scripts/scrape_orig_exhibition.py'
+  schedule:
+    # レース時間帯の複数アンカー(GitHub の間引き対策)。展示は随時更新されるため複数回。
+    - cron: '0 1 * * *'    # JST 10:00
+    - cron: '0 4 * * *'    # JST 13:00
+    - cron: '0 7 * * *'    # JST 16:00
+    - cron: '0 10 * * *'   # JST 19:00
+    - cron: '0 12 * * *'   # JST 21:00 (ナイター)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scrape-orig-exhibition
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/requirements.txt
+      - name: Scrape original exhibition
+        run: python scripts/scrape_orig_exhibition.py
+      - name: Commit & Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Automated"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/orig_exhibition/today.json
+          if git diff --staged --quiet; then
+            echo "::notice::no original exhibition change"; exit 0
+          fi
+          git commit -m "orig_exhibition: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3 4 5; do
+            git fetch "$REMOTE" main
+            if git rebase FETCH_HEAD; then
+              if git push "$REMOTE" HEAD:main; then echo "push ok"; exit 0; fi
+            else
+              git rebase --abort || true
+            fi
+            sleep $((RANDOM % 5 + i))
+          done
+          echo "::error::push failed"; exit 1
