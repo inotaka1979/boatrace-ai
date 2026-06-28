@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""戸田(jcd=2)のオリジナル展示データ源(XML)を特定するプローブ。
+"""戸田(jcd=2)オリジナル展示XMLを採取するプローブ(URL確定版)。
 
-戸田は別ベンダーで、ページが race_table_original.js + xml_read.js で XML から
-オリジナル展示(一周/まわり足/直線 等)を読み込む。これらJSは静的配信で展示時間に
-依存せず常時取得可能なため、XMLのURLパターンと項目構造をここで確定する。確認後撤去。
+race_table_original.js より判明:
+  download('./xml/kaisai/'+DATE+'/race_table_original_'+zero2(RACE_NO)+'.xml','xml')
+  XML record 項目: ttime(展示) tiltc(チルト) taiju(体重) ctaiju(調整)
+                   rnd cnr str (+ *_rank) ← rank強調される3つ=オリジナル展示
+相対パスの base が未確定のため複数 base 候補を試し、実XMLを採取。
+値域で rnd/cnr/str → 一周/まわり足/直線 の対応を確認する。確認後撤去。
 """
 import os
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 
@@ -15,54 +19,48 @@ from http_utils import fetch_bytes  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.boatrace-toda.jp"
+# 相対 './xml/...' の解決先 base 候補
+PREFIXES = ["/race", "", "/sp", "/assets", "/owpc/pc/race"]
 
 
-def _save(name, raw, note=""):
-    p = os.path.join(OUTDIR, name)
-    with open(p, "wb") as f:
-        f.write(raw)
-    print(f"      saved {p} ({len(raw)}B){note}")
+def _vals(xml: str, tag: str):
+    return re.findall(rf"<{tag}>([^<]*)</{tag}>", xml)
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    # 1) XMLを読むJS群を採取(URL構築とXMLパースのロジック)
-    for js in ("race_table_original.js", "xml_read.js", "race_table.js",
-               "race_table_before.js"):
-        url = f"{BASE}/assets/js/{js}"
-        try:
-            raw = fetch_bytes(url, timeout=15, retries=1,
-                              headers={"Referer": BASE + "/"})
-            _save(f"toda_{js}", raw)
-            txt = raw.decode("utf-8", errors="replace")
-            # XML/データURLの手がかりを表示
-            import re
-            hints = set(re.findall(r"[\"'][^\"']*\.(?:xml|cgi|php|json)[^\"']*[\"']", txt))
-            hints |= set(re.findall(r"(?:loadXml|readXml|getXml|ajax|\.get\()\w*", txt, re.I))
-            hints |= set(re.findall(r"(?:original|tenji|cyokuzen)\w*", txt, re.I))
-            for h in sorted(hints)[:25]:
-                print(f"        hint: {h[:110]}")
-        except Exception as e:
-            print(f"  {js} FAIL: {str(e)[:60]}")
-    # 2) よくある XML パスを試す(date/race 指定方法の当たりをつける)
-    candidates = [
-        f"/race/xml/original{hd}.xml",
-        f"/assets/xml/original{hd}.xml",
-        f"/cyokuzen/xml/{hd}.xml",
-        f"/race/original/{hd}.xml",
-    ]
-    for p in candidates:
-        url = BASE + p
-        try:
-            raw = fetch_bytes(url, timeout=12, retries=1,
-                              headers={"Referer": BASE + "/"})
-            txt = raw.decode("utf-8", errors="replace")
-            print(f"  XML? {p} ({len(raw)}B) 一周={txt.count('一周')} "
-                  f"まわり={txt.count('まわり')} 直線={txt.count('直線')}")
-            _save(f"toda_xmltry_{p.strip('/').replace('/','_')}", raw)
-        except Exception as e:
-            print(f"  XML? {p} FAIL: {str(e)[:50]}")
+    base_ok = None
+    saved = False
+    for rno in range(1, 13):
+        rr = f"{rno:02d}"
+        prefixes = [base_ok] if base_ok else PREFIXES
+        for pre in prefixes:
+            url = f"{BASE}{pre}/xml/kaisai/{hd}/race_table_original_{rr}.xml"
+            try:
+                raw = fetch_bytes(url, timeout=12, retries=1,
+                                  headers={"Referer": BASE + "/"})
+                xml = raw.decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            recs = xml.count("<record")
+            tt = _vals(xml, "ttime")
+            rnd = _vals(xml, "rnd")
+            cnr = _vals(xml, "cnr")
+            st = _vals(xml, "str")
+            print(f"R{rno:2d} base='{pre}' ({len(raw)}B) records={recs} "
+                  f"ttime={tt[:3]} rnd={rnd[:3]} cnr={cnr[:3]} str={st[:3]}")
+            base_ok = pre  # この base で取れた
+            if not saved and (any(rnd) or any(st)):
+                p = os.path.join(OUTDIR,
+                                 f"toda_original_xml_R{rr}.xml")
+                with open(p, "wb") as f:
+                    f.write(raw)
+                print(f"      saved {p}")
+                saved = True
+            break
+    if base_ok is None:
+        print("no XML found (戸田 非開催 or 展示前 or base 不一致)")
     return 0
 
 
