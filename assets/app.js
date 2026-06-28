@@ -1324,6 +1324,75 @@ var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 var tideData=null;
 // オリジナル展示(各場サイトの一周/まわり足/直線、対応場のみ)。sid -> rno -> {waku -> {lap,turn,straight,ex}}
 var _origExhibIndex={};
+// オンデマンド対応場(ajax_yosou 型)。GHA schedule では鮮度不足のため、閲覧中レースを Worker 経由で即取得。
+var _OE_VENUES={5:1,10:1,14:1,20:1,21:1};
+var _oeLiveTried={};
+
+// Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
+//   ヘッダ駆動(展示/一周/まわり足/直線 のラベルから列特定)で場ごとの列構成差を吸収。
+function _parseOrigExhibitionHtml(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり足')>=0&&tx.indexOf('直線')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var LABELS={'展示':'ex_time','一周':'lap_time','まわり足':'turn_time','直線':'straight_time'};
+    var colmap={}, trs=target.querySelectorAll('tr');
+    for(var r=0;r<trs.length;r++){
+      var ths=trs[r].querySelectorAll('th');
+      for(var t=0;t<ths.length;t++){
+        var lab=(ths[t].textContent||'').replace(/\s+/g,''), f=LABELS[lab];
+        if(!f||colmap[f]) continue;
+        var cls=(ths[t].className||'').split(/\s+/).filter(function(c){return /^col\d+$/.test(c);});
+        if(cls.length) colmap[f]=cls[0];
+      }
+    }
+    if(!(colmap.lap_time&&colmap.turn_time&&colmap.straight_time)) return null;
+    var bymap={};
+    for(var r2=0;r2<trs.length;r2++){
+      var wtd=trs[r2].querySelector('td.waku'); if(!wtd) continue;
+      var waku=parseInt((wtd.textContent||'').trim(),10);
+      if(!(waku>=1&&waku<=6)) continue;
+      var rec={racer_boat_number:waku};
+      for(var f2 in colmap){
+        var td=trs[r2].querySelector('td.'+colmap[f2]);
+        var v=td?parseFloat((td.textContent||'').trim()):0;
+        rec[f2]=(v>0)?v:0;
+      }
+      bymap[waku]=rec;
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
+
+// 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
+function _loadOrigExhibitionLive(sid,rno){
+  try{
+    sid=parseInt(sid); rno=parseInt(rno);
+    if(!_OE_VENUES[sid]) return;
+    var key=sid+'-'+rno;
+    if(_oeLiveTried[key]) return; _oeLiveTried[key]=true;
+    var hd=(typeof todayStr==='function')?todayStr():'';
+    if(!/^\d{8}$/.test(hd)) return;
+    var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
+    if(!base) return;
+    fetch(base+'/orig-exhibition-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
+      .then(function(r){return r.ok?r.text():null;})
+      .then(function(html){
+        if(!html) return;
+        var bymap=_parseOrigExhibitionHtml(html);
+        if(!bymap) return;
+        if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
+        _origExhibIndex[sid][rno]=bymap;
+        if(String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
+          openRace(sid,rno);  // 再描画(predictRace も最新展示で再計算)。_oeLiveTried ガードで再 fetch しない
+        }
+      }).catch(function(){});
+  }catch(e){}
+}
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
@@ -7894,6 +7963,7 @@ async function _loadNextOpen(){
   function openRace(sid, rn) {
     currentStadium = sid;
     currentRace = rn;
+    if (typeof globalThis._loadOrigExhibitionLive === "function") globalThis._loadOrigExhibitionLive(sid, rn);
     var name = STADIUMS[parseInt(sid)] || "\u5834" + sid;
     var race = programData[sid][rn];
     var closedAt = race ? race.race_closed_at || "" : "";

@@ -949,6 +949,43 @@ export default {
         return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
       }
     }
+    // 各場「オリジナル展示」(一周/まわり足/直線)のオンデマンド CORS/Referer プロキシ。
+    //   GHA schedule では鮮度が足りない(展示は各レース締切~30分前)ため、閲覧中レースを
+    //   その場で取得する。対応場(ajax_yosou 型)のみ。応答 HTML をクライアントが DOMParser で解析。
+    if (url.pathname === '/orig-exhibition-proxy') {
+      const ORIG_BASES = {
+        5: 'https://www.boatrace-tamagawa.com',
+        10: 'https://www.boatrace-mikuni.jp',
+        14: 'https://www.n14.jp',
+        20: 'https://www.wmb.jp',
+        21: 'https://www.boatrace-ashiya.com',
+      };
+      const jcd = url.searchParams.get('jcd') || '';
+      const race = url.searchParams.get('race') || '';
+      const hd = url.searchParams.get('hd') || '';
+      const base = ORIG_BASES[parseInt(jcd)];
+      if (!base || !/^\d+$/.test(race) || !/^\d{8}$/.test(hd)) {
+        return new Response('bad params', { status: 400, headers: CORS });
+      }
+      const upstream = `${base}/sp/ajax/ajax_yosou.php?targetday=${hd}&race=${parseInt(race)}&req=cyokuzen&run=0`;
+      try {
+        const res = await fetch(upstream, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 boatrace-scrape-trigger',
+            Referer: base + '/sp/',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          cf: { cacheTtl: 20, cacheEverything: true },
+        });
+        if (!res.ok) return new Response(`upstream ${res.status}`, { status: 502, headers: CORS });
+        const html = await res.text();
+        return new Response(html, {
+          headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
+        });
+      } catch (e) {
+        return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
+      }
+    }
     return new Response('boatrace-scrape-trigger (scrape-engine-v3)\n', { headers: CORS });
   },
 };

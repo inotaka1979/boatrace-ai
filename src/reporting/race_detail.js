@@ -44,6 +44,9 @@
 function openRace(sid, rn) {
   currentStadium = sid;
   currentRace = rn;
+  // オリジナル展示(一周/まわり足/直線)を Worker 経由でオンデマンド取得(対応場のみ)。
+  //   GHA schedule では鮮度不足のため、閲覧した瞬間に最新を取りに行き、取得後に再描画する。
+  if (typeof globalThis._loadOrigExhibitionLive === 'function') globalThis._loadOrigExhibitionLive(sid, rn);
   var name = STADIUMS[parseInt(sid)] || '場' + sid;
   var race = programData[sid][rn];
   var closedAt = race ? race.race_closed_at || '' : '';

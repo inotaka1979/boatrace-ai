@@ -1329,6 +1329,16 @@ var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 var tideData=null;
 // オリジナル展示(各場サイトの一周/まわり足/直線、対応場のみ)。sid -> rno -> {waku -> {lap,turn,straight,ex}}
 var _origExhibIndex={};
+// オンデマンド対応場(ajax_yosou 型)。GHA schedule では鮮度不足のため、閲覧中レースを Worker 経由で即取得。
+var _OE_VENUES={5:1,10:1,14:1,20:1,21:1};
+var _oeLiveTried={};
+
+// Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
+//   ヘッダ駆動(展示/一周/まわり足/直線 のラベルから列特定)で場ごとの列構成差を吸収。
+/* MOVED: function _parseOrigExhibitionHtml */
+
+// 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
+/* MOVED: function _loadOrigExhibitionLive */
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
