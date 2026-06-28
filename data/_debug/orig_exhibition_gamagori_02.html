@@ -21,7 +21,7 @@
     <script type="text/javascript" src="https://www.gamagori-kyotei.com/js/sp_recomend.js"></script>
     <script type="text/javascript">
         function funcDefaultSeledted(){
-            document.racenum.select.options[0].selected = true;
+            document.racenum.select.options[1].selected = true;
                             funcYosoChange();funcCommentChange();funcHyokaChange();funcMotorRankChange();
                                                                         }
     </script>
@@ -88,7 +88,7 @@
     </script>
 
             <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/owl.carousel_recomend.js"></script>
-        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/KekkaRaceNum2026062807.js?var=202606281118071"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/KekkaRaceNum2026062807.js?var=202606281118072"></script>
     <!-- フォーム -->
     <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/custom-form-elements.js"></script>
     <script type="text/javascript">
@@ -104,80 +104,80 @@
         });
     </script>
 
-            <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/focus2026062807.js?var=202606281118071"></script>
+            <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/focus2026062807.js?var=202606281118072"></script>
         <script type="text/javascript">
             function funcYosoChange( )
             {
                 var strYosoMarkHTML = new Array(6);
                 if ( typeof funcyoso == "function")  {
                                         strYosoMarkHTML[1] = '';
-                    if( funcyoso( '1', '1' ) === '1'){
+                    if( funcyoso( '2', '1' ) === '1'){
                         strYosoMarkHTML[1] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '1' ) === '2'){
+                    }else if( funcyoso( '2', '1' ) === '2'){
                         strYosoMarkHTML[1] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '1' ) === '3'){
+                    }else if( funcyoso( '2', '1' ) === '3'){
                         strYosoMarkHTML[1] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '1' ) === '4'){
+                    }else if( funcyoso( '2', '1' ) === '4'){
                         strYosoMarkHTML[1] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[1] = '';
                     }
                                         strYosoMarkHTML[2] = '';
-                    if( funcyoso( '1', '2' ) === '1'){
+                    if( funcyoso( '2', '2' ) === '1'){
                         strYosoMarkHTML[2] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '2' ) === '2'){
+                    }else if( funcyoso( '2', '2' ) === '2'){
                         strYosoMarkHTML[2] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '2' ) === '3'){
+                    }else if( funcyoso( '2', '2' ) === '3'){
                         strYosoMarkHTML[2] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '2' ) === '4'){
+                    }else if( funcyoso( '2', '2' ) === '4'){
                         strYosoMarkHTML[2] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[2] = '';
                     }
                                         strYosoMarkHTML[3] = '';
-                    if( funcyoso( '1', '3' ) === '1'){
+                    if( funcyoso( '2', '3' ) === '1'){
                         strYosoMarkHTML[3] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '3' ) === '2'){
+                    }else if( funcyoso( '2', '3' ) === '2'){
                         strYosoMarkHTML[3] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '3' ) === '3'){
+                    }else if( funcyoso( '2', '3' ) === '3'){
                         strYosoMarkHTML[3] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '3' ) === '4'){
+                    }else if( funcyoso( '2', '3' ) === '4'){
                         strYosoMarkHTML[3] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[3] = '';
                     }
                                         strYosoMarkHTML[4] = '';
-                    if( funcyoso( '1', '4' ) === '1'){
+                    if( funcyoso( '2', '4' ) === '1'){
                         strYosoMarkHTML[4] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '4' ) === '2'){
+                    }else if( funcyoso( '2', '4' ) === '2'){
                         strYosoMarkHTML[4] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '4' ) === '3'){
+                    }else if( funcyoso( '2', '4' ) === '3'){
                         strYosoMarkHTML[4] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '4' ) === '4'){
+                    }else if( funcyoso( '2', '4' ) === '4'){
                         strYosoMarkHTML[4] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[4] = '';
                     }
                                         strYosoMarkHTML[5] = '';
-                    if( funcyoso( '1', '5' ) === '1'){
+                    if( funcyoso( '2', '5' ) === '1'){
                         strYosoMarkHTML[5] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '5' ) === '2'){
+                    }else if( funcyoso( '2', '5' ) === '2'){
                         strYosoMarkHTML[5] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '5' ) === '3'){
+                    }else if( funcyoso( '2', '5' ) === '3'){
                         strYosoMarkHTML[5] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '5' ) === '4'){
+                    }else if( funcyoso( '2', '5' ) === '4'){
                         strYosoMarkHTML[5] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[5] = '';
                     }
                                         strYosoMarkHTML[6] = '';
-                    if( funcyoso( '1', '6' ) === '1'){
+                    if( funcyoso( '2', '6' ) === '1'){
                         strYosoMarkHTML[6] = '<img src=\"/sp/kyogi/images/yoso03.png\" alt=\"△\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '6' ) === '2'){
+                    }else if( funcyoso( '2', '6' ) === '2'){
                         strYosoMarkHTML[6] = '<img src=\"/sp/kyogi/images/yoso04.png\" alt=\"▲\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '6' ) === '3'){
+                    }else if( funcyoso( '2', '6' ) === '3'){
                         strYosoMarkHTML[6] = '<img src=\"/sp/kyogi/images/yoso02.png\" alt=\"○\" width=\"44\" height=\"44\">';
-                    }else if( funcyoso( '1', '6' ) === '4'){
+                    }else if( funcyoso( '2', '6' ) === '4'){
                         strYosoMarkHTML[6] = '<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">';
                     }else{
                         strYosoMarkHTML[6] = '';
@@ -224,98 +224,98 @@
                             }
         </script>
 
-        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/motor2026062807.js?var=202606281118071"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/motor2026062807.js?var=202606281118072"></script>
         <script type="text/javascript">
             var intMotorflg = 0;
             if ( typeof funcMotorRank == "function")  {
-                                if( funcMotorRank( '059' , "1" ) !== '0'){
+                                if( funcMotorRank( '011' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '059' , "2" ) !== '0'){
+                if( funcMotorRank( '011' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '059' , "3" ) !== '0'){
+                if( funcMotorRank( '011' , "3" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '059' , "4" ) !== '0'){
+                if( funcMotorRank( '011' , "4" ) !== '0'){
                     intMotorflg = 1;
                 }
-                                if( funcMotorRank( '024' , "1" ) !== '0'){
-                    intMotorflg = 1;
-                }
-
-                if( funcMotorRank( '024' , "2" ) !== '0'){
+                                if( funcMotorRank( '026' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '024' , "3" ) !== '0'){
+                if( funcMotorRank( '026' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '024' , "4" ) !== '0'){
-                    intMotorflg = 1;
-                }
-                                if( funcMotorRank( '048' , "1" ) !== '0'){
+                if( funcMotorRank( '026' , "3" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '048' , "2" ) !== '0'){
+                if( funcMotorRank( '026' , "4" ) !== '0'){
+                    intMotorflg = 1;
+                }
+                                if( funcMotorRank( '049' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '048' , "3" ) !== '0'){
+                if( funcMotorRank( '049' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '048' , "4" ) !== '0'){
-                    intMotorflg = 1;
-                }
-                                if( funcMotorRank( '052' , "1" ) !== '0'){
+                if( funcMotorRank( '049' , "3" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '052' , "2" ) !== '0'){
+                if( funcMotorRank( '049' , "4" ) !== '0'){
+                    intMotorflg = 1;
+                }
+                                if( funcMotorRank( '058' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '052' , "3" ) !== '0'){
+                if( funcMotorRank( '058' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '052' , "4" ) !== '0'){
-                    intMotorflg = 1;
-                }
-                                if( funcMotorRank( '036' , "1" ) !== '0'){
+                if( funcMotorRank( '058' , "3" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '036' , "2" ) !== '0'){
+                if( funcMotorRank( '058' , "4" ) !== '0'){
+                    intMotorflg = 1;
+                }
+                                if( funcMotorRank( '021' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '036' , "3" ) !== '0'){
+                if( funcMotorRank( '021' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '036' , "4" ) !== '0'){
-                    intMotorflg = 1;
-                }
-                                if( funcMotorRank( '033' , "1" ) !== '0'){
+                if( funcMotorRank( '021' , "3" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '033' , "2" ) !== '0'){
+                if( funcMotorRank( '021' , "4" ) !== '0'){
+                    intMotorflg = 1;
+                }
+                                if( funcMotorRank( '028' , "1" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '033' , "3" ) !== '0'){
+                if( funcMotorRank( '028' , "2" ) !== '0'){
                     intMotorflg = 1;
                 }
 
-                if( funcMotorRank( '033' , "4" ) !== '0'){
+                if( funcMotorRank( '028' , "3" ) !== '0'){
+                    intMotorflg = 1;
+                }
+
+                if( funcMotorRank( '028' , "4" ) !== '0'){
                     intMotorflg = 1;
                 }
                             }
@@ -326,8 +326,8 @@
             {
                 if ( typeof funcMotorRank == "function")  {
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '059' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '059' , "1" ) + ".png\" alt=\"" + funcMotorRank( '059' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '011' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '011' , "1" ) + ".png\" alt=\"" + funcMotorRank( '011' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -339,8 +339,8 @@
                     document.getElementById("id_motorRank1_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '059' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '059' , "2" ) + ".png\" alt=\"" + funcMotorRank( '059' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '011' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '011' , "2" ) + ".png\" alt=\"" + funcMotorRank( '011' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -352,8 +352,8 @@
                     document.getElementById("id_motorRank1_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '059' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '059' , "3" ) + ".png\" alt=\"" + funcMotorRank( '059' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '011' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '011' , "3" ) + ".png\" alt=\"" + funcMotorRank( '011' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -365,8 +365,8 @@
                     document.getElementById("id_motorRank1_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '059' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '059' , "4" ) + ".png\" alt=\"" + funcMotorRank( '059' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '011' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '011' , "4" ) + ".png\" alt=\"" + funcMotorRank( '011' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -377,8 +377,8 @@
 
                     document.getElementById("id_motorRank1_4").innerHTML = strMotorRankHTML;
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '024' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '024' , "1" ) + ".png\" alt=\"" + funcMotorRank( '024' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '026' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '026' , "1" ) + ".png\" alt=\"" + funcMotorRank( '026' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -390,8 +390,8 @@
                     document.getElementById("id_motorRank2_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '024' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '024' , "2" ) + ".png\" alt=\"" + funcMotorRank( '024' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '026' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '026' , "2" ) + ".png\" alt=\"" + funcMotorRank( '026' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -403,8 +403,8 @@
                     document.getElementById("id_motorRank2_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '024' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '024' , "3" ) + ".png\" alt=\"" + funcMotorRank( '024' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '026' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '026' , "3" ) + ".png\" alt=\"" + funcMotorRank( '026' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -416,8 +416,8 @@
                     document.getElementById("id_motorRank2_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '024' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '024' , "4" ) + ".png\" alt=\"" + funcMotorRank( '024' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '026' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '026' , "4" ) + ".png\" alt=\"" + funcMotorRank( '026' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -428,8 +428,8 @@
 
                     document.getElementById("id_motorRank2_4").innerHTML = strMotorRankHTML;
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '048' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '048' , "1" ) + ".png\" alt=\"" + funcMotorRank( '048' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '049' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '049' , "1" ) + ".png\" alt=\"" + funcMotorRank( '049' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -441,8 +441,8 @@
                     document.getElementById("id_motorRank3_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '048' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '048' , "2" ) + ".png\" alt=\"" + funcMotorRank( '048' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '049' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '049' , "2" ) + ".png\" alt=\"" + funcMotorRank( '049' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -454,8 +454,8 @@
                     document.getElementById("id_motorRank3_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '048' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '048' , "3" ) + ".png\" alt=\"" + funcMotorRank( '048' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '049' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '049' , "3" ) + ".png\" alt=\"" + funcMotorRank( '049' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -467,8 +467,8 @@
                     document.getElementById("id_motorRank3_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '048' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '048' , "4" ) + ".png\" alt=\"" + funcMotorRank( '048' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '049' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '049' , "4" ) + ".png\" alt=\"" + funcMotorRank( '049' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -479,8 +479,8 @@
 
                     document.getElementById("id_motorRank3_4").innerHTML = strMotorRankHTML;
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '052' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '052' , "1" ) + ".png\" alt=\"" + funcMotorRank( '052' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '058' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '058' , "1" ) + ".png\" alt=\"" + funcMotorRank( '058' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -492,8 +492,8 @@
                     document.getElementById("id_motorRank4_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '052' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '052' , "2" ) + ".png\" alt=\"" + funcMotorRank( '052' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '058' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '058' , "2" ) + ".png\" alt=\"" + funcMotorRank( '058' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -505,8 +505,8 @@
                     document.getElementById("id_motorRank4_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '052' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '052' , "3" ) + ".png\" alt=\"" + funcMotorRank( '052' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '058' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '058' , "3" ) + ".png\" alt=\"" + funcMotorRank( '058' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -518,8 +518,8 @@
                     document.getElementById("id_motorRank4_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '052' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '052' , "4" ) + ".png\" alt=\"" + funcMotorRank( '052' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '058' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '058' , "4" ) + ".png\" alt=\"" + funcMotorRank( '058' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -530,8 +530,8 @@
 
                     document.getElementById("id_motorRank4_4").innerHTML = strMotorRankHTML;
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '036' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '036' , "1" ) + ".png\" alt=\"" + funcMotorRank( '036' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '021' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '021' , "1" ) + ".png\" alt=\"" + funcMotorRank( '021' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -543,8 +543,8 @@
                     document.getElementById("id_motorRank5_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '036' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '036' , "2" ) + ".png\" alt=\"" + funcMotorRank( '036' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '021' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '021' , "2" ) + ".png\" alt=\"" + funcMotorRank( '021' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -556,8 +556,8 @@
                     document.getElementById("id_motorRank5_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '036' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '036' , "3" ) + ".png\" alt=\"" + funcMotorRank( '036' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '021' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '021' , "3" ) + ".png\" alt=\"" + funcMotorRank( '021' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -569,8 +569,8 @@
                     document.getElementById("id_motorRank5_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '036' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '036' , "4" ) + ".png\" alt=\"" + funcMotorRank( '036' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '021' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '021' , "4" ) + ".png\" alt=\"" + funcMotorRank( '021' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -581,8 +581,8 @@
 
                     document.getElementById("id_motorRank5_4").innerHTML = strMotorRankHTML;
                                                 strMotorRankHTML = '';
-                    if( funcMotorRank( '033' , "1" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '033' , "1" ) + ".png\" alt=\"" + funcMotorRank( '033' , "1" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '028' , "1" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '028' , "1" ) + ".png\" alt=\"" + funcMotorRank( '028' , "1" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -594,8 +594,8 @@
                     document.getElementById("id_motorRank6_1").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '033' , "2" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '033' , "2" ) + ".png\" alt=\"" + funcMotorRank( '033' , "2" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '028' , "2" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '028' , "2" ) + ".png\" alt=\"" + funcMotorRank( '028' , "2" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -607,8 +607,8 @@
                     document.getElementById("id_motorRank6_3").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '033' , "3" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '033' , "3" ) + ".png\" alt=\"" + funcMotorRank( '033' , "3" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '028' , "3" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '028' , "3" ) + ".png\" alt=\"" + funcMotorRank( '028' , "3" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -620,8 +620,8 @@
                     document.getElementById("id_motorRank6_2").innerHTML = strMotorRankHTML;
                     strMotorRankHTML = '';
 
-                    if( funcMotorRank( '033' , "4" ) !== '0'){
-                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '033' , "4" ) + ".png\" alt=\"" + funcMotorRank( '033' , "4" ) + "位\" width=\"40\" height=\"48\">";
+                    if( funcMotorRank( '028' , "4" ) !== '0'){
+                        strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor" + funcMotorRank( '028' , "4" ) + ".png\" alt=\"" + funcMotorRank( '028' , "4" ) + "位\" width=\"40\" height=\"48\">";
                     }else{
                         if( intMotorflg == 1){
                             strMotorRankHTML = "<img src=\"/sp/kyogi/images/motor0.png\" alt=\"\" width=\"40\" height=\"48\">";
@@ -643,62 +643,62 @@
             {
                 if ( typeof funcSujo == "function")  {
                                                 strMotorSujoHTML[1] = '';
-                    if( funcSujo( '59' ) === '10'){
+                    if( funcSujo( '11' ) === '10'){
                         strMotorSujoHTML[1] = '';
-                    }else if( funcSujo( '59' ) === '0'){
+                    }else if( funcSujo( '11' ) === '0'){
                         strMotorSujoHTML[1] = '10';
                     }else{
-                        strMotorSujoHTML[1] = funcSujo( '59' );
+                        strMotorSujoHTML[1] = funcSujo( '11' );
                     }
 
                     document.getElementById("MotorSujo1").innerHTML = strMotorSujoHTML[1];
                                                 strMotorSujoHTML[2] = '';
-                    if( funcSujo( '24' ) === '10'){
+                    if( funcSujo( '26' ) === '10'){
                         strMotorSujoHTML[2] = '';
-                    }else if( funcSujo( '24' ) === '0'){
+                    }else if( funcSujo( '26' ) === '0'){
                         strMotorSujoHTML[2] = '10';
                     }else{
-                        strMotorSujoHTML[2] = funcSujo( '24' );
+                        strMotorSujoHTML[2] = funcSujo( '26' );
                     }
 
                     document.getElementById("MotorSujo2").innerHTML = strMotorSujoHTML[2];
                                                 strMotorSujoHTML[3] = '';
-                    if( funcSujo( '48' ) === '10'){
+                    if( funcSujo( '49' ) === '10'){
                         strMotorSujoHTML[3] = '';
-                    }else if( funcSujo( '48' ) === '0'){
+                    }else if( funcSujo( '49' ) === '0'){
                         strMotorSujoHTML[3] = '10';
                     }else{
-                        strMotorSujoHTML[3] = funcSujo( '48' );
+                        strMotorSujoHTML[3] = funcSujo( '49' );
                     }
 
                     document.getElementById("MotorSujo3").innerHTML = strMotorSujoHTML[3];
                                                 strMotorSujoHTML[4] = '';
-                    if( funcSujo( '52' ) === '10'){
+                    if( funcSujo( '58' ) === '10'){
                         strMotorSujoHTML[4] = '';
-                    }else if( funcSujo( '52' ) === '0'){
+                    }else if( funcSujo( '58' ) === '0'){
                         strMotorSujoHTML[4] = '10';
                     }else{
-                        strMotorSujoHTML[4] = funcSujo( '52' );
+                        strMotorSujoHTML[4] = funcSujo( '58' );
                     }
 
                     document.getElementById("MotorSujo4").innerHTML = strMotorSujoHTML[4];
                                                 strMotorSujoHTML[5] = '';
-                    if( funcSujo( '36' ) === '10'){
+                    if( funcSujo( '21' ) === '10'){
                         strMotorSujoHTML[5] = '';
-                    }else if( funcSujo( '36' ) === '0'){
+                    }else if( funcSujo( '21' ) === '0'){
                         strMotorSujoHTML[5] = '10';
                     }else{
-                        strMotorSujoHTML[5] = funcSujo( '36' );
+                        strMotorSujoHTML[5] = funcSujo( '21' );
                     }
 
                     document.getElementById("MotorSujo5").innerHTML = strMotorSujoHTML[5];
                                                 strMotorSujoHTML[6] = '';
-                    if( funcSujo( '33' ) === '10'){
+                    if( funcSujo( '28' ) === '10'){
                         strMotorSujoHTML[6] = '';
-                    }else if( funcSujo( '33' ) === '0'){
+                    }else if( funcSujo( '28' ) === '0'){
                         strMotorSujoHTML[6] = '10';
                     }else{
-                        strMotorSujoHTML[6] = funcSujo( '33' );
+                        strMotorSujoHTML[6] = funcSujo( '28' );
                     }
 
                     document.getElementById("MotorSujo6").innerHTML = strMotorSujoHTML[6];
@@ -706,9 +706,9 @@
 
                 if ( typeof funcHyoka == "function")  {
                     if (document.getElementById){
-                                                if( funcHyoka( "59" ) === '000'){
+                                                if( funcHyoka( "11" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "59" );
+                            TempData = funcHyoka( "11" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[1] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -755,9 +755,9 @@
 
                                 document.getElementById("MotorMark1_3").innerHTML = strMotorHyokaHTML[1];
                                                     }
-                                                if( funcHyoka( "24" ) === '000'){
+                                                if( funcHyoka( "26" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "24" );
+                            TempData = funcHyoka( "26" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[2] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -804,9 +804,9 @@
 
                                 document.getElementById("MotorMark2_3").innerHTML = strMotorHyokaHTML[2];
                                                     }
-                                                if( funcHyoka( "48" ) === '000'){
+                                                if( funcHyoka( "49" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "48" );
+                            TempData = funcHyoka( "49" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[3] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -853,9 +853,9 @@
 
                                 document.getElementById("MotorMark3_3").innerHTML = strMotorHyokaHTML[3];
                                                     }
-                                                if( funcHyoka( "52" ) === '000'){
+                                                if( funcHyoka( "58" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "52" );
+                            TempData = funcHyoka( "58" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[4] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -902,9 +902,9 @@
 
                                 document.getElementById("MotorMark4_3").innerHTML = strMotorHyokaHTML[4];
                                                     }
-                                                if( funcHyoka( "36" ) === '000'){
+                                                if( funcHyoka( "21" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "36" );
+                            TempData = funcHyoka( "21" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[5] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -951,9 +951,9 @@
 
                                 document.getElementById("MotorMark5_3").innerHTML = strMotorHyokaHTML[5];
                                                     }
-                                                if( funcHyoka( "33" ) === '000'){
+                                                if( funcHyoka( "28" ) === '000'){
                         }else{
-                            TempData = funcHyoka( "33" );
+                            TempData = funcHyoka( "28" );
                                                             if (TempData.substring("0","1") === '1'){
                                     strMotorHyokaHTML[6] = "<img src=\"/sp/kyogi/images/yoso01.png\" alt=\"◎\" width=\"44\" height=\"44\">";
                                 } else if ( TempData.substring("0","1") === '2'){
@@ -1005,7 +1005,7 @@
             }
         </script>
 
-        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/comment2026062807.js?var=202606281118071"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/comment2026062807.js?var=202606281118072"></script>
         <script type="text/javascript">
             var strCommentHTML = '';
             var intCommentCount = new Array(6);
@@ -1019,8 +1019,8 @@
             {
                 if ( typeof funcToDayComment == "function")  {
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '5346' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5346' ) + "</li>";
+                    if( funcToDayComment( '5223' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5223' ) + "</li>";
                         intCommentCount[1] = intCommentCount[1] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1028,8 +1028,8 @@
 
                     document.getElementById("comment1_2").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '4664' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '4664' ) + "</li>";
+                    if( funcToDayComment( '5292' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5292' ) + "</li>";
                         intCommentCount[2] = intCommentCount[2] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1037,8 +1037,8 @@
 
                     document.getElementById("comment2_2").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '3870' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '3870' ) + "</li>";
+                    if( funcToDayComment( '5037' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5037' ) + "</li>";
                         intCommentCount[3] = intCommentCount[3] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1046,8 +1046,8 @@
 
                     document.getElementById("comment3_2").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '3538' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '3538' ) + "</li>";
+                    if( funcToDayComment( '3852' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '3852' ) + "</li>";
                         intCommentCount[4] = intCommentCount[4] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1055,8 +1055,8 @@
 
                     document.getElementById("comment4_2").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '5245' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5245' ) + "</li>";
+                    if( funcToDayComment( '5105' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5105' ) + "</li>";
                         intCommentCount[5] = intCommentCount[5] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1064,8 +1064,8 @@
 
                     document.getElementById("comment5_2").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayComment( '5461' ) !== ''){
-                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5461' ) + "</li>";
+                    if( funcToDayComment( '5399' ) !== ''){
+                        strCommentHTML = "<li class=\"today\">"  + funcToDayComment( '5399' ) + "</li>";
                         intCommentCount[6] = intCommentCount[6] + 1;
                     }else{
                         strCommentHTML = '<li class=\"today\"></li>';
@@ -1089,16 +1089,16 @@
 
                 if ( typeof funcToDayNewComment == "function")  {
                                                                             strCommentHTML = '';
-                    if( funcToDayNewComment( '5346' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5346' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5346' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5346' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5223' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5223' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5223' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5223' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5346' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5223' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5346' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5223' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5346' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5223' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1110,16 +1110,16 @@
 
                     document.getElementById("comment1_3").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '4664' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '4664' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '4664' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '4664' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5292' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5292' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5292' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5292' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '4664' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5292' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '4664' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5292' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '4664' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5292' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1131,16 +1131,16 @@
 
                     document.getElementById("comment2_3").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3870' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3870' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3870' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3870' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5037' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5037' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5037' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5037' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3870' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5037' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3870' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5037' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3870' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5037' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1152,16 +1152,16 @@
 
                     document.getElementById("comment3_3").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3538' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3538' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3538' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3538' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '3852' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '3852' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3852' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '3852' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3538' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3852' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3538' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '3852' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3538' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '3852' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1173,16 +1173,16 @@
 
                     document.getElementById("comment4_3").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5245' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5245' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5245' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5245' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5105' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5105' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5105' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5105' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5245' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5105' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5245' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5105' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5245' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5105' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1194,16 +1194,16 @@
 
                     document.getElementById("comment5_3").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5461' , '1' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5461' , '1' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5461' , '1' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5461' , '1' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5399' , '1' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5399' , '1' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5399' , '1' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5399' , '1' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5461' , '1' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5399' , '1' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5461' , '1' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5399' , '1' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5461' , '1' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5399' , '1' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1215,16 +1215,16 @@
 
                     document.getElementById("comment6_3").innerHTML = strCommentHTML;
                                                                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5346' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5346' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5346' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5346' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5223' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5223' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5223' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5223' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5346' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5223' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5346' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5223' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5346' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5223' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1236,16 +1236,16 @@
 
                     document.getElementById("comment1_4").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '4664' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '4664' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '4664' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '4664' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5292' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5292' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5292' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5292' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '4664' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5292' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '4664' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5292' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '4664' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5292' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1257,16 +1257,16 @@
 
                     document.getElementById("comment2_4").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3870' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3870' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3870' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3870' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5037' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5037' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5037' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5037' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3870' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5037' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3870' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5037' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3870' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5037' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1278,16 +1278,16 @@
 
                     document.getElementById("comment3_4").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3538' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3538' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3538' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3538' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '3852' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '3852' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3852' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '3852' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3538' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3852' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3538' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '3852' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3538' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '3852' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1299,16 +1299,16 @@
 
                     document.getElementById("comment4_4").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5245' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5245' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5245' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5245' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5105' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5105' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5105' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5105' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5245' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5105' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5245' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5105' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5245' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5105' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1320,16 +1320,16 @@
 
                     document.getElementById("comment5_4").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5461' , '2' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5461' , '2' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5461' , '2' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5461' , '2' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5399' , '2' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5399' , '2' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5399' , '2' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5399' , '2' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5461' , '2' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5399' , '2' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5461' , '2' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5399' , '2' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5461' , '2' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5399' , '2' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1341,16 +1341,16 @@
 
                     document.getElementById("comment6_4").innerHTML = strCommentHTML;
                                                                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5346' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5346' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5346' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5346' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5223' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5223' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5223' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5223' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5346' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5223' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5346' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5223' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5346' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5223' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1362,16 +1362,16 @@
 
                     document.getElementById("comment1_5").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '4664' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '4664' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '4664' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '4664' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5292' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5292' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5292' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5292' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '4664' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5292' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '4664' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5292' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '4664' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5292' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1383,16 +1383,16 @@
 
                     document.getElementById("comment2_5").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3870' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3870' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3870' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3870' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5037' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5037' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5037' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5037' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3870' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5037' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3870' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5037' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3870' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5037' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1404,16 +1404,16 @@
 
                     document.getElementById("comment3_5").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3538' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3538' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3538' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3538' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '3852' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '3852' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3852' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '3852' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3538' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3852' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3538' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '3852' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3538' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '3852' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1425,16 +1425,16 @@
 
                     document.getElementById("comment4_5").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5245' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5245' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5245' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5245' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5105' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5105' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5105' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5105' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5245' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5105' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5245' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5105' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5245' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5105' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1446,16 +1446,16 @@
 
                     document.getElementById("comment5_5").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5461' , '3' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5461' , '3' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5461' , '3' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5461' , '3' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5399' , '3' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5399' , '3' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5399' , '3' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5399' , '3' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5461' , '3' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5399' , '3' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5461' , '3' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5399' , '3' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5461' , '3' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5399' , '3' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1467,16 +1467,16 @@
 
                     document.getElementById("comment6_5").innerHTML = strCommentHTML;
                                                                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5346' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5346' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5346' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5346' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5223' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5223' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5223' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5223' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5346' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5223' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5346' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5223' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5346' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5223' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1488,16 +1488,16 @@
 
                     document.getElementById("comment1_6").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '4664' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '4664' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '4664' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '4664' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5292' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5292' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5292' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5292' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '4664' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5292' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '4664' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5292' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '4664' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5292' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1509,16 +1509,16 @@
 
                     document.getElementById("comment2_6").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3870' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3870' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3870' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3870' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5037' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5037' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5037' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5037' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3870' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5037' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3870' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5037' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3870' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5037' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1530,16 +1530,16 @@
 
                     document.getElementById("comment3_6").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '3538' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '3538' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3538' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '3538' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '3852' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '3852' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '3852' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '3852' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3538' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '3852' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '3538' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '3852' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '3538' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '3852' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1551,16 +1551,16 @@
 
                     document.getElementById("comment4_6").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5245' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5245' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5245' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5245' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5105' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5105' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5105' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5105' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5245' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5105' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5245' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5105' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5245' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5105' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1572,16 +1572,16 @@
 
                     document.getElementById("comment5_6").innerHTML = strCommentHTML;
                                                 strCommentHTML = '';
-                    if( funcToDayNewComment( '5461' , '4' , "1" , "1" ) !== ''){
-                        if( funcToDayNewComment( '5461' , '4' , "1" , "3" ) <= funckekkaRacenum() ){
-                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5461' , '4' , "1" , "3" ) + "\">"  + funcToDayNewComment( '5461' , '4' , "1" , "1" ) + '';
+                    if( funcToDayNewComment( '5399' , '4' , "2" , "1" ) !== ''){
+                        if( funcToDayNewComment( '5399' , '4' , "2" , "3" ) <= funckekkaRacenum() ){
+                            strCommentHTML = "<li class=\"R" + funcToDayNewComment( '5399' , '4' , "2" , "3" ) + "\">"  + funcToDayNewComment( '5399' , '4' , "2" , "1" ) + '';
                         }else{
-                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5461' , '4' , "1" , "1" ) + '';
+                            strCommentHTML = "<li class=\"new\">"  + funcToDayNewComment( '5399' , '4' , "2" , "1" ) + '';
                         }
 
-                        if( funcToDayNewComment( '5461' , '4' , "1" , "2" ) === '1'){
+                        if( funcToDayNewComment( '5399' , '4' , "2" , "2" ) === '1'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_kisya.png\" alt=\"記者\" width=\"36\" height=\"32\">";
-                        }else if( funcToDayNewComment( '5461' , '4' , "1" , "2" ) === '2'){
+                        }else if( funcToDayNewComment( '5399' , '4' , "2" , "2" ) === '2'){
                             strCommentHTML = strCommentHTML + "<img src=\"/sp/kyogi/images/comment_JLC.png\" alt=\"JLC\" width=\"36\" height=\"32\">";
                         }
 
@@ -1596,7 +1596,7 @@
             }
         </script>
 
-        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/weather2026062807.js?var=202606281118071"></script>
+        <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/js/weather2026062807.js?var=202606281118072"></script>
         <script type="text/javascript">
             var strWeatherHTML = '';
             if ( typeof funcweather == "function")  {
@@ -1662,7 +1662,7 @@
             var strfocusHTML = '';
 
             if ( ( typeof funcslit == "function" ) && ( typeof funcSD == "function" ) && ( typeof funcST == "function" ) )  {
-                if( ( funcslit( '1', "1" ) !== '' ) && ( funcslit( '1', "2" ) !== '' ) && ( funcslit( '1', "3" ) !== '' ) && ( funcslit( '1', "4" ) !== '' ) && ( funcslit( '1', "5" ) !== '' ) && ( funcslit( '1', "6" ) !== '' ) && ( funcSD( '1', "1" ) !== '' ) && ( funcSD( '1', "2" ) !== '' ) && ( funcSD( '1', "3" ) !== '' ) && ( funcSD( '1', "4" ) !== '' ) && ( funcSD( '1', "5" ) !== '' ) && ( funcSD( '1', "6" ) !== '' ) ){
+                if( ( funcslit( '2', "1" ) !== '' ) && ( funcslit( '2', "2" ) !== '' ) && ( funcslit( '2', "3" ) !== '' ) && ( funcslit( '2', "4" ) !== '' ) && ( funcslit( '2', "5" ) !== '' ) && ( funcslit( '2', "6" ) !== '' ) && ( funcSD( '2', "1" ) !== '' ) && ( funcSD( '2', "2" ) !== '' ) && ( funcSD( '2', "3" ) !== '' ) && ( funcSD( '2', "4" ) !== '' ) && ( funcSD( '2', "5" ) !== '' ) && ( funcSD( '2', "6" ) !== '' ) ){
 
                     strfocusHTML = strfocusHTML + '';
                     strfocusHTML = strfocusHTML + "<h2 class=\"slit\">独自スリット予想</h2>";
@@ -1676,9 +1676,9 @@
 
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '1' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '1' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '1' ) ) + "</td>";
+                    if( funcslit( '2', '1' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '1' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '1' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1686,11 +1686,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '1' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '1' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '1' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '1' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '1', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '1', "2" ) + "px\"></td>";
+                        if( funcST( '2', '1', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '1', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1700,8 +1700,8 @@
                     }
 
 
-                    if( funcST( '1', '1', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '1', "1" ) + "</td>";
+                    if( funcST( '2', '1', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '1', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1709,9 +1709,9 @@
                     strfocusHTML = strfocusHTML + "</tr>";
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '2' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '2' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '2' ) ) + "</td>";
+                    if( funcslit( '2', '2' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '2' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '2' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1719,11 +1719,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '2' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '2' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '2' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '2' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '2', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '2', "2" ) + "px\"></td>";
+                        if( funcST( '2', '2', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '2', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1733,8 +1733,8 @@
                     }
 
 
-                    if( funcST( '1', '2', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '2', "1" ) + "</td>";
+                    if( funcST( '2', '2', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '2', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1742,9 +1742,9 @@
                     strfocusHTML = strfocusHTML + "</tr>";
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '3' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '3' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '3' ) ) + "</td>";
+                    if( funcslit( '2', '3' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '3' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '3' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1752,11 +1752,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '3' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '3' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '3' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '3' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '3', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '3', "2" ) + "px\"></td>";
+                        if( funcST( '2', '3', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '3', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1766,8 +1766,8 @@
                     }
 
 
-                    if( funcST( '1', '3', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '3', "1" ) + "</td>";
+                    if( funcST( '2', '3', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '3', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1775,9 +1775,9 @@
                     strfocusHTML = strfocusHTML + "</tr>";
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '4' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '4' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '4' ) ) + "</td>";
+                    if( funcslit( '2', '4' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '4' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '4' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1785,11 +1785,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '4' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '4' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '4' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '4' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '4', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '4', "2" ) + "px\"></td>";
+                        if( funcST( '2', '4', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '4', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1799,8 +1799,8 @@
                     }
 
 
-                    if( funcST( '1', '4', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '4', "1" ) + "</td>";
+                    if( funcST( '2', '4', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '4', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1808,9 +1808,9 @@
                     strfocusHTML = strfocusHTML + "</tr>";
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '5' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '5' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '5' ) ) + "</td>";
+                    if( funcslit( '2', '5' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '5' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '5' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1818,11 +1818,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '5' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '5' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '5' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '5' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '5', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '5', "2" ) + "px\"></td>";
+                        if( funcST( '2', '5', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '5', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1832,8 +1832,8 @@
                     }
 
 
-                    if( funcST( '1', '5', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '5', "1" ) + "</td>";
+                    if( funcST( '2', '5', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '5', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1841,9 +1841,9 @@
                     strfocusHTML = strfocusHTML + "</tr>";
                                                 strfocusHTML = strfocusHTML + "<tr>";
 
-                    if( funcslit( '1', '6' ) !== '' ){
-                        if( funcSD( '1', funcslit( '1', '6' ) ) !== '' ){
-                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '1', funcslit( '1', '6' ) ) + "</td>";
+                    if( funcslit( '2', '6' ) !== '' ){
+                        if( funcSD( '2', funcslit( '2', '6' ) ) !== '' ){
+                            strfocusHTML = strfocusHTML + "<td class=\"SD\">" + funcSD( '2', funcslit( '2', '6' ) ) + "</td>";
                         }else{
                             strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                         }
@@ -1851,11 +1851,11 @@
                         strfocusHTML = strfocusHTML + "<td class=\"SD\">---</td>";
                     }
 
-                    if( funcslit( '1', '6' ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '1', '6' ) + ".png\" width=\"90\" height=\"56\" ";
+                    if( funcslit( '2', '6' ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"slit\"><img src=\"/sp/kyogi/images/focus_b" + funcslit( '2', '6' ) + ".png\" width=\"90\" height=\"56\" ";
 
-                        if( funcST( '1', '6', "2" ) !== '' ){
-                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '1', '6', "2" ) + "px\"></td>";
+                        if( funcST( '2', '6', "2" ) !== '' ){
+                            strfocusHTML = strfocusHTML + "style=\"margin-right:" + funcST( '2', '6', "2" ) + "px\"></td>";
                         }else{
                             strfocusHTML = strfocusHTML + "style=\"margin-right:304px\"></td>";
                         }
@@ -1865,8 +1865,8 @@
                     }
 
 
-                    if( funcST( '1', '6', "1" ) !== '' ){
-                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '1', '6', "1" ) + "</td>";
+                    if( funcST( '2', '6', "1" ) !== '' ){
+                        strfocusHTML = strfocusHTML + "<td class=\"ST\">" + funcST( '2', '6', "1" ) + "</td>";
                     }else{
                         strfocusHTML = strfocusHTML + "<td class=\"ST\">---</td>";
                     }
@@ -1887,10 +1887,10 @@
             var strYosoHTML = '';
 
             if ( typeof funcTenkai == "function")  {
-                if( funcTenkai( '1' ) !== '' ){
+                if( funcTenkai( '2' ) !== '' ){
                     strYosoHTML = strYosoHTML + "<h2 class=\"yoso\">レース展望</h2>";
                     strYosoHTML = strYosoHTML + "<div id=\"yoso\">";
-                    strYosoHTML = strYosoHTML + '' + funcTenkai( '1' ) + '';
+                    strYosoHTML = strYosoHTML + '' + funcTenkai( '2' ) + '';
                     strYosoHTML = strYosoHTML + "</div>";
                 }else{
                     strYosoHTML = strYosoHTML + "<div class=\"nodata\">ただいま鋭意入力中!!</div>";
@@ -1908,16 +1908,16 @@
             var strYoso4 = 0;
 
             if ( ( typeof funcKaime == "function" ) && ( typeof funcyoso == "function" ) )  {
-                if( funcKaime( '1' ) !== '' ){
+                if( funcKaime( '2' ) !== '' ){
 
                     for( intLoopCountjs = 1 ; intLoopCountjs <= 6 ; intLoopCountjs = intLoopCountjs + 1){
-                        if( funcyoso( '1', '' + intLoopCountjs + '' ) === '1' ){
+                        if( funcyoso( '2', '' + intLoopCountjs + '' ) === '1' ){
                             strYoso4 = intLoopCountjs;
-                        }else if( funcyoso( '1', '' + intLoopCountjs + '' ) === '2' ){
+                        }else if( funcyoso( '2', '' + intLoopCountjs + '' ) === '2' ){
                             strYoso3 = intLoopCountjs;
-                        }else if( funcyoso( '1', '' + intLoopCountjs + '' ) === '3' ){
+                        }else if( funcyoso( '2', '' + intLoopCountjs + '' ) === '3' ){
                             strYoso2 = intLoopCountjs;
-                        }else if( funcyoso( '1', '' + intLoopCountjs + '' ) === '4' ){
+                        }else if( funcyoso( '2', '' + intLoopCountjs + '' ) === '4' ){
                             strYoso1 = intLoopCountjs;
                         }
                     }
@@ -1926,7 +1926,7 @@
                         strKaimeHTML = strKaimeHTML + "<h2 class=\"kaime\">激アツ!! 買い目はコレ!!</h2>";
                         strKaimeHTML = strKaimeHTML + "<div id=\"kaime\">";
 
-                        if( funcKaime( '1' ) === '1' ){
+                        if( funcKaime( '2' ) === '1' ){
 
                             strKaimeHTML = strKaimeHTML + "<table>";
                             strKaimeHTML = strKaimeHTML + "<tr>";
@@ -1958,7 +1958,7 @@
                             strKaimeHTML = strKaimeHTML + "</tr>";
                             strKaimeHTML = strKaimeHTML + "</table>";
 
-                        }else if( funcKaime( '1' ) === '2' ){
+                        }else if( funcKaime( '2' ) === '2' ){
 
                             strKaimeHTML = strKaimeHTML + "<table>";
                             strKaimeHTML = strKaimeHTML + "<tr>";
@@ -1990,7 +1990,7 @@
                             strKaimeHTML = strKaimeHTML + "</tr>";
                             strKaimeHTML = strKaimeHTML + "</table>";
 
-                        }else if( funcKaime( '1' ) === '3' ){
+                        }else if( funcKaime( '2' ) === '3' ){
 
                             strKaimeHTML = strKaimeHTML + "<table>";
                             strKaimeHTML = strKaimeHTML + "<tr>";
@@ -2037,51 +2037,51 @@
             var strAnaHTML = '';
 
             if ( typeof funcAna == "function")  {
-                if( ( ( funcAna( '1', "1" , "1" ) !== '' ) && ( funcAna( '1', "1" , "2" ) !== '' ) ) || ( ( funcAna( '1', "2" , "1" ) !== '' ) && ( funcAna( '1', "2" , "2" ) !== '' ) ) ){
+                if( ( ( funcAna( '2', "1" , "1" ) !== '' ) && ( funcAna( '2', "1" , "2" ) !== '' ) ) || ( ( funcAna( '2', "2" , "1" ) !== '' ) && ( funcAna( '2', "2" , "2" ) !== '' ) ) ){
                     strAnaHTML = strAnaHTML + "<h2 class=\"ana\">プレミア!! 穴狙い!!</h2>";
                     strAnaHTML = strAnaHTML + "<div id=\"ana\" class=\"cf\">";
 
-                    if( ( ( funcAna( '1', "1" , "1" ) !== '' ) && ( funcAna( '1', "1" , "2" ) !== '' ) ) ){
+                    if( ( ( funcAna( '2', "1" , "1" ) !== '' ) && ( funcAna( '2', "1" , "2" ) !== '' ) ) ){
 
                         strAnaHTML = strAnaHTML + "<table>";
                         strAnaHTML = strAnaHTML + "<tr>";
 
-                        if( funcAna( '1', "1" , "1" ) === '1' ){
+                        if( funcAna( '2', "1" , "1" ) === '1' ){
                             strAnaHTML = strAnaHTML + "<td class=\"text\">流　し</td>";
-                        }else if( funcAna( '1', "1" , "1" ) === '2' ){
+                        }else if( funcAna( '2', "1" , "1" ) === '2' ){
                             strAnaHTML = strAnaHTML + "<td class=\"text\">ボックス</td>";
                         }else{
                             strAnaHTML = strAnaHTML + "<td class=\"text\">---</td>";
                         }
 
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "1" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '2', "1" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "1" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '2', "1" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "1" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '1', "1" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "1" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '2', "1" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "</tr>";
                         strAnaHTML = strAnaHTML + "</table>";
 
                     }
 
-                    if( ( ( funcAna( '1', "2" , "1" ) !== '' ) && ( funcAna( '1', "2" , "2" ) !== '' ) ) ){
+                    if( ( ( funcAna( '2', "2" , "1" ) !== '' ) && ( funcAna( '2', "2" , "2" ) !== '' ) ) ){
 
                         strAnaHTML = strAnaHTML + "<table>";
                         strAnaHTML = strAnaHTML + "<tr>";
 
-                        if( funcAna( '1', "2" , "1" ) === '1' ){
+                        if( funcAna( '2', "2" , "1" ) === '1' ){
                             strAnaHTML = strAnaHTML + "<td class=\"text\">流　し</td>";
-                        }else if( funcAna( '1', "2" , "1" ) === '2' ){
+                        }else if( funcAna( '2', "2" , "1" ) === '2' ){
                             strAnaHTML = strAnaHTML + "<td class=\"text\">ボックス</td>";
                         }else{
                             strAnaHTML = strAnaHTML + "<td class=\"text\">---</td>";
                         }
 
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "2" , "2" ).substring(0,1) + ".png\" alt=\"" + funcAna( '2', "2" , "2" ).substring(0,1) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "2" , "2" ).substring(1,2) + ".png\" alt=\"" + funcAna( '2', "2" , "2" ).substring(1,2) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana08.png\" width=\"28\" height=\"60\"></td>";
-                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '1', "2" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '1', "2" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
+                        strAnaHTML = strAnaHTML + "<td><img src=\"/sp/kyogi/images/focus_ana0" + funcAna( '2', "2" , "2" ).substring(2,3) + ".png\" alt=\"" + funcAna( '2', "2" , "2" ).substring(2,3) + "\" width=\"60\" height=\"60\"></td>";
                         strAnaHTML = strAnaHTML + "</tr>";
                         strAnaHTML = strAnaHTML + "</table>";
 
@@ -2108,13 +2108,13 @@
         var strNavHTML = '';
 
         if ( ( typeof funckekkaRacenum == "function" ) )  {
-            if( "1" <= funckekkaRacenum() ) {
-                strNavHTML = strNavHTML + "<li id=\"nav06\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/kekka/kekka202606280701.htm\">結果</a></li>";
+            if( "2" <= funckekkaRacenum() ) {
+                strNavHTML = strNavHTML + "<li id=\"nav06\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/kekka/kekka202606280702.htm\">結果</a></li>";
             }else{
-                strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280701.htm\">オッズ</a></li>";
+                strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280702.htm\">オッズ</a></li>";
             }
         }else{
-            strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280701.htm\">オッズ</a></li>";
+            strNavHTML = strNavHTML + "<li id=\"nav02\"><a href=\"/asp/gamagori/sp/kyogi/kyogihtml/odds/odds202606280702.htm\">オッズ</a></li>";
         }
     </script>
 
@@ -2204,7 +2204,7 @@
                     </div>
                     
                     <!-- ティッカー -->
-                    <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/ticker07.js?var=202606281118071"></script>
+                    <script type="text/javascript" src="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/js/ticker07.js?var=202606281118072"></script>
                     <script type="text/javascript" src="https://www.gamagori-kyotei.com/sp/kyogi/js/jquery.ticker.js"></script>
                     <script>
                         if (typeof funcTicker == "function")  {
@@ -2222,12 +2222,12 @@
                         }
                     </script>
                     <div id="race_select" class="cf">
-                                                    <div id="back"></div>
+                                                    <div id="back"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend202606280701.htm">back</a></div>
                                                 <div id="num_select">
                             <form name="racenum">
                                 <select id="select" name="select" class="styled">
-                                                                                                                        <option value="1R" selected>1R</option>
-                                                                                                                                                                <option value="2R">2R</option>
+                                                                                                                        <option value="1R">1R</option>
+                                                                                                                                                                <option value="2R" selected>2R</option>
                                                                                                                                                                 <option value="3R">3R</option>
                                                                                                                                                                 <option value="4R">4R</option>
                                                                                                                                                                 <option value="5R">5R</option>
@@ -2241,13 +2241,13 @@
                                                                                                             </select>
                             </form>
                         </div>
-                                                    <div id="next"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend202606280702.htm">next</a></div>
+                                                    <div id="next"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend202606280703.htm">next</a></div>
                                                 <table>
                             <tr>
                                                                                                                                         <td class="class">一般戦
                                 
                                 <td class="dento"><span>発売<br>締切</span></td>
-                                <td class="time">15:30</td>
+                                <td class="time">16:09</td>
                             </tr>
                         </table>
                     </div>
@@ -2289,9 +2289,9 @@
 <div class="YosoMark1"></div>
 </td>
 <td rowspan="2" class="waku r1">1</td>
-<td rowspan="2" class="NO">59</td>
-<td class="mo_rate_L">5.34<span id="id_motorRank1_1"></span></td>
-<td class="mo_rate_R">5.55<span id="id_motorRank1_2"></span></td>
+<td rowspan="2" class="NO">11</td>
+<td class="mo_rate_L">4.80<span id="id_motorRank1_1"></span></td>
+<td class="mo_rate_R">4.48<span id="id_motorRank1_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo1"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark1_1"></div>
@@ -2302,8 +2302,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">37.1<span id="id_motorRank1_3"></span></td>
-<td class="mo_2ren_R">42.9<span id="id_motorRank1_4"></span></td>
+<td class="mo_2ren_L">29.5<span id="id_motorRank1_3"></span></td>
+<td class="mo_2ren_R">25.0<span id="id_motorRank1_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -2311,9 +2311,9 @@
 <div class="YosoMark2"></div>
 </td>
 <td rowspan="2" class="waku r2">2</td>
-<td rowspan="2" class="NO">24</td>
-<td class="mo_rate_L">4.71<span id="id_motorRank2_1"></span></td>
-<td class="mo_rate_R">3.97<span id="id_motorRank2_2"></span></td>
+<td rowspan="2" class="NO">26</td>
+<td class="mo_rate_L">5.75<span id="id_motorRank2_1"></span></td>
+<td class="mo_rate_R">6.08<span id="id_motorRank2_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo2"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark2_1"></div>
@@ -2324,8 +2324,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">29.1<span id="id_motorRank2_3"></span></td>
-<td class="mo_2ren_R">24.3<span id="id_motorRank2_4"></span></td>
+<td class="mo_2ren_L">43.3<span id="id_motorRank2_3"></span></td>
+<td class="mo_2ren_R">51.0<span id="id_motorRank2_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -2333,9 +2333,9 @@
 <div class="YosoMark3"></div>
 </td>
 <td rowspan="2" class="waku r3">3</td>
-<td rowspan="2" class="NO">48</td>
-<td class="mo_rate_L">4.72<span id="id_motorRank3_1"></span></td>
-<td class="mo_rate_R">5.10<span id="id_motorRank3_2"></span></td>
+<td rowspan="2" class="NO">49</td>
+<td class="mo_rate_L">4.91<span id="id_motorRank3_1"></span></td>
+<td class="mo_rate_R">2.71<span id="id_motorRank3_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo3"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark3_1"></div>
@@ -2346,8 +2346,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">28.0<span id="id_motorRank3_3"></span></td>
-<td class="mo_2ren_R">29.0<span id="id_motorRank3_4"></span></td>
+<td class="mo_2ren_L">32.2<span id="id_motorRank3_3"></span></td>
+<td class="mo_2ren_R">9.80<span id="id_motorRank3_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -2355,9 +2355,9 @@
 <div class="YosoMark4"></div>
 </td>
 <td rowspan="2" class="waku r4">4</td>
-<td rowspan="2" class="NO">52</td>
-<td class="mo_rate_L">5.20<span id="id_motorRank4_1"></span></td>
-<td class="mo_rate_R">5.48<span id="id_motorRank4_2"></span></td>
+<td rowspan="2" class="NO">58</td>
+<td class="mo_rate_L">5.63<span id="id_motorRank4_1"></span></td>
+<td class="mo_rate_R">6.05<span id="id_motorRank4_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo4"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark4_1"></div>
@@ -2368,8 +2368,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">31.6<span id="id_motorRank4_3"></span></td>
-<td class="mo_2ren_R">36.4<span id="id_motorRank4_4"></span></td>
+<td class="mo_2ren_L">37.3<span id="id_motorRank4_3"></span></td>
+<td class="mo_2ren_R">41.9<span id="id_motorRank4_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -2377,9 +2377,9 @@
 <div class="YosoMark5"></div>
 </td>
 <td rowspan="2" class="waku r5">5</td>
-<td rowspan="2" class="NO">36</td>
-<td class="mo_rate_L">4.87<span id="id_motorRank5_1"></span></td>
-<td class="mo_rate_R">5.00<span id="id_motorRank5_2"></span></td>
+<td rowspan="2" class="NO">21</td>
+<td class="mo_rate_L">6.00<span id="id_motorRank5_1"></span></td>
+<td class="mo_rate_R">5.38<span id="id_motorRank5_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo5"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark5_1"></div>
@@ -2390,8 +2390,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">30.3<span id="id_motorRank5_3"></span></td>
-<td class="mo_2ren_R">36.4<span id="id_motorRank5_4"></span></td>
+<td class="mo_2ren_L">39.1<span id="id_motorRank5_3"></span></td>
+<td class="mo_2ren_R">35.9<span id="id_motorRank5_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -2399,9 +2399,9 @@
 <div class="YosoMark6"></div>
 </td>
 <td rowspan="2" class="waku r6">6</td>
-<td rowspan="2" class="NO">33</td>
-<td class="mo_rate_L">5.09<span id="id_motorRank6_1"></span></td>
-<td class="mo_rate_R">4.92<span id="id_motorRank6_2"></span></td>
+<td rowspan="2" class="NO">28</td>
+<td class="mo_rate_L">4.64<span id="id_motorRank6_1"></span></td>
+<td class="mo_rate_R">4.57<span id="id_motorRank6_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo6"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark6_1"></div>
@@ -2412,8 +2412,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">32.7<span id="id_motorRank6_3"></span></td>
-<td class="mo_2ren_R">31.6<span id="id_motorRank6_4"></span></td>
+<td class="mo_2ren_L">29.4<span id="id_motorRank6_3"></span></td>
+<td class="mo_2ren_R">23.3<span id="id_motorRank6_4"></span></td>
 </tr>
 </table>
 <div class="hyoka">※モーターパワーは前節までの実績で評価しています。</div>
@@ -2442,19 +2442,19 @@
                                                 <div class="YosoMark1"></div>
                                             </td>
                                             <td rowspan="2" class="waku r1">1</td>
-                                            <td rowspan="2" class="NO">59</td>
+                                            <td rowspan="2" class="NO">11</td>
                                             <td class="mo_racer_T">
-                                                後藤 浩<br>
-                                                <span>B1（4.89）</span>
+                                                奈須 啓太<br>
+                                                <span>A2（5.93）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">26556</td>
+                                            <td colspan="2" class="mo_seiseki_T">111532<span class="icon_y_3"></span>31</td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                高橋 真吾<br>
-                                                <span>B1（4.25）</span>
+                                                西舘 果里<br>
+                                                <span>B2（4.82）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">542455</td>
+                                            <td colspan="2" class="mo_seiseki_B">6544F2</td>
                                         </tr>
                                                                         <!-- ▼枠▼ -->
                                         <tr>
@@ -2462,19 +2462,19 @@
                                                 <div class="YosoMark2"></div>
                                             </td>
                                             <td rowspan="2" class="waku r2">2</td>
-                                            <td rowspan="2" class="NO">24</td>
+                                            <td rowspan="2" class="NO">26</td>
                                             <td class="mo_racer_T">
-                                                赤澤 文香<br>
-                                                <span>B1（4.99）</span>
+                                                大池 佑来<br>
+                                                <span>A1（6.33）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">55524563</td>
+                                            <td colspan="2" class="mo_seiseki_T">3222113212<span class="icon_y_1"></span><span class="icon_j_1"></span></td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                中野 夢斗<br>
-                                                <span>A2（5.03）</span>
+                                                平野 和明<br>
+                                                <span>A2（5.68）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">566</td>
+                                            <td colspan="2" class="mo_seiseki_B">222364<span class="icon_y_5"></span>14</td>
                                         </tr>
                                                                         <!-- ▼枠▼ -->
                                         <tr>
@@ -2482,19 +2482,19 @@
                                                 <div class="YosoMark3"></div>
                                             </td>
                                             <td rowspan="2" class="waku r3">3</td>
-                                            <td rowspan="2" class="NO">48</td>
+                                            <td rowspan="2" class="NO">49</td>
                                             <td class="mo_racer_T">
-                                                渡邊 伸太郎<br>
-                                                <span>B1（5.20）</span>
+                                                萩原 丈太朗<br>
+                                                <span>B1（2.09）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">624534</td>
+                                            <td colspan="2" class="mo_seiseki_T">55666656</td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                鳥居塚 嶺王<br>
-                                                <span>B1（3.73）</span>
+                                                久保原 秀人<br>
+                                                <span>B1（3.52）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">1144<span class="icon_y_5"></span>14</td>
+                                            <td colspan="2" class="mo_seiseki_B">664666</td>
                                         </tr>
                                                                         <!-- ▼枠▼ -->
                                         <tr>
@@ -2502,19 +2502,19 @@
                                                 <div class="YosoMark4"></div>
                                             </td>
                                             <td rowspan="2" class="waku r4">4</td>
-                                            <td rowspan="2" class="NO">52</td>
+                                            <td rowspan="2" class="NO">58</td>
                                             <td class="mo_racer_T">
-                                                一色 颯輝<br>
-                                                <span>B2（5.01）</span>
+                                                小宮 涼雅<br>
+                                                <span>B1（4.01）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">133365<span class="icon_y_4"></span>52</td>
+                                            <td colspan="2" class="mo_seiseki_T">33455664</td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                上田 紗奈<br>
-                                                <span>B1（5.64）</span>
+                                                下寺 秀和<br>
+                                                <span>A1（7.07）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">1662423</td>
+                                            <td colspan="2" class="mo_seiseki_B">13214<span class="icon_y_1"></span><span class="icon_j_2"></span></td>
                                         </tr>
                                                                         <!-- ▼枠▼ -->
                                         <tr>
@@ -2522,19 +2522,19 @@
                                                 <div class="YosoMark5"></div>
                                             </td>
                                             <td rowspan="2" class="waku r5">5</td>
-                                            <td rowspan="2" class="NO">36</td>
+                                            <td rowspan="2" class="NO">21</td>
                                             <td class="mo_racer_T">
-                                                山本 浩次<br>
-                                                <span>B1（4.65）</span>
+                                                木山 和幸<br>
+                                                <span>A2（5.63）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">256143116</td>
+                                            <td colspan="2" class="mo_seiseki_T">143322<span class="icon_y_5"></span>16</td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                山田 理央<br>
-                                                <span>A2（6.64）</span>
+                                                加藤 啓太<br>
+                                                <span>B1（3.83）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">3エ51356</td>
+                                            <td colspan="2" class="mo_seiseki_B">44</td>
                                         </tr>
                                                                         <!-- ▼枠▼ -->
                                         <tr>
@@ -2542,19 +2542,19 @@
                                                 <div class="YosoMark6"></div>
                                             </td>
                                             <td rowspan="2" class="waku r6">6</td>
-                                            <td rowspan="2" class="NO">33</td>
+                                            <td rowspan="2" class="NO">28</td>
                                             <td class="mo_racer_T">
-                                                安河内 将<br>
-                                                <span>A1（7.05）</span>
+                                                大場 敏<br>
+                                                <span>A2（5.76）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_T">24妨3</td>
+                                            <td colspan="2" class="mo_seiseki_T">623535611</td>
                                         </tr>
                                         <tr>
                                             <td class="mo_racer_B">
-                                                廣中 良一<br>
-                                                <span>B1（4.11）</span>
+                                                藤原 駿<br>
+                                                <span>B2（1.47）</span>
                                             </td>
-                                            <td colspan="2" class="mo_seiseki_B">64妨416</td>
+                                            <td colspan="2" class="mo_seiseki_B">666664</td>
                                         </tr>
                                                                     </table>
                             </div>
@@ -2791,9 +2791,9 @@
                                             <tr>
                                                 <td class="cho_waku r1">1</td>
 
-                                                                                                    <td class="cho_kaisu">23</td>
+                                                                                                    <td class="cho_kaisu">32</td>
                                                 
-                                                                                                    <td class="cho_kaisu">0.09</td>
+                                                                                                    <td class="cho_kaisu">0.31</td>
                                                 
                                                 
                                                                                                     <td class="cho_z_R">---</td>
@@ -2806,9 +2806,9 @@
                                             <tr>
                                                 <td class="cho_waku r2">2</td>
 
-                                                                                                    <td class="cho_kaisu">41</td>
+                                                                                                    <td class="cho_kaisu">37</td>
                                                 
-                                                                                                    <td class="cho_kaisu">0</td>
+                                                                                                    <td class="cho_kaisu">0.05</td>
                                                 
                                                 
                                                                                                     <td class="cho_z_R">---</td>
@@ -2821,7 +2821,7 @@
                                             <tr>
                                                 <td class="cho_waku r3">3</td>
 
-                                                                                                    <td class="cho_kaisu">34</td>
+                                                                                                    <td class="cho_kaisu">28</td>
                                                 
                                                                                                     <td class="cho_kaisu">0</td>
                                                 
@@ -2836,9 +2836,9 @@
                                             <tr>
                                                 <td class="cho_waku r4">4</td>
 
-                                                                                                    <td class="cho_kaisu">37</td>
+                                                                                                    <td class="cho_kaisu">40</td>
                                                 
-                                                                                                    <td class="cho_kaisu">0.32</td>
+                                                                                                    <td class="cho_kaisu">0</td>
                                                 
                                                 
                                                                                                     <td class="cho_z_R">---</td>
@@ -2851,9 +2851,9 @@
                                             <tr>
                                                 <td class="cho_waku r5">5</td>
 
-                                                                                                    <td class="cho_kaisu">41</td>
+                                                                                                    <td class="cho_kaisu">31</td>
                                                 
-                                                                                                    <td class="cho_kaisu">0.05</td>
+                                                                                                    <td class="cho_kaisu">0.81</td>
                                                 
                                                 
                                                                                                     <td class="cho_z_R">---</td>
@@ -2866,9 +2866,9 @@
                                             <tr>
                                                 <td class="cho_waku r6">6</td>
 
-                                                                                                    <td class="cho_kaisu">24</td>
+                                                                                                    <td class="cho_kaisu">22</td>
                                                 
-                                                                                                    <td class="cho_kaisu">0</td>
+                                                                                                    <td class="cho_kaisu">0.09</td>
                                                 
                                                 
                                                                                                     <td class="cho_z_R">---</td>
@@ -3777,9 +3777,9 @@
 <div class="YosoMark1"></div>
 </td>
 <td rowspan="2" class="waku r1">1</td>
-<td rowspan="2" class="NO">59</td>
-<td class="mo_rate_L">5.34<span id="id_motorRank1_1"></span></td>
-<td class="mo_rate_R">5.55<span id="id_motorRank1_2"></span></td>
+<td rowspan="2" class="NO">11</td>
+<td class="mo_rate_L">4.80<span id="id_motorRank1_1"></span></td>
+<td class="mo_rate_R">4.48<span id="id_motorRank1_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo1"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark1_1"></div>
@@ -3790,8 +3790,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">37.1<span id="id_motorRank1_3"></span></td>
-<td class="mo_2ren_R">42.9<span id="id_motorRank1_4"></span></td>
+<td class="mo_2ren_L">29.5<span id="id_motorRank1_3"></span></td>
+<td class="mo_2ren_R">25.0<span id="id_motorRank1_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -3799,9 +3799,9 @@
 <div class="YosoMark2"></div>
 </td>
 <td rowspan="2" class="waku r2">2</td>
-<td rowspan="2" class="NO">24</td>
-<td class="mo_rate_L">4.71<span id="id_motorRank2_1"></span></td>
-<td class="mo_rate_R">3.97<span id="id_motorRank2_2"></span></td>
+<td rowspan="2" class="NO">26</td>
+<td class="mo_rate_L">5.75<span id="id_motorRank2_1"></span></td>
+<td class="mo_rate_R">6.08<span id="id_motorRank2_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo2"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark2_1"></div>
@@ -3812,8 +3812,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">29.1<span id="id_motorRank2_3"></span></td>
-<td class="mo_2ren_R">24.3<span id="id_motorRank2_4"></span></td>
+<td class="mo_2ren_L">43.3<span id="id_motorRank2_3"></span></td>
+<td class="mo_2ren_R">51.0<span id="id_motorRank2_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -3821,9 +3821,9 @@
 <div class="YosoMark3"></div>
 </td>
 <td rowspan="2" class="waku r3">3</td>
-<td rowspan="2" class="NO">48</td>
-<td class="mo_rate_L">4.72<span id="id_motorRank3_1"></span></td>
-<td class="mo_rate_R">5.10<span id="id_motorRank3_2"></span></td>
+<td rowspan="2" class="NO">49</td>
+<td class="mo_rate_L">4.91<span id="id_motorRank3_1"></span></td>
+<td class="mo_rate_R">2.71<span id="id_motorRank3_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo3"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark3_1"></div>
@@ -3834,8 +3834,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">28.0<span id="id_motorRank3_3"></span></td>
-<td class="mo_2ren_R">29.0<span id="id_motorRank3_4"></span></td>
+<td class="mo_2ren_L">32.2<span id="id_motorRank3_3"></span></td>
+<td class="mo_2ren_R">9.80<span id="id_motorRank3_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -3843,9 +3843,9 @@
 <div class="YosoMark4"></div>
 </td>
 <td rowspan="2" class="waku r4">4</td>
-<td rowspan="2" class="NO">52</td>
-<td class="mo_rate_L">5.20<span id="id_motorRank4_1"></span></td>
-<td class="mo_rate_R">5.48<span id="id_motorRank4_2"></span></td>
+<td rowspan="2" class="NO">58</td>
+<td class="mo_rate_L">5.63<span id="id_motorRank4_1"></span></td>
+<td class="mo_rate_R">6.05<span id="id_motorRank4_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo4"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark4_1"></div>
@@ -3856,8 +3856,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">31.6<span id="id_motorRank4_3"></span></td>
-<td class="mo_2ren_R">36.4<span id="id_motorRank4_4"></span></td>
+<td class="mo_2ren_L">37.3<span id="id_motorRank4_3"></span></td>
+<td class="mo_2ren_R">41.9<span id="id_motorRank4_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -3865,9 +3865,9 @@
 <div class="YosoMark5"></div>
 </td>
 <td rowspan="2" class="waku r5">5</td>
-<td rowspan="2" class="NO">36</td>
-<td class="mo_rate_L">4.87<span id="id_motorRank5_1"></span></td>
-<td class="mo_rate_R">5.00<span id="id_motorRank5_2"></span></td>
+<td rowspan="2" class="NO">21</td>
+<td class="mo_rate_L">6.00<span id="id_motorRank5_1"></span></td>
+<td class="mo_rate_R">5.38<span id="id_motorRank5_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo5"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark5_1"></div>
@@ -3878,8 +3878,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">30.3<span id="id_motorRank5_3"></span></td>
-<td class="mo_2ren_R">36.4<span id="id_motorRank5_4"></span></td>
+<td class="mo_2ren_L">39.1<span id="id_motorRank5_3"></span></td>
+<td class="mo_2ren_R">35.9<span id="id_motorRank5_4"></span></td>
 </tr>
 <!-- ▼枠▼ -->
 <tr>
@@ -3887,9 +3887,9 @@
 <div class="YosoMark6"></div>
 </td>
 <td rowspan="2" class="waku r6">6</td>
-<td rowspan="2" class="NO">33</td>
-<td class="mo_rate_L">5.09<span id="id_motorRank6_1"></span></td>
-<td class="mo_rate_R">4.92<span id="id_motorRank6_2"></span></td>
+<td rowspan="2" class="NO">28</td>
+<td class="mo_rate_L">4.64<span id="id_motorRank6_1"></span></td>
+<td class="mo_rate_R">4.57<span id="id_motorRank6_2"></span></td>
 <td rowspan="2" class="mo_level"><div id="MotorSujo6"></div>
 </td>
 <td rowspan="2" class="mo_mark_L"><div id="MotorMark6_1"></div>
@@ -3900,8 +3900,8 @@
 </td>
 </tr>
 <tr>
-<td class="mo_2ren_L">32.7<span id="id_motorRank6_3"></span></td>
-<td class="mo_2ren_R">31.6<span id="id_motorRank6_4"></span></td>
+<td class="mo_2ren_L">29.4<span id="id_motorRank6_3"></span></td>
+<td class="mo_2ren_R">23.3<span id="id_motorRank6_4"></span></td>
 </tr>
 </table>
 <div class="hyoka">※モーターパワーは前節までの実績で評価しています。</div>
@@ -3915,29 +3915,29 @@
                                                             
                             <td class="waku r1">1</td>
 
-                                                            <td class="name r1"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280101.htm">中村 紋夕梨</a></td>
+                                                            <td class="name r1"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280201.htm">森清 友翔</a></td>
                                                                                         
                             <td class="waku r2">2</td>
 
-                                                            <td class="name r2"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280102.htm">東口 晃</a></td>
+                                                            <td class="name r2"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280202.htm">佐藤 右京</a></td>
                                                                                         
                             <td class="waku r3">3</td>
 
-                                                            <td class="name r3"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280103.htm">寺嶋 雄</a></td>
+                                                            <td class="name r3"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280203.htm">田頭 虎親</a></td>
                                                                                                                 </tr>
                         <tr>
                             
                             <td class="waku r4">4</td>
 
-                                                            <td class="name r4"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280104.htm">菊池 峰晴</a></td>
+                                                            <td class="name r4"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280204.htm">澤 大介</a></td>
                                                                                         
                             <td class="waku r5">5</td>
 
-                                                            <td class="name r5"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280105.htm">倉富 大誠</a></td>
+                                                            <td class="name r5"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280205.htm">富田 恕生</a></td>
                                                                                         
                             <td class="waku r6">6</td>
 
-                                                            <td class="name r6"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280106.htm">板頭 里緒</a></td>
+                                                            <td class="name r6"><a class="fancybox" href="https://www.gamagori-kyotei.com/asp/gamagori/kyogi/kyogihtml/seiseki/sp/202606280206.htm">長野 未来</a></td>
                                                         
                         </tr>
                     </table>
@@ -4114,12 +4114,12 @@
     <div id="footer_space"></div>
     <div id="footer_nav" class="cf"><!-- footer_nav start -->
         <ul class="cf">
-            <li id="nav01"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/syusso/syusso202606280701.htm">出走表</a></li>
+            <li id="nav01"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/syusso/syusso202606280702.htm">出走表</a></li>
             <script type="text/javascript">
                 document.write(strNavHTML);
             </script>
-            <li id="nav03"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/choku/choku202606280701.htm">直前＆スタ展</a></li>
-            <li id="nav04"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/kekka_all/kekka_all202606280701.htm">結果一覧</a></li>
+            <li id="nav03"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/choku/choku202606280702.htm">直前＆スタ展</a></li>
+            <li id="nav04"><a href="https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/kekka_all/kekka_all202606280702.htm">結果一覧</a></li>
             <li id="nav05" class="active">蒲郡のおすすめ</li>
         </ul>
     </div><!-- footer_nav end -->
