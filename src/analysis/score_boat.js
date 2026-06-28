@@ -21,7 +21,7 @@
 
 'use strict';
 
-function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries) {
+function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries, rno) {
   var score = 0;
   var reasons = [];
   var risks = [];
@@ -214,6 +214,44 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
     var ezAux = exhibitionZScore(etTime, sid);
     if (ezAux !== 0) score += -ezAux * 2 * decay;
     if (ezAux <= -1.0) reasons.push('展示タイム場相対的に超速(z=' + ezAux.toFixed(1) + ')');
+
+    // オリジナル展示(各場サイトの実測 一周/まわり足): レース内で相対的に速い艇へ小さく加点。
+    //   データのある対応場(多摩川/三国/鳴門/若松/芦屋)のみ作用。他場は oeRace=null で完全に不変。
+    var oeRace = ((((typeof globalThis !== 'undefined' && globalThis._origExhibIndex) || {})[sid] || {})[rno]) || null;
+    if (oeRace) {
+      var _oeRank = function (field) {
+        var arr = [];
+        for (var w in oeRace) {
+          var v = oeRace[w] && oeRace[w][field];
+          if (v > 0) arr.push({ w: parseInt(w, 10), v: v });
+        }
+        arr.sort(function (a, b) {
+          return a.v - b.v; // 小さい = 速い = 良い
+        });
+        var rk = -1;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i].w === bn) {
+            rk = i;
+            break;
+          }
+        }
+        return { rank: rk, n: arr.length };
+      };
+      var turnR = _oeRank('turn_time'); // まわり足
+      var lapR = _oeRank('lap_time'); // 一周
+      // 信頼できる相対比較には最低 4 艇分の実測が必要
+      if (turnR.n >= 4 && turnR.rank >= 0) {
+        var tb = turnR.rank === 0 ? 2.5 : turnR.rank === 1 ? 1.2 : turnR.rank >= turnR.n - 1 ? -1.5 : 0;
+        score += tb * decay;
+        if (turnR.rank === 0) reasons.push('まわり足最速(オリジナル展示)');
+        else if (turnR.rank >= turnR.n - 1) risks.push('まわり足最遅(オリジナル展示)');
+      }
+      if (lapR.n >= 4 && lapR.rank >= 0) {
+        var lb = lapR.rank === 0 ? 1.5 : lapR.rank === 1 ? 0.8 : 0;
+        score += lb * decay;
+        if (lapR.rank === 0) reasons.push('一周最速(オリジナル展示)');
+      }
+    }
 
     if (myPv && myPv.racer_start_timing != null) {
       var st = pf(myPv.racer_start_timing);
