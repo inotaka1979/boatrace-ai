@@ -60,9 +60,23 @@ def main() -> int:
     _ = datetime.now(JST).strftime("%Y%m%d")
     for jcd, base in VENUES.items():
         print(f"===== jcd={jcd} {base} =====")
+        # cyokuzen.css は実データ有無に関わらず col5-1/2/3・rank クラス定義を含む
+        # → 描画前でも populated レイアウトを確定できる(夜間場でも採取可)
+        for css in (base + "/sp/page/yosou/css/cyokuzen.css?ver=2.1.21",
+                    base + "/sp/page/yosou/css/cyokuzen.css"):
+            try:
+                op = _opener()
+                craw = _get(op, css, base + "/sp/index.php?page=yosou-cyokuzen")
+                path = os.path.join(OUTDIR, f"fmtA_cyokuzen_jcd{jcd:02d}.css")
+                with open(path, "wb") as f:
+                    f.write(craw)
+                print(f"  css saved {path} ({len(craw)}B)")
+                break
+            except Exception as e:
+                print(f"  css FAIL {css}: {str(e)[:60]}")
         ajax = base + "/sp/ajax/ajax_cyokuzen.php"
         saved = False
-        for rno in (3, 6, 9, 12):
+        for rno in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
             op = _opener()  # レースごとに新規 session
             page = base + f"/sp/index.php?page=yosou-cyokuzen&race={rno}"
             try:
