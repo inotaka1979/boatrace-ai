@@ -1,57 +1,54 @@
 #!/usr/bin/env python3
-"""江戸川(3)が桐生/福岡と同ベンダー(ajax_cyokuzen)か確認するプローブ。
+"""住之江(12)が蒲郡型(ASP静的htm)か確認するプローブ。
 
-江戸川トップの script 構成(/sp/common/js/jquery-2.1.4 / common.js / main_setting.js,
-index.php?page=yosou)が桐生/福岡と一致。cyokuzen ページ + ajax_cyokuzen.php +
-cyokuzen.css を採取し、列ラベル(一周/半周/まわり足/直線)と構造を確定する。確認後撤去。
+住之江は /asp/suminoe/sp/kyogi/kyogihtml/... の蒲郡型 ASP 構造だが、ファイル名規則が
+不明(蒲郡=recomend{date}{jcd}{race}, 住之江 zenken は zenken1205 = 日付無しの可能性)。
+recomend/zenken/choku を複数パターンで叩き、URL規則と周回(ta_recomend/一周/まわり足/直線)
+構造を確定する。確認後撤去。
 """
 import os
 import sys
+from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from http_utils import fetch_bytes  # noqa: E402
 
+JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
-BASE = "https://www.boatrace-edogawa.com"
-
-
-def _save(name, raw, note=""):
-    p = os.path.join(OUTDIR, name)
-    with open(p, "wb") as f:
-        f.write(raw)
-    print(f"      saved {p} ({len(raw)}B){note}")
+BASE = "https://www.boatrace-suminoe.jp"
+JCD = 12
 
 
 def _counts(h):
     return " ".join(f"{m}={h.count(m)}" for m in
-                    ("一周", "半周", "まわり足", "直線", "周回", "展示", "オリジナル展示データ"))
+                    ("一周", "まわり足", "直線", "周回", "展示", "ta_recomend", "ori_time"))
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    targets = [
-        ("page", BASE + "/sp/index.php?page=yosou-cyokuzen"),
-        ("ajax", BASE + "/sp/ajax/ajax_cyokuzen.php"),
-        ("css", BASE + "/sp/page/yosou/css/cyokuzen.css"),
-    ]
-    for tag, url in targets:
-        try:
-            raw = fetch_bytes(url, timeout=15, retries=1,
-                              headers={"Referer": BASE + "/sp/",
-                                       "X-Requested-With": "XMLHttpRequest"})
-            txt = raw.decode("utf-8", errors="replace")
-        except Exception as e:
-            print(f"{tag} FAIL: {str(e)[:70]}")
-            continue
-        print(f"{tag} ({len(raw)}B) {_counts(txt)}")
-        _save(f"edo_{tag}.txt", raw)
-        if tag in ("page", "ajax"):
-            # thead ラベル行の手がかり
-            import re
-            for m in re.findall(r"<th[^>]*>([^<]{1,8})</th>", txt):
-                s = m.strip()
-                if s in ("一周", "半周", "まわり足", "直線", "展示", "展示タイム", "チルト"):
-                    print(f"     th: {s}")
+    hd = datetime.now(JST).strftime("%Y%m%d")
+    saved = 0
+    # type と filename パターンの直積を試す
+    for typ in ("recomend", "zenken", "choku"):
+        for label, fn in [
+            ("date+jcd+rr", f"{typ}{hd}{JCD:02d}01.htm"),
+            ("jcd+rr", f"{typ}{JCD:02d}01.htm"),
+            ("jcd+rr3", f"{typ}{JCD:02d}1.htm"),
+        ]:
+            url = f"{BASE}/asp/suminoe/sp/kyogi/kyogihtml/{typ}/{fn}"
+            try:
+                raw = fetch_bytes(url, timeout=12, retries=1,
+                                  headers={"Referer": BASE + "/"})
+                txt = raw.decode("utf-8", errors="replace")
+            except Exception as e:
+                print(f"{typ:9s} {label:12s} FAIL: {str(e)[:45]}")
+                continue
+            print(f"{typ:9s} {label:12s} ({len(raw)}B) {_counts(txt)}  {fn}")
+            if saved < 3:
+                p = os.path.join(OUTDIR, f"sumi_{typ}_{label}.htm")
+                with open(p, "wb") as f:
+                    f.write(raw)
+                saved += 1
     return 0
 
 
