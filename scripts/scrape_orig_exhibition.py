@@ -50,12 +50,17 @@ T = "toda_xml"
 # platform "gamagori_recomend": 蒲郡型。recomend{date}{jcd}{RR}.htm(静的)の
 #   table.ta_recomend に コース/枠番/展示/一周/まわり足/直線。展示後に値が入る。
 G = "gamagori_recomend"
+# platform "miyajima_post": 宮島型。POST race_common/require/kaisai_reload.php
+#   {race,date} のレスポンスを '####' で split、dt[8]=周回タイム断片を
+#   parse_miyajima_shukai で解析(ヘッダ駆動)。
+M = "miyajima_post"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
+    17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
     22: {"platform": C, "base": "https://www.boatrace-fukuoka.com"},   # 福岡(同ベンダー)
     5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
     6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
@@ -316,6 +321,73 @@ def parse_gamagori_recomend(html, sid, rno):
     }
 
 
+_MIYA_LAB = {"展示": "ex_time", "展示タイム": "ex_time", "一周": "lap_time",
+             "まわり足": "turn_time", "回り足": "turn_time", "直線": "straight_time"}
+
+
+def parse_miyajima_shukai(html, sid, rno):
+    """宮島型(kaisai_reload.php の dt[8]=周回タイム HTML 断片)→ race dict | None。
+
+    ヘッダ駆動: 一周/まわり足/直線 を含む表を探し、ヘッダ行のラベル位置で列を特定、
+    各データ行から 艇番(先頭付近の 1-6 の単独セル) と各タイムを抽出する。
+    実 dt[8] 構造は宮島開催日に最終確認(展示前は空 → None)。
+    """
+    import re
+    soup = BeautifulSoup(html, "html.parser")
+    target = None
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if ("一周" in t) and ("まわり足" in t or "回り足" in t) and ("直線" in t):
+            target = tbl
+            break
+    if target is None:
+        return None
+    rows = target.find_all("tr")
+    colidx = {}
+    for row in rows:
+        cells = row.find_all(["th", "td"])
+        found = {}
+        for i, c in enumerate(cells):
+            f = _MIYA_LAB.get(c.get_text(strip=True).replace(" ", ""))
+            if f and f not in found:
+                found[f] = i
+        if all(k in found for k in ("lap_time", "turn_time", "straight_time")):
+            colidx = found
+            break
+    if not colidx:
+        return None
+    boats = []
+    seen = set()
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) <= colidx["straight_time"]:
+            continue
+        waku = None
+        for c in cells[:3]:
+            tx = c.get_text(strip=True)
+            if re.fullmatch(r"[1-6]", tx):
+                waku = int(tx)
+                break
+        if waku is None or waku in seen:
+            continue
+
+        def _cell(field):
+            i = colidx.get(field, -1)
+            return _f(cells[i].get_text(strip=True)) if 0 <= i < len(cells) else 0.0
+        seen.add(waku)
+        boats.append({
+            "racer_boat_number": waku,
+            "ex_time": _cell("ex_time"),
+            "lap_time": _cell("lap_time"),
+            "turn_time": _cell("turn_time"),
+            "straight_time": _cell("straight_time"),
+        })
+    if not boats:
+        return None
+    boats.sort(key=lambda b: b["racer_boat_number"])
+    return {"race_stadium_number": int(sid), "race_number": int(rno), "boats": boats}
+
+
 def _has_times(race):
     """1 艇でも一周/まわり足/直線が入っていれば True(展示後)。"""
     return any(
@@ -472,6 +544,42 @@ def scrape_gamagori_recomend(base, jcd, date_str):
     return out
 
 
+def _miyajima_post(base, race, date_str):
+    """宮島 kaisai_reload.php に POST し dt[8](周回タイム断片)を返す。"""
+    import urllib.parse
+    import urllib.request
+    data = urllib.parse.urlencode({"race": race, "date": date_str}).encode()
+    req = urllib.request.Request(
+        base + "/race_common/require/kaisai_reload.php", data=data,
+        headers={"User-Agent": _UA, "Referer": base + "/",
+                 "X-Requested-With": "XMLHttpRequest",
+                 "Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=12) as r:
+        parts = r.read().decode("utf-8", errors="replace").split("####")
+    return parts[8] if len(parts) > 8 else ""
+
+
+def scrape_miyajima_post(base, jcd, date_str):
+    """宮島型: 全12R を kaisai_reload.php に POST し dt[8] を解析、展示後のみ返す。"""
+    out = []
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futs = {ex.submit(_miyajima_post, base, rno, date_str): rno
+                for rno in range(1, 13)}
+        for fut in as_completed(futs):
+            rno = futs[fut]
+            try:
+                dt8 = fut.result()
+            except Exception:
+                continue
+            if not dt8:
+                continue
+            race = parse_miyajima_shukai(dt8, jcd, rno)
+            if race and _has_times(race):
+                out.append(race)
+    out.sort(key=lambda r: r["race_number"])
+    return out
+
+
 def scrape_venue(jcd, cfg, date_str):
     """レジストリの platform に応じて場のオリジナル展示を取得する。"""
     if cfg["platform"] == "ajax_yosou":
@@ -482,6 +590,8 @@ def scrape_venue(jcd, cfg, date_str):
         return scrape_toda_xml(cfg["base"], jcd, date_str)
     if cfg["platform"] == "gamagori_recomend":
         return scrape_gamagori_recomend(cfg["base"], jcd, date_str)
+    if cfg["platform"] == "miyajima_post":
+        return scrape_miyajima_post(cfg["base"], jcd, date_str)
     print(f"  jcd={jcd}: unknown platform {cfg['platform']}")
     return []
 
