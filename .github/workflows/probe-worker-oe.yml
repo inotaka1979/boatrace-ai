@@ -1,0 +1,45 @@
+name: Probe Worker Orig-Exhibition (diag)
+
+# 診断専用: Worker /orig-exhibition-proxy が各場サイトに到達して「各タイム」表を返せるか確認する。
+# クライアントのオンデマンド表示が出ない原因（Worker が venue を引けているか）を切り分ける。
+# 確認後に撤去する。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-worker-oe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Hit worker proxy + venue directly
+        run: |
+          set -uo pipefail
+          HD=$(TZ=Asia/Tokyo date +%Y%m%d)
+          WB="https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+          echo "date=$HD"
+          for R in 1 5 9 11; do
+            echo "===== jcd=10 race=$R via WORKER ====="
+            code=$(curl -sS -m 25 -o /tmp/w.html -w "%{http_code}" \
+              "$WB/orig-exhibition-proxy?jcd=10&race=$R&hd=$HD" || echo "000")
+            sz=$(wc -c < /tmp/w.html 2>/dev/null || echo 0)
+            isu=$(grep -c "一周" /tmp/w.html 2>/dev/null || echo 0)
+            echo "  worker HTTP=$code size=${sz}B 一周count=$isu"
+            head -c 200 /tmp/w.html | tr '\n' ' '; echo
+          done
+          echo "===== venue DIRECT from GHA (比較対象) jcd=10 race=5 ====="
+          code=$(curl -sS -m 25 -o /tmp/d.html -w "%{http_code}" \
+            -H "Referer: https://www.boatrace-mikuni.jp/sp/" \
+            -H "X-Requested-With: XMLHttpRequest" \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://www.boatrace-mikuni.jp/sp/ajax/ajax_yosou.php?targetday=$HD&race=5&req=cyokuzen&run=0" || echo "000")
+          sz=$(wc -c < /tmp/d.html 2>/dev/null || echo 0)
+          isu=$(grep -c "一周" /tmp/d.html 2>/dev/null || echo 0)
+          echo "  direct HTTP=$code size=${sz}B 一周count=$isu"
