@@ -106,5 +106,49 @@ class TestKiryuCyokuzenEmpty(unittest.TestCase):
         self.assertFalse(S._has_times(self.race))
 
 
+_TODA_XML = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'toda_original_R01.xml'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_TODA_XML),
+                     'deps or sample XML missing')
+class TestTodaOriginal(unittest.TestCase):
+    """戸田型(race_table_original.xml)パーサの回帰テスト。
+
+    採取済み 2026-06-28 戸田 1R XML で teiban/ttime/rnd/cnr/str の抽出と
+    一周/まわり足/直線 への対応(値域)を固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_TODA_XML, 'rb') as f:
+            cls.race = S.parse_toda_original(f.read(), 2, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 2)
+        self.assertEqual(self.race['race_number'], 1)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.78)     # ttime
+        self.assertEqual(b['lap_time'], 37.20)   # rnd=一周
+        self.assertEqual(b['turn_time'], 5.85)   # cnr=まわり足
+        self.assertEqual(b['straight_time'], 6.93)  # str=直線
+
+    def test_value_ranges_confirm_mapping(self):
+        for b in self.race['boats']:
+            self.assertTrue(6.0 <= b['ex_time'] <= 8.0, b)        # 展示
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)     # 一周
+            self.assertTrue(4.5 <= b['turn_time'] <= 8.0, b)      # まわり足
+            self.assertTrue(6.0 <= b['straight_time'] <= 8.0, b)  # 直線
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 if __name__ == '__main__':
     unittest.main()

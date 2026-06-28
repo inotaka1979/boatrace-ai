@@ -43,10 +43,15 @@ A = "ajax_yosou"
 #   取得し、レスポンス(<!--sep--> 区切り先頭ページ)を parse_kiryu_cyokuzen で解析。
 #   桐生は「一周」でなく「半周」を計測(lap_time に格納)。福岡は同ベンダーで流用。
 C = "ajax_cyokuzen"
+# platform "toda_xml": 戸田型。race_table_original.js が
+#   {base}/race/xml/kaisai/{YYYYMMDD}/race_table_original_{RR}.xml を読む。
+#   XML record: teiban/ttime(展示)/rnd(一周)/cnr(まわり足)/str(直線)。
+T = "toda_xml"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
+    2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     22: {"platform": C, "base": "https://www.boatrace-fukuoka.com"},   # 福岡(同ベンダー)
     5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
     6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
@@ -221,6 +226,46 @@ def parse_kiryu_cyokuzen(html, sid, rno):
     }
 
 
+def parse_toda_original(xml_bytes, sid, rno):
+    """戸田型(race_table_original.xml)→ race dict | None。
+
+    XML record 項目: teiban(艇番) / ttime(展示) / rnd(一周) / cnr(まわり足) /
+      str(直線) / tiltc / taiju / ctaiju。値域で確認済み(rnd≈37-38=一周,
+      cnr≈5.7-5.9=まわり足, str≈7=直線, ttime≈6.7=展示)。
+    展示前は record が無い/空 → None または時刻 0.0(誤データを出さない)。
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return None
+    boats = []
+    for rec in root.findall(".//record"):
+        def _t(tag):
+            el = rec.find(tag)
+            return el.text if el is not None else None
+        try:
+            waku = int((_t("teiban") or "").strip())
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= waku <= 6):
+            continue
+        boats.append({
+            "racer_boat_number": waku,
+            "ex_time": _f(_t("ttime")),
+            "lap_time": _f(_t("rnd")),      # 一周
+            "turn_time": _f(_t("cnr")),     # まわり足
+            "straight_time": _f(_t("str")),  # 直線
+        })
+    if not boats:
+        return None
+    return {
+        "race_stadium_number": int(sid),
+        "race_number": int(rno),
+        "boats": boats,
+    }
+
+
 def _has_times(race):
     """1 艇でも一周/まわり足/直線が入っていれば True(展示後)。"""
     return any(
@@ -330,12 +375,42 @@ def scrape_ajax_cyokuzen(base, jcd, date_str):
     return out
 
 
+# 戸田 XML の相対 './xml/...' 解決先 base 候補(最初に取れたものを採用)
+_TODA_PREFIXES = ("/race", "", "/sp", "/owpc/pc/race")
+
+
+def scrape_toda_xml(base, jcd, date_str):
+    """戸田型: race_table_original_{RR}.xml を全12R取得し、展示後のみ返す。"""
+    out = []
+    prefix_ok = None
+    for rno in range(1, 13):
+        rr = f"{rno:02d}"
+        prefixes = (prefix_ok,) if prefix_ok else _TODA_PREFIXES
+        for pre in prefixes:
+            url = (f"{base}{pre}/xml/kaisai/{date_str}/"
+                   f"race_table_original_{rr}.xml")
+            try:
+                raw = fetch_text(url, timeout=12, retries=1,
+                                 headers={"Referer": base + "/"})
+            except Exception:
+                continue
+            prefix_ok = pre
+            race = parse_toda_original(raw.encode("utf-8"), jcd, rno)
+            if race and _has_times(race):
+                out.append(race)
+            break
+    out.sort(key=lambda r: r["race_number"])
+    return out
+
+
 def scrape_venue(jcd, cfg, date_str):
     """レジストリの platform に応じて場のオリジナル展示を取得する。"""
     if cfg["platform"] == "ajax_yosou":
         return scrape_ajax_yosou(cfg["base"], jcd, date_str)
     if cfg["platform"] == "ajax_cyokuzen":
         return scrape_ajax_cyokuzen(cfg["base"], jcd, date_str)
+    if cfg["platform"] == "toda_xml":
+        return scrape_toda_xml(cfg["base"], jcd, date_str)
     print(f"  jcd={jcd}: unknown platform {cfg['platform']}")
     return []
 
