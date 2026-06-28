@@ -1327,6 +1327,8 @@ var stadiumMotorStats=_bootParseLS('boatrace_motorStats', {});
 var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 // X4: 潮汐データ（cron で 1日1回更新）
 var tideData=null;
+// オリジナル展示(各場サイトの一周/まわり足/直線、対応場のみ)。sid -> rno -> {waku -> {lap,turn,straight,ex}}
+var _origExhibIndex={};
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();

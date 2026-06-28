@@ -248,13 +248,29 @@ function openRace(sid, rn) {
   // ==========================================
   // 3b. 展示情報テーブル
   // ==========================================
+  // オリジナル展示（各場サイト由来の一周/まわり足/直線、対応場のみ）。waku -> {lap,turn,straight}
+  var _oeRace = ((globalThis._origExhibIndex || {})[sid] || {})[rn] || null;
+  var _hasOe = false;
+  if (_oeRace) {
+    for (var _ob in _oeRace) {
+      var _oeb = _oeRace[_ob];
+      if (_oeb && ((_oeb.lap_time || 0) > 0 || (_oeb.turn_time || 0) > 0 || (_oeb.straight_time || 0) > 0)) {
+        _hasOe = true;
+        break;
+      }
+    }
+  }
+
   var exhHtml = '';
   if (preview && preview.boats) {
     exhHtml = '<div class="section-title">展示情報</div>';
     exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
     // F12: 展示テーブルに「持ペラ / 部品交換 / 調整重量」を追加
+    // オリジナル展示対応場では 一周/まわり足/直線 列を追加（boatrace.jp 公式には無い実測値）
     exhHtml +=
-      '<thead><tr><th>枠</th><th>ST</th><th>展示</th><th>チルト</th><th>整備</th><th>調整</th></tr></thead><tbody>';
+      '<thead><tr><th>枠</th><th>ST</th><th>展示</th><th>チルト</th>' +
+      (_hasOe ? '<th>一周</th><th>まわり足</th><th>直線</th>' : '') +
+      '<th>整備</th><th>調整</th></tr></thead><tbody>';
 
     for (var bn = 1; bn <= 6; bn++) {
       var pv = pvMap[bn];
@@ -310,14 +326,26 @@ function openRace(sid, rn) {
       exhHtml += '<td class="' + stCls + '">' + stDisp + '</td>';
       exhHtml += '<td class="' + etCls + '">' + (etVal !== null ? etVal : '---') + '</td>';
       exhHtml += '<td>' + (tiltVal !== null ? tiltVal : '---') + '</td>';
+      if (_hasOe) {
+        var _oeb2 = _oeRace[bn] || {};
+        var _lap = (_oeb2.lap_time || 0) > 0 ? _oeb2.lap_time.toFixed(2) : '---';
+        var _turn = (_oeb2.turn_time || 0) > 0 ? _oeb2.turn_time.toFixed(2) : '---';
+        var _str = (_oeb2.straight_time || 0) > 0 ? _oeb2.straight_time.toFixed(2) : '---';
+        exhHtml += '<td>' + _lap + '</td><td>' + _turn + '</td><td>' + _str + '</td>';
+      }
       exhHtml += '<td class="fs-9">' + maintDisp + '</td>';
       exhHtml += '<td>' + adjDisp + '</td>';
       exhHtml += '</tr>';
     }
     exhHtml += '</tbody></table></div>';
-    // 注記: 公式に存在しない情報（まわり足/直線/1周/ピット）は専門紙でのみ取得可能
-    exhHtml +=
-      '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※ まわり足・1周・直線・ピット離れは boatrace.jp 公式に非公開（マクール等専門紙のみ）</div>';
+    // オリジナル展示(各場サイトの実測 一周/まわり足/直線)が取れた場はその旨、未対応場は注記。
+    if (_hasOe) {
+      exhHtml +=
+        '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">一周・まわり足・直線は当該場オフィシャルサイトのオリジナル展示（実測）</div>';
+    } else {
+      exhHtml +=
+        '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※ この場は一周・まわり足・直線のオリジナル展示に未対応（boatrace.jp 公式には非掲載）</div>';
+    }
 
     // Course entry grid
     if (preview.boats) {
