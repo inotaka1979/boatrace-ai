@@ -72,7 +72,13 @@ def _discover_naruto():
     for u in sorted(hrefs | srcs):
         if re.search(r'recomend|直前|展示|kyogi|syusso|tenji|chokuzen|info', u, re.I):
             print("  LINK:", u[:160])
-    return 1
+    # 鳴門は getYosou(date, race, type) で AJAX 取得。endpoint を持つ JS を採取。
+    saved = 1
+    for js in ("/sp/page/top/js/getYosou.js",
+               "/sp/page/top/yosou/js/yosou_slider.js"):
+        if _save("https://www.n14.jp" + js, "naruto_" + js.split("/")[-1].split("?")[0]):
+            saved += 1
+    return saved
 
 
 def main() -> int:
