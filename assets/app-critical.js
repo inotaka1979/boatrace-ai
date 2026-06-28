@@ -1329,9 +1329,8 @@ var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 var tideData=null;
 // オリジナル展示(各場サイトの一周/まわり足/直線、対応場のみ)。sid -> rno -> {waku -> {lap,turn,straight,ex}}
 var _origExhibIndex={};
-// オンデマンド対応場(ajax_yosou 型・全場)。非対応場は Worker 応答が空/別構造→parse None で無害。
-//   蒲郡(7)は静的+JS の別形式のため除外。
-var _OE_VENUES={1:1,2:1,3:1,4:1,5:1,6:1,8:1,9:1,10:1,11:1,12:1,13:1,15:1,16:1,17:1,18:1,19:1,20:1,21:1,22:1,23:1,24:1};
+// オンデマンド対応場(ajax_yosou で実際に表が取れる場のみ、probe 判定)。別サイト形式の場は除外。
+var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
