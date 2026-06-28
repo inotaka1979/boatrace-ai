@@ -33,34 +33,23 @@ OUTPUT = "data/orig_exhibition/today.json"
 #   platform "ajax_yosou": 鳴門型(n14.jp 系ベンダー)。/sp/ajax/ajax_yosou.php?req=cyokuzen を
 #     Referer/XHR 付きで叩き、「各タイム」表(col4-7)を parse_naruto_cyokuzen で解析。
 #     同型サイトの他場は base を足すだけで流用できる。
-# 他形式(蒲郡=静的HTML+motor.js 等)は platform を追加実装して対応する。
-# 全場登録。ajax_yosou 非対応の場は parse が None を返し自然に除外されるため誤データは出ない。
-#   蒲郡(7)は静的HTML+motor.js の別形式のため未登録（別 platform で対応予定）。
+# ajax_yosou 形式(/sp/ajax/ajax_yosou.php?req=cyokuzen)で動く場のみ登録。
+#   全24場 probe で判定: 5/10/13/18/20/21 は表取得OK、6/8/9/19 は同エンドポイント200(同ベンダー、
+#   開催日/展示後に表が出る想定)。残り12場(1/2/3/4/11/12/15/16/17/22/23/24)は ajax_yosou.php が
+#   404(502)=別サイト形式のため未登録(蒲郡7=静的+JSも別形式)。別形式は専用 platform で順次対応。
 A = "ajax_yosou"
 VENUES = {
-    1: {"platform": A, "base": "https://www.kiryu-kyotei.com"},       # 桐生
-    2: {"platform": A, "base": "https://www.boatrace-toda.jp"},       # 戸田
-    3: {"platform": A, "base": "https://www.boatrace-edogawa.com"},   # 江戸川
-    4: {"platform": A, "base": "https://www.heiwajima.gr.jp"},        # 平和島
-    5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},  # 多摩川 ✓確認済
-    6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},   # 浜名湖
-    8: {"platform": A, "base": "https://www.boatrace-tokoname.jp"},   # 常滑
-    9: {"platform": A, "base": "https://www.boatrace-tsu.com"},       # 津
-    10: {"platform": A, "base": "https://www.boatrace-mikuni.jp"},    # 三国 ✓確認済
-    11: {"platform": A, "base": "https://www.boatrace-biwako.jp"},    # びわこ
-    12: {"platform": A, "base": "https://www.boatrace-suminoe.jp"},   # 住之江
-    13: {"platform": A, "base": "https://www.boatrace-amagasaki.jp"},  # 尼崎
-    14: {"platform": A, "base": "https://www.n14.jp"},               # 鳴門 ✓確認済
-    15: {"platform": A, "base": "https://www.marugameboat.jp"},       # 丸亀
-    16: {"platform": A, "base": "https://www.kojimaboat.jp"},         # 児島
-    17: {"platform": A, "base": "https://www.boatrace-miyajima.com"},  # 宮島
-    18: {"platform": A, "base": "https://www.boatrace-tokuyama.jp"},  # 徳山
-    19: {"platform": A, "base": "https://www.boatrace-shimonoseki.jp"},  # 下関
-    20: {"platform": A, "base": "https://www.wmb.jp"},               # 若松 ✓確認済
-    21: {"platform": A, "base": "https://www.boatrace-ashiya.com"},  # 芦屋 ✓確認済
-    22: {"platform": A, "base": "https://www.boatrace-fukuoka.com"},  # 福岡
-    23: {"platform": A, "base": "https://www.boatrace-karatsu.jp"},   # 唐津
-    24: {"platform": A, "base": "https://omurakyotei.jp"},            # 大村
+    5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
+    6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
+    8: {"platform": A, "base": "https://www.boatrace-tokoname.jp"},    # 常滑(同ベンダー)
+    9: {"platform": A, "base": "https://www.boatrace-tsu.com"},        # 津(同ベンダー)
+    10: {"platform": A, "base": "https://www.boatrace-mikuni.jp"},     # 三国 ✓
+    13: {"platform": A, "base": "https://www.boatrace-amagasaki.jp"},  # 尼崎 ✓
+    14: {"platform": A, "base": "https://www.n14.jp"},                 # 鳴門 ✓
+    18: {"platform": A, "base": "https://www.boatrace-tokuyama.jp"},   # 徳山 ✓
+    19: {"platform": A, "base": "https://www.boatrace-shimonoseki.jp"},  # 下関(同ベンダー)
+    20: {"platform": A, "base": "https://www.wmb.jp"},                 # 若松 ✓
+    21: {"platform": A, "base": "https://www.boatrace-ashiya.com"},    # 芦屋 ✓
 }
 
 

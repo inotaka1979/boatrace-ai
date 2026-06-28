@@ -953,32 +953,19 @@ export default {
     //   GHA schedule では鮮度が足りない(展示は各レース締切~30分前)ため、閲覧中レースを
     //   その場で取得する。対応場(ajax_yosou 型)のみ。応答 HTML をクライアントが DOMParser で解析。
     if (url.pathname === '/orig-exhibition-proxy') {
-      // 全場(ajax_yosou 型)。非対応場は upstream が 404/別構造 → クライアント側パースで None。
-      //   蒲郡(7)は静的+JS の別形式のため未登録。
+      // ajax_yosou 形式で動く場のみ(probe 判定)。別サイト形式の12場+蒲郡は未登録(別途対応)。
       const ORIG_BASES = {
-        1: 'https://www.kiryu-kyotei.com',
-        2: 'https://www.boatrace-toda.jp',
-        3: 'https://www.boatrace-edogawa.com',
-        4: 'https://www.heiwajima.gr.jp',
         5: 'https://www.boatrace-tamagawa.com',
         6: 'https://www.boatrace-hamanako.jp',
         8: 'https://www.boatrace-tokoname.jp',
         9: 'https://www.boatrace-tsu.com',
         10: 'https://www.boatrace-mikuni.jp',
-        11: 'https://www.boatrace-biwako.jp',
-        12: 'https://www.boatrace-suminoe.jp',
         13: 'https://www.boatrace-amagasaki.jp',
         14: 'https://www.n14.jp',
-        15: 'https://www.marugameboat.jp',
-        16: 'https://www.kojimaboat.jp',
-        17: 'https://www.boatrace-miyajima.com',
         18: 'https://www.boatrace-tokuyama.jp',
         19: 'https://www.boatrace-shimonoseki.jp',
         20: 'https://www.wmb.jp',
         21: 'https://www.boatrace-ashiya.com',
-        22: 'https://www.boatrace-fukuoka.com',
-        23: 'https://www.boatrace-karatsu.jp',
-        24: 'https://omurakyotei.jp',
       };
       const jcd = url.searchParams.get('jcd') || '';
       const race = url.searchParams.get('race') || '';
