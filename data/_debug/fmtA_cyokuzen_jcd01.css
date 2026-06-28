@@ -1,0 +1,376 @@
+@charset:"UTF-8";
+
+/* 直前情報メニューのレイアウト*/
+.pagecategory:first-of-type p{
+	vertical-align: bottom;
+	line-height: 1;
+	padding-top: 1rem;
+}
+.pagecategory p.no-btn {
+	line-height:1.3;
+}
+
+table th:last-of-type,
+table td:last-of-type{
+	border-right:0;
+}
+/*cyokuzeninfo page*/
+/************************************
+	sttenji
+************************************/
+
+.sttenji thead .col1{
+	width: 2.3rem;
+}
+.sttenji thead .col2{
+	width: 7.9rem;
+}
+.sttenji thead .col3{
+	width: 2.4rem;
+}
+.sttenji thead .col4{
+	width: 16.1rem;
+}
+.sttenji thead .col5{
+	width: 3.2rem;
+}
+.sttenji thead th{
+	font-size: 1rem;
+	height:2rem;
+	line-height: 1.9rem;
+}
+.sttenji tbody td.col1,
+.sttenji tbody td.col2,
+.sttenji tbody td.col3{
+	height: 3.5rem;
+}
+.sttenji tbody td.col3{
+	padding: 0 0.4rem;
+	line-height: 1;
+}
+.sttenji tbody td{
+	font-weight: bold;
+	font-size: 1rem;
+}
+.sttenji table{
+	border-bottom: 1px solid #999999;
+}
+.sttenji tbody .col4{
+	width: 61%;
+	position: relative;
+	text-align: left;
+	background-color: #beedfd;
+	/* background-image: url("../images/suimen.png"); */
+	/* background-size: cover; */
+}
+.sttenji tbody .col4 img{
+	width: 50%;
+	position: relative;
+	vertical-align: middle;
+}
+
+.sttenji .slit_table{
+	display: table;
+	width: 100%;
+}
+.sttenji .slit_table li{
+	vertical-align: middle;
+}
+.sttenji .slit_table .item_01{
+	display: table-cell;
+	width: 53%;
+	text-align: right;
+}
+.sttenji .slit_table .item_02{
+	display: table-cell;
+	width: 47%;
+	padding-right: 0.5rem;
+	text-align: right;
+	font-size: 1.2rem;
+	font-weight: bold;
+}
+/* フライング時 */
+.sttenji .slit_table .st.l,
+.sttenji .slit_table .st.f{
+	color: #F00;
+}
+.sttenji table.suimen{
+	margin-top: 1rem;
+	font-weight: bold;
+}
+.sttenji table.suimen thead th{
+	border-bottom: 1px solid #C1C1C1;
+	height: 2.1rem;
+}
+.sttenji table.suimen tbody th{
+	width:14%;
+	height: 1.8rem;
+	color: #000;
+	line-height: 1.3rem;
+	font-weight: bold;
+	border-bottom: 1px solid;
+	border-color: #999999;
+	background-color: #d0f0ef;
+}
+.sttenji table.suimen tbody td{
+	height: 2rem;
+	font-weight: bold;
+}
+.sttenji table td.col5-1{
+    border-right: 1px solid #c8dae4 !important;
+}
+.sttenji table td.col4-2{
+    width: 8.2rem;
+    border-right: 2px solid #309d9e!important;
+}
+.sttenji table td.col4-1{
+	width: 1.7rem;
+	height: 3.5rem;
+}
+.sttenji table td.col5-1{
+	text-align: right;
+	padding-right: 0.8rem;
+}
+/*************************************
+	水面 ボート
+*************************************/
+.com-yosou-suimen{
+	background-color: #beedfd !important;
+	border-bottom: none !important;
+	border-right: none !important;
+}
+.com-yosou-suimen .com-yosou-boat{
+    position: relative;
+    text-align: right;
+    left: 0rem;
+}
+.com-yosou-suimen .boat{
+    position: relative;
+    display: inline;
+    width: 5rem;
+    vertical-align: middle;
+}
+
+/************************************
+	cyoku
+************************************/
+.cyoku .rank_1 {
+	color:#fff;
+	background-color: #ff5c5c !important;
+}
+.cyoku .rank_2 {
+    background-color: #ffe200 !important;
+}
+/************************************
+	cyoku1
+************************************/
+.cyoku1 table th.col1{width: 2.9rem;}
+.cyoku1 table th.col2,
+.cyoku1 table th.col3,
+.cyoku1 table th.col4{width: 4.3rem;}
+.cyoku1 table th.col5_1,
+.cyoku1 table th.col5_2,
+.cyoku1 table th.col5_3{width: 5.4rem;}
+.cyoku1 table th.col2,
+.cyoku1 table th.col5{
+	height: 1.5rem;
+	border-bottom:1px solid #fff;
+}
+.cyoku1 table th.col4{
+	line-height: 1.4;
+}
+.cyoku1 table td.col2,
+.cyoku1 table .col2_1{
+	height: 1.5rem;
+}
+.cyoku1 table .col2_1{
+	border-right: 1px solid #bcbcbc;
+}
+.cyoku1 table th,
+.cyoku1 table tbody td{
+	line-height: 1.5rem;
+}
+.cyoku1 table tbody td {
+	font-size: 1rem;
+	font-weight: bold;
+}
+.cyoku1 table tbody td.col5-7 {
+	border-left: 1px solid #bcbcbc;
+}
+.cyoku1 .color_box_rank{
+	margin: 0.3rem 0 0.2rem;
+	text-align: right;
+}
+.cyoku1 .color_box{
+	width: 3.7rem;
+	height: 1.5rem;
+	display: inline-block;
+	text-align: center;
+	font-size: 1rem;
+	margin-right: 0.5rem;
+}
+.cyoku1 .color_box:nth-of-type(1){
+	border: 1px solid #d01919;
+}
+.cyoku1 .color_box:nth-of-type(2){
+	border: 1px solid #ceb700;
+}
+.cyoku1 .oriten_note{
+	white-space: normal;
+	padding-bottom: 1rem;
+}
+.cyoku1 .note_ttl{
+	padding: 0 0.6rem;
+	font-size: 1rem;
+}
+.cyoku1 .notice{
+	padding: 0 0.7rem;
+	font-size: 0.9rem;
+}
+/************************************
+	cyoku2
+************************************/
+.cyoku2 table th.col1{
+	width: 3rem;
+}
+.cyoku2 table th.col2{
+	height: 1.5rem;
+	line-height: 1.3rem;
+	border-bottom:1px solid #fff;
+}
+.cyoku2 table th.col3{
+	width: 16.1rem;
+}
+.cyoku2 table th.col4,
+.cyoku2 table th.col5,
+.cyoku2 table th.col6,
+.cyoku2 table th.col7{
+	width: 3.2rem;
+	height: 1.5rem;
+	line-height: 1.3rem;
+}
+.cyoku2 table th.col7{
+	border-right: 1px solid #fff;
+}
+.cyoku2 table td{
+	height:4rem;
+	font-size: 1rem;
+	font-weight: bold;
+}
+.cyoku2 table td.col6 {
+	text-align: left;
+	padding-left: 0.5rem;
+}
+.cyoku2 table td.col6 span {
+	display: inline-block;
+	line-height: 1.4;
+}
+.cyoku2 .buhin-name{
+	white-space: normal;
+	padding: 0.5rem 0.6rem 2.4rem;
+	font-size: 0.9rem;
+	line-height: 1.4;
+	font-weight: bold;
+}
+.cyoku2 .buhin-name span {
+	display: inline-block;
+}
+/************************************
+	cyoku3
+************************************/
+.cyoku3 table th {
+	height: 2.2rem;
+}
+.cyoku3 table td{
+	padding: 1rem 0.8rem 0.7rem;
+	text-align: left;
+	line-height: 1.6;
+	letter-spacing: 0.1rem;
+	font-size: 1rem;
+	font-weight: bold;
+}
+.cyoku3 p.notice{
+	padding: 0.4rem 0.5rem;
+	font-size: 0.85rem;
+	text-indent: -1rem;
+	line-height: 1.5;
+	padding-left: 1.5rem !important;
+	margin-bottom: 1.5rem;
+}
+/************************************
+	time
+************************************/
+.time table th{
+	line-height: 1.2;
+}
+.time table td{
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+
+.time table th.col1{
+	width: 5.5rem;
+}
+.time table th.col2{
+	width: 3.3rem;
+	height: 1.6rem;
+/* 	border-bottom: 1px solid #C1C1C1; */
+	border-bottom: 1px solid #FFF;
+}
+.time table th.col3{
+	width: 19.2rem;
+	height: 1.6rem;
+/* 	border-bottom: 1px solid #C1C1C1; */
+	border-bottom: 1px solid #FFF;
+}
+.time table th.col4{
+	width: 4.1rem;
+}
+.time table .col5 {
+	height: 1.6rem;
+	line-height: 1.5rem;
+	border-right: 1px solid #fff;
+}
+.time table td.col5 {
+	border-right: 1px solid #bcbcbc;
+}
+
+.time table td.col5 div.chaku div{
+	margin: 0 0.2rem;
+	float: left;
+	width: 5%;
+}
+.time div.linkParts a{
+	display: block;
+	width: 66%;
+	height: 3rem;
+	padding-left: 4.3rem;
+	line-height: 2rem;
+	font-size: 1rem;
+	margin: auto;
+	text-align: left;
+	color: #fff;
+	background-size: 1rem;
+	font-weight: normal;
+}
+.time div.linkParts a:nth-of-type(2){
+	margin-top: 1rem;
+	line-height: 1rem;
+}
+.time div.linkParts div.keisoku {margin-top: 0.3rem;}
+.time div.linkParts {margin: 1rem 0 2.5rem;}
+
+/*******************************************
+体重調整
+********************************************/
+.u-accent,.red{
+	color: #F00;
+}
+
+.not_odds.item-yosou-border{
+	padding: 6rem 0;
+}
+.not_odds.item-yosou-border .error.text_01.contents{
+	padding: 3rem 0;
+}

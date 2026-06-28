@@ -1,0 +1,460 @@
+@charset:"UTF-8";
+/************************************
+    直前情報予想
+************************************/
+.item-body-waku {
+    font-size: 1.4rem !important;
+    font-weight: bold;
+}
+/* com-table */
+table.com-table{
+    border-top:none;
+    border-left:none;
+}
+table.com-table th {
+   text-align:center;
+   vertical-align: middle;
+   font-size: 1rem;
+   font-weight: bold;
+   padding: 0.2rem 0;
+   line-height: 1.2;
+}
+table.com-table td {
+    vertical-align: middle;
+    text-align:center;
+    font-size: 1.4rem;
+}
+table.com-table tr th.tbl-end,
+table.com-table tr td.tbl-end {
+    /*! border-right: none !important; */
+}
+table.com-table td.item-body-waku {
+    height: 5rem !important;
+    font-weight: bold;
+}
+table.com-table th.col1 {
+    height: 3.8rem;
+}
+table.com-table th.item-head-waku {
+    width: 6%;
+}
+table.com-table .item-name{
+    width: 34%;
+}
+/* com-table_選手情報 */
+table.com-table li {
+    text-align: left;
+    padding: 0 0.3rem;
+    line-height: 1.1;
+}
+table.com-table li.com-toban {
+    font-size: 1rem;
+}
+table.com-table li.com-rname {
+    font-size: 1.3rem;
+    font-weight:bold;
+}
+table.com-table li.com-subinfo {
+    font-size: 1rem;
+}
+table.com-table td .item-pinfo{
+	font-size: 1.3rem;
+	font-weight: normal;
+}
+/* com-table inner */
+table.com-table.inner{
+    border:none;
+}
+table.com-table.inner li{
+    line-height: 0;
+}
+table.com-table.inner td {
+    white-space: pre-line;
+    word-wrap: break-word;
+    border: none;
+    font-size: 1.2rem;
+    padding: 1rem 1.5rem;
+    text-align: left;
+    height: 6.3rem;
+}
+table.com-table.inner th {
+    height: 3.8rem;
+    border-top: 1px solid #CCC;
+    border-left: none;
+    border-bottom: 1px solid #CCC;
+    border-right: none;
+}
+table.com-table.inner ul.sinnyu{
+}
+table.com-table.inner ul.num{
+    display:table;
+    margin:auto;
+}
+table.com-table.inner li.num{
+    display:table-cell;
+    padding: 0 0.1rem;
+}
+table.com-table.inner ul.inout{
+    display:table;
+    width: 80%;
+    margin: auto;
+}
+table.com-table.inner li.inout{
+    display:table-cell;
+}
+
+table.com-table.inner li .ico_num {
+    padding: 0.2rem;
+    font-size: 1.4rem;
+    border-radius: 0.4rem;
+}
+table.com-table.inner li li.in{
+    text-align: left;
+}
+table.com-table.inner li li.out{
+    text-align: right;
+}
+/* explanation */
+div.explanation {
+    /* background-color: #E4E4E4; */
+    padding: 0.8rem;
+    margin: 0.5rem;
+    border: 2px solid #CCC;
+    white-space: normal;
+    word-wrap: normal;
+}
+div.explanation p {
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/***************************************
+
+***************************************/
+.com-cyokuzen{
+	height: 38rem;
+}
+
+
+/* 直前情報 */
+.cyokuzen1 table td a {
+    color: #000;
+    text-decoration: underline;
+}
+.cyokuzen1 table th.col1{
+    width: 10%;
+}
+.cyokuzen1 table th.col2{
+    width: 30%;
+}
+.cyokuzen1 table th.col3,
+.cyokuzen1 table th.col4,
+.cyokuzen1 table th.col5,
+.cyokuzen1 table th.col6{
+    width:15%;
+}
+.cyokuzen1 table td{
+    padding: 0;
+    line-height: 1.5rem;
+}
+
+/*直前情報 zensou*/
+.zensou table th.col1{
+    width: 10%;
+}
+.zensou table th.col2{
+    width: 30%;
+}
+.zensou table th.col3{
+    width: 45%;
+    border-bottom: 0.1rem solid #fff;
+    height: 2.1rem;
+}
+.zensou table th.col4{
+    width: 15%;
+}
+.zensou table th.col3_1,
+.zensou table th.col3_2,
+.zensou table th.col3_3 {
+    width: 15%;
+    height: 2rem;
+}
+.zensou table td.col6 {
+    line-height: 2.4rem;
+}
+.zensou table td a {
+    color: #000;
+    text-decoration: underline;
+}
+
+/*直前情報 cyokuzen_parts_change*/
+.cyokuzen_parts_change table th.col1{
+    width: 10%;
+}
+.cyokuzen_parts_change table th.col2{
+    width: 30%;
+}
+.cyokuzen_parts_change table td.col3 {
+    text-align: left;
+    white-space: normal;
+    line-height: 1.5;
+}
+.cyokuzen_parts_change table td a {
+    color: #000;
+    text-decoration: underline;
+}
+
+
+/* スタート展示 */
+.cyokuzen2 .com-yosou-table td {
+    font-size: 1.5rem;
+    background-color: #BEC7DD;
+}
+.cyokuzen2 table th.col1 {
+    width: 10%;
+}
+.cyokuzen2 table th.col2 {
+    width: 10%;
+}
+.cyokuzen2 table th.col3 {
+    width: 65%;
+}
+.cyokuzen2 table th.col4 {
+    width: 15%;
+}
+.cyokuzen2 table td .stTen img.boat {
+    width: 3.5rem;
+    display: initial;
+    position: relative;
+}
+.cyokuzen2 table td.col2 {
+    /* border-right: 0.1rem solid #E4E6EA; */
+    border-right: none;
+}
+.cyokuzen2 table td.col3 {
+    border-right: 0.4rem solid #5B8CD9;
+    width: 55%;
+}
+.cyokuzen2 table td.col4 {
+    border-right: none;
+}
+.cyokuzen2 table td div.stTen {
+    position: relative;
+    /* width: 2.5rem; */
+}
+.cyokuzen2 .f, .cyokuzen2 .l{
+    color: #D60021;
+}
+.cyokuzen2 td.tei_images{
+	text-align: right;
+	padding: 0;
+}
+/* 直前予想 */
+.cyosou table td.col3 {
+    vertical-align: top;
+}
+/* 水面気象状況 */
+table.com-table.suimen {
+    margin-top: 0.5rem;
+    border-top: 1px solid #CCC;
+}
+table.com-table.suimen {
+    margin-top: 0.5rem;
+    width: 100%;
+    border-top: 1px solid #CCC;
+    border-left: 1px solid #CCC;
+    border-right: 1px solid #CCC;
+}
+table.com-table.suimen th,
+table.com-table.suimen td{
+	padding: .6rem 0;
+    height: inherit;
+}
+
+table.com-table.suimen th.col1{width: 30%;}
+table.com-table.suimen th.col2{width: 9%;}
+table.com-table.suimen th.col3{width: 9%;}
+table.com-table.suimen th.col4{width: 12%;}
+table.com-table.suimen th.col5{width: 12%;}
+table.com-table.suimen th.col6{width: 13%;}
+table.com-table.suimen th.col7{width: 13%;}
+table.com-table.suimen td{
+	font-size: 1.1rem;
+}
+table.com-table.suimen ul.suimen{
+    margin:auto;
+    display:table;
+}
+table.com-table.suimen ul.suimen li{
+    display:table-cell;
+}
+/**********************************
+直前情報 cyokuzen_parts_change
+**********************************/
+.cyokuzen_parts_change{
+	
+}
+.cyokuzen_parts_change + .buhin-name{
+	width: 95%;
+	margin: auto;
+	white-space: normal;
+	padding: 0.7rem;
+	margin-bottom: 1rem;
+	border: 2px solid #CCC;
+	word-wrap: normal;
+	font-size: 0.9rem;
+	line-height: 1.5;
+}
+
+
+/* 展示情報 */
+.original_tenji table th {
+	height: 2.1rem;
+}
+.original_tenji table td a {
+    color: #000;
+    text-decoration: underline;
+}
+.original_tenji table th.col1,
+.original_tenji table th.col8{
+    width: 3rem;
+}
+.original_tenji table th.col2,
+.original_tenji table th.col4{
+    width: 4.8rem;
+}
+.original_tenji table th.col3{
+    width: 3.2rem;
+}
+.original_tenji table th.col5,
+.original_tenji table th.col6,
+.original_tenji table th.col7{
+    width: 4.4rem;
+}
+.original_tenji table th.col5-7 {
+	border-bottom: 0.1rem solid #fff;
+}
+.original_tenji table td{
+    padding: 0;
+    line-height: 1.5rem;
+}
+.original_tenji table td.rank_1,
+.oriten-explanation .color_box.rank_1{
+	background-color:#f44c74;
+	color: #ffffff;
+}
+.original_tenji table td.rank_2,
+.oriten-explanation .color_box.rank_2{
+	background-color:#ede654;
+}
+.oriten-explanation {
+	width: 100%;
+	padding: 0 1.5rem 1.3rem;
+	text-align: right;
+	margin-top: -2rem;
+}
+.oriten-explanation .color_box_rank,
+.oriten-explanation .hyoumikata {
+    display: inline-block;
+}
+.oriten-explanation .hyoumikata a {
+	color: #000000;
+	text-decoration: underline;
+}
+.oriten-explanation .color_box {
+    display: inline-block;
+    vertical-align: middle;
+    width: 3.5rem;
+    height: 1.8rem;
+    line-height: 2rem;
+    font-size: 1.1rem;
+    text-align: center;
+    margin-right: 0.5rem;
+}
+.oriten_note {
+	width: 32rem;
+	box-sizing: border-box;
+	padding: 0 1.5rem 1.5rem;
+}
+.oriten_note .note_ttl {
+    line-height: 1.6;
+    font-size: 1.2rem;
+    font-weight: bold;
+    width: 100%;
+    white-space: normal;
+}
+.oriten_note p.notice{
+	font-size: 1.2rem;
+	line-height: 1.6;
+	width: 100%;
+	white-space: normal;
+}
+
+
+
+/**********************************
+ 直前予想 ページ下部共通
+ under-com-contents
+**********************************/
+.under-com-contents{
+	
+}
+/* 一番右側 */
+.under-com-contents th:last-of-type,
+.under-com-contents td:last-of-type{
+    border-right: none!important;
+}
+.under-com-contents .unit__subtitle{
+    padding: .7rem;
+    font-size: 1.3rem;
+}
+
+/* 直前コメント */
+.under-com-contents .group-comment td{
+    padding: 0rem;
+    text-align: left;
+    font-size: 1.3rem;
+}
+/* コメント */
+.under-com-contents .group-comment .item-comment{
+   padding: 1rem; 
+}
+/* 買い目(艇番) */
+.under-com-contents .group-comment td .item-kaime{
+    padding-bottom: .8rem;
+    font-size: 1.2rem;
+}
+.under-com-contents .group-comment td .item-kaime .ico_num{
+    padding: .2rem;
+    font-size: 1.3rem;
+}
+/* 買い目(ハイフン画像) */
+.under-com-contents .group-comment td .item-kaime .symbol_img{
+    padding: .1rem;
+    width: 1.5rem;
+}
+/* 水面気象状況 */
+.under-com-contents .group-suimen .unit__subtitle{
+    border-bottom: 1px solid #FFF;
+}
+.under-com-contents .group-suimen tbody th,
+.under-com-contents .group-suimen tbody td{
+    padding: .7rem 0;
+    font-size: 1.3rem;
+    font-weight: normal;
+    color: #000;
+}
+.under-com-contents .group-suimen tbody th{
+	height: 1rem;
+    border-right: 1px solid #999;
+    border-bottom: 1px solid #999;
+    background-color: #BFC9DF;    
+}
+.under-com-contents .group-suimen tbody td.col1,
+.under-com-contents .group-suimen tbody td.col3{
+    width: 28%;
+}
+.under-com-contents .group-suimen tbody td.col2_1,
+.under-com-contents .group-suimen tbody td.col2_2{
+    width: 22%;
+}
