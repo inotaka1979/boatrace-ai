@@ -1,0 +1,174 @@
+<!DOCTYPE HTML>
+<html lang='ja'>
+<head>
+<!-- 20220128 -->
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-TW46PTL');</script>
+<!-- End Google Tag Manager -->
+<!-- 20220128 -->
+<!-- 20190918 -->
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-84781097-20"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+gtag('config', 'UA-84781097-20');
+</script>
+<!-- 20190918 -->
+<meta charset='UTF-8'>
+<title>ボートレース江戸川 スマートフォンサイト：予想・直前情報</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=yes"><meta name='keywords' content='江戸川 ボート,ボートレース 江戸川,BOATRACE江戸川,江戸川競艇,ボートレース場,競艇場,レース情報,03#' />
+<meta name='discription' content='BOAT RACE 江戸川のOfficialウェブサイトです。' />
+<meta name='format-detection' content='telephone=no'>
+<link rel='apple-touch-icon' href='https://www.boatrace-edogawa.com/apple-touch-icon.png'>
+<link rel='stylesheet' href='/sp/common/css/reset.css' type='text/css' />
+<link rel='stylesheet' href='/sp/common/css/original_reset.css' type='text/css' />
+<link rel='stylesheet' href='/sp/common/css/base.css' type='text/css' />
+<link rel='stylesheet' href='/sp/common/css/common.css?v=20210605' type='text/css' />
+<link rel='stylesheet' href='/sp/common/css/globalmenu.css' type='text/css' />
+<link type="text/css" href="/sp/page/yosou/css/yosou.css?v=20260324" rel="stylesheet">
+<script src='/sp/common/js/jquery-2.1.4.min.js'></script>
+<script src='/sp/common/js/main_setting.js'></script>
+<script src='/sp/common/js/common.js'></script>
+<script>window.SITEINFO = {'root':'/sp'};</script>
+<script src="/sp/page/yosou/js/yosou.js"></script>
+</head>
+<body class='font_base'>
+<!-- 20220128 -->
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TW46PTL"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- 20220128 -->
+<header>
+<div class='category-header header-style02'>
+<h1 class='item-logo'><a href='/sp'><img class='item-logo-img' src='/sp/common/images/header_logo.png' alt='BOATRACE 江戸川'></a></h1>
+<a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/live_03.php' target='_blank' class='item-center list-1 icon' title='ライブ'></a>
+<a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/vod_03.php' target='_blank' class='item-center list-2 icon' title='リプレイ'></a>
+<a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/tvod_03.php' target='_blank' class='item-center list-3 icon' title='展示<br/>リプレイ'></a>
+<a href='https://spweb.brtb.jp' target='_blank' class='item-center list-4 icon' title='投票'></a>
+<div id='js-display-global' class='item-globalmenu-switch' ><span class='item-hamburger'></span><span class='item-hamburger'></span><span class='item-hamburger'></span><span class='item-txt'>メニュー</span></div>
+</div>
+</header>
+<div class='category-head-gmenu'><div class='category-globalmenu'>
+<nav>
+<ul class='item-menu'>
+<li class='item-large list-1'>
+<a class='item-menu-name ts no-child' href='/sp/index.php?page=yosou-race_index'>出走表・予想サイト</a>
+</li>
+<li class='item-large list-1'>
+<a class='js-tgl item-menu-name ts mo_plus' href='javascript:void(0);'>得点率＆データ</a>
+<ul class='item-panel'>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-tokuten'>得点率</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-motor_cyusen'>モーター抽選結果</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-motor_seiseki'>モーター成績</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-boat_seiseki'>ボート成績</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-zensou'>前走地進入別</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-racebetsu'>レース別成績</a></li>
+<li class='item-small'><a href='/sp/index.php?page=raceinfo-deme'>出目データ</a></li>
+</ul>
+</li>
+<li class='item-large list-3'>
+<a class='js-tgl item-menu-name ts mo_plus' href='javascript:void(0);'>イベント・お知らせ</a>
+<ul class='item-panel'>
+<li class='item-small'><a href='/sp/index.php?page=info-news_list'>イベント・お知らせ</a></li>
+<li class='item-small'><a href='/sp/index.php?page=info-tel'>電話案内</a></li>
+</ul>
+</li>
+<li class='item-large list-4'>
+<a class='js-tgl item-menu-name ts mo_plus' href='javascript:void(0);'>施設案内・アクセス</a>
+<ul class='item-panel'>
+<li class='item-small'><a href='/sp/index.php?page=guide-access_index'>施設案内・アクセス</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-car'>お車でのアクセス</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-train'>電車でのアクセス</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-access'>交通アクセス</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-floormap'>ボートレース場フロアマップ</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-sitei'>指定席案内</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-restaurant'>レストラン</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-soto'>外向発売所 BOAT RACE 365</a></li>
+<li class='item-small'><a href='/sp/index.php?page=guide-beginner'>初めてのかたへ</a></li>
+</ul>
+</li>
+<li class='item-large list-5'>
+<a class='item-menu-name ts no-child' href='/sp/index.php?page=calendar-honjyo'>開催日程</a>
+</li>
+<li class='item-large list-5'>
+<a class='js-tgl item-menu-name ts mo_plus' href='javascript:void(0);'>ライブ＆リプレイ</a>
+<ul class='item-panel'>
+<li class='item-small'><a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/live_03.php' target='_blank'>ライブ</a></li>
+<li class='item-small'><a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/vod_03.php' target='_blank'>レースリプレイ</a></li>
+<li class='item-small'><a href='https://livebb.jlc.ne.jp/bb_top/sp_bb/tvod_03.php' target='_blank'>展示リプレイ</a></li>
+</ul>
+</li>
+<li class='item-large list-5'>
+<a class='item-menu-name ts no-child' href='/sp/index.php?page=race_result-result_list'>過去のレース結果</a>
+</li>
+</ul>
+</nav>
+</div>
+</div><br />UNDER CONSTRUCTION !!<br /><br />しばらくお待ちください・・・<br /><div class='group-return_raceindex'><a href='/sp/index.php?page=yosou-race_index' class='com-button1'>予想サイトトップに戻る</a>
+</div>
+<div id='js-navi_bottom_wrap'><ul id='js-navi_bottom' class='yosou_navigation2'><li class='btn_color_01 not_select'><a href='/sp/index.php?page=yosou-syussou'>出走表</a></li><li class='btn_color_01 not_select'><a href='/sp/index.php?page=yosou-odds'>オッズ<br>結果</a></li><li class='btn_color_01 not_select'><a href='/sp/index.php?page=yosou-kouryaku'>潮・風向<br>攻略法!</a></li><li class='btn_color_01 not_select'><a href='/sp/index.php?page=raceinfo-tokuten'>得点率<br>データ</a></li><li class='btn_color_01 not_select'><a href='/sp/index.php?page=yosou-resultlist'>結果<br>一覧</a></li></ul></div>
+<script>
+	var btmWrap = $("#js-navi_bottom");
+	function fixedMenuInit(){
+		btmWrap.css({
+			// "position": "fixed",
+			"width": "100%",
+			"left": "0",
+			"bottom": "0"
+		});
+		if(getOver()){
+			fixedMenuOff();
+		}else{
+			fixedMenuOn();
+		}
+	}
+	function fixedMenuOn(){
+		btmWrap.css({
+			"position": "fixed"
+		});
+	}
+	function fixedMenuOff(){
+		btmWrap.css({
+			"position": "relative"
+		});
+	}
+	function getOver(){
+		var win = $(window);
+		var wHeight = win.height();			//ディスプレイ表示高さ
+		var dHeight = $(document).height()+$("#js-navi_bottom").height();	//ドキュメント高さ
+		var crntScroll = win.scrollTop();	//現在のスクロール分
+
+		var isOver;	//スクロールが一番下に到達した場合 true; それ以外 false;
+
+		if( (crntScroll+wHeight) >= dHeight ){
+			isOver = true;
+		}else{
+			isOver = false;
+		}
+		return isOver;
+	}
+	$(window).scroll(function(ev){
+		if(getOver()){
+			fixedMenuOff();
+		}else{
+			fixedMenuOn();
+		}
+	});
+	$(window).resize(function(ev){
+		if(getOver()){
+			fixedMenuOff();
+		}else{
+			fixedMenuOn();
+		}
+	});
+
+	//初期動作
+	fixedMenuInit();
+</script>
