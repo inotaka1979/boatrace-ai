@@ -11,6 +11,12 @@ on:
     paths:
       - '.github/workflows/probe-exhibition.yml'
       - 'scripts/probe_original_exhibition.py'
+  schedule:
+    # 蒲郡(ナイター)の早いレースの展示航走後にキャプチャするため午後〜夕方の複数アンカー。
+    # 1R 締切 ~15:30 → 展示 ~14:50。GitHub の間引き対策で複数置く。確実に取るなら手動 dispatch 推奨。
+    - cron: '30 6 * * *'   # JST 15:30
+    - cron: '30 8 * * *'   # JST 17:30
+    - cron: '0 10 * * *'   # JST 19:00
 
 permissions:
   contents: read
