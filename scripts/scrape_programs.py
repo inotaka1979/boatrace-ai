@@ -237,65 +237,100 @@ def _venues_from_schedule(date_iso):
     return sorted(venues)
 
 
-def _resolve_race_list():
-    """本日の (date_str, [(sid, rno), ...]) を返す。
+def _fetch_openapi_today():
+    """openapi programs を取得し (date_str, {(sid,rno): program}) を返す。失敗で (None, {})。
 
-    主系: 公式 data/schedule/current.json（本日開催の全場 × 1..12R）。
-    フォールバック: openapi programs（一覧のみ）。両方失敗で (None, [])。
+    openapi は「本日どの場の何レースが実際に開催か」の権威（=本日の出走表カードそのもの）。
+    一覧の網羅と、自前パース失敗レースのバックフィルの両方に使う。
     """
-    today_iso = datetime.now(JST).date().isoformat()
-    venues = _venues_from_schedule(today_iso)
-    if venues:
-        date_str = today_iso.replace("-", "")
-        pairs = [(sid, rno) for sid in venues for rno in range(1, RACES_PER_DAY + 1)]
-        print(f"race list (official schedule): {len(venues)} venues / {len(pairs)} races")
-        return date_str, pairs
-    # フォールバック: openapi
     try:
         prog = fetch_json(PROGRAMS_URL)
     except Exception as e:
-        print(f"openapi list fetch failed: {e}")
-        return None, []
+        print(f"openapi fetch failed: {e}")
+        return None, {}
     listed = prog.get("programs") or []
     if not listed:
-        return None, []
+        return None, {}
     date_str = str((listed[0].get("race_date") or "")).replace("-", "")
-    pairs = [(p["race_stadium_number"], p["race_number"]) for p in listed]
-    print(f"race list (openapi fallback): {len(pairs)} races")
-    return date_str, pairs
+    by_key = {}
+    for p in listed:
+        try:
+            by_key[(int(p["race_stadium_number"]), int(p["race_number"]))] = p
+        except (KeyError, TypeError, ValueError):
+            continue
+    return date_str, by_key
 
 
 def main() -> int:
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
-    date_str, pairs = _resolve_race_list()
-    if not date_str or not pairs:
+    today_iso = datetime.now(JST).date().isoformat()
+
+    # openapi（本日カードの権威 + バックフィル源）を 1 回取得
+    op_date, openapi_by_key = _fetch_openapi_today()
+    # openapi が本日でなければバックフィルに使わない（別日混入防止）
+    if op_date and op_date != today_iso.replace("-", ""):
+        print(f"openapi is not today ({op_date} != {today_iso}) — backfill 無効化")
+        openapi_by_key = {}
+        op_date = None
+
+    date_str = op_date or today_iso.replace("-", "")
+
+    # レース一覧 = 公式 schedule の開催場×12R ∪ openapi の本日カード（網羅性最大化）。
+    #   どちらか一方にしか無い場も漏らさない。非開催の場は official パース失敗かつ
+    #   openapi にも無いため自然に除外される。
+    pairs = set()
+    venues = _venues_from_schedule(today_iso)
+    for sid in venues:
+        for rno in range(1, RACES_PER_DAY + 1):
+            pairs.add((sid, rno))
+    for k in openapi_by_key:
+        pairs.add(k)
+    if not pairs:
         print("no races today")
-        atomic_write_json(OUTPUT, {"updated_at": utc_iso_seconds(), "programs": []})
+        atomic_write_json(OUTPUT, {"updated_at": utc_iso_seconds(),
+                                   "race_date": f"{today_iso}", "programs": []})
         return 0
+    print(f"race list: schedule venues={len(venues)} ∪ openapi races={len(openapi_by_key)}"
+          f" → {len(pairs)} races")
 
     out = []
-    fail = 0
-    for sid, rno in pairs:
+    official = backfilled = dropped = 0
+    for sid, rno in sorted(pairs):
         url = BASE_URL.format(rno=rno, jcd=sid, hd=date_str)
+        prg = None
+        err = None
         try:
-            html = fetch_text(url)
+            html = fetch_text(url, timeout=12, retries=1)
             prg = parse_racelist_program(html, sid, rno, date_str)
+            if prg and not _validate(prg):
+                err = "validate failed"
+                prg = None
+            elif not prg:
+                err = "no race table (parse None)"
         except Exception as e:
-            # 開催はあってもレース欠番（中止等）は普通にあるので warning 止まり
-            print(f"  {sid}-{rno} fetch/parse fail: {e}")
+            err = f"exception: {e}"
             prg = None
-        if prg and _validate(prg):
+        if prg:
             out.append(prg)
+            official += 1
+        elif (sid, rno) in openapi_by_key:
+            # 自前パース失敗 → openapi の本日カードでバックフィル（開催場を grey にしない）
+            out.append(openapi_by_key[(sid, rno)])
+            backfilled += 1
+            print(f"  {sid}-{rno} official miss ({err}) → openapi backfill")
         else:
-            fail += 1
-        time.sleep(0.2)
+            # schedule にあるが official も openapi も無い = 実際は非開催 → 正しく除外
+            dropped += 1
+            print(f"  {sid}-{rno} dropped ({err}, not in openapi)")
+        time.sleep(0.15)
 
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
         "race_date": f"{date_str[0:4]}-{date_str[4:6]}-{date_str[6:8]}",
         "programs": out,
     })
-    print(f"wrote {OUTPUT}: {len(out)} races ({fail} failed)")
+    print(f"wrote {OUTPUT}: {len(out)} races "
+          f"(official={official}, openapi_backfill={backfilled}, dropped_nonracing={dropped})")
     return 0
 
 
