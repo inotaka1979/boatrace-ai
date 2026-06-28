@@ -150,5 +150,45 @@ class TestTodaOriginal(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_GAMA = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'gamagori_recomend_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_GAMA),
+                     'bs4 or sample HTML missing')
+class TestGamagoriRecomend(unittest.TestCase):
+    """蒲郡型(recomend 予想紙htm)パーサの回帰テスト。
+
+    採取済み 2026-06-28 蒲郡 1R 周回テーブルで 展示/一周/まわり足/直線 を固定。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_GAMA, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_gamagori_recomend(f.read(), 7, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 7)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.69)
+        self.assertEqual(b['lap_time'], 37.57)   # 一周
+        self.assertEqual(b['turn_time'], 5.17)   # まわり足
+        self.assertEqual(b['straight_time'], 6.36)  # 直線
+
+    def test_value_ranges(self):
+        for b in self.race['boats']:
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)    # 一周
+            self.assertTrue(4.5 <= b['turn_time'] <= 8.0, b)     # まわり足
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 if __name__ == '__main__':
     unittest.main()
