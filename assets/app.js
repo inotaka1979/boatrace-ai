@@ -1326,6 +1326,9 @@ var tideData=null;
 var _origExhibIndex={};
 // オンデマンド対応場(ajax_yosou で実際に表が取れる場のみ、probe 判定)。別サイト形式の場は除外。
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1};
+// 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
+//   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
+var _OE_FMT={2:'toda',7:'gama'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1368,11 +1371,50 @@ function _parseOrigExhibitionHtml(html){
   }catch(e){ return null; }
 }
 
+// 戸田XML(record: teiban/ttime/rnd/cnr/str) → {waku -> {ex/lap/turn/straight}}。
+function _parseTodaXml(xml){
+  try{
+    var doc=new DOMParser().parseFromString(xml,'application/xml');
+    var recs=doc.querySelectorAll('record'); if(!recs.length) return null;
+    var bymap={};
+    for(var i=0;i<recs.length;i++){
+      var g=function(t){var e=recs[i].querySelector(t);var v=e?parseFloat((e.textContent||'').trim()):0;return (v>0)?v:0;};
+      var tb=recs[i].querySelector('teiban');
+      var waku=tb?parseInt((tb.textContent||'').trim(),10):0;
+      if(!(waku>=1&&waku<=6)) continue;
+      bymap[waku]={racer_boat_number:waku,ex_time:g('ttime'),lap_time:g('rnd'),turn_time:g('cnr'),straight_time:g('str')};
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
+// 蒲郡 recomend(table.ta_recomend: cho_waku + ori_time×4[展示/一周/まわり足/直線]) → bymap。
+function _parseGamagoriRecomendHtml(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり足')>=0&&tx.indexOf('直線')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var bymap={}, trs=target.querySelectorAll('tr');
+    for(var r=0;r<trs.length;r++){
+      var wtd=trs[r].querySelector('td.cho_waku'); if(!wtd) continue;
+      var waku=parseInt((wtd.textContent||'').trim(),10);
+      if(!(waku>=1&&waku<=6)) continue;
+      var ots=trs[r].querySelectorAll('td.ori_time');
+      var val=function(n){var t=ots[n]?parseFloat((ots[n].textContent||'').trim()):0; return (t>0)?t:0;};
+      bymap[waku]={racer_boat_number:waku,ex_time:val(0),lap_time:val(1),turn_time:val(2),straight_time:val(3)};
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 function _loadOrigExhibitionLive(sid,rno){
   try{
     sid=parseInt(sid); rno=parseInt(rno);
-    if(!_OE_VENUES[sid]) return;
+    var fmt=_OE_VENUES[sid]?'ajax':(_OE_FMT[sid]||null);
+    if(!fmt) return;
     var key=sid+'-'+rno;
     if(_oeLiveTried[key]) return; _oeLiveTried[key]=true;
     var hd=(typeof todayStr==='function')?todayStr():'';
@@ -1383,7 +1425,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html) return;
-        var bymap=_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):_parseOrigExhibitionHtml(html);
         if(!bymap) return;
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;

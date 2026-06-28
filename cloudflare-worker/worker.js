@@ -970,18 +970,33 @@ export default {
       const jcd = url.searchParams.get('jcd') || '';
       const race = url.searchParams.get('race') || '';
       const hd = url.searchParams.get('hd') || '';
-      const base = ORIG_BASES[parseInt(jcd)];
-      if (!base || !/^\d+$/.test(race) || !/^\d{8}$/.test(hd)) {
+      if (!/^\d+$/.test(race) || !/^\d{8}$/.test(hd)) {
         return new Response('bad params', { status: 400, headers: CORS });
       }
-      const upstream = `${base}/sp/ajax/ajax_yosou.php?targetday=${hd}&race=${parseInt(race)}&req=cyokuzen&run=0`;
+      const jcdN = parseInt(jcd);
+      const rr = String(parseInt(race)).padStart(2, '0');
+      const base = ORIG_BASES[jcdN];
+      // 場の形式に応じて upstream とヘッダを決める。
+      //   ajax_yosou(鳴門系): ajax_yosou.php。蒲郡(7): recomend 静的htm。戸田(2): XML。
+      let upstream = null;
+      let fetchHeaders = { 'User-Agent': 'Mozilla/5.0 boatrace-scrape-trigger' };
+      if (base) {
+        upstream = `${base}/sp/ajax/ajax_yosou.php?targetday=${hd}&race=${parseInt(race)}&req=cyokuzen&run=0`;
+        fetchHeaders.Referer = base + '/sp/';
+        fetchHeaders['X-Requested-With'] = 'XMLHttpRequest';
+      } else if (jcdN === 7) {
+        upstream = `https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend${hd}07${rr}.htm`;
+        fetchHeaders.Referer = 'https://www.gamagori-kyotei.com/';
+      } else if (jcdN === 2) {
+        upstream = `https://www.boatrace-toda.jp/race/xml/kaisai/${hd}/race_table_original_${rr}.xml`;
+        fetchHeaders.Referer = 'https://www.boatrace-toda.jp/';
+      }
+      if (!upstream) {
+        return new Response('unsupported jcd', { status: 400, headers: CORS });
+      }
       try {
         const res = await fetch(upstream, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 boatrace-scrape-trigger',
-            Referer: base + '/sp/',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
+          headers: fetchHeaders,
           cf: { cacheTtl: 20, cacheEverything: true },
         });
         if (!res.ok) return new Response(`upstream ${res.status}`, { status: 502, headers: CORS });
