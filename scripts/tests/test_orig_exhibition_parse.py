@@ -190,5 +190,47 @@ class TestGamagoriRecomend(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_MIYA = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'miyajima_shukai_synthetic.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_MIYA),
+                     'bs4 or sample HTML missing')
+class TestMiyajimaShukai(unittest.TestCase):
+    """宮島型(kaisai_reload dt[8])ヘッダ駆動パーサのロジック固定。
+
+    合成 fixture(枠/展示/一周/まわり足/直線 の標準的な表)でヘッダ位置駆動の
+    抽出を検証。実 dt[8] 構造は宮島開催日に最終確認する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_MIYA, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_miyajima_shukai(f.read(), 17, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 17)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.70)
+        self.assertEqual(b['lap_time'], 37.50)
+        self.assertEqual(b['turn_time'], 5.20)
+        self.assertEqual(b['straight_time'], 6.40)
+
+    def test_header_driven_columns(self):
+        wakus = [b['racer_boat_number'] for b in self.race['boats']]
+        self.assertEqual(wakus, [1, 2, 3, 4, 5, 6])
+        for b in self.race['boats']:
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 if __name__ == '__main__':
     unittest.main()
