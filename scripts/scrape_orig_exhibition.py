@@ -58,6 +58,7 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
+    3: {"platform": C, "base": "https://www.boatrace-edogawa.com"},    # 江戸川(同ベンダー yosou.js)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
@@ -185,7 +186,9 @@ def parse_kiryu_cyokuzen(html, sid, rno):
             if not head:
                 continue
             t = head.get_text()
-            if ("半周" in t) and ("まわり足" in t) and ("直線" in t):
+            # 同ベンダー(yosou.js): 桐生=半周, 江戸川/福岡等は一周 の可能性。
+            #   どちらでも col5_1=その周回タイム/col5_2=まわり足/col5_3=直線 で位置同一。
+            if (("半周" in t) or ("一周" in t)) and ("まわり足" in t) and ("直線" in t):
                 target = tbl
                 break
         if target is not None:
