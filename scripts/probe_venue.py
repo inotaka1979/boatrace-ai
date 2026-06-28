@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""宮島(17) kaisai_reload.php の周回タイム(dt[8])を採取するプローブ。
+"""宮島(17) kaisai_reload.php の周回タイム(dt[8])を過去日付込みで採取。
 
-宮島は POST race_common/require/kaisai_reload.php {race,date} のレスポンスを
-'####' で split、dt[8]=周回タイム(オリジナル展示)。全12レースで POST し、
-dt[8] に 一周/まわり足/直線 が入るか確認、構造を採取する。確認後撤去。
+本日 宮島 非開催で dt[8] が空。kaisai_reload.php は date 引数を取るため、
+過去日付(直近10日)を POST し、開催日の populated dt[8](周回タイム)構造を採取する。
+確認後撤去。
 """
 import os
 import sys
@@ -32,25 +32,36 @@ def _post(race, date):
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    hd = datetime.now(JST).strftime("%Y%m%d")
+    today = datetime.now(JST)
     saved = False
-    for rno in range(1, 13):
-        try:
-            resp = _post(rno, hd)
-        except Exception as e:
-            print(f"R{rno:2d} POST FAIL: {str(e)[:60]}")
-            continue
-        parts = resp.split("####")
-        dt8 = parts[8] if len(parts) > 8 else ""
-        cnt = " ".join(f"{m}={dt8.count(m)}" for m in ORIG)
-        print(f"R{rno:2d} parts={len(parts)} dt8({len(dt8)}B) {cnt}")
-        if not saved and len(dt8) > 50:
-            p = os.path.join(OUTDIR, f"miyajima_shukai_R{rno:02d}.html")
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(dt8)
-            print(f"      saved {p}")
-            if any(m in dt8 for m in ORIG):
-                saved = True
+    for back in range(0, 11):
+        d = (today - timedelta(days=back)).strftime("%Y%m%d")
+        # 各日 数レースだけ試す(開催日判定 + 展示後レース)
+        hit = False
+        for rno in (10, 11, 12, 7, 5):
+            try:
+                resp = _post(rno, d)
+            except Exception as e:
+                print(f"{d} R{rno} FAIL: {str(e)[:50]}")
+                continue
+            parts = resp.split("####")
+            dt8 = parts[8] if len(parts) > 8 else ""
+            has = any(m in dt8 for m in ORIG)
+            if len(dt8) > 30 or has:
+                cnt = " ".join(f"{m}={dt8.count(m)}" for m in ORIG)
+                print(f"{d} R{rno} parts={len(parts)} dt8({len(dt8)}B) {cnt} has={has}")
+                hit = True
+                if has and not saved:
+                    p = os.path.join(OUTDIR, f"miyajima_shukai_{d}_R{rno:02d}.html")
+                    with open(p, "w", encoding="utf-8") as f:
+                        f.write(dt8)
+                    print(f"      saved {p}")
+                    saved = True
+                    return 0  # 1件取れれば十分
+        if not hit:
+            print(f"{d}: no dt8 data (非開催?)")
+    if not saved:
+        print("no populated dt8 found in last 11 days")
     return 0
 
 
