@@ -65,5 +65,46 @@ class TestNarutoCyokuzen(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_KIRYU_EMPTY = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'kiryu_cyokuzen_R03_empty.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_KIRYU_EMPTY),
+                     'bs4 or sample HTML missing')
+class TestKiryuCyokuzenEmpty(unittest.TestCase):
+    """桐生型(ajax_cyokuzen)の展示前レスポンス: テーブルは在るが時刻は無い。
+
+    展示前は誤データを出さず、時刻 0.0 / _has_times False になることを固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_KIRYU_EMPTY, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_kiryu_cyokuzen(f.read(), 1, 3)
+
+    def test_table_found_six_boats(self):
+        # 半周/まわり足/直線 のヘッダを持つ表を見つけ、6 艇を返す
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 1)
+        self.assertEqual(self.race['race_number'], 3)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat_numbers(self):
+        wakus = [b['racer_boat_number'] for b in self.race['boats']]
+        self.assertEqual(wakus, [1, 2, 3, 4, 5, 6])
+
+    def test_no_times_before_exhibition(self):
+        # 展示前(col5-7 = 「表示するデータがありません」)は全時刻 0.0
+        for b in self.race['boats']:
+            self.assertEqual(b['lap_time'], 0.0, b)
+            self.assertEqual(b['turn_time'], 0.0, b)
+            self.assertEqual(b['straight_time'], 0.0, b)
+
+    def test_has_times_false(self):
+        # 誤データを出さない: 展示前は _has_times False → 出力に含めない
+        self.assertFalse(S._has_times(self.race))
+
+
 if __name__ == '__main__':
     unittest.main()
