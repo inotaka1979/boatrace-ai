@@ -37,6 +37,7 @@ DATA_JS = {
     "weather": "/asp/gamagori/kyogi/kyogihtml/js/weather{d}{jcd:02d}.js",
     # 展示タイム(一周/まわり足)を埋める制御スクリプト。データファイル名を特定するため取得。
     "sp_recomend": "/js/sp_recomend.js",
+    "funcLiveTime": "/asp/gamagori/sp/kyogi/kyogihtml/js/funcLiveTime.js",
 }
 
 
@@ -58,10 +59,13 @@ def main() -> int:
     d = datetime.now(JST).strftime("%Y%m%d")
     jcd = 7
     saved = 0
-    # 1) recomend HTML（静的テンプレ構造の確認用）
-    if _save(GAMAGORI.format(d=d, jcd=jcd, rno=6), "orig_exhibition_gamagori_06.html"):
-        saved += 1
-    # 2) JS データファイル（出足/伸び/回り足 等の実値）
+    # 1) recomend HTML（展示後に「オリジナル展示タイム(一周/まわり足/直線)」が埋まる）。
+    #    早いレースほど展示航走が先に終わるので 1〜3R を採取。展示後の時間帯に実行すること。
+    for rno in (1, 2, 3):
+        if _save(GAMAGORI.format(d=d, jcd=jcd, rno=rno),
+                 f"orig_exhibition_gamagori_{rno:02d}.html"):
+            saved += 1
+    # 2) JS データファイル（出足/伸び/回り足 等）+ ライブ展示タイム制御
     for key, tmpl in DATA_JS.items():
         url = BASE + tmpl.format(d=d, jcd=jcd)
         if _save(url, f"orig_data_gamagori_{key}.js"):
