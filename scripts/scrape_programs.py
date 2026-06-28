@@ -16,7 +16,7 @@ import json
 import os
 import re
 import sys
-import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +32,7 @@ BASE_URL = "https://www.boatrace.jp/owpc/pc/race/racelist?rno={rno}&jcd={jcd:02d
 SCHEDULE_FILE = "data/schedule/current.json"
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"  # 一覧フォールバックのみ
 RACES_PER_DAY = 12  # 競艇は 1 場 1 日 12 レース固定
+PARALLEL_WORKERS = 4  # scrape_results と同値。boatrace.jp への同時接続を抑えつつ wall-time 短縮
 OUTPUT = "data/programs/today.json"
 
 CLASS_MAP = {"A1": 1, "A2": 2, "B1": 3, "B2": 4}
@@ -261,6 +262,21 @@ def _fetch_openapi_today():
     return date_str, by_key
 
 
+def _scrape_one(sid, rno, date_str):
+    """1 レース分を fetch+parse。(sid, rno, program|None, err|None) を返す（スレッド実行用）。"""
+    url = BASE_URL.format(rno=rno, jcd=sid, hd=date_str)
+    try:
+        html = fetch_text(url, timeout=12, retries=1)
+        prg = parse_racelist_program(html, sid, rno, date_str)
+        if prg and not _validate(prg):
+            return (sid, rno, None, "validate failed")
+        if not prg:
+            return (sid, rno, None, "no race table (parse None)")
+        return (sid, rno, prg, None)
+    except Exception as e:
+        return (sid, rno, None, f"exception: {e}")
+
+
 def main() -> int:
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     today_iso = datetime.now(JST).date().isoformat()
@@ -293,36 +309,31 @@ def main() -> int:
     print(f"race list: schedule venues={len(venues)} ∪ openapi races={len(openapi_by_key)}"
           f" → {len(pairs)} races")
 
+    # boatrace.jp は 1 ページ ~9s と遅く、156 レースを直列で引くと 24 分超で job timeout に
+    #   迫る。scrape_results.py と同じく ThreadPoolExecutor で並列化して wall-time を短縮。
+    results = {}
+    with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as ex:
+        futs = {ex.submit(_scrape_one, sid, rno, date_str): (sid, rno) for sid, rno in pairs}
+        for fut in as_completed(futs):
+            sid, rno, prg, err = fut.result()
+            results[(sid, rno)] = (prg, err)
+
     out = []
     official = backfilled = dropped = 0
-    for sid, rno in sorted(pairs):
-        url = BASE_URL.format(rno=rno, jcd=sid, hd=date_str)
-        prg = None
-        err = None
-        try:
-            html = fetch_text(url, timeout=12, retries=1)
-            prg = parse_racelist_program(html, sid, rno, date_str)
-            if prg and not _validate(prg):
-                err = "validate failed"
-                prg = None
-            elif not prg:
-                err = "no race table (parse None)"
-        except Exception as e:
-            err = f"exception: {e}"
-            prg = None
+    for key in sorted(pairs):
+        prg, err = results.get(key, (None, "no result"))
         if prg:
             out.append(prg)
             official += 1
-        elif (sid, rno) in openapi_by_key:
+        elif key in openapi_by_key:
             # 自前パース失敗 → openapi の本日カードでバックフィル（開催場を grey にしない）
-            out.append(openapi_by_key[(sid, rno)])
+            out.append(openapi_by_key[key])
             backfilled += 1
-            print(f"  {sid}-{rno} official miss ({err}) → openapi backfill")
+            print(f"  {key[0]}-{key[1]} official miss ({err}) → openapi backfill")
         else:
             # schedule にあるが official も openapi も無い = 実際は非開催 → 正しく除外
             dropped += 1
-            print(f"  {sid}-{rno} dropped ({err}, not in openapi)")
-        time.sleep(0.15)
+            print(f"  {key[0]}-{key[1]} dropped ({err}, not in openapi)")
 
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
