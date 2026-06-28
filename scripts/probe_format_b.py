@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""形式B(蒲郡型)の recomend(予想紙) + 日付きデータJS を採取するプローブ。
+"""形式B(蒲郡)オリジナル展示の所在特定プローブ(展示データ投入後・網羅版)。
 
-蒲郡の recomend(予想紙)ページは周回展示(一周/まわり足/直線)を含む(ユーザ確認)が、
-データは日付きJS(comment/focus/motor/weather{YYYYMMDD}{jcd}.js)で注入される。
-choku(直前)には無かったため、recomend 本体 + 日付きデータJS を採取して
-周回タイムの所在(HTML静的 or JSデータ)と構造を特定する。確認後撤去。
+蒲郡に展示データが出ている状態で、recomend(予想紙)本体 + 各種日付きデータJS +
+追加候補ファイルを採取し、一周/まわり足/直線/周回 がどこに入るかを網羅検出する。
+データのある recomend / 周回ラベルを含むファイルを保存。確認後撤去。
 """
 import os
 import sys
@@ -17,12 +16,12 @@ JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.gamagori-kyotei.com"
 JCD = 7
-ORIG_RE = ("一周", "まわり足", "まわり", "直線", "周回")
+ORIG = ("一周", "まわり足", "まわり", "直線", "周回", "ターン")
 
 
-def _counts(h: str) -> str:
+def _counts(h):
     return " ".join(f"{m}={h.count(m)}" for m in
-                    ("一周", "まわり足", "直線", "周回", "展示", "ST"))
+                    ("一周", "まわり足", "直線", "周回", "ターン", "展示"))
 
 
 def _save(name, raw, note=""):
@@ -32,42 +31,52 @@ def _save(name, raw, note=""):
     print(f"      saved {p} ({len(raw)}B){note}")
 
 
+def _get(url):
+    raw = fetch_bytes(url, timeout=15, retries=1, headers={"Referer": BASE + "/"})
+    return raw, raw.decode("utf-8", errors="replace")
+
+
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    saved_html = False
-    saved_data = False
+    # 1) recomend 全12R: 展示値が入った回 + 周回ラベルを含む回を保存
+    saved_pop = False
+    saved_orig = False
     for rno in range(1, 13):
         rid = f"{hd}{JCD:02d}{rno:02d}"
         url = f"{BASE}/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend{rid}.htm"
         try:
-            raw = fetch_bytes(url, timeout=15, retries=1,
-                              headers={"Referer": BASE + "/"})
-            html = raw.decode("utf-8", errors="replace")
+            raw, html = _get(url)
         except Exception as e:
-            print(f"R{rno:2d} recomend FAIL: {str(e)[:60]}")
+            print(f"R{rno:2d} recomend FAIL: {str(e)[:50]}")
             continue
-        has = any(m in html for m in ORIG_RE)
-        print(f"R{rno:2d} recomend ({len(raw)}B) {_counts(html)} hasOrig={has}")
-        if not saved_html:
-            _save(f"fmtB_recomend_jcd{JCD:02d}_R{rno:02d}_first.htm", raw)
-            saved_html = True
-        if has and not saved_data:
-            _save(f"fmtB_recomend_jcd{JCD:02d}_R{rno:02d}.htm", raw,
-                  " (has orig labels)")
-            saved_data = True
-    # 日付きデータJS(予想紙の中身)を採取。motor が周回タイムを含む可能性。
-    for kind in ("motor", "comment", "focus", "weather"):
-        url = (f"{BASE}/asp/gamagori/kyogi/kyogihtml/js/"
-               f"{kind}{hd}{JCD:02d}.js")
-        try:
-            raw = fetch_bytes(url, timeout=15, retries=1,
-                              headers={"Referer": BASE + "/"})
-            html = raw.decode("utf-8", errors="replace")
-            print(f"JS {kind} ({len(raw)}B) {_counts(html)}")
-            _save(f"fmtB_datajs_{kind}_jcd{JCD:02d}.js", raw)
-        except Exception as e:
-            print(f"JS {kind} FAIL: {str(e)[:60]}")
+        has_orig = any(m in html for m in ORIG)
+        populated = ("---" not in html.split("ta_tenji", 1)[-1][:400]) if "ta_tenji" in html else False
+        print(f"R{rno:2d} recomend ({len(raw)}B) {_counts(html)} orig={has_orig} pop={populated}")
+        if has_orig and not saved_orig:
+            _save(f"fmtB_recomend_orig_R{rno:02d}.htm", raw, " [orig labels]")
+            saved_orig = True
+        if populated and not saved_pop:
+            _save(f"fmtB_recomend_pop_R{rno:02d}.htm", raw, " [populated]")
+            saved_pop = True
+    # 2) 日付きデータJS(既知4種 + 周回候補)
+    js_dirs = [
+        "/asp/gamagori/kyogi/kyogihtml/js",
+        "/asp/gamagori/sp/kyogi/kyogihtml/js",
+    ]
+    kinds = ["motor", "comment", "focus", "weather", "tenji", "syuhkai",
+             "syukai", "around", "time", "original", "choku", "lap"]
+    for d in js_dirs:
+        for k in kinds:
+            url = f"{BASE}{d}/{k}{hd}{JCD:02d}.js"
+            try:
+                raw, txt = _get(url)
+            except Exception:
+                continue
+            has = any(m in txt for m in ORIG)
+            print(f"JS {d.split('/')[-2]}/{k} ({len(raw)}B) {_counts(txt)} orig={has}")
+            if has:
+                _save(f"fmtB_js_{k}.js", raw, " [orig labels]")
     return 0
 
 
