@@ -59,6 +59,7 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     3: {"platform": C, "base": "https://www.boatrace-edogawa.com"},    # 江戸川(同ベンダー yosou.js)
+    11: {"platform": C, "base": "https://www.boatrace-biwako.jp"},     # びわこ(同ベンダー共通フレーム)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
