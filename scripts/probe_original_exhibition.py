@@ -72,11 +72,15 @@ def _discover_naruto():
     for u in sorted(hrefs | srcs):
         if re.search(r'recomend|直前|展示|kyogi|syusso|tenji|chokuzen|info', u, re.I):
             print("  LINK:", u[:160])
-    # 鳴門は getYosou(date, race, type) で AJAX 取得。endpoint を持つ JS を採取。
+    # 鳴門の直前情報(オリジナル展示=一周/まわり足/直線)は AJAX:
+    #   /sp/ajax/ajax_yosou.php?targetday=YYYYMMDD&race=N&req=cyokuzen&run=0
+    # ライブ進行中なので展示済みレースは populated。早い数レースを採取。
     saved = 1
-    for js in ("/sp/page/top/js/getYosou.js",
-               "/sp/page/top/yosou/js/yosou_slider.js"):
-        if _save("https://www.n14.jp" + js, "naruto_" + js.split("/")[-1].split("?")[0]):
+    d = datetime.now(JST).strftime("%Y%m%d")
+    for rno in range(1, 7):
+        url = ("https://www.n14.jp/sp/ajax/ajax_yosou.php"
+               f"?targetday={d}&race={rno}&req=cyokuzen&run=0")
+        if _save(url, f"naruto_cyokuzen_{rno:02d}.html"):
             saved += 1
     return saved
 
