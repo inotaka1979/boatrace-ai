@@ -54,9 +54,16 @@ jobs:
           - name: worker-previews
             url: https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/previews
             max_age_min: 60
+          # rt-fix4 (2026-06-28): programs(番組表) は「当日1回発行 → 終日不変」の
+          #   日次アーティファクト。さらに Worker kvWrite は内容無変化なら put を skip し
+          #   updated_at を更新しない(rt-fix2 P1 の KV 書込み節約)。この2点により
+          #   programs の updated_at は朝の発行時刻のまま → 180分 SLO は毎日午後に
+          #   構造的に false-positive STALE を量産していた(#176 系の通知ノイズ)。
+          #   programs は「当日分が存在するか(=24h 以内)」を見れば十分なので 24h SLO に。
+          #   Worker のリアルタイム死活は worker-previews(60分, レース毎更新)が担保する。
           - name: worker-programs
             url: https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs
-            max_age_min: 180
+            max_age_min: 1440
     steps:
       - uses: actions/checkout@v7
         with:
