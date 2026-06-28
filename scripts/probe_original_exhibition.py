@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""各場「オリジナル展示」ページの HTML をキャプチャして解析用に保存する PoC プローブ。
+"""各場「オリジナル展示」サイトの形式を判定する検証プローブ。
 
-各レース場の公式サイトは boatrace.jp(全国版)に無い詳細展示(まわり足/一周/直線/出足 等)を
-「オリジナル展示」として公開している。本スクリプトはサンプル HTML を data/_debug/ に raw 保存し、
-パーサ設計のために構造（項目ラベル・テーブル構成・文字コード）を確認する用途
-（Phase 1 の _debug_racelist.html と同じ進め方）。値が未掲載の時間帯でもテンプレート構造
-（まわり足/一周等のラベル）は確認できる。
+各場の公式サイトは boatrace.jp(全国版)に無い実測周回展示(一周/まわり足/直線)を公開する。
+鳴門(n14.jp)は AJAX `/sp/ajax/ajax_yosou.php?req=cyokuzen`(Referer/XHR 必須)で取得できた。
+多くの場が `boatrace-{名}.jp/sp/` 形式=同ベンダーの可能性が高い。
 
-蒲郡(jcd=07)の URL パターン（ユーザー提供）:
-  https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend{YYYYMMDD}{jcd:02d}{rno:02d}.htm
-
-文字コードが不明（Shift_JIS/EUC-JP 等の可能性）なので bytes のまま保存し、解析時に判定する。
+本プローブは候補各場に対し ajax_yosou エンドポイントを叩き、
+「各タイム」表(一周/まわり足/直線)が返るかを判定してログに出力する。
+同型と判明した場は scrape_orig_exhibition.VENUES に base を足すだけで対応できる。
+判定用に、表が取れた場のサンプル HTML を data/_debug/ に保存する(解析後に撤去)。
 """
 import os
 import sys
@@ -22,93 +20,70 @@ from http_utils import fetch_bytes  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 
-# 場ごとに独自ドメイン。PoC は蒲郡のみ。構造確認後に横展開する。
-GAMAGORI = (
-    "https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/"
-    "recomend/recomend{d}{jcd:02d}{rno:02d}.htm"
-)
-BASE = "https://www.gamagori-kyotei.com"
-# recomend HTML の <div id> は空で、これらの per-day-per-venue JS データファイルを
-# sp_recomend.js が読んで埋める。出足/伸び/回り足は motor*.js に入っている。
-DATA_JS = {
-    "motor": "/asp/gamagori/kyogi/kyogihtml/js/motor{d}{jcd:02d}.js",
-    "comment": "/asp/gamagori/kyogi/kyogihtml/js/comment{d}{jcd:02d}.js",
-    "focus": "/asp/gamagori/kyogi/kyogihtml/js/focus{d}{jcd:02d}.js",
-    "weather": "/asp/gamagori/kyogi/kyogihtml/js/weather{d}{jcd:02d}.js",
-    # 展示タイム(一周/まわり足)を埋める制御スクリプト。データファイル名を特定するため取得。
-    "sp_recomend": "/js/sp_recomend.js",
-    "funcLiveTime": "/asp/gamagori/sp/kyogi/kyogihtml/js/funcLiveTime.js",
+# 検証対象(ユーザー提供 URL から base ドメインを抽出)。jcd: base
+CANDIDATES = {
+    1: "https://www.kiryu-kyotei.com",     # 桐生
+    2: "https://www.boatrace-toda.jp",     # 戸田
+    3: "https://www.boatrace-edogawa.com",  # 江戸川
+    5: "https://www.boatrace-tamagawa.com",  # 多摩川
+    6: "https://www.boatrace-hamanako.jp",  # 浜名湖
+    8: "https://www.boatrace-tokoname.jp",  # 常滑
+    9: "https://www.boatrace-tsu.com",     # 津
+    10: "https://www.boatrace-mikuni.jp",  # 三国
+    11: "https://www.boatrace-biwako.jp",  # びわこ
+    12: "https://www.boatrace-suminoe.jp",  # 住之江
 }
 
 
-def _save(url, name, headers=None):
-    try:
-        raw = fetch_bytes(url, timeout=20, retries=1, headers=headers)
-        path = os.path.join(OUTDIR, name)
-        with open(path, "wb") as f:
-            f.write(raw)
-        print(f"saved {path} ({len(raw)} bytes) from {url}")
-        return raw
-    except Exception as e:
-        print(f"  fetch fail {url}: {e}")
-        return None
-
-
-def _discover_naruto():
-    """鳴門(n14.jp)はライブ進行中=実測展示が populated。別ドメイン・別構造のため
-    トップ(sp)を採取し、recomend/直前/展示/kyogi 系リンクをログに列挙して URL を発見する。
-    """
-    import re
-    raw = _save("https://www.n14.jp/sp/", "naruto_top.html")
-    if not raw:
-        return 0
-    try:
-        html = raw.decode("utf-8", errors="replace")
-    except Exception:
-        html = ""
-    hrefs = set(re.findall(r'href=[\"\']([^\"\']+)[\"\']', html))
-    srcs = set(re.findall(r'src=[\"\']([^\"\']+)[\"\']', html))
-    print("=== naruto candidate links (recomend/直前/展示/kyogi/syusso) ===")
-    for u in sorted(hrefs | srcs):
-        if re.search(r'recomend|直前|展示|kyogi|syusso|tenji|chokuzen|info', u, re.I):
-            print("  LINK:", u[:160])
-    # 鳴門の直前情報(オリジナル展示=一周/まわり足/直線)は AJAX:
-    #   /sp/ajax/ajax_yosou.php?targetday=YYYYMMDD&race=N&req=cyokuzen&run=0
-    # ライブ進行中なので展示済みレースは populated。早い数レースを採取。
-    saved = 1
-    d = datetime.now(JST).strftime("%Y%m%d")
-    # AJAX エンドポイントは Referer / X-Requested-With が無いと空を返すため付与する。
-    ajax_headers = {
-        "Referer": "https://www.n14.jp/sp/",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-    for rno in range(1, 7):
-        url = ("https://www.n14.jp/sp/ajax/ajax_yosou.php"
-               f"?targetday={d}&race={rno}&req=cyokuzen&run=0")
-        if _save(url, f"naruto_cyokuzen_{rno:02d}.html", headers=ajax_headers):
-            saved += 1
-    return saved
+def _probe_ajax_yosou(jcd, base, date_str):
+    """ajax_yosou(鳴門型)が使えるか判定。表の有無・値の有無・byte 数を返す。"""
+    headers = {"Referer": base + "/sp/", "X-Requested-With": "XMLHttpRequest"}
+    best = {"jcd": jcd, "base": base, "ok": False, "has_table": False,
+            "has_values": False, "bytes": 0, "sample_rno": None}
+    for rno in (1, 2, 3, 4, 5):
+        url = (f"{base}/sp/ajax/ajax_yosou.php"
+               f"?targetday={date_str}&race={rno}&req=cyokuzen&run=0")
+        try:
+            raw = fetch_bytes(url, timeout=15, retries=1, headers=headers)
+        except Exception as e:
+            print(f"  jcd={jcd} {rno}R fetch fail: {str(e)[:80]}")
+            continue
+        best["ok"] = True
+        try:
+            html = raw.decode("utf-8", errors="replace")
+        except Exception:
+            html = ""
+        has_table = ("一周" in html) and ("まわり足" in html) and ("直線" in html)
+        # 値らしき数値(35.xx 等)が表内にあるか簡易判定
+        has_values = has_table and any(s in html for s in ("rank_1", "col5"))
+        if len(raw) > best["bytes"]:
+            best["bytes"] = len(raw)
+        if has_table and not best["has_table"]:
+            best["has_table"] = True
+            best["sample_rno"] = rno
+            # 解析用にサンプル保存
+            path = os.path.join(OUTDIR, f"cyokuzen_jcd{jcd:02d}_{rno:02d}.html")
+            with open(path, "wb") as f:
+                f.write(raw)
+            print(f"  saved {path} ({len(raw)} bytes)")
+        if has_values:
+            best["has_values"] = True
+            break
+    return best
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    d = datetime.now(JST).strftime("%Y%m%d")
-    jcd = 7
-    saved = 0
-    # 1) recomend HTML（展示後に「オリジナル展示タイム(一周/まわり足/直線)」が埋まる）。
-    #    早いレースほど展示航走が先に終わるので 1〜3R を採取。展示後の時間帯に実行すること。
-    for rno in (1, 2, 3):
-        if _save(GAMAGORI.format(d=d, jcd=jcd, rno=rno),
-                 f"orig_exhibition_gamagori_{rno:02d}.html"):
-            saved += 1
-    # 2) JS データファイル（出足/伸び/回り足 等）+ ライブ展示タイム制御
-    for key, tmpl in DATA_JS.items():
-        url = BASE + tmpl.format(d=d, jcd=jcd)
-        if _save(url, f"orig_data_gamagori_{key}.js"):
-            saved += 1
-    # 3) 鳴門(n14.jp, ライブ進行中=実測展示 populated)のトップを採取し URL 発見
-    saved += _discover_naruto()
-    print(f"done: {saved} files saved")
+    date_str = datetime.now(JST).strftime("%Y%m%d")
+    print(f"=== probe ajax_yosou compatibility (date={date_str}) ===")
+    results = []
+    for jcd, base in CANDIDATES.items():
+        r = _probe_ajax_yosou(jcd, base, date_str)
+        results.append(r)
+        print(f"jcd={jcd:2d} {base:40s} ok={r['ok']} table={r['has_table']} "
+              f"values={r['has_values']} bytes={r['bytes']}")
+    compat = [r["jcd"] for r in results if r["has_table"]]
+    print(f"=== ajax_yosou-compatible venues: {compat} ===")
     return 0
 
 
