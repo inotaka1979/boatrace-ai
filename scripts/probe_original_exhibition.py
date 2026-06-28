@@ -48,10 +48,31 @@ def _save(url, name):
         with open(path, "wb") as f:
             f.write(raw)
         print(f"saved {path} ({len(raw)} bytes) from {url}")
-        return True
+        return raw
     except Exception as e:
         print(f"  fetch fail {url}: {e}")
-        return False
+        return None
+
+
+def _discover_naruto():
+    """鳴門(n14.jp)はライブ進行中=実測展示が populated。別ドメイン・別構造のため
+    トップ(sp)を採取し、recomend/直前/展示/kyogi 系リンクをログに列挙して URL を発見する。
+    """
+    import re
+    raw = _save("https://www.n14.jp/sp/", "naruto_top.html")
+    if not raw:
+        return 0
+    try:
+        html = raw.decode("utf-8", errors="replace")
+    except Exception:
+        html = ""
+    hrefs = set(re.findall(r'href=[\"\']([^\"\']+)[\"\']', html))
+    srcs = set(re.findall(r'src=[\"\']([^\"\']+)[\"\']', html))
+    print("=== naruto candidate links (recomend/直前/展示/kyogi/syusso) ===")
+    for u in sorted(hrefs | srcs):
+        if re.search(r'recomend|直前|展示|kyogi|syusso|tenji|chokuzen|info', u, re.I):
+            print("  LINK:", u[:160])
+    return 1
 
 
 def main() -> int:
@@ -70,6 +91,8 @@ def main() -> int:
         url = BASE + tmpl.format(d=d, jcd=jcd)
         if _save(url, f"orig_data_gamagori_{key}.js"):
             saved += 1
+    # 3) 鳴門(n14.jp, ライブ進行中=実測展示 populated)のトップを採取し URL 発見
+    saved += _discover_naruto()
     print(f"done: {saved} files saved")
     return 0
 
