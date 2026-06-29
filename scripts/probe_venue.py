@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""住之江(12): iframe 内 syusso1005.htm のタブバーから 直前情報/オリジナル展示 の htm を特定。
+"""住之江(12): 直前情報予想 yoso05{RR}.htm の オリジナル展示テーブルを採取(最終)。
 
-/sp/ は iframe ラッパーで、タブバー(出走表/前日予想/直前情報予想/得点率/オッズ)と
-データは iframe 内 htm にある。syusso{1000+RR}=出走表タブ。その htm 内のタブバー
-リンクに 直前情報予想(=オリジナル展示) の htm 名があるはず。それを抽出する。確認後撤去。
+タブバー解析で 直前情報予想 = /asp/kyogi/12/sp/yoso05{RR:02d}.htm と判明
+(出走表=syusso10RR, 前日=syusso01RR, 得点率=hayami01RR, オッズ=kekka01RR)。
+yoso0505(R5)/yoso0501(R1) を取得し、オリジナル展示(枠/展示/一周/まわり足/直線)の
+表構造とサブタブ(スタート展示/オリジナル展示)を確認する。確認後撤去。
 """
 import os
 import re
@@ -18,33 +19,43 @@ BASE = "https://www.boatrace-suminoe.jp"
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    url = f"{BASE}/asp/kyogi/12/sp/syusso1005.htm"
-    try:
-        raw = fetch_bytes(url, timeout=12, retries=1,
-                          headers={"Referer": BASE + "/sp/"})
-    except Exception as e:
-        print(f"FAIL: {e}")
-        return 0
-    txt = raw.decode("utf-8", errors="replace")
-    print(f"syusso1005.htm ({len(raw)}B)")
-    # タブラベルとリンク
-    for lbl in ("直前", "オリジナル", "展示", "前日", "出走", "得点", "オッズ"):
-        for m in re.finditer(lbl, txt):
-            seg = re.sub(r'\s+', ' ', txt[m.start()-140:m.start()+20])
-            print(f"  [{lbl}] ...{seg}")
-            break
-    print("=== all .htm hrefs ===")
-    for u in sorted(set(re.findall(
-            r'(?:href|src|onclick|location\.href\s*=\s*)[=\s]?[\"\']'
-            r'([^\"\']*\.htm[^\"\']*)[\"\']', txt))):
-        print("  ", u)
-    print("=== JS htm concatenation / location ===")
-    for m in re.finditer(r'location\.href[^;]{0,80}|\.htm[\"\']', txt):
-        print("  ", re.sub(r'\s+', ' ', m.group(0))[:100])
-    # data-* on tab elements
-    print("data-*:", sorted(set(re.findall(r'data-([a-z]+)=', txt)))[:20])
-    with open(os.path.join(OUTDIR, "suminoe_syusso1005_full.htm"), "wb") as f:
-        f.write(raw)
+    from bs4 import BeautifulSoup
+    saved = False
+    for rno in (5, 1, 2):
+        url = f"{BASE}/asp/kyogi/12/sp/yoso05{rno:02d}.htm"
+        try:
+            raw = fetch_bytes(url, timeout=10, retries=1,
+                              headers={"Referer": BASE + "/sp/"})
+            txt = raw.decode("utf-8", errors="replace")
+        except Exception as e:
+            print(f"[yoso05{rno:02d}] -- {str(e)[:45]}")
+            continue
+        marks = " ".join(f"{m}={txt.count(m)}" for m in
+                         ("オリジナル展示", "スタート展示", "一周", "まわり",
+                          "直線", "展示"))
+        print(f"[yoso05{rno:02d} R{rno}] ({len(raw)}B) {marks}")
+        # サブタブ(スタート展示/オリジナル展示)のリンク
+        for a in re.findall(r'<a[^>]+href=[\"\']([^\"\']+)[\"\'][^>]*>([^<]*'
+                            r'(?:スタート|オリジナル|展示)[^<]*)</a>', txt):
+            print(f"    subtab: {a[1].strip()} -> {a[0]}")
+        soup = BeautifulSoup(txt, "html.parser")
+        for tbl in soup.find_all("table"):
+            t = tbl.get_text()
+            if ("一周" in t) and ("まわり" in t):
+                print("    *** ORIGINAL EXHIBITION TABLE ***")
+                for ri, row in enumerate(tbl.find_all("tr")[:8]):
+                    cells = [("/".join(c.get("class") or [])) + ":" +
+                             c.get_text(strip=True)
+                             for c in row.find_all(["td", "th"])]
+                    if cells:
+                        print(f"    row{ri}: {cells[:12]}")
+                break
+        if not saved and len(raw) > 500:
+            with open(os.path.join(OUTDIR, f"suminoe_yoso05{rno:02d}.htm"),
+                      "wb") as f:
+                f.write(raw)
+            print(f"    saved suminoe_yoso05{rno:02d}.htm")
+            saved = True
     return 0
 
 
