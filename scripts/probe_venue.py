@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""津(9) のオリジナル展示(ajax_yosou)が表示されない原因を切り分けるプローブ。
+"""津(9) がオリジナル展示(一周/まわり足/直線)を公開しているか発見するプローブ。
 
-津は platform A(ajax_yosou)・_OE_VENUES 登録済みで本来 on-demand で動くはず。
-実応答を採取し、404/空(展示前)/別ラベル/別エンドポイント/列構成差 のどれかを
-切り分ける。Worker 経由(クライアント実経路)も確認。確認後撤去。
+津の ajax_yosou req=cyokuzen は直前情報(展示評価)のみで一周/まわり足/直線が無いと判明。
+鳴門(n14)は req=cyokuzen に在るので津は別実装。津のページ/別 req を当たって、
+オリジナル展示タブ/エンドポイントの有無を確定する。確認後撤去。
 """
 import os
 import re
@@ -16,50 +16,60 @@ from http_utils import fetch_bytes  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.boatrace-tsu.com"
-WORKER = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+KW = ("オリジナル展示", "一周", "半周", "まわり足", "直線", "周回", "展示タイム",
+      "展示評価", "スタート展示", "展示")
 
 
-def _counts(h):
-    return " ".join(f"{m}={h.count(m)}" for m in
-                    ("一周", "まわり足", "直線", "周回", "展示", "展示タイム",
-                     "table", "waku"))
+def _marks(txt):
+    return " ".join(f"{m}={txt.count(m)}" for m in KW)
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    headers = {"Referer": BASE + "/sp/", "X-Requested-With": "XMLHttpRequest"}
-    saved = False
-    print(f"== 津 ajax_yosou direct (hd={hd}) ==")
-    for rno in range(1, 13):
-        url = (f"{BASE}/sp/ajax/ajax_yosou.php"
-               f"?targetday={hd}&race={rno}&req=cyokuzen&run=0")
-        try:
-            raw = fetch_bytes(url, timeout=12, retries=1, headers=headers)
-            txt = raw.decode("utf-8", errors="replace")
-        except Exception as e:
-            print(f"R{rno} FAIL: {str(e)[:70]}")
-            continue
-        ths = [re.sub(r"<[^>]+>", "", t).strip()
-               for t in re.findall(r"<th[^>]*>.*?</th>", txt, re.S)]
-        ths = [t for t in ths if t][:14]
-        print(f"R{rno} ({len(raw)}B) {_counts(txt)} ths={ths}")
-        if not saved and len(raw) > 200:
-            with open(os.path.join(OUTDIR, f"tsu_ajax_R{rno:02d}.html"),
-                      "wb") as f:
-                f.write(raw)
-            print(f"      saved tsu_ajax_R{rno:02d}.html")
-            saved = True
+    h_ajax = {"Referer": BASE + "/sp/", "X-Requested-With": "XMLHttpRequest"}
+    h_pg = {"Referer": BASE + "/"}
 
-    print("== via Worker /orig-exhibition-proxy jcd=9 ==")
-    for rno in (1, 2, 3, 6):
-        u = f"{WORKER}/orig-exhibition-proxy?jcd=9&race={rno}&hd={hd}"
+    # 1) ホスト側ページ(タブのリンク/JSを見る)
+    print("== 津 pages ==")
+    for name, url in [
+        ("sp", f"{BASE}/sp/"),
+        ("sp_yosou_cyokuzen", f"{BASE}/sp/index.php?page=yosou-cyokuzen&race=1"),
+        ("top", f"{BASE}/"),
+    ]:
         try:
-            raw = fetch_bytes(u, timeout=15, retries=1)
+            raw = fetch_bytes(url, timeout=12, retries=1, headers=h_pg)
             txt = raw.decode("utf-8", errors="replace")
-            print(f"R{rno} ({len(raw)}B) {_counts(txt)}")
+            print(f"[{name}] ({len(raw)}B) {_marks(txt)}")
+            refs = re.findall(
+                r'''(?:href|src|data-[\w-]+|onclick)=["']?'''
+                r'''([^"'<> )]*(?:cyokuzen|original|tenji|req=|kind=|周回)'''
+                r'''[^"'<> )]*)''', txt)
+            for r in sorted(set(refs))[:25]:
+                print(f"    ref: {r}")
+            # 「オリジナル展示」近傍を表示
+            i = txt.find("オリジナル展示")
+            if i >= 0:
+                print(f"    near: {re.sub(chr(9),'',txt[i-150:i+120])}")
+            if name == "sp_yosou_cyokuzen":
+                with open(os.path.join(OUTDIR, "tsu_yosou_cyokuzen.html"),
+                          "wb") as f:
+                    f.write(raw)
         except Exception as e:
-            print(f"R{rno} FAIL: {str(e)[:80]}")
+            print(f"[{name}] FAIL: {str(e)[:70]}")
+
+    # 2) 別 req 候補を直叩き
+    print("== 津 ajax req candidates ==")
+    for req in ("cyokuzen2", "original", "cyokuzen_o", "shukai", "syuukai",
+                "tenji", "cyokuzen&kind=2"):
+        url = (f"{BASE}/sp/ajax/ajax_yosou.php"
+               f"?targetday={hd}&race=1&req={req}&run=0")
+        try:
+            raw = fetch_bytes(url, timeout=10, retries=0, headers=h_ajax)
+            txt = raw.decode("utf-8", errors="replace")
+            print(f"[req={req}] ({len(raw)}B) {_marks(txt)}")
+        except Exception as e:
+            print(f"[req={req}] -- {str(e)[:45]}")
     return 0
 
 
