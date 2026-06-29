@@ -1330,7 +1330,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1459,6 +1459,45 @@ function _parseSuminoeYoso(html){
     return Object.keys(bymap).length?bymap:null;
   }catch(e){ return null; }
 }
+// 大村(omurakyotei.jp /yosou/sp/syussou) → bymap。位置ベース: 枠/ST/展示タイム/一周/
+//   まわり足/直線/チルト、枠セル waku{N}。ST も同表にあるため st_time も取得。
+function _parseOmura(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり')>=0&&tx.indexOf('ST')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var trs=target.querySelectorAll('tr'), head=null;
+    for(var r=0;r<trs.length;r++){
+      var ths=trs[r].querySelectorAll('th');
+      if(!ths.length) continue;
+      head=[]; for(var t=0;t<ths.length;t++) head.push((ths[t].textContent||'').replace(/\s+/g,''));
+      break;
+    }
+    if(!head) return null;
+    var find=function(lab){for(var i2=0;i2<head.length;i2++){if(head[i2].indexOf(lab)>=0) return i2;} return -1;};
+    var iSt=find('ST'), iEx=find('展示'), iLap=find('一周'), iTurn=find('まわり足'), iStr=find('直線');
+    if(iLap<0||iTurn<0) return null;
+    var bymap={};
+    for(var r2=0;r2<trs.length;r2++){
+      var first=trs[r2].querySelector('td'); if(!first) continue;
+      var m=/waku(\d+)/.exec(first.className||''); if(!m) continue;
+      var waku=parseInt(m[1],10); if(!(waku>=1&&waku<=6)) continue;
+      var tds=trs[r2].querySelectorAll('td');
+      var v=function(n){var x=(n>=0&&n<tds.length)?parseFloat((tds[n].textContent||'').trim()):0; return (x>0)?x:0;};
+      var rec={racer_boat_number:waku,ex_time:v(iEx),lap_time:v(iLap),turn_time:v(iTurn),straight_time:v(iStr)};
+      if(iSt>=0&&iSt<tds.length){
+        var stx=(tds[iSt].textContent||'').trim(), sv=parseFloat(stx.replace(/[^0-9.]/g,''));
+        if(!isNaN(sv)) rec.st_time=(/f/i.test(stx)?-sv:sv);
+      }
+      bymap[waku]=rec;
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
 // 宮島 kaisai_reload.php 応答全文(####区切り)→ bymap。位置ベース: 一周/まわり足/直線 を
 //   含む表を探し、ヘッダのラベル位置で列特定、各行の先頭付近 1-6 を枠として読む。
 function _parseMiyajimaReload(html){
@@ -1516,7 +1555,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;

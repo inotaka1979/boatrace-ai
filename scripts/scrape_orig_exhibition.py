@@ -64,6 +64,10 @@ BW = "biwako_modules"
 #   予想タブ = /asp/kyogi/12/sp/yoso05{RR}.htm に オリジナル展示(枠/展示/一周/まわり足)。
 #   時刻列 th が全て col10・枠セルが waku01.. のため位置ベースの専用パーサで解析。
 SU = "suminoe_yoso"
+# platform "omura": 大村(omurakyotei.jp 独自ドメイン)。/yosou/sp/syussou/?day=&race=
+#   に 枠/ST/展示タイム/一周/まわり足/直線/チルト の位置ベース表(枠=waku{N})が
+#   インライン。ST も同表にあり st_time も取得。
+OM = "omura"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
@@ -71,6 +75,7 @@ VENUES = {
     # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外
     11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     12: {"platform": SU, "base": "https://www.boatrace-suminoe.jp"},   # 住之江(iframe yoso05RR)
+    24: {"platform": OM, "base": "https://omurakyotei.jp"},            # 大村(独自ドメイン syussou)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
@@ -680,6 +685,104 @@ def scrape_suminoe_yoso(base, jcd, date_str):
     return out
 
 
+def parse_omura(html, sid, rno):
+    """大村型(omurakyotei.jp /yosou/sp/syussou/)→ race dict | None。
+
+    SP 出走表ページに直前展示表がインライン。位置ベース: 枠/ST/展示タイム/一周/
+    まわり足/直線/チルト、枠セルは waku{N}。ST も同表にあるため st_time も取る
+    (".39"→0.39、"F"→フライング=負)。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    target = None
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if ("一周" in t) and ("まわり" in t) and ("ST" in t):
+            target = tbl
+            break
+    if target is None:
+        return None
+    head = []
+    for tr in target.find_all("tr"):
+        ths = tr.find_all("th")
+        if ths:
+            head = [th.get_text(strip=True).replace(" ", "").replace("\n", "")
+                    for th in ths]
+            break
+    if not head:
+        return None
+
+    def _idx(label):
+        for i, lab in enumerate(head):
+            if label in lab:
+                return i
+        return -1
+
+    i_st = _idx("ST")
+    i_ex = _idx("展示")
+    i_lap = _idx("一周")
+    i_turn = _idx("まわり足")
+    i_str = _idx("直線")
+    if i_lap < 0 or i_turn < 0:
+        return None
+
+    boats = []
+    for tr in target.find_all("tr"):
+        first = tr.find("td")
+        if not first:
+            continue
+        m = re.search(r"waku(\d+)", " ".join(first.get("class") or []))
+        if not m:
+            continue
+        waku = int(m.group(1))
+        if not (1 <= waku <= 6):
+            continue
+        tds = tr.find_all("td")
+
+        def _v(i):
+            return _f(tds[i].get_text(strip=True)) if 0 <= i < len(tds) else 0.0
+
+        rec = {
+            "racer_boat_number": waku,
+            "ex_time": _v(i_ex),
+            "lap_time": _v(i_lap),
+            "turn_time": _v(i_turn),
+            "straight_time": _v(i_str),
+        }
+        if 0 <= i_st < len(tds):
+            stx = tds[i_st].get_text(strip=True)
+            sv = re.sub(r"[^0-9.]", "", stx)
+            try:
+                v = float(sv)
+                rec["st_time"] = -v if ("F" in stx.upper()) else v
+            except ValueError:
+                pass
+        boats.append(rec)
+    if not boats:
+        return None
+    return {
+        "race_stadium_number": int(sid),
+        "race_number": int(rno),
+        "boats": boats,
+    }
+
+
+def scrape_omura(base, jcd, date_str):
+    """大村型: /yosou/sp/syussou/?day=YYYYMMDD&race=NN を全12R取得。"""
+    out = []
+    for rno in range(1, 13):
+        url = f"{base}/yosou/sp/syussou/?day={date_str}&race={rno:02d}"
+        try:
+            html = fetch_text(url, timeout=12, retries=1,
+                              headers={"Referer": base + "/yosou/sp/syussou/"})
+        except Exception:
+            continue
+        race = parse_omura(html, jcd, rno)
+        if race and _has_times(race):
+            out.append(race)
+    out.sort(key=lambda r: r["race_number"])
+    return out
+
+
 def _miyajima_post(base, race, date_str):
     """宮島 kaisai_reload.php に POST し応答全文を返す。
 
@@ -752,6 +855,8 @@ def scrape_venue(jcd, cfg, date_str):
         return scrape_biwako_modules(cfg["base"], jcd, date_str)
     if cfg["platform"] == "suminoe_yoso":
         return scrape_suminoe_yoso(cfg["base"], jcd, date_str)
+    if cfg["platform"] == "omura":
+        return scrape_omura(cfg["base"], jcd, date_str)
     if cfg["platform"] == "toda_xml":
         return scrape_toda_xml(cfg["base"], jcd, date_str)
     if cfg["platform"] == "gamagori_recomend":

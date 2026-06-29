@@ -235,6 +235,47 @@ class TestSuminoeYoso(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_OMURA = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'omura_syussou_R_sample.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_OMURA),
+                     'bs4 or sample HTML missing')
+class TestOmura(unittest.TestCase):
+    """大村型(omurakyotei.jp 出走表ページ内 直前展示表)の回帰テスト。
+
+    位置ベース: 枠/ST/展示タイム/一周/まわり足/直線/チルト、枠=waku{N}。
+    ST も同表から取得(st_time)。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_OMURA, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_omura(f.read(), 24, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 24)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.93)
+        self.assertEqual(b['lap_time'], 37.40)
+        self.assertEqual(b['turn_time'], 6.47)
+        self.assertEqual(b['straight_time'], 7.30)
+        self.assertEqual(b['st_time'], 0.39)
+
+    def test_all_st(self):
+        st = [b.get('st_time') for b in self.race['boats']]
+        self.assertEqual(st, [0.39, 0.14, 0.17, 0.07, 0.05, 0.23])
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _MIYA_REAL = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'miyajima_reload_part7_R01.html'
 )
