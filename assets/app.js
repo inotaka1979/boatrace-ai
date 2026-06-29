@@ -1324,8 +1324,10 @@ var stadiumExhibitionStats=_bootParseLS('boatrace_exhibitionStats', {});
 var tideData=null;
 // オリジナル展示(各場サイトの一周/まわり足/直線、対応場のみ)。sid -> rno -> {waku -> {lap,turn,straight,ex}}
 var _origExhibIndex={};
-// オンデマンド対応場(ajax_yosou で実際に表が取れる場のみ、probe 判定)。別サイト形式の場は除外。
-var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1};
+// オンデマンド対応場(ヘッダ駆動の col クラス表で _parseOrigExhibitionHtml が解析可能な場)。
+//   ajax_yosou 系 11 場 + びわこ(11: 独自CMS modules/yosou/cyokuzen.php?kind=2 だが
+//   表構造は col5-8=展示/一周/まわり足/直線 で同形式)。URL差は Worker 側で吸収。
+var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
 var _OE_FMT={2:'toda',7:'gama'};
