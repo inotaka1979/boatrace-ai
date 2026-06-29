@@ -981,7 +981,11 @@ export default {
       let upstream = null;
       let fetchHeaders = { 'User-Agent': 'Mozilla/5.0 boatrace-scrape-trigger' };
       if (base) {
-        upstream = `${base}/sp/ajax/ajax_yosou.php?targetday=${hd}&race=${parseInt(race)}&req=cyokuzen&run=0`;
+        // オリジナル展示の req は場により異なる。多くは cyokuzen だが
+        //   津(9)は「展示情報」タブ=sttenji にオリジナル展示がある。
+        const ORIG_REQ = { 9: 'sttenji' };
+        const oreq = ORIG_REQ[jcdN] || 'cyokuzen';
+        upstream = `${base}/sp/ajax/ajax_yosou.php?targetday=${hd}&race=${parseInt(race)}&req=${oreq}&run=0`;
         fetchHeaders.Referer = base + '/sp/';
         fetchHeaders['X-Requested-With'] = 'XMLHttpRequest';
       } else if (jcdN === 7) {
