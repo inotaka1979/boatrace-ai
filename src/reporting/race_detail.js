@@ -299,9 +299,14 @@ function openRace(sid, rn) {
 
     for (var bn = 1; bn <= 6; bn++) {
       var pv = pvMap[bn];
-      var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : null;
+      // 一部の場(住之江等)は boatrace.jp 直前情報が未取得でも、オリジナル展示ページ側に
+      //   ST/展示タイムがある。preview が欠ければ OE 由来の値でフォールバックする。
+      var _oebST = (_oeRace && _oeRace[bn]) || {};
+      var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing
+        : (_oebST.st_time != null ? _oebST.st_time : null);
       var etVal =
-        pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : null;
+        pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time
+        : ((_oebST.ex_time || 0) > 0 ? _oebST.ex_time : null);
       var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
       var propVal = pv && pv.racer_propeller ? pv.racer_propeller : '';
       var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : '';

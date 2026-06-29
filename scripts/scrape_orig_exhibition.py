@@ -630,6 +630,28 @@ def parse_suminoe_yoso(html, sid, rno):
         })
     if not boats:
         return None
+    # スタート展示 ST を併せて抽出(同ページ内 dl: dt=ST文字列, dd.boatN=艇番)。
+    #   boatrace.jp 直前情報が未取得でも ST/展示タイムを補完できるようにする。
+    #   ".10"→0.10、"F.03"→フライング(負)。
+    st_by_boat = {}
+    for dl in soup.find_all("dl"):
+        dt = dl.find("dt")
+        dd = dl.find("dd")
+        if not dt or not dd:
+            continue
+        mb = re.search(r"boat([1-6])", " ".join(dd.get("class") or []))
+        if not mb:
+            continue
+        txt = dt.get_text(strip=True)
+        num = re.sub(r"[^0-9.]", "", txt)
+        try:
+            v = float(num)
+        except ValueError:
+            continue
+        st_by_boat[int(mb.group(1))] = -v if ("F" in txt.upper()) else v
+    for b in boats:
+        if b["racer_boat_number"] in st_by_boat:
+            b["st_time"] = st_by_boat[b["racer_boat_number"]]
     return {
         "race_stadium_number": int(sid),
         "race_number": int(rno),
