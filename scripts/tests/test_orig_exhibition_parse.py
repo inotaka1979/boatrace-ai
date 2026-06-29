@@ -187,6 +187,43 @@ class TestBiwakoModules(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_KIRYU_REAL = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'kiryu_ajax_R08.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_KIRYU_REAL),
+                     'bs4 or sample HTML missing')
+class TestKiryuCyokuzenReal(unittest.TestCase):
+    """桐生(実 ajax_cyokuzen 応答)の回帰テスト。
+
+    現行は col4=展示/col5=半周/col6=まわり足/col7=直線(ラベルは画像)。
+    parse_kiryu_cyokuzen の col4 後ろ3セルフォールバックで解析できることを固定。
+    桐生は「一周」でなく半周を lap_time に格納する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_KIRYU_REAL, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_kiryu_cyokuzen(f.read(), 1, 8)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 1)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.83)       # col4 展示
+        self.assertEqual(b['lap_time'], 18.34)     # col5 半周
+        self.assertEqual(b['turn_time'], 4.73)     # col6 まわり足
+        self.assertEqual(b['straight_time'], 7.43)  # col7 直線
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _SUMINOE = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'suminoe_yoso0505.htm'
 )
