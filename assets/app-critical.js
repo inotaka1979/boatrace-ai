@@ -1363,6 +1363,19 @@ var _oeLiveTried={};
 /* MOVED: function _parseKiryu */
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 /* MOVED: function _loadOrigExhibitionLive */
+// === レース結果のオンデマンド取得 (2026-06-29) ===
+//   bulk /api/results (openapi ベース + cron 補完) は GHA schedule 間引き + 無料枠
+//   (20件/run・締切+360分窓) で夜のナイター場が処理しきれず、結果/払戻が「途中で
+//   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
+var _resLiveTried={};
+// 結果が「未確定」または「確定済だが3連単払戻が空」なら補完対象。
+/* MOVED: function _isResultIncomplete */
+// 既存 entry を新 entry で更新。新が払戻を持たず既存が持つ種別は退行させない。
+/* MOVED: function _mergeResultEntry */
+/* MOVED: function _loadResultLive */
+// 締切を過ぎたのに結果/払戻が欠けるレースを古い順に最大 N 件だけオンデマンド補完。
+//   bulk が止まっても背景で backlog を drain する。1 回 N 件に絞り CF CPU/サブリクエストを抑える。
+/* MOVED: function _sweepMissingResults */
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
@@ -4147,6 +4160,9 @@ setManagedInterval(async function(){
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
+    // 2026-06-29: bulk results が間引き/無料枠で夜に止まっても、締切超過で結果/払戻が
+    //   欠けるレースを古い順に最大6件オンデマンド補完(背景で backlog を drain)。
+    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(6);
     var od=_val(3);
     // rt-fix2 P0-A: 無条件全置換 (oddsData=od) をやめ単調性ガード付きマージへ
     if(od){ _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }
@@ -4352,6 +4368,8 @@ async function forceRefresh(){
       }
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
+    // 2026-06-29: 起動時点で締切超過なのに結果/払戻が欠けるレースをオンデマンド補完。
+    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(8);
     // F17: 全場の確定レースに対して予想 backfill
     if(typeof _backfillTodayPredictions === 'function') await _backfillTodayPredictions();   // PE-9
     // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完

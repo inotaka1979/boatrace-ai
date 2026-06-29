@@ -131,6 +131,8 @@ REST_ANCHORS = {
     'checkHit', '_stackedPredict', 'calcEV', '_runLazyBackfillOnce',
     '_scheduleLazyBackfill', 'getOddsForRace', 'calcPopularity',
     'boatBadge', 'predictRaceProgram',
+    # 2026-06-29: レース結果オンデマンド補完 (loadAllData/poll から呼ぶが rest に置く)
+    '_sweepMissingResults', '_loadResultLive', '_isResultIncomplete', '_mergeResultEntry',
 }
 
 

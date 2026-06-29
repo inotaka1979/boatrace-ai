@@ -169,6 +169,10 @@ step "X7 backtest engine tests" \
 step "history dedup tests" \
      "node scripts/tests/test_history_dedup.js"
 
+# 15c) レース結果オンデマンド補完テスト (2026-06-29: 夜の結果/払戻停止の解消)
+step "result on-demand tests" \
+     "node scripts/tests/test_result_ondemand.js"
+
 # 16) F13 自己決まり手スコアテスト
 step "F13 self-style score tests" \
      "node scripts/tests/test_self_style.js"

@@ -1069,6 +1069,37 @@ export default {
         return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
       }
     }
+    // レース結果のオンデマンド取得 (2026-06-29)。
+    //   bulk /api/results は openapi ベース + cron 補完(20件/run・締切+360分窓)で、
+    //   GHA schedule 間引き + 無料枠上限により夜のナイター場の結果/払戻が「途中で止まる」。
+    //   閲覧中レース / 確定済なのに払戻欠落のレースを、クライアントから 1 レース単位で
+    //   その場 scrape する。既存 scrapeRaceresult を 1 件公開するだけ(着順+払戻を parse 済 JSON)。
+    if (url.pathname === '/result-proxy') {
+      const jcd = url.searchParams.get('jcd') || '';
+      const race = url.searchParams.get('race') || '';
+      const hd = url.searchParams.get('hd') || '';
+      if (!/^\d+$/.test(jcd) || !/^\d+$/.test(race) || !/^\d{8}$/.test(hd)) {
+        return new Response('bad params', { status: 400, headers: CORS });
+      }
+      const sidNum = parseInt(jcd);
+      if (sidNum < 1 || sidNum > 24) return new Response('bad sid', { status: 400, headers: CORS });
+      const raceDate = `${hd.slice(0, 4)}-${hd.slice(4, 6)}-${hd.slice(6, 8)}`;
+      try {
+        const parsed = await scrapeRaceresult(sidNum, parseInt(race), hd, raceDate);
+        // 着順未確定(結果ページがまだ無い/parse 不完全)は pending を返す。
+        //   クライアントは pending 時に tried フラグを解除して後で再取得する。
+        if (!parsed || parsed.race_technique_number == null) {
+          return new Response(JSON.stringify({ pending: true }), {
+            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS },
+          });
+        }
+        return new Response(JSON.stringify(parsed), {
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=30', ...CORS },
+        });
+      } catch (e) {
+        return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
+      }
+    }
     return new Response('boatrace-scrape-trigger (scrape-engine-v3)\n', { headers: CORS });
   },
 };

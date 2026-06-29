@@ -1601,6 +1601,97 @@ function _loadOrigExhibitionLive(sid,rno){
       }).catch(function(){ _retry(); });
   }catch(e){}
 }
+// === レース結果のオンデマンド取得 (2026-06-29) ===
+//   bulk /api/results (openapi ベース + cron 補完) は GHA schedule 間引き + 無料枠
+//   (20件/run・締切+360分窓) で夜のナイター場が処理しきれず、結果/払戻が「途中で
+//   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
+var _resLiveTried={};
+// 結果が「未確定」または「確定済だが3連単払戻が空」なら補完対象。
+function _isResultIncomplete(res){
+  if(!res || !res.isFinished || !res.results || !res.results.length) return true;
+  var rf=res.refund||{};
+  return !(Array.isArray(rf.trifecta) && rf.trifecta.length>0);
+}
+// 既存 entry を新 entry で更新。新が払戻を持たず既存が持つ種別は退行させない。
+function _mergeResultEntry(oldR, newR){
+  if(!oldR) return newR;
+  if(!newR) return oldR;
+  var orf=oldR.refund||{}, nrf=newR.refund||{};
+  var types=['trifecta','trio','exacta','quinella','quinella_place','win','place'];
+  var merged={};
+  for(var i=0;i<types.length;i++){
+    var k=types[i], na=nrf[k], oa=orf[k];
+    if(Array.isArray(na)&&na.length>0) merged[k]=na;
+    else if(Array.isArray(oa)&&oa.length>0) merged[k]=oa;
+    else merged[k]=na||oa||[];
+  }
+  newR.refund=merged; newR.payouts=merged;
+  return newR;
+}
+function _loadResultLive(sid,rno){
+  try{
+    sid=parseInt(sid); rno=parseInt(rno);
+    if(!(sid>=1&&rno>=1)) return;
+    var key=sid+'-'+rno;
+    if(_resLiveTried[key]) return; _resLiveTried[key]=true;
+    var hd=(typeof todayStr==='function')?todayStr():'';
+    if(!/^\d{8}$/.test(hd)) return;
+    var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
+    if(!base || typeof indexResults!=='function') return;
+    var _retry=function(){ _resLiveTried[key]=false; };
+    fetch(base+'/result-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(obj){
+        if(!obj || obj.pending || obj.race_technique_number==null){ _retry(); return; }
+        var idx=indexResults({results:[obj]});
+        var rr=idx&&idx[sid]&&idx[sid][rno];
+        if(!rr||!rr.isFinished){ _retry(); return; }
+        if(!resultData) resultData={};
+        if(!resultData[sid]) resultData[sid]={};
+        var prev=resultData[sid][rno];
+        var beforeFin=!!(prev&&prev.isFinished);
+        var beforePay=!!(prev&&prev.refund&&Array.isArray(prev.refund.trifecta)&&prev.refund.trifecta.length>0);
+        resultData[sid][rno]=_mergeResultEntry(prev, rr);
+        var cur=resultData[sid][rno];
+        var afterPay=!!(cur.refund&&Array.isArray(cur.refund.trifecta)&&cur.refund.trifecta.length>0);
+        // 着順は出たが払戻未掲載 → ガード解除して後の sweep で払戻だけ取り直す
+        if(!afterPay) _retry();
+        try{ if(programData && typeof updateDBFromResults==='function') updateDBFromResults(resultData, programData); }catch(e){}
+        try{ if(typeof updateHistoryWithResults==='function') updateHistoryWithResults(); }catch(e){}
+        // 実際に改善した時(新規確定 or 払戻新着)だけ閲覧中レースを再描画
+        var improved=(cur.isFinished&&!beforeFin)||(afterPay&&!beforePay);
+        if(improved && String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
+          openRace(sid,rno);
+        }
+      }).catch(function(){ _retry(); });
+  }catch(e){}
+}
+// 締切を過ぎたのに結果/払戻が欠けるレースを古い順に最大 N 件だけオンデマンド補完。
+//   bulk が止まっても背景で backlog を drain する。1 回 N 件に絞り CF CPU/サブリクエストを抑える。
+function _sweepMissingResults(maxN){
+  try{
+    if(!programData) return;
+    maxN=maxN||6;
+    var now=Date.now();
+    var cands=[];
+    for(var sid in programData){
+      var st=programData[sid];
+      for(var rn in st){
+        var p=st[rn], closed=p&&p.race_closed_at;
+        if(!closed) continue;
+        var m=/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(closed);
+        if(!m) continue;
+        var closeMs=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]);
+        if(now < closeMs+3*60000 || now > closeMs+360*60000) continue;  // 結果窓外
+        if(!_isResultIncomplete((resultData&&resultData[sid]&&resultData[sid][rn])||null)) continue;
+        if(_resLiveTried[parseInt(sid)+'-'+parseInt(rn)]) continue;
+        cands.push({sid:parseInt(sid),rno:parseInt(rn),closeMs:closeMs});
+      }
+    }
+    cands.sort(function(a,b){return a.closeMs-b.closeMs;});   // 古い順 = 確定済の確率が高い
+    for(var i=0;i<cands.length && i<maxN;i++) _loadResultLive(cands[i].sid, cands[i].rno);
+  }catch(e){}
+}
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
@@ -2116,6 +2207,8 @@ async function forceRefresh(){
       }
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
+    // 2026-06-29: 起動時点で締切超過なのに結果/払戻が欠けるレースをオンデマンド補完。
+    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(8);
     // F17: 全場の確定レースに対して予想 backfill
     if(typeof _backfillTodayPredictions === 'function') await _backfillTodayPredictions();   // PE-9
     // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
@@ -8213,6 +8306,18 @@ async function _loadNextOpen(){
     currentStadium = sid;
     currentRace = rn;
     if (typeof globalThis._loadOrigExhibitionLive === "function") globalThis._loadOrigExhibitionLive(sid, rn);
+    if (typeof globalThis._loadResultLive === "function" && typeof globalThis._isResultIncomplete === "function") {
+      var _rd = (globalThis.resultData || {})[sid] || {};
+      var _closed = programData && programData[sid] && programData[sid][rn] && programData[sid][rn].race_closed_at;
+      var _closedMs = 0;
+      if (_closed) {
+        var _m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(_closed);
+        if (_m) _closedMs = Date.UTC(+_m[1], +_m[2] - 1, +_m[3], +_m[4] - 9, +_m[5], +_m[6]);
+      }
+      if (_closedMs && Date.now() > _closedMs + 3 * 6e4 && globalThis._isResultIncomplete(_rd[rn] || null)) {
+        globalThis._loadResultLive(sid, rn);
+      }
+    }
     var name = STADIUMS[parseInt(sid)] || "\u5834" + sid;
     var race = programData[sid][rn];
     var closedAt = race ? race.race_closed_at || "" : "";
@@ -8235,11 +8340,11 @@ async function _loadNextOpen(){
           var _e = _h[_hi];
           if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
             var _liveMarkByBoat = {};
-            (pred && pred.marks ? pred.marks : []).forEach(function(_m) {
-              if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
+            (pred && pred.marks ? pred.marks : []).forEach(function(_m2) {
+              if (_m2 && _m2.boat) _liveMarkByBoat[_m2.boat] = _m2.mark;
             });
-            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m) {
-              return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || "" });
+            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m2) {
+              return Object.assign({}, _m2, { mark: _m2.mark || _liveMarkByBoat[_m2.boat] || "" });
             });
             pred = {
               marks: _snapMarks,
@@ -10491,6 +10596,9 @@ setManagedInterval(async function(){
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
+    // 2026-06-29: bulk results が間引き/無料枠で夜に止まっても、締切超過で結果/払戻が
+    //   欠けるレースを古い順に最大6件オンデマンド補完(背景で backlog を drain)。
+    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(6);
     var od=_val(3);
     // rt-fix2 P0-A: 無条件全置換 (oddsData=od) をやめ単調性ガード付きマージへ
     if(od){ _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }
