@@ -1,0 +1,138 @@
+var raceDate = 0;
+var raceOdds = 0;
+var raceNo = 0;
+
+function reloadAll(race) {
+	if ( race == null ) {
+		race = raceNo;
+	}
+	raceNo = race;
+
+	$.ajax({
+		type: "POST",
+		url: "race_common/require/kaisai_reload.php",
+		data: {'race':raceNo,'date':raceDate},
+		success:function(response){
+			var dt = response.split("####");
+			$('#list_chart_01').html(dt[0]); //選手データ　今節成績
+			$('#list_chart_02').html(dt[1]); //モーターボート情報
+			$('#list_chart_03').html(dt[2]); //全国成績過去3節
+			$('#list_chart_04').html(dt[3]); //当地成績過去3節
+			$('#list_yosou_01').html(dt[4]); //選手コメント
+			$('#list_yosou_02').html(dt[5]); //予想
+			$('#list_start_01').html(dt[6]); //直前情報
+			$('#list_start_02').html(dt[7]); //スタート展示
+			$('#list_start_03').html(dt[8]); //周回タイム
+			$('#list_wakuban_01').html(dt[9]); //枠番別・過去10走
+			$('#list_tokuten_01').html(dt[10]); //得点率早見
+			$('#list_odds_01').html(dt[11]); //3連単
+			$('#list_odds_02').html(dt[12]); //2連単・2連複
+			$('#list_odds_03').html(dt[13]); //3連複・拡連複・単勝・複勝
+			$('#list_odds_04').html(dt[14]); //人気・高配当ランキング
+			$('#list_result_01').html(dt[15]); //結果
+			result_flg = dt[41];
+
+			interview_flg = dt[42]; //interviewボタン
+			$('#tenki').html(dt[43]);
+			$('#sio').html(dt[44]);
+			$('.selectday').html(dt[46]);
+			$('#title_week').html(dt[47]);
+
+			if(interview_flg){
+				$('.interview_off').css('display', 'none');
+				$('.interview_on').css('display', 'block');
+			}
+
+			if (result_flg == 1) { //レース結果表示
+				$('#kaisai_odds').css('display', 'none');
+				$('#kaisai_result').css('display', 'block');
+				$('#btn_odds').css('display', 'none');
+				$('#btn_result').css('display', 'flex');
+				raceOdds = 0;
+			} else { //オッズ表示
+				$('#kaisai_odds').css('display', 'block');
+				$('#kaisai_result').css('display', 'none');
+				$('#btn_odds').css('display', 'flex');
+				$('#btn_result').css('display', 'none');
+			}
+
+		}
+	});
+}
+
+function selectday() {
+	var val = $('[name=select1]').val();
+	raceDate = val;
+	reloadAll(raceNo);
+	$("#yosou_pdf").attr("href", "http://www.boatrace-miyajima.com/yosou/pdf.php?date=" + val);
+}
+
+function racelive() {
+	$.ajax({
+		type: "POST",
+		url: "race_common/require/kaisai_racelive.php",
+		success:function(response){
+			jQuery('.racelive').html(response);
+		}
+	});
+}
+
+function racelive_youtube(no) {
+	$.ajax({
+		type: "POST",
+		url: "race_common/require/kaisai_racelive_youtube.php",
+		data: {'no':no},
+		success:function(response){
+			for (var i=1; i<5; i++) {
+				jQuery('.angle_'+i).removeClass('active');
+			}
+			jQuery('.spr_tab_content2').html(response);
+			jQuery('.angle_'+no).addClass('active');
+		}
+	});
+}
+
+function marquee() {
+	var flg = 1;
+	$.ajax({
+		type: "POST",
+		url: "pages_php/marquee.php",
+		data: {'top':flg},
+		success:function(response){
+			$('.marquee').html(response);
+		}
+	});
+}
+
+//画面読み込み時、実行
+window.onload = function(){
+	reloadAll(raceNo);
+	racelive();
+	racelive_youtube(1);
+	marquee();
+}
+
+//定期更新
+setInterval(function(){
+
+var now = new Date();
+var h = now.getHours();
+var mi = now.getMinutes();
+var hh = ('0' + h).slice(-2);
+var mmi = ('0' + mi).slice(-2);
+var hmi = h + mmi;
+
+Number(hmi);
+
+
+if ( hmi >= 1209 && hmi <= 1213 ) {
+} else if ( hmi >= 1605 && hmi <= 1609 ) {
+} else if ( hmi >= 1647 && hmi <= 1651 ) {
+} else {
+	reloadAll(raceNo);
+}
+
+marquee();
+
+},120000);
+
