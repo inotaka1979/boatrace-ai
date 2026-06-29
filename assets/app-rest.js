@@ -4,6 +4,107 @@
 // window.load 後に lazy load される (assets/app-rest-stats.js は別 sub-chunk)
 'use strict';
 
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_program.js
+  function predictRaceProgram(sid, raceNum) {
+    if (!programData) return null;
+    var stadiumProg = programData[String(sid)];
+    if (!stadiumProg) return null;
+    var race = stadiumProg[String(raceNum)];
+    if (!race || !race.boats) return null;
+    var boats = race.boats;
+    if (!Array.isArray(boats)) return null;
+    var predictedEntries = predictEntryCourses(boats, sid);
+    var l1scores = [];
+    boats.forEach(function(b) {
+      var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries, raceNum);
+      l1scores.push(s);
+    });
+    var l1total = l1scores.reduce(function(a, s) {
+      return a + Math.exp(s.score / 15);
+    }, 0);
+    var l1probs = l1scores.map(function(s) {
+      return Math.exp(s.score / 15) / l1total;
+    });
+    var features6 = boats.map(function(b) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
+    });
+    var l2probs = l2Predict(features6);
+    var dbSize = Object.keys(racerDB).length;
+    var alpha = 600 / (600 + dbSize);
+    var beta = 1 - alpha;
+    var finalProbs = boats.map(function(b, i) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      var idx = boats.indexOf(b);
+      var fp = alpha * l1probs[idx] + beta * l2probs[idx];
+      return {
+        boat: b.racer_boat_number,
+        prob: fp,
+        score: l1s.score,
+        course: l1s.course,
+        reasons: l1s.reasons,
+        risks: l1s.risks,
+        motorLabel: l1s.motorLabel,
+        motorEmoji: l1s.motorEmoji,
+        motorRate: l1s.motorRate,
+        classNum: l1s.classNum
+      };
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    finalProbs.forEach(function(p) {
+      var l1 = l1scores.find(function(s) {
+        return s.boat === p.boat;
+      });
+      var fc = l1 ? l1.fc || 0 : 0;
+      var lc = l1 ? l1.lc || 0 : 0;
+      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
+      p.prob *= mult;
+    });
+    var _sum2 = finalProbs.reduce(function(a, p) {
+      return a + p.prob;
+    }, 0);
+    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
+      finalProbs.forEach(function(p) {
+        p.prob = p.prob / _sum2;
+      });
+    }
+    finalProbs.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    finalProbs.forEach(function(p, i) {
+      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
+    });
+    var topProb = finalProbs[0].prob;
+    var top2Prob = finalProbs[0].prob + finalProbs[1].prob;
+    var raceType, typeLabel;
+    var RT2 = TUNING.RACE_TYPE;
+    if (topProb > RT2.HONMEI_TOP1_MIN && top2Prob > RT2.HONMEI_TOP2_MIN) {
+      raceType = "honmei";
+      typeLabel = "\u672C\u547D";
+    } else if (topProb < RT2.ANA_TOP1_MAX) {
+      raceType = "ana";
+      typeLabel = "\u7A74";
+    } else {
+      raceType = "middle";
+      typeLabel = "\u6DF7\u6226";
+    }
+    return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
+  }
+  globalThis.predictRaceProgram = predictRaceProgram;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
+
+
 /* BUILD:ANALYSIS_CALIBRATION:START */
 "use strict";
 (() => {
@@ -292,6 +393,613 @@
 })();
 
 /* BUILD:ANALYSIS_CALIBRATION:END */
+
+
+/* BUILD:ANALYSIS_L2_FEATURES:START */
+"use strict";
+(() => {
+  // ../src/analysis/l2_features.js
+  function _computeClassAttenuation(allBoats) {
+    if (!Array.isArray(allBoats) || !allBoats.length) return 1;
+    var avgClass = 0;
+    allBoats.forEach(function(b) {
+      avgClass += b && b.racer_class_number || 3;
+    });
+    avgClass /= allBoats.length;
+    if (avgClass >= 3.5) return 0.55;
+    if (avgClass >= 3) return 0.7;
+    if (avgClass >= 2.5) return 0.85;
+    return 1;
+  }
+  function _classCourseMult(classNum, course) {
+    var c = classNum || 3, k = course || 3;
+    if (c < 1) c = 1;
+    if (c > 4) c = 4;
+    if (k < 1) k = 1;
+    if (k > 6) k = 6;
+    return CLASS_COURSE_MULT[k - 1][c - 1];
+  }
+  function _computeRaceScenario(allBoats, allPreviews, sid, raceHour) {
+    if (!Array.isArray(allBoats)) return null;
+    var attackProbs = [0, 0, 0, 0, 0, 0, 0];
+    for (var c = 2; c <= 6; c++) {
+      var bt = allBoats.find(function(b) {
+        return b.racer_boat_number === c;
+      });
+      if (!bt) {
+        attackProbs[c] = 0.1;
+        continue;
+      }
+      var rid = bt.racer_number || 0;
+      var style = getRacerCourseStyle(rid, c) || DEFAULT_COURSE_TECHNIQUE[c];
+      if (!style) {
+        attackProbs[c] = 0.08;
+        continue;
+      }
+      var total = (style.nige || 0) + (style.sashi || 0) + (style.makuri || 0) + (style.makuriSashi || 0) + (style.nuki || 0) + (style.megumare || 0);
+      if (total < 3) {
+        attackProbs[c] = 0.08;
+        continue;
+      }
+      var sashiRate = (style.sashi || 0) / total;
+      var makuriComboRate = ((style.makuri || 0) + (style.makuriSashi || 0)) / total;
+      var threat = c === 2 ? sashiRate * 0.7 + makuriComboRate * 0.4 : c === 3 ? makuriComboRate * 0.6 + sashiRate * 0.3 : makuriComboRate * 0.5;
+      if (threat < 0.02) threat = 0.02;
+      if (threat > 0.55) threat = 0.55;
+      attackProbs[c] = threat;
+    }
+    if (sid != null && raceHour != null && typeof tideData !== "undefined" && tideData && tideData.stadiums) {
+      var tideEntry = tideData.stadiums[String(sid)];
+      if (tideEntry && typeof classifyTidePhase === "function") {
+        var phase = classifyTidePhase(tideEntry, raceHour);
+        var outsideMakuriFactor = phase === "high" ? 0.85 : phase === "low" ? 1.15 : 1;
+        if (outsideMakuriFactor !== 1) {
+          for (var k = 4; k <= 6; k++) {
+            attackProbs[k] *= outsideMakuriFactor;
+            if (attackProbs[k] < 0.02) attackProbs[k] = 0.02;
+            if (attackProbs[k] > 0.55) attackProbs[k] = 0.55;
+          }
+        }
+      }
+    }
+    var nigeSuccess = 1;
+    for (var i = 2; i <= 6; i++) nigeSuccess *= 1 - attackProbs[i];
+    if (nigeSuccess < 0.02) nigeSuccess = 0.02;
+    if (nigeSuccess > 0.95) nigeSuccess = 0.95;
+    return { nigeSuccess, attackProbs };
+  }
+  function _resolveCourse(boat, preview, predictedEntries) {
+    var bn = boat.racer_boat_number;
+    if (preview && preview.racer_course_number != null) {
+      return { course: preview.racer_course_number, entryConf: 1, source: "preview" };
+    }
+    if (predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]) {
+      return {
+        course: predictedEntries.byBoat[bn],
+        entryConf: predictedEntries.conf[bn] || 0.5,
+        source: "predicted"
+      };
+    }
+    return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
+  }
+  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
+    var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
+    var rid = boat.racer_number || 0;
+    var racerCWR = getRacerCourseWinRate(rid, course);
+    var stadCWR = getStadiumCourseWinRate(String(sid), course);
+    var myPv = preview || {};
+    var st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
+    var tilt = pf(myPv.racer_tilt_adjustment);
+    var windCourse = 0;
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
+      var isHead = wd >= 7 && wd <= 11;
+      if (isHead && course === 1) windCourse = -ws / 10;
+      else if (isHead && course >= 4) windCourse = ws / 20;
+    }
+    var etComp = 0;
+    if (etRank <= 1 && st > 0 && st <= 0.1) etComp = 1;
+    else if (etRank >= 4 && st >= 0.15) etComp = -1;
+    var formScore = 0;
+    var form = getRacerForm(rid);
+    if (form) formScore = form.score / 10;
+    var tiltAlign = 0;
+    if (course <= 2 && tilt <= -0.5) tiltAlign = 1;
+    else if (course >= 4 && tilt >= 0.5) tiltAlign = 1;
+    else if (course <= 2 && tilt >= 0.5 || course >= 4 && tilt <= -0.5) tiltAlign = -1;
+    return [
+      pf(boat.racer_national_top_1_percent) / 10,
+      pf(boat.racer_assigned_motor_top_2_percent) / 100,
+      (etRank + 1) / 6,
+      course / 6,
+      (boat.racer_class_number || 3) / 4,
+      windCourse,
+      racerCWR || pf(boat.racer_national_top_1_percent) / 100,
+      (stRank + 1) / 6,
+      etComp,
+      formScore,
+      tiltAlign,
+      stadCWR
+    ];
+  }
+  function l2Predict(features6) {
+    var enableZ = TUNING.PREDICTION.ENABLE_ZSCORE;
+    var warmupOk = enableZ && _featureStats.n >= TUNING.PREDICTION.ZSCORE_WARMUP_N;
+    var w = l2weights;
+    var wlen = w.length;
+    var prior = COURSE_LOG_PRIOR;
+    var bias = L2_BIAS;
+    var logits = new Array(6);
+    for (var b = 0; b < 6; b++) {
+      var feat = features6[b];
+      if (warmupOk) feat = _normalizeFeatures(feat);
+      var z = bias + (prior[b] || 0);
+      for (var i = 0; i < wlen; i++) {
+        var fi = feat[i];
+        if (fi) z += fi * (w[i] || 0);
+      }
+      logits[b] = z;
+    }
+    return softmax(logits);
+  }
+  function l2Update(features6, winnerIdx) {
+    var probs = l2Predict(features6);
+    var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
+    for (var b = 0; b < 6; b++) {
+      var target = b === winnerIdx ? 1 : 0;
+      var err = probs[b] - target;
+      for (var i = 0; i < l2weights.length; i++) {
+        var grad = err * (features6[b][i] || 0) + L2_LAMBDA * l2weights[i];
+        l2weights[i] -= lr * grad;
+      }
+      _updateFeatureStats(features6[b]);
+    }
+    l2trainStep += 1;
+    safeSet("boatrace_weights", l2weights);
+    safeSet("boatrace_trainstep", l2trainStep);
+    if (l2trainStep % 50 === 0) safeSet("boatrace_featurestats", _featureStats);
+  }
+  globalThis._computeClassAttenuation = _computeClassAttenuation;
+  globalThis._classCourseMult = _classCourseMult;
+  globalThis._computeRaceScenario = _computeRaceScenario;
+  globalThis._resolveCourse = _resolveCourse;
+  globalThis.getL2Features = getL2Features;
+  globalThis.l2Predict = l2Predict;
+  globalThis.l2Update = l2Update;
+})();
+
+/* BUILD:ANALYSIS_L2_FEATURES:END */
+
+
+/* BUILD:ANALYSIS_GBDT_RUNTIME:START */
+"use strict";
+(() => {
+  // ../src/analysis/gbdt_runtime.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  function _traverseTree(tree, features) {
+    if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) return 0;
+    let idx = 0;
+    for (let depth = 0; depth < 64; depth++) {
+      const node = tree.nodes[idx];
+      if (!node) return 0;
+      if (typeof node.value === "number" && Number.isFinite(node.value)) {
+        return node.value;
+      }
+      if (typeof node.feat !== "number" || typeof node.thr !== "number") return 0;
+      const fv = features[node.feat];
+      const fvNum = Number.isFinite(fv) ? fv : 0;
+      idx = fvNum <= node.thr ? node.left || 0 : node.right || 0;
+      if (idx <= 0 || idx >= tree.nodes.length) return 0;
+    }
+    return 0;
+  }
+  function gbdtPredictLogits(model, features) {
+    if (!model || !Array.isArray(model.trees)) return [0, 0, 0, 0, 0, 0];
+    const lr = Number.isFinite(model.learning_rate) ? model.learning_rate : 0.1;
+    const nClasses = model.n_classes || 6;
+    const logits = new Array(nClasses).fill(0);
+    for (let t = 0; t < model.trees.length; t++) {
+      const tree = model.trees[t];
+      if (!tree || typeof tree.class !== "number") continue;
+      if (tree.class < 0 || tree.class >= nClasses) continue;
+      logits[tree.class] += lr * _traverseTree(tree, features);
+    }
+    return logits;
+  }
+  function _blendGBDTPrediction(currentLogits, features6, weight) {
+    const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
+    if (!enabled) return currentLogits;
+    const model = _g._gbdtModel;
+    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
+    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
+    const w = Number.isFinite(weight) ? weight : 0.3;
+    const out = currentLogits.slice();
+    for (let b = 0; b < out.length && b < 6; b++) {
+      const gbdtLogits = gbdtPredictLogits(model, features6[b] || []);
+      const gbdtSelf = gbdtLogits[b] || 0;
+      out[b] = (1 - w) * out[b] + w * gbdtSelf;
+    }
+    return out;
+  }
+  _g._traverseTree = _traverseTree;
+  _g.gbdtPredictLogits = gbdtPredictLogits;
+  _g._blendGBDTPrediction = _blendGBDTPrediction;
+})();
+
+/* BUILD:ANALYSIS_GBDT_RUNTIME:END */
+
+
+/* BUILD:ANALYSIS_SCORE_BOAT:START */
+"use strict";
+(() => {
+  // ../src/analysis/score_boat.js
+  function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries, rno) {
+    var score = 0;
+    var reasons = [];
+    var risks = [];
+    var bn = boat.racer_boat_number;
+    var resolved = _resolveCourse(boat, preview, predictedEntries);
+    var course = resolved.course;
+    var entryConf = resolved.entryConf;
+    if (resolved.source === "predicted" && course !== bn && entryConf >= 0.6) {
+      reasons.push("\u9032\u5165\u4E88\u60F3: " + bn + "\u67A0\u2192" + course + "\u30B3\u30FC\u30B9(" + (entryConf * 100).toFixed(0) + "%)");
+    }
+    var rid = boat.racer_number || 0;
+    var scwr = getStadiumCourseWinRate(String(sid), course);
+    var baseCoursePt = scwr * COURSE_MULTIPLIER;
+    var attn = _computeClassAttenuation(allBoats);
+    var classCM = _classCourseMult(boat.racer_class_number, course);
+    var coursePt;
+    if (resolved.source === "predicted" && course !== bn && entryConf > 0 && entryConf < 1) {
+      var scwrFrame = getStadiumCourseWinRate(String(sid), bn);
+      var classCMFrame = _classCourseMult(boat.racer_class_number, bn);
+      var ptPred = scwr * COURSE_MULTIPLIER * attn * classCM;
+      var ptFrame = scwrFrame * COURSE_MULTIPLIER * attn * classCMFrame;
+      coursePt = ptPred * entryConf + ptFrame * (1 - entryConf);
+    } else {
+      coursePt = baseCoursePt * attn * classCM;
+    }
+    score += coursePt;
+    if (course === 1 && allBoats) {
+      var _rh = null;
+      try {
+        if (typeof programData !== "undefined" && programData && programData[String(sid)]) {
+          var _races = programData[String(sid)];
+          var _firstKey = Object.keys(_races)[0];
+          var _ca = _firstKey ? _races[_firstKey].race_closed_at || "" : "";
+          if (_ca) {
+            var _hh = _ca.split(" ")[1] || "";
+            if (_hh) _rh = parseInt(_hh.split(":")[0], 10);
+          }
+        }
+      } catch (_) {
+      }
+      var sc = _computeRaceScenario(allBoats, allPreviews, sid, _rh);
+      if (sc && Number.isFinite(sc.nigeSuccess)) {
+        var lodd = Math.log(sc.nigeSuccess / (1 - sc.nigeSuccess));
+        score += lodd * 4;
+        if (sc.nigeSuccess >= 0.65) reasons.push("\u9003\u3052\u6210\u529F\u7387\u63A8\u5B9A " + Math.round(sc.nigeSuccess * 100) + "%");
+        else if (sc.nigeSuccess <= 0.35) risks.push("\u9003\u3052\u963B\u6B62\u30EA\u30B9\u30AF(" + Math.round((1 - sc.nigeSuccess) * 100) + "%)");
+      }
+    }
+    if (preview && preview.racer_course_number != null) {
+      if (bn > course) {
+        score += 3;
+        reasons.push("\u524D\u4ED8\u3051\u6210\u529F(" + bn + "\u2192" + course + "\u30B3\u30FC\u30B9)");
+      } else if (bn < course) {
+        score -= 2;
+        risks.push("\u62BC\u3057\u51FA\u3055\u308C(" + bn + "\u2192" + course + "\u30B3\u30FC\u30B9)");
+      }
+    }
+    if (course === 1) reasons.push(course + "\u30B3\u30FC\u30B9(\u5834\u52DD\u7387" + Math.round(scwr * 100) + "%)");
+    var racerCWR = getRacerCourseWinRate(rid, course);
+    if (racerCWR !== null) {
+      score += racerCWR * 25;
+      var rdb = racerDB[rid];
+      if (rdb && rdb.courseStats && rdb.courseStats[course]) {
+        var cs = rdb.courseStats[course];
+        score += cs.top3 / cs.races * 0.08 * 100;
+        if (racerCWR > 0.5 && course <= 2) reasons.push("\u30B3\u30FC\u30B9\u52251\u7740\u7387" + Math.round(racerCWR * 100) + "%");
+      }
+    } else {
+      var wr = pf(boat.racer_national_top_1_percent);
+      score += wr * 2.5;
+      var lr = pf(boat.racer_local_top_2_percent);
+      score += lr * 0.15;
+    }
+    var selfStyle = selfStyleScore(rid, course);
+    if (selfStyle.score !== 0) {
+      score += selfStyle.score;
+      if (selfStyle.reason) reasons.push(selfStyle.reason);
+      if (selfStyle.risk) risks.push(selfStyle.risk);
+    }
+    var classBonus = { 1: 6, 2: 3, 3: 0, 4: -3 };
+    score += classBonus[boat.racer_class_number] || 0;
+    if (allPreviews && allPreviews.boats) {
+      for (var ci = 1; ci <= 6; ci++) {
+        if (ci === bn) continue;
+        var cpv = allPreviews.boats[String(ci)];
+        var cCourse = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
+        var cBoat = allBoats.find(function(b) {
+          return b.racer_boat_number === ci;
+        });
+        if (!cBoat) continue;
+        var cRid = cBoat.racer_number || 0;
+        var style = getRacerCourseStyle(cRid, cCourse);
+        if (!style) {
+          style = DEFAULT_COURSE_TECHNIQUE[cCourse];
+        }
+        if (!style) continue;
+        var total = style.nige + style.sashi + style.makuri + style.makuriSashi + style.nuki + (style.megumare || 0);
+        if (total < 3) continue;
+        var sashiRate = style.sashi / total;
+        var makuriRate = style.makuri / total;
+        var makuriSashiRate = style.makuriSashi / total;
+        if (cCourse === 2 && course === 1) {
+          if (sashiRate > 0.5) {
+            score += 3;
+            reasons.push("2\u30B3\u30FC\u30B9\u5DEE\u3057\u4E3B\u4F53\u2192\u9003\u3052\u6B8B\u308A\u3084\u3059\u3044");
+          } else if (makuriRate > 0.3) {
+            score -= 5;
+            risks.push("2\u30B3\u30FC\u30B9\u307E\u304F\u308A\u50BE\u5411(\u8105\u5A01)");
+          }
+        }
+        if (cCourse === 3) {
+          if (course === 1 && makuriRate > 0.3) {
+            score -= 3;
+            risks.push("3\u30B3\u30FC\u30B9\u307E\u304F\u308A\u50BE\u5411");
+          }
+          if (course === 2 && makuriSashiRate > 0.3) {
+            score -= 4;
+          }
+          if (course === 1 && sashiRate > 0.4) score += 2;
+        }
+        if (cCourse === 4 && makuriRate > 0.3) {
+          if (course <= 3) score -= 3;
+        }
+        if (cCourse >= 5 && makuriRate > 0.4) {
+          if (course <= 2) score -= 2;
+        }
+      }
+    }
+    var motorRate = pf(boat.racer_assigned_motor_top_2_percent);
+    var motorEval = motorScoreNormalized(motorRate, sid);
+    score += motorEval.score;
+    var motorLabel = motorEval.label;
+    var motorEmoji = motorEval.emoji;
+    if (motorEval.label === "\u8D85\u629C")
+      reasons.push("\u8D85\u629C\u30E2\u30FC\u30BF\u30FC(" + motorRate + "%" + (motorEval.z != null ? " z=" + motorEval.z.toFixed(1) : "") + ")");
+    else if (motorEval.label === "\u6574\u5099\u8981") risks.push("\u30E2\u30FC\u30BF\u30FC\u4E0D\u8ABF(" + motorRate + "%)");
+    var boatRate = pf(boat.racer_assigned_boat_top_2_percent);
+    score += boatRate * 0.08;
+    var etRank = 5, etTime = 99;
+    if (allPreviews && allPreviews.boats) {
+      var times = [];
+      for (var ei = 1; ei <= 6; ei++) {
+        var epv = allPreviews.boats[String(ei)];
+        var etime = epv && epv.racer_exhibition_time != null && epv.racer_exhibition_time > 0 ? pf(epv.racer_exhibition_time) : 99;
+        times.push({ boat: ei, time: etime });
+      }
+      times.sort(function(a, b) {
+        return a.time - b.time;
+      });
+      etRank = times.findIndex(function(t) {
+        return t.boat === bn;
+      });
+      var myPv = allPreviews.boats[String(bn)];
+      etTime = myPv ? pf(myPv.racer_exhibition_time) : 99;
+      var bestTime = times[0].time;
+      var decay = ET_COURSE_DECAY[course] || 1;
+      var etBonus = 0;
+      if (etRank === 0) etBonus = 6;
+      else if (etRank === 1) etBonus = 4;
+      else if (etRank === 2) etBonus = 2;
+      else if (etRank >= 4) {
+        var diff = etTime - bestTime;
+        if (diff >= 0.08) etBonus = -5;
+        else if (diff >= 0.03) etBonus = -Math.round(diff * 60);
+      }
+      score += etBonus * decay;
+      if (etRank === 0) reasons.push("\u5C55\u793A\u30BF\u30A4\u30E0\u6700\u901F(" + etTime + "s)");
+      var ezAux = exhibitionZScore(etTime, sid);
+      if (ezAux !== 0) score += -ezAux * 2 * decay;
+      if (ezAux <= -1) reasons.push("\u5C55\u793A\u30BF\u30A4\u30E0\u5834\u76F8\u5BFE\u7684\u306B\u8D85\u901F(z=" + ezAux.toFixed(1) + ")");
+      var oeRace = ((typeof globalThis !== "undefined" && globalThis._origExhibIndex || {})[sid] || {})[rno] || null;
+      if (oeRace) {
+        var _oeRank = function(field) {
+          var arr = [];
+          for (var w in oeRace) {
+            var v = oeRace[w] && oeRace[w][field];
+            if (v > 0) arr.push({ w: parseInt(w, 10), v });
+          }
+          arr.sort(function(a, b) {
+            return a.v - b.v;
+          });
+          var rk = -1;
+          for (var i = 0; i < arr.length; i++) {
+            if (arr[i].w === bn) {
+              rk = i;
+              break;
+            }
+          }
+          return { rank: rk, n: arr.length };
+        };
+        var turnR = _oeRank("turn_time");
+        var lapR = _oeRank("lap_time");
+        if (turnR.n >= 4 && turnR.rank >= 0) {
+          var tb = turnR.rank === 0 ? 2.5 : turnR.rank === 1 ? 1.2 : turnR.rank >= turnR.n - 1 ? -1.5 : 0;
+          score += tb * decay;
+          if (turnR.rank === 0) reasons.push("\u307E\u308F\u308A\u8DB3\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+          else if (turnR.rank >= turnR.n - 1) risks.push("\u307E\u308F\u308A\u8DB3\u6700\u9045(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+        }
+        if (lapR.n >= 4 && lapR.rank >= 0) {
+          var lb = lapR.rank === 0 ? 1.5 : lapR.rank === 1 ? 0.8 : 0;
+          score += lb * decay;
+          if (lapR.rank === 0) reasons.push("\u4E00\u5468\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
+        }
+      }
+      if (myPv && myPv.racer_start_timing != null) {
+        var st = pf(myPv.racer_start_timing);
+        var absScore = st < 0 ? -6 : st <= 0.05 ? 4 : st <= 0.1 ? 2 : st >= 0.2 ? -2 : 0;
+        var perScore = stDivergenceScore(st, rid, course);
+        var stScore = Math.max(absScore, perScore);
+        score += stScore;
+        if (stScore >= 4) reasons.push("ST\u92ED\u3044(" + st + "s)");
+        else if (stScore <= -2 && st > 0) risks.push("ST\u51FA\u9045\u308C(" + st + "s)");
+        else if (st < 0) risks.push("F\u30B9\u30BF\u30FC\u30C8\u6C17\u5473(" + st + "s)");
+        if (etRank <= 1 && st > 0 && st <= 0.1) score += 3;
+        else if (etRank <= 1 && st > 0.15) score += 1;
+        else if (etRank >= 4 && st > 0 && st <= 0.1) score += 1;
+        else if (etRank >= 4 && st >= 0.15) score -= 3;
+        var tilt = pf(myPv.racer_tilt_adjustment);
+        if (course <= 2 && tilt <= -0.5) score += 2;
+        else if (course >= 4 && tilt >= 0.5) score += 2;
+        else if (course <= 2 && tilt >= 0.5) score -= 1;
+        else if (course >= 4 && tilt <= -0.5) score -= 1;
+        var adjW = pf(myPv.racer_adjust_weight);
+        if (adjW >= 1) {
+          if (course >= 4) {
+            score -= 3;
+            risks.push("\u8ABF\u6574\u91CD\u91CF+" + adjW.toFixed(1) + "kg(\u30A2\u30A6\u30C8\u4E0D\u5229)");
+          } else {
+            score -= 1;
+            risks.push("\u8ABF\u6574\u91CD\u91CF+" + adjW.toFixed(1) + "kg");
+          }
+        } else if (adjW >= 0.5) {
+          if (course >= 4) score -= 1;
+        }
+        var partsTxt = String(myPv.racer_parts_replaced || "");
+        if (partsTxt.indexOf("\u30DA\u30E9") >= 0) {
+          score -= 1;
+          risks.push("\u30EC\u30FC\u30B9\u76F4\u524D\u30DA\u30E9\u4EA4\u63DB(" + escText(partsTxt) + ")");
+        } else if (partsTxt) {
+          reasons.push("\u6574\u5099\u5B9F\u65BD: " + escText(partsTxt));
+        }
+      }
+      if (boat.racer_class_number === 1 && etRank >= 4) {
+        score -= 4;
+        risks.push("A1\u3060\u304C\u5C55\u793A\u4E0B\u4F4D(\u30E2\u30FC\u30BF\u30FC\u4E0D\u5B89)");
+      }
+      if ((boat.racer_class_number === 3 || boat.racer_class_number === 4) && etRank === 0) {
+        score += 3;
+        reasons.push("\u597D\u30E2\u30FC\u30BF\u30FC\u767A\u898B(\u5C55\u793A1\u4F4D)");
+      }
+      if (weather) {
+        var wt = weather.water_temperature || weather.race_water_temperature || 20;
+        if (wt <= 15) score += etBonus * 0.2 * decay;
+        else if (wt >= 25) score -= etBonus * 0.2 * decay;
+      }
+    }
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
+      var isHead = isHeadWind(wd, sid);
+      var isTail = isTailWind(wd, sid);
+      if (isHead && ws >= 5) {
+        if (course === 1) {
+          score -= 8;
+          risks.push("\u5411\u304B\u3044\u98A8" + ws + "m(\u30A4\u30F3\u4E0D\u5229)");
+        } else if (course === 2) score -= 3;
+        else if (course >= 4) score += 4;
+      } else if (isHead && ws >= 3) {
+        if (course === 1) score -= 4;
+        if (course >= 4) score += 2;
+      }
+      if (isTail && ws >= 3) {
+        if (course === 1) {
+          score += 4;
+          reasons.push("\u8FFD\u3044\u98A8" + ws + "m(\u30A4\u30F3\u6709\u5229)");
+        }
+        if (course >= 4) score -= 2;
+      }
+      var wh = weather.wave_height || weather.race_wave || 0;
+      if (wh >= 7 && course <= 2) {
+        score -= 4;
+        risks.push("\u6CE2\u9AD8" + wh + "cm(\u8352\u308C\u6A21\u69D8)");
+      } else if (wh >= 4 && course <= 2) score -= 2;
+      var stormDelta = stormBonus(ws, wh, course);
+      if (stormDelta !== 0) {
+        score += stormDelta;
+        if (stormDelta <= -4) risks.push("\u8352\u5929\u4EA4\u5DEE\u9805" + stormDelta);
+        else if (stormDelta >= 4) reasons.push("\u8352\u308C\u5C55\u958B\u3067\u6069\u6075+" + stormDelta);
+      }
+    }
+    if (preview && preview.race_closed_at) {
+      try {
+        var hour = parseInt(String(preview.race_closed_at).split(" ")[1].split(":")[0], 10);
+        var tideDelta = tideScore(sid, course, hour);
+        if (tideDelta !== 0) {
+          score += tideDelta;
+          if (tideDelta >= 4) reasons.push("\u6F6E\u4F4D\u304C\u30B3\u30FC\u30B9\u6709\u5229(+" + tideDelta + ")");
+          else if (tideDelta <= -4) risks.push("\u6F6E\u4F4D\u4E0D\u5229(" + tideDelta + ")");
+        }
+      } catch (_) {
+      }
+    }
+    var seriesAdj = seriesAdjustmentScore(rid, sid);
+    if (seriesAdj.score !== 0) {
+      score += seriesAdj.score;
+      if (seriesAdj.score >= 3) reasons.push("\u7BC0\u9593\u30E2\u30FC\u30BF\u30FC\u4E0A\u6607\u4E2D(slope+" + seriesAdj.slope.toFixed(1) + ")");
+      else if (seriesAdj.score <= -3) risks.push("\u7BC0\u9593\u30E2\u30FC\u30BF\u30FC\u4E0B\u964D\u4E2D(slope" + seriesAdj.slope.toFixed(1) + ")");
+    }
+    if (allBoats && allBoats.length > 0) {
+      var oppRids = allBoats.map(function(b) {
+        return b.racer_number;
+      }).filter(function(o) {
+        return o && o !== rid;
+      });
+      var pair = pairwiseScore(rid, sid, oppRids);
+      if (Math.abs(pair.score) >= 0.5) {
+        score += pair.score;
+        if (pair.score >= 1) reasons.push("\u5BFE\u6226\u76F8\u6027\u25CE(+" + pair.score.toFixed(1) + ", " + pair.hits + "\u4EF6)");
+        else if (pair.score <= -1) risks.push("\u5BFE\u6226\u76F8\u6027\xD7(" + pair.score.toFixed(1) + ", " + pair.hits + "\u4EF6)");
+      }
+    }
+    var fc = boat.racer_flying_count || 0;
+    var lc = boat.racer_late_start_count_in_current_term || boat.racer_late_count || 0;
+    if (fc >= 2) {
+      score -= 25;
+      risks.push("F2\u6301\u3061");
+    } else if (fc >= 1) {
+      score -= 15;
+      risks.push("F1\u6301\u3061");
+    }
+    if (lc >= 1) score -= 5;
+    var form = getRacerForm(rid);
+    if (form) {
+      score += form.score;
+      if (form.avg <= 2.5) reasons.push("\u597D\u8ABF(\u76F4\u8FD15R\u5E73\u5747" + form.avg.toFixed(1) + "\u7740)");
+      if (form.avg >= 4) risks.push("\u4E0D\u8ABF(\u76F4\u8FD15R\u5E73\u5747" + form.avg.toFixed(1) + "\u7740)");
+      if (form.trend > 0.5) reasons.push("\u4E0A\u308A\u8ABF\u5B50");
+      if (form.trend < -0.5) risks.push("\u4E0B\u308A\u8ABF\u5B50");
+    }
+    return {
+      boat: bn,
+      score: Math.max(0, score),
+      course,
+      etRank,
+      etTime,
+      reasons,
+      risks,
+      motorLabel,
+      motorEmoji,
+      motorRate,
+      boatRate,
+      form,
+      classNum: boat.racer_class_number,
+      fc,
+      lc
+      // P1-A4: F/L 確率乗数で使用
+    };
+  }
+  globalThis.scoreBoatV2 = scoreBoatV2;
+})();
+
+/* BUILD:ANALYSIS_SCORE_BOAT:END */
 
 
 /* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
@@ -875,714 +1583,6 @@
 /* BUILD:ANALYSIS_PREDICT_RACE:END */
 
 
-/* BUILD:ANALYSIS_SCORE_BOAT:START */
-"use strict";
-(() => {
-  // ../src/analysis/score_boat.js
-  function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries, rno) {
-    var score = 0;
-    var reasons = [];
-    var risks = [];
-    var bn = boat.racer_boat_number;
-    var resolved = _resolveCourse(boat, preview, predictedEntries);
-    var course = resolved.course;
-    var entryConf = resolved.entryConf;
-    if (resolved.source === "predicted" && course !== bn && entryConf >= 0.6) {
-      reasons.push("\u9032\u5165\u4E88\u60F3: " + bn + "\u67A0\u2192" + course + "\u30B3\u30FC\u30B9(" + (entryConf * 100).toFixed(0) + "%)");
-    }
-    var rid = boat.racer_number || 0;
-    var scwr = getStadiumCourseWinRate(String(sid), course);
-    var baseCoursePt = scwr * COURSE_MULTIPLIER;
-    var attn = _computeClassAttenuation(allBoats);
-    var classCM = _classCourseMult(boat.racer_class_number, course);
-    var coursePt;
-    if (resolved.source === "predicted" && course !== bn && entryConf > 0 && entryConf < 1) {
-      var scwrFrame = getStadiumCourseWinRate(String(sid), bn);
-      var classCMFrame = _classCourseMult(boat.racer_class_number, bn);
-      var ptPred = scwr * COURSE_MULTIPLIER * attn * classCM;
-      var ptFrame = scwrFrame * COURSE_MULTIPLIER * attn * classCMFrame;
-      coursePt = ptPred * entryConf + ptFrame * (1 - entryConf);
-    } else {
-      coursePt = baseCoursePt * attn * classCM;
-    }
-    score += coursePt;
-    if (course === 1 && allBoats) {
-      var _rh = null;
-      try {
-        if (typeof programData !== "undefined" && programData && programData[String(sid)]) {
-          var _races = programData[String(sid)];
-          var _firstKey = Object.keys(_races)[0];
-          var _ca = _firstKey ? _races[_firstKey].race_closed_at || "" : "";
-          if (_ca) {
-            var _hh = _ca.split(" ")[1] || "";
-            if (_hh) _rh = parseInt(_hh.split(":")[0], 10);
-          }
-        }
-      } catch (_) {
-      }
-      var sc = _computeRaceScenario(allBoats, allPreviews, sid, _rh);
-      if (sc && Number.isFinite(sc.nigeSuccess)) {
-        var lodd = Math.log(sc.nigeSuccess / (1 - sc.nigeSuccess));
-        score += lodd * 4;
-        if (sc.nigeSuccess >= 0.65) reasons.push("\u9003\u3052\u6210\u529F\u7387\u63A8\u5B9A " + Math.round(sc.nigeSuccess * 100) + "%");
-        else if (sc.nigeSuccess <= 0.35) risks.push("\u9003\u3052\u963B\u6B62\u30EA\u30B9\u30AF(" + Math.round((1 - sc.nigeSuccess) * 100) + "%)");
-      }
-    }
-    if (preview && preview.racer_course_number != null) {
-      if (bn > course) {
-        score += 3;
-        reasons.push("\u524D\u4ED8\u3051\u6210\u529F(" + bn + "\u2192" + course + "\u30B3\u30FC\u30B9)");
-      } else if (bn < course) {
-        score -= 2;
-        risks.push("\u62BC\u3057\u51FA\u3055\u308C(" + bn + "\u2192" + course + "\u30B3\u30FC\u30B9)");
-      }
-    }
-    if (course === 1) reasons.push(course + "\u30B3\u30FC\u30B9(\u5834\u52DD\u7387" + Math.round(scwr * 100) + "%)");
-    var racerCWR = getRacerCourseWinRate(rid, course);
-    if (racerCWR !== null) {
-      score += racerCWR * 25;
-      var rdb = racerDB[rid];
-      if (rdb && rdb.courseStats && rdb.courseStats[course]) {
-        var cs = rdb.courseStats[course];
-        score += cs.top3 / cs.races * 0.08 * 100;
-        if (racerCWR > 0.5 && course <= 2) reasons.push("\u30B3\u30FC\u30B9\u52251\u7740\u7387" + Math.round(racerCWR * 100) + "%");
-      }
-    } else {
-      var wr = pf(boat.racer_national_top_1_percent);
-      score += wr * 2.5;
-      var lr = pf(boat.racer_local_top_2_percent);
-      score += lr * 0.15;
-    }
-    var selfStyle = selfStyleScore(rid, course);
-    if (selfStyle.score !== 0) {
-      score += selfStyle.score;
-      if (selfStyle.reason) reasons.push(selfStyle.reason);
-      if (selfStyle.risk) risks.push(selfStyle.risk);
-    }
-    var classBonus = { 1: 6, 2: 3, 3: 0, 4: -3 };
-    score += classBonus[boat.racer_class_number] || 0;
-    if (allPreviews && allPreviews.boats) {
-      for (var ci = 1; ci <= 6; ci++) {
-        if (ci === bn) continue;
-        var cpv = allPreviews.boats[String(ci)];
-        var cCourse = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
-        var cBoat = allBoats.find(function(b) {
-          return b.racer_boat_number === ci;
-        });
-        if (!cBoat) continue;
-        var cRid = cBoat.racer_number || 0;
-        var style = getRacerCourseStyle(cRid, cCourse);
-        if (!style) {
-          style = DEFAULT_COURSE_TECHNIQUE[cCourse];
-        }
-        if (!style) continue;
-        var total = style.nige + style.sashi + style.makuri + style.makuriSashi + style.nuki + (style.megumare || 0);
-        if (total < 3) continue;
-        var sashiRate = style.sashi / total;
-        var makuriRate = style.makuri / total;
-        var makuriSashiRate = style.makuriSashi / total;
-        if (cCourse === 2 && course === 1) {
-          if (sashiRate > 0.5) {
-            score += 3;
-            reasons.push("2\u30B3\u30FC\u30B9\u5DEE\u3057\u4E3B\u4F53\u2192\u9003\u3052\u6B8B\u308A\u3084\u3059\u3044");
-          } else if (makuriRate > 0.3) {
-            score -= 5;
-            risks.push("2\u30B3\u30FC\u30B9\u307E\u304F\u308A\u50BE\u5411(\u8105\u5A01)");
-          }
-        }
-        if (cCourse === 3) {
-          if (course === 1 && makuriRate > 0.3) {
-            score -= 3;
-            risks.push("3\u30B3\u30FC\u30B9\u307E\u304F\u308A\u50BE\u5411");
-          }
-          if (course === 2 && makuriSashiRate > 0.3) {
-            score -= 4;
-          }
-          if (course === 1 && sashiRate > 0.4) score += 2;
-        }
-        if (cCourse === 4 && makuriRate > 0.3) {
-          if (course <= 3) score -= 3;
-        }
-        if (cCourse >= 5 && makuriRate > 0.4) {
-          if (course <= 2) score -= 2;
-        }
-      }
-    }
-    var motorRate = pf(boat.racer_assigned_motor_top_2_percent);
-    var motorEval = motorScoreNormalized(motorRate, sid);
-    score += motorEval.score;
-    var motorLabel = motorEval.label;
-    var motorEmoji = motorEval.emoji;
-    if (motorEval.label === "\u8D85\u629C")
-      reasons.push("\u8D85\u629C\u30E2\u30FC\u30BF\u30FC(" + motorRate + "%" + (motorEval.z != null ? " z=" + motorEval.z.toFixed(1) : "") + ")");
-    else if (motorEval.label === "\u6574\u5099\u8981") risks.push("\u30E2\u30FC\u30BF\u30FC\u4E0D\u8ABF(" + motorRate + "%)");
-    var boatRate = pf(boat.racer_assigned_boat_top_2_percent);
-    score += boatRate * 0.08;
-    var etRank = 5, etTime = 99;
-    if (allPreviews && allPreviews.boats) {
-      var times = [];
-      for (var ei = 1; ei <= 6; ei++) {
-        var epv = allPreviews.boats[String(ei)];
-        var etime = epv && epv.racer_exhibition_time != null && epv.racer_exhibition_time > 0 ? pf(epv.racer_exhibition_time) : 99;
-        times.push({ boat: ei, time: etime });
-      }
-      times.sort(function(a, b) {
-        return a.time - b.time;
-      });
-      etRank = times.findIndex(function(t) {
-        return t.boat === bn;
-      });
-      var myPv = allPreviews.boats[String(bn)];
-      etTime = myPv ? pf(myPv.racer_exhibition_time) : 99;
-      var bestTime = times[0].time;
-      var decay = ET_COURSE_DECAY[course] || 1;
-      var etBonus = 0;
-      if (etRank === 0) etBonus = 6;
-      else if (etRank === 1) etBonus = 4;
-      else if (etRank === 2) etBonus = 2;
-      else if (etRank >= 4) {
-        var diff = etTime - bestTime;
-        if (diff >= 0.08) etBonus = -5;
-        else if (diff >= 0.03) etBonus = -Math.round(diff * 60);
-      }
-      score += etBonus * decay;
-      if (etRank === 0) reasons.push("\u5C55\u793A\u30BF\u30A4\u30E0\u6700\u901F(" + etTime + "s)");
-      var ezAux = exhibitionZScore(etTime, sid);
-      if (ezAux !== 0) score += -ezAux * 2 * decay;
-      if (ezAux <= -1) reasons.push("\u5C55\u793A\u30BF\u30A4\u30E0\u5834\u76F8\u5BFE\u7684\u306B\u8D85\u901F(z=" + ezAux.toFixed(1) + ")");
-      var oeRace = ((typeof globalThis !== "undefined" && globalThis._origExhibIndex || {})[sid] || {})[rno] || null;
-      if (oeRace) {
-        var _oeRank = function(field) {
-          var arr = [];
-          for (var w in oeRace) {
-            var v = oeRace[w] && oeRace[w][field];
-            if (v > 0) arr.push({ w: parseInt(w, 10), v });
-          }
-          arr.sort(function(a, b) {
-            return a.v - b.v;
-          });
-          var rk = -1;
-          for (var i = 0; i < arr.length; i++) {
-            if (arr[i].w === bn) {
-              rk = i;
-              break;
-            }
-          }
-          return { rank: rk, n: arr.length };
-        };
-        var turnR = _oeRank("turn_time");
-        var lapR = _oeRank("lap_time");
-        if (turnR.n >= 4 && turnR.rank >= 0) {
-          var tb = turnR.rank === 0 ? 2.5 : turnR.rank === 1 ? 1.2 : turnR.rank >= turnR.n - 1 ? -1.5 : 0;
-          score += tb * decay;
-          if (turnR.rank === 0) reasons.push("\u307E\u308F\u308A\u8DB3\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
-          else if (turnR.rank >= turnR.n - 1) risks.push("\u307E\u308F\u308A\u8DB3\u6700\u9045(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
-        }
-        if (lapR.n >= 4 && lapR.rank >= 0) {
-          var lb = lapR.rank === 0 ? 1.5 : lapR.rank === 1 ? 0.8 : 0;
-          score += lb * decay;
-          if (lapR.rank === 0) reasons.push("\u4E00\u5468\u6700\u901F(\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A)");
-        }
-      }
-      if (myPv && myPv.racer_start_timing != null) {
-        var st = pf(myPv.racer_start_timing);
-        var absScore = st < 0 ? -6 : st <= 0.05 ? 4 : st <= 0.1 ? 2 : st >= 0.2 ? -2 : 0;
-        var perScore = stDivergenceScore(st, rid, course);
-        var stScore = Math.max(absScore, perScore);
-        score += stScore;
-        if (stScore >= 4) reasons.push("ST\u92ED\u3044(" + st + "s)");
-        else if (stScore <= -2 && st > 0) risks.push("ST\u51FA\u9045\u308C(" + st + "s)");
-        else if (st < 0) risks.push("F\u30B9\u30BF\u30FC\u30C8\u6C17\u5473(" + st + "s)");
-        if (etRank <= 1 && st > 0 && st <= 0.1) score += 3;
-        else if (etRank <= 1 && st > 0.15) score += 1;
-        else if (etRank >= 4 && st > 0 && st <= 0.1) score += 1;
-        else if (etRank >= 4 && st >= 0.15) score -= 3;
-        var tilt = pf(myPv.racer_tilt_adjustment);
-        if (course <= 2 && tilt <= -0.5) score += 2;
-        else if (course >= 4 && tilt >= 0.5) score += 2;
-        else if (course <= 2 && tilt >= 0.5) score -= 1;
-        else if (course >= 4 && tilt <= -0.5) score -= 1;
-        var adjW = pf(myPv.racer_adjust_weight);
-        if (adjW >= 1) {
-          if (course >= 4) {
-            score -= 3;
-            risks.push("\u8ABF\u6574\u91CD\u91CF+" + adjW.toFixed(1) + "kg(\u30A2\u30A6\u30C8\u4E0D\u5229)");
-          } else {
-            score -= 1;
-            risks.push("\u8ABF\u6574\u91CD\u91CF+" + adjW.toFixed(1) + "kg");
-          }
-        } else if (adjW >= 0.5) {
-          if (course >= 4) score -= 1;
-        }
-        var partsTxt = String(myPv.racer_parts_replaced || "");
-        if (partsTxt.indexOf("\u30DA\u30E9") >= 0) {
-          score -= 1;
-          risks.push("\u30EC\u30FC\u30B9\u76F4\u524D\u30DA\u30E9\u4EA4\u63DB(" + escText(partsTxt) + ")");
-        } else if (partsTxt) {
-          reasons.push("\u6574\u5099\u5B9F\u65BD: " + escText(partsTxt));
-        }
-      }
-      if (boat.racer_class_number === 1 && etRank >= 4) {
-        score -= 4;
-        risks.push("A1\u3060\u304C\u5C55\u793A\u4E0B\u4F4D(\u30E2\u30FC\u30BF\u30FC\u4E0D\u5B89)");
-      }
-      if ((boat.racer_class_number === 3 || boat.racer_class_number === 4) && etRank === 0) {
-        score += 3;
-        reasons.push("\u597D\u30E2\u30FC\u30BF\u30FC\u767A\u898B(\u5C55\u793A1\u4F4D)");
-      }
-      if (weather) {
-        var wt = weather.water_temperature || weather.race_water_temperature || 20;
-        if (wt <= 15) score += etBonus * 0.2 * decay;
-        else if (wt >= 25) score -= etBonus * 0.2 * decay;
-      }
-    }
-    if (weather) {
-      var ws = weather.wind_speed || weather.race_wind || 0;
-      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = isHeadWind(wd, sid);
-      var isTail = isTailWind(wd, sid);
-      if (isHead && ws >= 5) {
-        if (course === 1) {
-          score -= 8;
-          risks.push("\u5411\u304B\u3044\u98A8" + ws + "m(\u30A4\u30F3\u4E0D\u5229)");
-        } else if (course === 2) score -= 3;
-        else if (course >= 4) score += 4;
-      } else if (isHead && ws >= 3) {
-        if (course === 1) score -= 4;
-        if (course >= 4) score += 2;
-      }
-      if (isTail && ws >= 3) {
-        if (course === 1) {
-          score += 4;
-          reasons.push("\u8FFD\u3044\u98A8" + ws + "m(\u30A4\u30F3\u6709\u5229)");
-        }
-        if (course >= 4) score -= 2;
-      }
-      var wh = weather.wave_height || weather.race_wave || 0;
-      if (wh >= 7 && course <= 2) {
-        score -= 4;
-        risks.push("\u6CE2\u9AD8" + wh + "cm(\u8352\u308C\u6A21\u69D8)");
-      } else if (wh >= 4 && course <= 2) score -= 2;
-      var stormDelta = stormBonus(ws, wh, course);
-      if (stormDelta !== 0) {
-        score += stormDelta;
-        if (stormDelta <= -4) risks.push("\u8352\u5929\u4EA4\u5DEE\u9805" + stormDelta);
-        else if (stormDelta >= 4) reasons.push("\u8352\u308C\u5C55\u958B\u3067\u6069\u6075+" + stormDelta);
-      }
-    }
-    if (preview && preview.race_closed_at) {
-      try {
-        var hour = parseInt(String(preview.race_closed_at).split(" ")[1].split(":")[0], 10);
-        var tideDelta = tideScore(sid, course, hour);
-        if (tideDelta !== 0) {
-          score += tideDelta;
-          if (tideDelta >= 4) reasons.push("\u6F6E\u4F4D\u304C\u30B3\u30FC\u30B9\u6709\u5229(+" + tideDelta + ")");
-          else if (tideDelta <= -4) risks.push("\u6F6E\u4F4D\u4E0D\u5229(" + tideDelta + ")");
-        }
-      } catch (_) {
-      }
-    }
-    var seriesAdj = seriesAdjustmentScore(rid, sid);
-    if (seriesAdj.score !== 0) {
-      score += seriesAdj.score;
-      if (seriesAdj.score >= 3) reasons.push("\u7BC0\u9593\u30E2\u30FC\u30BF\u30FC\u4E0A\u6607\u4E2D(slope+" + seriesAdj.slope.toFixed(1) + ")");
-      else if (seriesAdj.score <= -3) risks.push("\u7BC0\u9593\u30E2\u30FC\u30BF\u30FC\u4E0B\u964D\u4E2D(slope" + seriesAdj.slope.toFixed(1) + ")");
-    }
-    if (allBoats && allBoats.length > 0) {
-      var oppRids = allBoats.map(function(b) {
-        return b.racer_number;
-      }).filter(function(o) {
-        return o && o !== rid;
-      });
-      var pair = pairwiseScore(rid, sid, oppRids);
-      if (Math.abs(pair.score) >= 0.5) {
-        score += pair.score;
-        if (pair.score >= 1) reasons.push("\u5BFE\u6226\u76F8\u6027\u25CE(+" + pair.score.toFixed(1) + ", " + pair.hits + "\u4EF6)");
-        else if (pair.score <= -1) risks.push("\u5BFE\u6226\u76F8\u6027\xD7(" + pair.score.toFixed(1) + ", " + pair.hits + "\u4EF6)");
-      }
-    }
-    var fc = boat.racer_flying_count || 0;
-    var lc = boat.racer_late_start_count_in_current_term || boat.racer_late_count || 0;
-    if (fc >= 2) {
-      score -= 25;
-      risks.push("F2\u6301\u3061");
-    } else if (fc >= 1) {
-      score -= 15;
-      risks.push("F1\u6301\u3061");
-    }
-    if (lc >= 1) score -= 5;
-    var form = getRacerForm(rid);
-    if (form) {
-      score += form.score;
-      if (form.avg <= 2.5) reasons.push("\u597D\u8ABF(\u76F4\u8FD15R\u5E73\u5747" + form.avg.toFixed(1) + "\u7740)");
-      if (form.avg >= 4) risks.push("\u4E0D\u8ABF(\u76F4\u8FD15R\u5E73\u5747" + form.avg.toFixed(1) + "\u7740)");
-      if (form.trend > 0.5) reasons.push("\u4E0A\u308A\u8ABF\u5B50");
-      if (form.trend < -0.5) risks.push("\u4E0B\u308A\u8ABF\u5B50");
-    }
-    return {
-      boat: bn,
-      score: Math.max(0, score),
-      course,
-      etRank,
-      etTime,
-      reasons,
-      risks,
-      motorLabel,
-      motorEmoji,
-      motorRate,
-      boatRate,
-      form,
-      classNum: boat.racer_class_number,
-      fc,
-      lc
-      // P1-A4: F/L 確率乗数で使用
-    };
-  }
-  globalThis.scoreBoatV2 = scoreBoatV2;
-})();
-
-/* BUILD:ANALYSIS_SCORE_BOAT:END */
-
-
-/* BUILD:ANALYSIS_GBDT_RUNTIME:START */
-"use strict";
-(() => {
-  // ../src/analysis/gbdt_runtime.js
-  var _g = (
-    /** @type {any} */
-    globalThis
-  );
-  function _traverseTree(tree, features) {
-    if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) return 0;
-    let idx = 0;
-    for (let depth = 0; depth < 64; depth++) {
-      const node = tree.nodes[idx];
-      if (!node) return 0;
-      if (typeof node.value === "number" && Number.isFinite(node.value)) {
-        return node.value;
-      }
-      if (typeof node.feat !== "number" || typeof node.thr !== "number") return 0;
-      const fv = features[node.feat];
-      const fvNum = Number.isFinite(fv) ? fv : 0;
-      idx = fvNum <= node.thr ? node.left || 0 : node.right || 0;
-      if (idx <= 0 || idx >= tree.nodes.length) return 0;
-    }
-    return 0;
-  }
-  function gbdtPredictLogits(model, features) {
-    if (!model || !Array.isArray(model.trees)) return [0, 0, 0, 0, 0, 0];
-    const lr = Number.isFinite(model.learning_rate) ? model.learning_rate : 0.1;
-    const nClasses = model.n_classes || 6;
-    const logits = new Array(nClasses).fill(0);
-    for (let t = 0; t < model.trees.length; t++) {
-      const tree = model.trees[t];
-      if (!tree || typeof tree.class !== "number") continue;
-      if (tree.class < 0 || tree.class >= nClasses) continue;
-      logits[tree.class] += lr * _traverseTree(tree, features);
-    }
-    return logits;
-  }
-  function _blendGBDTPrediction(currentLogits, features6, weight) {
-    const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
-    if (!enabled) return currentLogits;
-    const model = _g._gbdtModel;
-    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
-    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
-    const w = Number.isFinite(weight) ? weight : 0.3;
-    const out = currentLogits.slice();
-    for (let b = 0; b < out.length && b < 6; b++) {
-      const gbdtLogits = gbdtPredictLogits(model, features6[b] || []);
-      const gbdtSelf = gbdtLogits[b] || 0;
-      out[b] = (1 - w) * out[b] + w * gbdtSelf;
-    }
-    return out;
-  }
-  _g._traverseTree = _traverseTree;
-  _g.gbdtPredictLogits = gbdtPredictLogits;
-  _g._blendGBDTPrediction = _blendGBDTPrediction;
-})();
-
-/* BUILD:ANALYSIS_GBDT_RUNTIME:END */
-
-
-/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
-"use strict";
-(() => {
-  // ../src/analysis/predict_program.js
-  function predictRaceProgram(sid, raceNum) {
-    if (!programData) return null;
-    var stadiumProg = programData[String(sid)];
-    if (!stadiumProg) return null;
-    var race = stadiumProg[String(raceNum)];
-    if (!race || !race.boats) return null;
-    var boats = race.boats;
-    if (!Array.isArray(boats)) return null;
-    var predictedEntries = predictEntryCourses(boats, sid);
-    var l1scores = [];
-    boats.forEach(function(b) {
-      var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries, raceNum);
-      l1scores.push(s);
-    });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
-    }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
-    });
-    var features6 = boats.map(function(b) {
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
-    });
-    var l2probs = l2Predict(features6);
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 600 / (600 + dbSize);
-    var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      var idx = boats.indexOf(b);
-      var fp = alpha * l1probs[idx] + beta * l2probs[idx];
-      return {
-        boat: b.racer_boat_number,
-        prob: fp,
-        score: l1s.score,
-        course: l1s.course,
-        reasons: l1s.reasons,
-        risks: l1s.risks,
-        motorLabel: l1s.motorLabel,
-        motorEmoji: l1s.motorEmoji,
-        motorRate: l1s.motorRate,
-        classNum: l1s.classNum
-      };
-    });
-    finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
-      var l1 = l1scores.find(function(s) {
-        return s.boat === p.boat;
-      });
-      var fc = l1 ? l1.fc || 0 : 0;
-      var lc = l1 ? l1.lc || 0 : 0;
-      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
-      p.prob *= mult;
-    });
-    var _sum2 = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sum2;
-      });
-    }
-    finalProbs.sort(function(a, b) {
-      return b.prob - a.prob;
-    });
-    finalProbs.forEach(function(p, i) {
-      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
-    });
-    var topProb = finalProbs[0].prob;
-    var top2Prob = finalProbs[0].prob + finalProbs[1].prob;
-    var raceType, typeLabel;
-    var RT2 = TUNING.RACE_TYPE;
-    if (topProb > RT2.HONMEI_TOP1_MIN && top2Prob > RT2.HONMEI_TOP2_MIN) {
-      raceType = "honmei";
-      typeLabel = "\u672C\u547D";
-    } else if (topProb < RT2.ANA_TOP1_MAX) {
-      raceType = "ana";
-      typeLabel = "\u7A74";
-    } else {
-      raceType = "middle";
-      typeLabel = "\u6DF7\u6226";
-    }
-    return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
-  }
-  globalThis.predictRaceProgram = predictRaceProgram;
-})();
-
-/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
-
-
-/* BUILD:ANALYSIS_L2_FEATURES:START */
-"use strict";
-(() => {
-  // ../src/analysis/l2_features.js
-  function _computeClassAttenuation(allBoats) {
-    if (!Array.isArray(allBoats) || !allBoats.length) return 1;
-    var avgClass = 0;
-    allBoats.forEach(function(b) {
-      avgClass += b && b.racer_class_number || 3;
-    });
-    avgClass /= allBoats.length;
-    if (avgClass >= 3.5) return 0.55;
-    if (avgClass >= 3) return 0.7;
-    if (avgClass >= 2.5) return 0.85;
-    return 1;
-  }
-  function _classCourseMult(classNum, course) {
-    var c = classNum || 3, k = course || 3;
-    if (c < 1) c = 1;
-    if (c > 4) c = 4;
-    if (k < 1) k = 1;
-    if (k > 6) k = 6;
-    return CLASS_COURSE_MULT[k - 1][c - 1];
-  }
-  function _computeRaceScenario(allBoats, allPreviews, sid, raceHour) {
-    if (!Array.isArray(allBoats)) return null;
-    var attackProbs = [0, 0, 0, 0, 0, 0, 0];
-    for (var c = 2; c <= 6; c++) {
-      var bt = allBoats.find(function(b) {
-        return b.racer_boat_number === c;
-      });
-      if (!bt) {
-        attackProbs[c] = 0.1;
-        continue;
-      }
-      var rid = bt.racer_number || 0;
-      var style = getRacerCourseStyle(rid, c) || DEFAULT_COURSE_TECHNIQUE[c];
-      if (!style) {
-        attackProbs[c] = 0.08;
-        continue;
-      }
-      var total = (style.nige || 0) + (style.sashi || 0) + (style.makuri || 0) + (style.makuriSashi || 0) + (style.nuki || 0) + (style.megumare || 0);
-      if (total < 3) {
-        attackProbs[c] = 0.08;
-        continue;
-      }
-      var sashiRate = (style.sashi || 0) / total;
-      var makuriComboRate = ((style.makuri || 0) + (style.makuriSashi || 0)) / total;
-      var threat = c === 2 ? sashiRate * 0.7 + makuriComboRate * 0.4 : c === 3 ? makuriComboRate * 0.6 + sashiRate * 0.3 : makuriComboRate * 0.5;
-      if (threat < 0.02) threat = 0.02;
-      if (threat > 0.55) threat = 0.55;
-      attackProbs[c] = threat;
-    }
-    if (sid != null && raceHour != null && typeof tideData !== "undefined" && tideData && tideData.stadiums) {
-      var tideEntry = tideData.stadiums[String(sid)];
-      if (tideEntry && typeof classifyTidePhase === "function") {
-        var phase = classifyTidePhase(tideEntry, raceHour);
-        var outsideMakuriFactor = phase === "high" ? 0.85 : phase === "low" ? 1.15 : 1;
-        if (outsideMakuriFactor !== 1) {
-          for (var k = 4; k <= 6; k++) {
-            attackProbs[k] *= outsideMakuriFactor;
-            if (attackProbs[k] < 0.02) attackProbs[k] = 0.02;
-            if (attackProbs[k] > 0.55) attackProbs[k] = 0.55;
-          }
-        }
-      }
-    }
-    var nigeSuccess = 1;
-    for (var i = 2; i <= 6; i++) nigeSuccess *= 1 - attackProbs[i];
-    if (nigeSuccess < 0.02) nigeSuccess = 0.02;
-    if (nigeSuccess > 0.95) nigeSuccess = 0.95;
-    return { nigeSuccess, attackProbs };
-  }
-  function _resolveCourse(boat, preview, predictedEntries) {
-    var bn = boat.racer_boat_number;
-    if (preview && preview.racer_course_number != null) {
-      return { course: preview.racer_course_number, entryConf: 1, source: "preview" };
-    }
-    if (predictedEntries && predictedEntries.byBoat && predictedEntries.byBoat[bn]) {
-      return {
-        course: predictedEntries.byBoat[bn],
-        entryConf: predictedEntries.conf[bn] || 0.5,
-        source: "predicted"
-      };
-    }
-    return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
-  }
-  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
-    var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
-    var rid = boat.racer_number || 0;
-    var racerCWR = getRacerCourseWinRate(rid, course);
-    var stadCWR = getStadiumCourseWinRate(String(sid), course);
-    var myPv = preview || {};
-    var st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
-    var tilt = pf(myPv.racer_tilt_adjustment);
-    var windCourse = 0;
-    if (weather) {
-      var ws = weather.wind_speed || weather.race_wind || 0;
-      var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = wd >= 7 && wd <= 11;
-      if (isHead && course === 1) windCourse = -ws / 10;
-      else if (isHead && course >= 4) windCourse = ws / 20;
-    }
-    var etComp = 0;
-    if (etRank <= 1 && st > 0 && st <= 0.1) etComp = 1;
-    else if (etRank >= 4 && st >= 0.15) etComp = -1;
-    var formScore = 0;
-    var form = getRacerForm(rid);
-    if (form) formScore = form.score / 10;
-    var tiltAlign = 0;
-    if (course <= 2 && tilt <= -0.5) tiltAlign = 1;
-    else if (course >= 4 && tilt >= 0.5) tiltAlign = 1;
-    else if (course <= 2 && tilt >= 0.5 || course >= 4 && tilt <= -0.5) tiltAlign = -1;
-    return [
-      pf(boat.racer_national_top_1_percent) / 10,
-      pf(boat.racer_assigned_motor_top_2_percent) / 100,
-      (etRank + 1) / 6,
-      course / 6,
-      (boat.racer_class_number || 3) / 4,
-      windCourse,
-      racerCWR || pf(boat.racer_national_top_1_percent) / 100,
-      (stRank + 1) / 6,
-      etComp,
-      formScore,
-      tiltAlign,
-      stadCWR
-    ];
-  }
-  function l2Predict(features6) {
-    var enableZ = TUNING.PREDICTION.ENABLE_ZSCORE;
-    var warmupOk = enableZ && _featureStats.n >= TUNING.PREDICTION.ZSCORE_WARMUP_N;
-    var w = l2weights;
-    var wlen = w.length;
-    var prior = COURSE_LOG_PRIOR;
-    var bias = L2_BIAS;
-    var logits = new Array(6);
-    for (var b = 0; b < 6; b++) {
-      var feat = features6[b];
-      if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
-      for (var i = 0; i < wlen; i++) {
-        var fi = feat[i];
-        if (fi) z += fi * (w[i] || 0);
-      }
-      logits[b] = z;
-    }
-    return softmax(logits);
-  }
-  function l2Update(features6, winnerIdx) {
-    var probs = l2Predict(features6);
-    var lr = L2_LR0 / (1 + l2trainStep / L2_LR_TAU);
-    for (var b = 0; b < 6; b++) {
-      var target = b === winnerIdx ? 1 : 0;
-      var err = probs[b] - target;
-      for (var i = 0; i < l2weights.length; i++) {
-        var grad = err * (features6[b][i] || 0) + L2_LAMBDA * l2weights[i];
-        l2weights[i] -= lr * grad;
-      }
-      _updateFeatureStats(features6[b]);
-    }
-    l2trainStep += 1;
-    safeSet("boatrace_weights", l2weights);
-    safeSet("boatrace_trainstep", l2trainStep);
-    if (l2trainStep % 50 === 0) safeSet("boatrace_featurestats", _featureStats);
-  }
-  globalThis._computeClassAttenuation = _computeClassAttenuation;
-  globalThis._classCourseMult = _classCourseMult;
-  globalThis._computeRaceScenario = _computeRaceScenario;
-  globalThis._resolveCourse = _resolveCourse;
-  globalThis.getL2Features = getL2Features;
-  globalThis.l2Predict = l2Predict;
-  globalThis.l2Update = l2Update;
-})();
-
-/* BUILD:ANALYSIS_L2_FEATURES:END */
-
-
 function _parseOrigExhibitionHtml(html){
   try{
     var doc=new DOMParser().parseFromString(html,'text/html');
@@ -1660,6 +1660,39 @@ function _parseGamagoriRecomendHtml(html){
   }catch(e){ return null; }
 }
 
+function _parseSuminoeYoso(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var trs=target.querySelectorAll('tr'), head=null;
+    for(var r=0;r<trs.length;r++){
+      var ths=trs[r].querySelectorAll('th');
+      if(!ths.length) continue;
+      var labels=[]; for(var t=0;t<ths.length;t++) labels.push((ths[t].textContent||'').replace(/\s+/g,''));
+      if(labels.indexOf('枠')>=0){ head=labels; break; }
+    }
+    if(!head) return null;
+    var iEx=head.indexOf('展示'), iLap=head.indexOf('一周'), iTurn=head.indexOf('まわり足'), iStr=head.indexOf('直線');
+    if(iLap<0||iTurn<0) return null;
+    var bymap={};
+    for(var r2=0;r2<trs.length;r2++){
+      var first=trs[r2].querySelector('td'); if(!first) continue;
+      var m=/waku0*(\d+)/.exec(first.className||'');
+      if(!m) continue;
+      var waku=parseInt(m[1],10); if(!(waku>=1&&waku<=6)) continue;
+      var tds=trs[r2].querySelectorAll('td');
+      var v=function(n){var x=(n>=0&&n<tds.length)?parseFloat((tds[n].textContent||'').trim()):0; return (x>0)?x:0;};
+      bymap[waku]={racer_boat_number:waku,ex_time:v(iEx),lap_time:v(iLap),turn_time:v(iTurn),straight_time:v(iStr)};
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
+
 function _loadOrigExhibitionLive(sid,rno){
   try{
     sid=parseInt(sid); rno=parseInt(rno);
@@ -1678,7 +1711,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
