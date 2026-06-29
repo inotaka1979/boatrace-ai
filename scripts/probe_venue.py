@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""江戸川(3)・びわこ(11) のオリジナル展示の有無/データ経路を発見するプローブ。
+"""びわこ(11) のオリジナル展示(一周/まわり足/直線)のデータ経路と表構造を採取するプローブ。
 
-両者は platform C(桐生/福岡型)で登録されていたが、江戸川は独自CMS
-(/modules/yosou/cyokuzen.php?day=&race=)と判明。びわこも別構造の可能性が高い。
-- 江戸川: cyokuzen / cyokuzen_info モジュールにオリジナル展示(一周/まわり足/直線)が
-  あるか確認。
-- びわこ: top ページから直前モジュールの参照とパラメータ構造を抽出し、候補を叩く。
-確認後撤去。
+江戸川は非公開と確定(対応対象外)。びわこは存在が確認できたため、実装に必要な
+URL とテーブル構造(列順/クラス/値)をログと保存HTMLの両方で採取する。確認後撤去。
 """
 import os
 import re
@@ -18,6 +14,7 @@ from http_utils import fetch_bytes  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
+BASE = "https://www.boatrace-biwako.jp"
 KW = ("オリジナル展示", "一周", "半周", "まわり足", "直線", "周回", "展示タイム",
       "展示", "<table", "<th")
 
@@ -26,67 +23,81 @@ def _marks(txt):
     return " ".join(f"{m}={txt.count(m)}" for m in KW)
 
 
-def _ths(txt):
-    ths = [re.sub(r"<[^>]+>", "", t).strip()
-           for t in re.findall(r"<th[^>]*>.*?</th>", txt, re.S)]
-    return [t for t in ths if t][:16]
-
-
-def probe_modules(tag, base, hd):
-    """edogawa 系 CMS の /modules/yosou/{cyokuzen,cyokuzen_info}.php を叩く。"""
-    print(f"== {tag} /modules/yosou/*.php ==")
-    saved = set()
-    for mod in ("cyokuzen", "cyokuzen_info"):
-        for race in (1, 2, 3):
-            url = f"{base}/modules/yosou/{mod}.php?day={hd}&race={race}"
-            try:
-                raw = fetch_bytes(url, timeout=12, retries=1,
-                                  headers={"Referer": base + "/"})
-                txt = raw.decode("utf-8", errors="replace")
-                print(f"[{tag} {mod} R{race}] ({len(raw)}B) {_marks(txt)}")
-                print(f"    th={_ths(txt)}")
-                if mod not in saved and len(raw) > 300:
-                    p = os.path.join(OUTDIR, f"{tag}_{mod}_R{race:02d}.html")
-                    with open(p, "wb") as f:
-                        f.write(raw)
-                    print(f"    saved {p}")
-                    saved.add(mod)
-            except Exception as e:
-                print(f"[{tag} {mod} R{race}] FAIL: {str(e)[:70]}")
-
-
-def discover_top(tag, base):
-    """top を取得し、直前/オリジナル展示への参照(モジュール/ajax/php)を抽出。"""
-    print(f"== {tag} top discovery ==")
+def _dump_table(txt):
+    """一周/まわり足/直線 を含むテーブルの thead と先頭数行を吐く(構造把握用)。"""
     try:
-        raw = fetch_bytes(base + "/", timeout=12, retries=1,
-                          headers={"Referer": base + "/"})
-        txt = raw.decode("utf-8", errors="replace")
-        print(f"[{tag} top] ({len(raw)}B) {_marks(txt)}")
-        refs = re.findall(
-            r'''['"]([^'"<> ]*(?:modules|cyokuzen|tenji|yosou|ajax|周回)'''
-            r'''[^'"<> ]*)['"]''', txt)
-        for r in sorted(set(refs))[:40]:
-            print(f"    ref: {r}")
-        # iframe/ajax の param 構造(day=/race= 等)
-        for m in re.findall(r'["\'][^"\']*\.php["\']\s*\+\s*\n?[^;]{0,60}', txt):
-            print(f"    param: {re.sub(chr(9),'',m)[:90]}")
-        p = os.path.join(OUTDIR, f"{tag}_top.html")
-        with open(p, "wb") as f:
-            f.write(raw)
-        print(f"    saved {p}")
-    except Exception as e:
-        print(f"[{tag} top] FAIL: {str(e)[:70]}")
+        from bs4 import BeautifulSoup
+    except Exception:
+        return
+    soup = BeautifulSoup(txt, "html.parser")
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if ("まわり足" in t) and (("一周" in t) or ("半周" in t)):
+            ths = [th.get_text(strip=True) for th in tbl.find_all("th")]
+            print(f"      THEAD: {ths}")
+            for i, row in enumerate(tbl.find_all("tr")[:8]):
+                tds = []
+                for td in row.find_all("td"):
+                    cls = "/".join(td.get("class") or [])
+                    tds.append(f"{cls}:{td.get_text(strip=True)}")
+                if tds:
+                    print(f"      row{i}: {tds[:10]}")
+            return True
+    return False
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    # 江戸川: モジュール確認
-    probe_modules("edogawa", "https://www.boatrace-edogawa.com", hd)
-    # びわこ: まず構造発見 → edogawa 系なら同じモジュールも試す
-    discover_top("biwako", "https://www.boatrace-biwako.jp")
-    probe_modules("biwako", "https://www.boatrace-biwako.jp", hd)
+
+    # 1) top から直前/オリジナル展示への参照を発見
+    print("== biwako top discovery ==")
+    try:
+        raw = fetch_bytes(BASE + "/", timeout=12, retries=1,
+                          headers={"Referer": BASE + "/"})
+        txt = raw.decode("utf-8", errors="replace")
+        print(f"[top] ({len(raw)}B) {_marks(txt)}")
+        refs = re.findall(
+            r'''['"]([^'"<> ]*(?:modules|cyokuzen|tenji|yosou|ajax)'''
+            r'''[^'"<> ]*\.php)['"]''', txt)
+        for r in sorted(set(refs))[:40]:
+            print(f"    ref: {r}")
+        for m in re.findall(r'["\'][^"\']*\.php["\']\s*\+\s*[^;]{0,70}', txt):
+            print(f"    param: {re.sub(chr(9),'',m)[:100]}")
+        with open(os.path.join(OUTDIR, "biwako_top.html"), "wb") as f:
+            f.write(raw)
+    except Exception as e:
+        print(f"[top] FAIL: {str(e)[:70]}")
+
+    # 2) 候補エンドポイントを叩く(edogawa 系 + 一般的な命名)
+    print("== biwako endpoint candidates ==")
+    cands = [
+        "/modules/yosou/cyokuzen.php?day={hd}&race={r}",
+        "/modules/yosou/cyokuzen_info.php?day={hd}&race={r}",
+        "/sp/ajax/ajax_cyokuzen.php",
+        "/race/xml/kaisai/{hd}/race_table_original_{rr}.xml",
+        "/xml/kaisai/{hd}/race_table_original_{rr}.xml",
+    ]
+    saved = set()
+    for tmpl in cands:
+        for r in (1, 2):
+            path = tmpl.format(hd=hd, r=r, rr=f"{r:02d}")
+            try:
+                raw = fetch_bytes(BASE + path, timeout=10, retries=0,
+                                  headers={"Referer": BASE + "/"})
+                txt = raw.decode("utf-8", errors="replace")
+                print(f"[{path}] ({len(raw)}B) {_marks(txt)}")
+                got = _dump_table(txt)
+                key = tmpl.split("?")[0]
+                if (got or len(raw) > 500) and key not in saved:
+                    fn = re.sub(r"[^a-z0-9]+", "_", key.strip("/"))
+                    with open(os.path.join(OUTDIR, f"biwako_{fn}.html"),
+                              "wb") as fp:
+                        fp.write(raw)
+                    print(f"      saved biwako_{fn}.html")
+                    saved.add(key)
+            except Exception as e:
+                print(f"[{path}] -- {str(e)[:45]}")
     return 0
 
 
