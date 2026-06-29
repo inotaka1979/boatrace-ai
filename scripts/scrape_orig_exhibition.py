@@ -89,6 +89,7 @@ def _f(s):
 # 抽出する時刻フィールド(予想に効く)。体重/チルト/調整は boatrace.jp 側で取得済みのため対象外。
 _TIME_LABELS = {
     "展示": "ex_time",        # 直線150m 展示タイム
+    "展示タイム": "ex_time",   # 徳山等は「展示タイム」表記
     "一周": "lap_time",       # 一周タイム
     "まわり足": "turn_time",   # まわり足
     "直線": "straight_time",  # 直線
@@ -127,15 +128,17 @@ def parse_naruto_cyokuzen(html, sid, rno):
     target = None
     for tbl in soup.find_all("table"):
         txt = tbl.get_text()
-        if ("一周" in txt) and ("まわり足" in txt) and ("直線" in txt):
+        # 直線は任意(徳山は 展示/一周/まわり足 のみで直線列なし)。
+        #   コアの 一周 & まわり足 が揃う表をオリジナル展示表とみなす。
+        if ("一周" in txt) and ("まわり足" in txt):
             target = tbl
             break
     if target is None:
         return None
 
     colmap = _header_col_map(target)
-    # 最低限 一周/まわり足/直線 の列が取れないと信頼できない
-    if not all(k in colmap for k in ("lap_time", "turn_time", "straight_time")):
+    # 最低限 一周/まわり足 の列が取れないと信頼できない(直線は任意)
+    if not all(k in colmap for k in ("lap_time", "turn_time")):
         return None
 
     boats = []

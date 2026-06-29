@@ -491,6 +491,153 @@
 /* BUILD:REPORTING_RACE_DETAIL_BOATS:END */
 
 
+/* BUILD:REPORTING_RACE_DETAIL_BETS:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_bets.js
+  function _renderRaceDetailBets(ctx) {
+    var sid = ctx.sid, rn = ctx.rn, race = ctx.race;
+    var pred = ctx.pred, progPred = ctx.progPred;
+    var hasRealPreview = ctx.hasRealPreview, raceOdds = ctx.raceOdds;
+    var predHtml = "";
+    var activePred = hasRealPreview && pred ? pred : null;
+    var activePredLabel = hasRealPreview ? "\u76F4\u524D\u4E88\u60F3" : "\u756A\u7D44\u4E88\u60F3";
+    if (activePred || progPred) {
+      predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
+      predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
+      if (activePred && activePred.trifecta) {
+        predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968 <span class="bet-method">[' + escText(activePred.methodLabel || "") + ']</span></div><div class="bet-combos">';
+        activePred.trifecta.forEach(function(t) {
+          var liveOdds = raceOdds && raceOdds.trifecta ? raceOdds.trifecta[t.combo] : null;
+          var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
+          var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
+          var evHtml = evBadge(ev3);
+          var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
+          var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
+          predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
+        });
+        predHtml += "</div>";
+        if (activePred.evApplied) {
+          var totalStake = activePred.trifecta.reduce(function(a, t) {
+            return a + (t.stakeYen || 0);
+          }, 0);
+          predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
+        }
+        if (!raceOdds)
+          predHtml += '<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 -- \u78BA\u7387\u30D9\u30FC\u30B9\u306E\u63A8\u5B9A\u5024</div>';
+        predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
+        activePred.exacta.forEach(function(t) {
+          predHtml += '<span class="bet-chip">' + t.combo + "</span>";
+        });
+        predHtml += "</div>";
+      } else if (progPred) {
+        var betCount3 = parseInt(settings.betCount3) || 10;
+        var betCount2 = parseInt(settings.betCount2) || 5;
+        var method = settings.betMethod || "auto";
+        if (method === "auto") {
+          if (progPred.raceType === "honmei") method = "prob";
+          else if (progPred.raceType === "ana") method = "box";
+          else method = "formation";
+        }
+        var progBets = generateBetsV2(progPred.marks, method, betCount3, betCount2);
+        predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
+        progBets.trifecta.forEach(function(t) {
+          predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span></span>";
+        });
+        predHtml += "</div>";
+        predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
+        progBets.exacta.forEach(function(t) {
+          predHtml += '<span class="bet-chip">' + t.combo + "</span>";
+        });
+        predHtml += "</div>";
+        predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
+      }
+      var anaSrc = activePred || progPred;
+      if (anaSrc && anaSrc.marks) {
+        var anaTopN = parseInt(settings.betCountAna) || 3;
+        if (anaTopN < 1) anaTopN = 1;
+        else if (anaTopN > 6) anaTopN = 6;
+        var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
+        var _recommendedCombos = [];
+        if (activePred && Array.isArray(activePred.trifecta)) {
+          _recommendedCombos = activePred.trifecta.map(function(t) {
+            return t.combo;
+          });
+        } else if (progPred && progPred.marks) {
+          try {
+            var _pm = typeof progBets !== "undefined" && progBets && progBets.trifecta ? progBets.trifecta : [];
+            _recommendedCombos = _pm.map(function(t) {
+              return t.combo;
+            });
+          } catch (_) {
+            _recommendedCombos = [];
+          }
+        }
+        var anaHtmlBlock = "";
+        if (hasAnaOdds) {
+          var anaRes = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {
+            minOdds: 30,
+            minEV: 1,
+            minOddsLoose: 15,
+            topN: anaTopN,
+            excludeCombos: _recommendedCombos
+            // B13
+          });
+          var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
+          var isPrimary = anaRes.primary.length > 0;
+          if (picks.length > 0) {
+            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u9AD8 EV \u5019\u88DC\u306A\u3057 \u2014 \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + " \u3092\u53C2\u8003\u8868\u793A";
+            anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
+            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
+            anaHtmlBlock += '<div class="bet-combos">';
+            picks.forEach(function(p) {
+              var evColor = p.ev >= 1 ? "#FF5722" : "#999";
+              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p.odds.toFixed(1) + '\u500D</span><span style="font-size:9px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p.ev.toFixed(2) + "</span></span>";
+            });
+            anaHtmlBlock += "</div></div>";
+          }
+        } else if (anaSrc.marks.length >= 3) {
+          var dist = buildTrifectaProbDist(anaSrc.marks);
+          var top1Boat = anaSrc.marks[0].boat;
+          var _recoSet = {};
+          _recommendedCombos.forEach(function(c) {
+            if (c) _recoSet[String(c)] = true;
+          });
+          var anaCands = [];
+          for (var k in dist) {
+            if (!Object.prototype.hasOwnProperty.call(dist, k)) continue;
+            if (k.split("-")[0] === String(top1Boat)) continue;
+            if (_recoSet[k]) continue;
+            anaCands.push({ combo: k, prob: dist[k] });
+          }
+          anaCands.sort(function(a, b) {
+            return b.prob - a.prob;
+          });
+          anaCands = anaCands.slice(0, anaTopN);
+          if (anaCands.length > 0) {
+            anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
+            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 \u2014 AI \u7A74\u30B3\u30F3\u30D3\u5019\u88DC</span></div>';
+            anaHtmlBlock += '<div class="bet-combos">';
+            anaCands.forEach(function(p) {
+              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + "%</span></span>";
+            });
+            anaHtmlBlock += "</div>";
+            anaHtmlBlock += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B\u30AA\u30C3\u30BA\u53D6\u5F97\u5F8C\u306B EV \u8A55\u4FA1\u3078\u81EA\u52D5\u66F4\u65B0</div>';
+            anaHtmlBlock += "</div>";
+          }
+        }
+        predHtml += anaHtmlBlock;
+      }
+      predHtml += "</div>";
+    }
+    return predHtml;
+  }
+  globalThis._renderRaceDetailBets = _renderRaceDetailBets;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL_BETS:END */
+
+
 /* BUILD:REPORTING_RACE_DETAIL_PREDICTION:START */
 "use strict";
 (() => {
@@ -645,153 +792,6 @@
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_PREDICTION:END */
-
-
-/* BUILD:REPORTING_RACE_DETAIL_BETS:START */
-"use strict";
-(() => {
-  // ../src/reporting/race_detail_bets.js
-  function _renderRaceDetailBets(ctx) {
-    var sid = ctx.sid, rn = ctx.rn, race = ctx.race;
-    var pred = ctx.pred, progPred = ctx.progPred;
-    var hasRealPreview = ctx.hasRealPreview, raceOdds = ctx.raceOdds;
-    var predHtml = "";
-    var activePred = hasRealPreview && pred ? pred : null;
-    var activePredLabel = hasRealPreview ? "\u76F4\u524D\u4E88\u60F3" : "\u756A\u7D44\u4E88\u60F3";
-    if (activePred || progPred) {
-      predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
-      predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
-      if (activePred && activePred.trifecta) {
-        predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968 <span class="bet-method">[' + escText(activePred.methodLabel || "") + ']</span></div><div class="bet-combos">';
-        activePred.trifecta.forEach(function(t) {
-          var liveOdds = raceOdds && raceOdds.trifecta ? raceOdds.trifecta[t.combo] : null;
-          var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
-          var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
-          var evHtml = evBadge(ev3);
-          var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
-          var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
-          predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
-        });
-        predHtml += "</div>";
-        if (activePred.evApplied) {
-          var totalStake = activePred.trifecta.reduce(function(a, t) {
-            return a + (t.stakeYen || 0);
-          }, 0);
-          predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
-        }
-        if (!raceOdds)
-          predHtml += '<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 -- \u78BA\u7387\u30D9\u30FC\u30B9\u306E\u63A8\u5B9A\u5024</div>';
-        predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
-        activePred.exacta.forEach(function(t) {
-          predHtml += '<span class="bet-chip">' + t.combo + "</span>";
-        });
-        predHtml += "</div>";
-      } else if (progPred) {
-        var betCount3 = parseInt(settings.betCount3) || 10;
-        var betCount2 = parseInt(settings.betCount2) || 5;
-        var method = settings.betMethod || "auto";
-        if (method === "auto") {
-          if (progPred.raceType === "honmei") method = "prob";
-          else if (progPred.raceType === "ana") method = "box";
-          else method = "formation";
-        }
-        var progBets = generateBetsV2(progPred.marks, method, betCount3, betCount2);
-        predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
-        progBets.trifecta.forEach(function(t) {
-          predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span></span>";
-        });
-        predHtml += "</div>";
-        predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
-        progBets.exacta.forEach(function(t) {
-          predHtml += '<span class="bet-chip">' + t.combo + "</span>";
-        });
-        predHtml += "</div>";
-        predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
-      }
-      var anaSrc = activePred || progPred;
-      if (anaSrc && anaSrc.marks) {
-        var anaTopN = parseInt(settings.betCountAna) || 3;
-        if (anaTopN < 1) anaTopN = 1;
-        else if (anaTopN > 6) anaTopN = 6;
-        var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
-        var _recommendedCombos = [];
-        if (activePred && Array.isArray(activePred.trifecta)) {
-          _recommendedCombos = activePred.trifecta.map(function(t) {
-            return t.combo;
-          });
-        } else if (progPred && progPred.marks) {
-          try {
-            var _pm = typeof progBets !== "undefined" && progBets && progBets.trifecta ? progBets.trifecta : [];
-            _recommendedCombos = _pm.map(function(t) {
-              return t.combo;
-            });
-          } catch (_) {
-            _recommendedCombos = [];
-          }
-        }
-        var anaHtmlBlock = "";
-        if (hasAnaOdds) {
-          var anaRes = _pickAnaCandidates(anaSrc.marks, raceOdds.trifecta, {
-            minOdds: 30,
-            minEV: 1,
-            minOddsLoose: 15,
-            topN: anaTopN,
-            excludeCombos: _recommendedCombos
-            // B13
-          });
-          var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-          var isPrimary = anaRes.primary.length > 0;
-          if (picks.length > 0) {
-            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u9AD8 EV \u5019\u88DC\u306A\u3057 \u2014 \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + " \u3092\u53C2\u8003\u8868\u793A";
-            anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
-            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
-            anaHtmlBlock += '<div class="bet-combos">';
-            picks.forEach(function(p) {
-              var evColor = p.ev >= 1 ? "#FF5722" : "#999";
-              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p.odds.toFixed(1) + '\u500D</span><span style="font-size:9px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p.ev.toFixed(2) + "</span></span>";
-            });
-            anaHtmlBlock += "</div></div>";
-          }
-        } else if (anaSrc.marks.length >= 3) {
-          var dist = buildTrifectaProbDist(anaSrc.marks);
-          var top1Boat = anaSrc.marks[0].boat;
-          var _recoSet = {};
-          _recommendedCombos.forEach(function(c) {
-            if (c) _recoSet[String(c)] = true;
-          });
-          var anaCands = [];
-          for (var k in dist) {
-            if (!Object.prototype.hasOwnProperty.call(dist, k)) continue;
-            if (k.split("-")[0] === String(top1Boat)) continue;
-            if (_recoSet[k]) continue;
-            anaCands.push({ combo: k, prob: dist[k] });
-          }
-          anaCands.sort(function(a, b) {
-            return b.prob - a.prob;
-          });
-          anaCands = anaCands.slice(0, anaTopN);
-          if (anaCands.length > 0) {
-            anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
-            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 \u2014 AI \u7A74\u30B3\u30F3\u30D3\u5019\u88DC</span></div>';
-            anaHtmlBlock += '<div class="bet-combos">';
-            anaCands.forEach(function(p) {
-              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + "%</span></span>";
-            });
-            anaHtmlBlock += "</div>";
-            anaHtmlBlock += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B\u30AA\u30C3\u30BA\u53D6\u5F97\u5F8C\u306B EV \u8A55\u4FA1\u3078\u81EA\u52D5\u66F4\u65B0</div>';
-            anaHtmlBlock += "</div>";
-          }
-        }
-        predHtml += anaHtmlBlock;
-      }
-      predHtml += "</div>";
-    }
-    return predHtml;
-  }
-  globalThis._renderRaceDetailBets = _renderRaceDetailBets;
-})();
-
-/* BUILD:REPORTING_RACE_DETAIL_BETS:END */
 
 
 
