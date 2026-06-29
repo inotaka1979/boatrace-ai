@@ -1,74 +1,63 @@
 #!/usr/bin/env python3
-"""江戸川(3) のオリジナル展示(ajax_cyokuzen)が表示されない原因を切り分けるプローブ。
+"""江戸川(3) の実サイト構造と「オリジナル展示」の有無/データ経路を発見するプローブ。
 
-江戸川は data/orig_exhibition/today.json に1レースも出ていない。cookie session で
-レースを選び ajax_cyokuzen.php を取得する方式のため、(a)展示前 (b)race-selection 不能で
-全抑止 (c)パース不一致 のどれかを切り分ける。scraper の本体関数をそのまま使って
-roster の差異・時刻の有無を確認する。確認後撤去。
+前回 probe で /sp/index.php?page=yosou-cyokuzen が 404 と判明(桐生/福岡型ではない)。
+江戸川 top と候補ページを取得し、オリジナル展示(一周/まわり足/直線)への参照
+(URL/JS/ajax/xml)を抽出して、現行の正しいデータ経路を突き止める。確認後撤去。
 """
 import os
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import scrape_orig_exhibition as S  # noqa: E402
-from scrape_orig_exhibition import _fetch_one_cyokuzen, _cookie_get  # noqa: E402
+from http_utils import fetch_bytes  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.boatrace-edogawa.com"
-JCD = 3
+
+
+def _refs(txt):
+    pats = re.findall(
+        r'''(?:src|href|url|data-[\w-]+|action)\s*[=:]\s*["']?([^"'<> )]+)''',
+        txt)
+    hits = [u for u in pats
+            if re.search(r'xml|original|ajax|\.php|kaisai|cyokuzen|yosou|'
+                         r'recomend|tenji|shukai|周回', u, re.I)]
+    return sorted(set(hits))[:50]
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    date_str = datetime.now(JST).strftime("%Y%m%d")
-    print(f"== 江戸川 ajax_cyokuzen (date={date_str}) ==")
+    hd = datetime.now(JST).strftime("%Y%m%d")
+    headers = {"Referer": BASE + "/"}
 
-    # 生 HTML を1レース保存(構造確認用)
-    import http.cookiejar
-    import urllib.request
-    for rno in (1, 2, 3):
-        page = BASE + f"/sp/index.php?page=yosou-cyokuzen&race={rno}"
-        ajax = BASE + "/sp/ajax/ajax_cyokuzen.php"
+    pages = [
+        ("top", f"{BASE}/"),
+        ("sp_top", f"{BASE}/sp/"),
+        ("modal_r1", f"{BASE}/modate/race?rno=1&hd={hd}"),
+        ("yosou", f"{BASE}/yosou/"),
+        ("sp_yosou", f"{BASE}/sp/index.php?page=yosou"),
+        ("sp_cyokuzen", f"{BASE}/sp/index.php?page=cyokuzen&race=1"),
+        ("sp_index", f"{BASE}/sp/index.php"),
+    ]
+    for name, url in pages:
         try:
-            cj = http.cookiejar.CookieJar()
-            op = urllib.request.build_opener(
-                urllib.request.HTTPCookieProcessor(cj))
-            _cookie_get(op, page, BASE + "/sp/")
-            html = _cookie_get(op, ajax, page)
-            segs = html.split("<!--sep-->")
-            marks = " ".join(f"{m}={html.count(m)}" for m in
-                             ("半周", "一周", "まわり足", "直線", "展示",
-                              "表示するデータがありません", "<table"))
-            print(f"R{rno}: ajax {len(html)}B segs={len(segs)} {marks}")
-            if rno == 1:
-                p = os.path.join(OUTDIR, "edogawa_cyokuzen_R01.html")
-                with open(p, "w", encoding="utf-8") as f:
-                    f.write(html)
-                print(f"      saved {p}")
-            race = S.parse_kiryu_cyokuzen(html, JCD, rno)
-            if race:
-                roster = S._roster(html)
-                times = [(b["racer_boat_number"], b["ex_time"], b["lap_time"],
-                          b["turn_time"], b["straight_time"])
-                         for b in race["boats"]]
-                print(f"      parsed boats={len(race['boats'])} "
-                      f"has_times={S._has_times(race)} roster={roster}")
-                print(f"      times={times}")
-            else:
-                print("      parse → None (テーブル構造不一致 or 展示前)")
+            raw = fetch_bytes(url, timeout=12, retries=1, headers=headers)
+            txt = raw.decode("utf-8", errors="replace")
+            has = " ".join(f"{m}={txt.count(m)}" for m in
+                           ("オリジナル展示", "一周", "半周", "まわり足", "直線",
+                            "周回", "展示"))
+            print(f"[{name}] {url[len(BASE):] or '/'} ({len(raw)}B) {has}")
+            for r in _refs(txt):
+                print(f"    ref: {r}")
+            if name in ("top", "sp_top"):
+                p = os.path.join(OUTDIR, f"edogawa_{name}.html")
+                with open(p, "wb") as f:
+                    f.write(raw)
         except Exception as e:
-            print(f"R{rno} FAIL: {str(e)[:90]}")
-
-    # scraper 本体経由(roster 重複抑止が効くか)
-    print("== scrape_ajax_cyokuzen() 経由(本番ロジック) ==")
-    try:
-        races = S.scrape_ajax_cyokuzen(BASE, JCD, date_str)
-        print(f"  returned {len(races)} races: "
-              f"{[r['race_number'] for r in races]}")
-    except Exception as e:
-        print(f"  FAIL: {str(e)[:90]}")
+            print(f"[{name}] {url[len(BASE):] or '/'} FAIL: {str(e)[:70]}")
     return 0
 
 
