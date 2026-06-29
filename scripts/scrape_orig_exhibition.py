@@ -408,9 +408,15 @@ def _has_times(race):
     )
 
 
+# ajax_yosou のオリジナル展示 req は場により異なる。多くは cyokuzen だが、
+#   津(9)は「展示情報」タブ=sttenji にオリジナル展示(一周/まわり足/直線)がある。
+_ORIG_REQ = {9: "sttenji"}
+
+
 def _fetch_one_ajax(base, jcd, rno, date_str, headers):
+    req = _ORIG_REQ.get(jcd, "cyokuzen")
     url = (f"{base}/sp/ajax/ajax_yosou.php"
-           f"?targetday={date_str}&race={rno}&req=cyokuzen&run=0")
+           f"?targetday={date_str}&race={rno}&req={req}&run=0")
     try:
         html = fetch_text(url, timeout=12, retries=1, headers=headers)
         race = parse_naruto_cyokuzen(html, jcd, rno)

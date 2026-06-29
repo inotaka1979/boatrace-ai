@@ -65,6 +65,49 @@ class TestNarutoCyokuzen(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_TSU = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'tsu_sttenji_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_TSU),
+                     'bs4 or sample HTML missing')
+class TestTsuSttenji(unittest.TestCase):
+    """津型(ajax_yosou だが req=sttenji=展示情報 にオリジナル展示)の回帰テスト。
+
+    津は req=cyokuzen が直前情報(展示評価)で、オリジナル展示は別タブ sttenji。
+    表は col4-7=展示タイム/一周/まわり足/直線 のヘッダ駆動形式で
+    parse_naruto_cyokuzen でそのまま解析できることを固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_TSU, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_naruto_cyokuzen(f.read(), 9, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 9)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.85)       # col4 展示タイム
+        self.assertEqual(b['lap_time'], 38.10)     # col5 一周
+        self.assertEqual(b['turn_time'], 4.54)     # col6 まわり足
+        self.assertEqual(b['straight_time'], 8.57)  # col7 直線
+
+    def test_value_ranges(self):
+        for b in self.race['boats']:
+            self.assertTrue(6.0 <= b['ex_time'] <= 8.0, b)
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)
+            self.assertTrue(4.0 <= b['turn_time'] <= 8.0, b)
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _TOKUYAMA = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'tokuyama_cyokuzen_R01.html'
 )
