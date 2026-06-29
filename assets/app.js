@@ -6618,6 +6618,39 @@ function _migrateDropStaleTodayHistory(){
   try { localStorage.setItem(key, '1'); } catch(e){}
 }
 
+// 2026-06-29: savePrediction の型不一致重複バグ(string sid vs number sid)で
+//   生じた boatrace_history の二重登録を一掃する。(date, stadium, race) を
+//   数値正規化したキーで畳み込み、actual あり > なし、actual 同士なら払戻が
+//   多い方を残す。型も number に正規化して以後の === 比較を安定させる。
+//   毎回呼ばれるが冪等で、変化が無ければ書込まない（軽量）。
+function _dedupHistory(){
+  var hist = safeParse('boatrace_history', []);
+  if(!Array.isArray(hist) || hist.length===0) return;
+  var before = hist.length;
+  var map = {};
+  var order = [];
+  hist.forEach(function(h){
+    if(!h || h.date==null) return;
+    var sid = parseInt(h.stadium), rn = parseInt(h.race);
+    var k = h.date+'|'+sid+'|'+rn;
+    h.stadium = sid; h.race = rn;   // 型正規化
+    var ex = map[k];
+    if(!ex){ map[k]=h; order.push(k); return; }
+    var exA = !!(ex.actual && ex.actual.length>0);
+    var hA  = !!(h.actual && h.actual.length>0);
+    if(hA && !exA){ map[k]=h; return; }          // actual あり優先
+    if(exA && !hA){ return; }
+    if(hA && exA){                                // 両方 actual → 払戻多い方
+      if(((h.payout3||0)+(h.payout2||0)) > ((ex.payout3||0)+(ex.payout2||0))) map[k]=h;
+    }
+    // 両方 actual 無し → 先勝ち
+  });
+  if(order.length === before) return;             // 重複なし → 何もしない
+  var out = order.map(function(k){ return map[k]; });
+  safeSet('boatrace_history', out);
+  console.warn('[history] deduped '+before+' -> '+out.length+' entries (型不一致の二重登録を解消)');
+}
+
 // 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
 // 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
 // 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
@@ -6688,11 +6721,18 @@ async function _backfillTodayPredictions(){
 
 function savePrediction(date,sid,rn,pred,result){
   try{
+    // 2026-06-29 FIX: sid/rn を数値に正規化。_backfillTodayPredictions は
+    //   for-in のキー(=文字列)で、openStadium は数値で savePrediction を呼ぶため、
+    //   下の重複判定 (===) が型不一致で外れ、同一レースが二重登録されていた
+    //   （成績「本日 場別」で R 数が 12 を超える＝芦屋24/三国24/桐生20 の原因）。
+    sid = parseInt(sid); rn = parseInt(rn);
+    if(!(sid>=1) || !(rn>=1)) return;
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
     var existIdx = -1;
     for(var i=0;i<history.length;i++){
-      if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
+      // 既存エントリは型混在しうるので parseInt で比較を頑健化
+      if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
     }
     // F19b: 既存エントリ更新ポリシー (カウント安定化版)
     //   - 既存が actual あり (確定済) → ロックイン、常に skip
@@ -9137,6 +9177,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 //   ・場別 (全場): 場ごとに R数 / 3連単的中 / 投資 / 払戻 / 回収率
 function calcTodayStats(){
   if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _dedupHistory==='function') _dedupHistory();
   if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5

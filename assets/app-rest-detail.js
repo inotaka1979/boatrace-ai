@@ -4,260 +4,6 @@
 // page_router.js の _ensureRaceDetailChunk() が race click 時に動的 load。
 'use strict';
 
-/* BUILD:REPORTING_RACE_DETAIL:START */
-"use strict";
-(() => {
-  // ../src/reporting/race_detail.js
-  function openRace(sid, rn) {
-    currentStadium = sid;
-    currentRace = rn;
-    if (typeof globalThis._loadOrigExhibitionLive === "function") globalThis._loadOrigExhibitionLive(sid, rn);
-    var name = STADIUMS[parseInt(sid)] || "\u5834" + sid;
-    var race = programData[sid][rn];
-    var closedAt = race ? race.race_closed_at || "" : "";
-    var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
-    if (closedTime) closedTime = closedTime.slice(0, 5);
-    var _watched = typeof _isRaceWatched === "function" ? _isRaceWatched(sid, rn) : false;
-    var _starHtml = '<button id="raceStarBtn" aria-label="\u304A\u6C17\u306B\u5165\u308A\u5207\u66FF" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
-    document.getElementById("detailTitle").innerHTML = name + " " + rn + "R" + (closedTime ? ' <span style="font-size:12px;color:var(--text-dim);font-weight:400">\u7DE0\u5207 ' + closedTime + "</span>" : "") + _starHtml;
-    document.getElementById("detailBack").onclick = function() {
-      openStadium(sid);
-    };
-    if (typeof _showDetailTab === "function") _showDetailTab("lineup");
-    var preview = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
-    var result = resultData && resultData[sid] && resultData[sid][rn] ? resultData[sid][rn] : null;
-    var pred = predictRace(sid, parseInt(rn));
-    if (result && result.isFinished) {
-      try {
-        var _h = safeParse("boatrace_history", []);
-        for (var _hi = 0; _hi < _h.length; _hi++) {
-          var _e = _h[_hi];
-          if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-            var _liveMarkByBoat = {};
-            (pred && pred.marks ? pred.marks : []).forEach(function(_m) {
-              if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
-            });
-            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m) {
-              return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || "" });
-            });
-            pred = {
-              marks: _snapMarks,
-              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-              exacta: _e.pred_snapshot.exacta || pred.exacta,
-              raceType: _e.pred_snapshot.raceType || pred.raceType,
-              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-              scenarios: _e.pred_snapshot.scenarios || pred.scenarios
-            };
-            break;
-          }
-        }
-      } catch (_) {
-      }
-    }
-    var raceOdds = getOddsForRace(sid, rn);
-    var popularity = calcPopularity(raceOdds);
-    var rdForRace = getRaceDataForRace(sid, rn);
-    document.getElementById("oddsRefreshBtn").style.display = "inline-block";
-    updateOddsUI();
-    var weatherHtml = "";
-    if (preview) {
-      var w = preview.weather || preview;
-      var windDir = WIND_DIR[w.wind_direction || w.race_wind_direction_number] || "---";
-      var ws = w.wind_speed || w.race_wind || 0;
-      var wh = w.wave_height || w.race_wave || 0;
-      var temp = w.temperature || w.race_temperature || "--";
-      var wtemp = w.water_temperature || w.race_water_temperature || "--";
-      weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
-    }
-    if (oddsData && oddsData.updated_at) {
-      var _ot = Date.parse(oddsData.updated_at);
-      if (!isNaN(_ot)) {
-        var _osm = Math.round((Date.now() - _ot) / 6e4);
-        if (_osm >= 30) {
-          var _hh = _osm >= 60 ? Math.floor(_osm / 60) + "\u6642\u9593" + _osm % 60 + "\u5206" : _osm + "\u5206";
-          weatherHtml = '<div style="background:#FFEBEE;border:2px solid #D32F2F;border-radius:8px;padding:10px;margin:8px 0;color:#D32F2F;font-weight:700;font-size:13px;text-align:center">\u26A0 \u30AA\u30C3\u30BA\u304C ' + _hh + '\u524D\u306E\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3067\u3059<br><span style="font-size:11px;font-weight:400">\u30EC\u30FC\u30B9\u76F4\u524D\u306E\u5E02\u5834\u3068\u4E56\u96E2\u3057\u3066\u3044\u308B\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059</span></div>' + weatherHtml;
-        }
-      }
-    }
-    document.getElementById("detailWeather").innerHTML = weatherHtml;
-    var resHtml = "";
-    if (result && result.isFinished && result.results && result.results.length > 0) {
-      var _rawPlaces = Array.isArray(result.results) ? result.results : [];
-      var places = _rawPlaces.filter(function(p) {
-        return p && Number.isFinite(p.place) && p.racer_boat_number;
-      }).sort(function(a, b) {
-        return a.place - b.place;
-      });
-      resHtml = '<div class="result-box"><div class="result-title">\u30EC\u30FC\u30B9\u7D50\u679C</div>';
-      resHtml += '<div class="result-places">';
-      places.slice(0, 3).forEach(function(p) {
-        resHtml += p.place + "\u7740" + boatBadge(p.racer_boat_number) + " ";
-      });
-      resHtml += "</div>";
-      if (result.technique_number)
-        resHtml += '<div style="font-size:11px;margin-bottom:6px">\u6C7A\u307E\u308A\u624B: <b>' + (TECHNIQUE[result.technique_number] || "---") + "</b></div>";
-      if (result.refund) {
-        ["trifecta", "trio", "exacta"].forEach(function(type) {
-          var label = type === "trifecta" ? "3\u9023\u5358" : type === "trio" ? "3\u9023\u8907" : "2\u9023\u5358";
-          if (result.refund[type]) {
-            result.refund[type].forEach(function(r) {
-              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + r.combination + '</span><span class="refund-val">\\' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
-            });
-          }
-        });
-      }
-      if (pred && places.length >= 3) {
-        var actualCombo = places[0].racer_boat_number + "-" + places[1].racer_boat_number + "-" + places[2].racer_boat_number;
-        var hit = pred.trifecta.some(function(t) {
-          return t.combo === actualCombo;
-        });
-        resHtml += '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' + (hit ? "hit" : "miss") + '">' + (hit ? "3\u9023\u5358 \u7684\u4E2D!" : "\u4E0D\u7684\u4E2D") + "</div>";
-      } else if (pred && places.length < 3) {
-        resHtml += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">\u7D50\u679C\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D (\u7740\u9806 ' + places.length + "/3 \u4EF6)</div>";
-      }
-      resHtml += "</div>";
-    }
-    document.getElementById("detailResult").innerHTML = resHtml;
-    var _ctxBoats = {
-      race,
-      preview,
-      pred,
-      rdForRace
-    };
-    _renderRaceDetailBoats(_ctxBoats);
-    var boatMap = _ctxBoats.boatMap;
-    var pvMap = _ctxBoats.pvMap;
-    var etRankMap = _ctxBoats.etRankMap;
-    var stRankMap = _ctxBoats.stRankMap;
-    var _oeRace = ((globalThis._origExhibIndex || {})[sid] || {})[rn] || null;
-    var _hasOe = false;
-    if (_oeRace) {
-      for (var _ob in _oeRace) {
-        var _oeb = _oeRace[_ob];
-        if (_oeb && ((_oeb.lap_time || 0) > 0 || (_oeb.turn_time || 0) > 0 || (_oeb.straight_time || 0) > 0)) {
-          _hasOe = true;
-          break;
-        }
-      }
-    }
-    function _oeRankMap(field) {
-      var arr = [];
-      for (var b = 1; b <= 6; b++) {
-        var v = _oeRace && _oeRace[b] && _oeRace[b][field] || 0;
-        if (v > 0) arr.push([b, v]);
-      }
-      arr.sort(function(a, c) {
-        return a[1] - c[1];
-      });
-      var m = {};
-      for (var i = 0; i < arr.length; i++) m[arr[i][0]] = i;
-      return m;
-    }
-    var _lapRk = _hasOe ? _oeRankMap("lap_time") : {};
-    var _turnRk = _hasOe ? _oeRankMap("turn_time") : {};
-    var _strRk = _hasOe ? _oeRankMap("straight_time") : {};
-    function _oeCls(rk) {
-      return rk === 0 ? "hl-rank1" : rk === 1 ? "hl-rank2" : rk === 2 ? "hl-rank3" : "";
-    }
-    var exhHtml = "";
-    if (preview && preview.boats) {
-      exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
-      exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
-      var _lapLabel = String(sid) === "1" ? "\u534A\u5468" : "\u4E00\u5468";
-      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th>" + (_hasOe ? "<th>" + _lapLabel + "</th><th>\u307E\u308F\u308A\u8DB3</th><th>\u76F4\u7DDA</th>" : "") + "<th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var pv = pvMap[bn];
-        var _oebST = _oeRace && _oeRace[bn] || {};
-        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : _oebST.st_time != null ? _oebST.st_time : null;
-        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : (_oebST.ex_time || 0) > 0 ? _oebST.ex_time : null;
-        var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
-        var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
-        var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
-        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
-        var etRk = etRankMap[bn];
-        var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
-        var stRk = stRankMap[bn];
-        var stCls = stRk === 0 ? "hl-rank1" : stRk === 1 ? "hl-rank2" : stRk === 2 ? "hl-rank3" : "";
-        var stDisp = stVal !== null ? "." + String(Math.abs(pf(stVal) * 100).toFixed(0)).padStart(2, "0") : "---";
-        if (stVal !== null && pf(stVal) < 0) stDisp = "F" + stDisp;
-        var maintDisp = "";
-        if (propVal)
-          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' + escText(propVal) + "</span> ";
-        if (partsVal)
-          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
-        if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
-        var adjDisp = adjVal > 0 ? '<span style="color:var(--warn);font-weight:700">+' + adjVal.toFixed(1) + "</span>" : '<span style="color:#CCC">-</span>';
-        exhHtml += "<tr>";
-        exhHtml += '<td style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";font-weight:700;border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "</td>";
-        exhHtml += '<td class="' + stCls + '">' + stDisp + "</td>";
-        exhHtml += '<td class="' + etCls + '">' + (etVal !== null ? etVal : "---") + "</td>";
-        exhHtml += "<td>" + (tiltVal !== null ? tiltVal : "---") + "</td>";
-        if (_hasOe) {
-          var _oeb2 = _oeRace[bn] || {};
-          var _lap = (_oeb2.lap_time || 0) > 0 ? _oeb2.lap_time.toFixed(2) : "---";
-          var _turn = (_oeb2.turn_time || 0) > 0 ? _oeb2.turn_time.toFixed(2) : "---";
-          var _str = (_oeb2.straight_time || 0) > 0 ? _oeb2.straight_time.toFixed(2) : "---";
-          exhHtml += '<td class="' + _oeCls(_lapRk[bn]) + '">' + _lap + '</td><td class="' + _oeCls(_turnRk[bn]) + '">' + _turn + '</td><td class="' + _oeCls(_strRk[bn]) + '">' + _str + "</td>";
-        }
-        exhHtml += '<td class="fs-9">' + maintDisp + "</td>";
-        exhHtml += "<td>" + adjDisp + "</td>";
-        exhHtml += "</tr>";
-      }
-      exhHtml += "</tbody></table></div>";
-      if (_hasOe) {
-        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">' + _lapLabel + "\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>";
-      } else {
-        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
-      }
-      if (preview.boats) {
-        var courseEntries = [];
-        var hasCourse = false;
-        for (var ci = 1; ci <= 6; ci++) {
-          var cpv = preview.boats[String(ci)];
-          var cn = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
-          if (cpv && cpv.racer_course_number != null) hasCourse = true;
-          courseEntries.push({ boat: ci, course: cn });
-        }
-        if (hasCourse) {
-          courseEntries.sort(function(a, b) {
-            return a.course - b.course;
-          });
-          exhHtml += '<div style="margin:8px 0;text-align:center;font-size:11px;font-weight:700;color:var(--text-sub)">\u9032\u5165\u30B3\u30FC\u30B9</div>';
-          exhHtml += '<div class="course-grid">';
-          courseEntries.forEach(function(e) {
-            exhHtml += '<div class="course-entry" style="background:' + BOAT_COLORS[e.boat] + ";color:" + BOAT_TEXT[e.boat] + ";border:1px solid " + (e.boat === 1 ? "#ccc" : "transparent") + '">' + e.boat + "</div>";
-          });
-          exhHtml += "</div>";
-        }
-      }
-    }
-    document.getElementById("detailExhibition").innerHTML = exhHtml;
-    _renderRaceDetailPrediction({
-      sid,
-      rn,
-      race,
-      pred,
-      preview,
-      result,
-      popularity,
-      raceOdds
-    });
-    document.getElementById("detailOdds").innerHTML = renderOddsSection(sid, rn, raceOdds, pred, race);
-    showPage("detail");
-    try {
-      _kickOffLiveOddsRefresh(sid, rn);
-    } catch (_) {
-    }
-  }
-  globalThis.openRace = openRace;
-})();
-
-/* BUILD:REPORTING_RACE_DETAIL:END */
-
-
 /* BUILD:REPORTING_RACE_DETAIL_BOATS:START */
 "use strict";
 (() => {
@@ -659,6 +405,260 @@
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_BETS:END */
+
+
+/* BUILD:REPORTING_RACE_DETAIL:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail.js
+  function openRace(sid, rn) {
+    currentStadium = sid;
+    currentRace = rn;
+    if (typeof globalThis._loadOrigExhibitionLive === "function") globalThis._loadOrigExhibitionLive(sid, rn);
+    var name = STADIUMS[parseInt(sid)] || "\u5834" + sid;
+    var race = programData[sid][rn];
+    var closedAt = race ? race.race_closed_at || "" : "";
+    var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
+    if (closedTime) closedTime = closedTime.slice(0, 5);
+    var _watched = typeof _isRaceWatched === "function" ? _isRaceWatched(sid, rn) : false;
+    var _starHtml = '<button id="raceStarBtn" aria-label="\u304A\u6C17\u306B\u5165\u308A\u5207\u66FF" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
+    document.getElementById("detailTitle").innerHTML = name + " " + rn + "R" + (closedTime ? ' <span style="font-size:12px;color:var(--text-dim);font-weight:400">\u7DE0\u5207 ' + closedTime + "</span>" : "") + _starHtml;
+    document.getElementById("detailBack").onclick = function() {
+      openStadium(sid);
+    };
+    if (typeof _showDetailTab === "function") _showDetailTab("lineup");
+    var preview = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
+    var result = resultData && resultData[sid] && resultData[sid][rn] ? resultData[sid][rn] : null;
+    var pred = predictRace(sid, parseInt(rn));
+    if (result && result.isFinished) {
+      try {
+        var _h = safeParse("boatrace_history", []);
+        for (var _hi = 0; _hi < _h.length; _hi++) {
+          var _e = _h[_hi];
+          if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
+            var _liveMarkByBoat = {};
+            (pred && pred.marks ? pred.marks : []).forEach(function(_m) {
+              if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
+            });
+            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m) {
+              return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || "" });
+            });
+            pred = {
+              marks: _snapMarks,
+              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
+              exacta: _e.pred_snapshot.exacta || pred.exacta,
+              raceType: _e.pred_snapshot.raceType || pred.raceType,
+              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
+              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
+              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
+              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
+              scenarios: _e.pred_snapshot.scenarios || pred.scenarios
+            };
+            break;
+          }
+        }
+      } catch (_) {
+      }
+    }
+    var raceOdds = getOddsForRace(sid, rn);
+    var popularity = calcPopularity(raceOdds);
+    var rdForRace = getRaceDataForRace(sid, rn);
+    document.getElementById("oddsRefreshBtn").style.display = "inline-block";
+    updateOddsUI();
+    var weatherHtml = "";
+    if (preview) {
+      var w = preview.weather || preview;
+      var windDir = WIND_DIR[w.wind_direction || w.race_wind_direction_number] || "---";
+      var ws = w.wind_speed || w.race_wind || 0;
+      var wh = w.wave_height || w.race_wave || 0;
+      var temp = w.temperature || w.race_temperature || "--";
+      var wtemp = w.water_temperature || w.race_water_temperature || "--";
+      weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
+    }
+    if (oddsData && oddsData.updated_at) {
+      var _ot = Date.parse(oddsData.updated_at);
+      if (!isNaN(_ot)) {
+        var _osm = Math.round((Date.now() - _ot) / 6e4);
+        if (_osm >= 30) {
+          var _hh = _osm >= 60 ? Math.floor(_osm / 60) + "\u6642\u9593" + _osm % 60 + "\u5206" : _osm + "\u5206";
+          weatherHtml = '<div style="background:#FFEBEE;border:2px solid #D32F2F;border-radius:8px;padding:10px;margin:8px 0;color:#D32F2F;font-weight:700;font-size:13px;text-align:center">\u26A0 \u30AA\u30C3\u30BA\u304C ' + _hh + '\u524D\u306E\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3067\u3059<br><span style="font-size:11px;font-weight:400">\u30EC\u30FC\u30B9\u76F4\u524D\u306E\u5E02\u5834\u3068\u4E56\u96E2\u3057\u3066\u3044\u308B\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059</span></div>' + weatherHtml;
+        }
+      }
+    }
+    document.getElementById("detailWeather").innerHTML = weatherHtml;
+    var resHtml = "";
+    if (result && result.isFinished && result.results && result.results.length > 0) {
+      var _rawPlaces = Array.isArray(result.results) ? result.results : [];
+      var places = _rawPlaces.filter(function(p) {
+        return p && Number.isFinite(p.place) && p.racer_boat_number;
+      }).sort(function(a, b) {
+        return a.place - b.place;
+      });
+      resHtml = '<div class="result-box"><div class="result-title">\u30EC\u30FC\u30B9\u7D50\u679C</div>';
+      resHtml += '<div class="result-places">';
+      places.slice(0, 3).forEach(function(p) {
+        resHtml += p.place + "\u7740" + boatBadge(p.racer_boat_number) + " ";
+      });
+      resHtml += "</div>";
+      if (result.technique_number)
+        resHtml += '<div style="font-size:11px;margin-bottom:6px">\u6C7A\u307E\u308A\u624B: <b>' + (TECHNIQUE[result.technique_number] || "---") + "</b></div>";
+      if (result.refund) {
+        ["trifecta", "trio", "exacta"].forEach(function(type) {
+          var label = type === "trifecta" ? "3\u9023\u5358" : type === "trio" ? "3\u9023\u8907" : "2\u9023\u5358";
+          if (result.refund[type]) {
+            result.refund[type].forEach(function(r) {
+              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + r.combination + '</span><span class="refund-val">\\' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
+            });
+          }
+        });
+      }
+      if (pred && places.length >= 3) {
+        var actualCombo = places[0].racer_boat_number + "-" + places[1].racer_boat_number + "-" + places[2].racer_boat_number;
+        var hit = pred.trifecta.some(function(t) {
+          return t.combo === actualCombo;
+        });
+        resHtml += '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' + (hit ? "hit" : "miss") + '">' + (hit ? "3\u9023\u5358 \u7684\u4E2D!" : "\u4E0D\u7684\u4E2D") + "</div>";
+      } else if (pred && places.length < 3) {
+        resHtml += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">\u7D50\u679C\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D (\u7740\u9806 ' + places.length + "/3 \u4EF6)</div>";
+      }
+      resHtml += "</div>";
+    }
+    document.getElementById("detailResult").innerHTML = resHtml;
+    var _ctxBoats = {
+      race,
+      preview,
+      pred,
+      rdForRace
+    };
+    _renderRaceDetailBoats(_ctxBoats);
+    var boatMap = _ctxBoats.boatMap;
+    var pvMap = _ctxBoats.pvMap;
+    var etRankMap = _ctxBoats.etRankMap;
+    var stRankMap = _ctxBoats.stRankMap;
+    var _oeRace = ((globalThis._origExhibIndex || {})[sid] || {})[rn] || null;
+    var _hasOe = false;
+    if (_oeRace) {
+      for (var _ob in _oeRace) {
+        var _oeb = _oeRace[_ob];
+        if (_oeb && ((_oeb.lap_time || 0) > 0 || (_oeb.turn_time || 0) > 0 || (_oeb.straight_time || 0) > 0)) {
+          _hasOe = true;
+          break;
+        }
+      }
+    }
+    function _oeRankMap(field) {
+      var arr = [];
+      for (var b = 1; b <= 6; b++) {
+        var v = _oeRace && _oeRace[b] && _oeRace[b][field] || 0;
+        if (v > 0) arr.push([b, v]);
+      }
+      arr.sort(function(a, c) {
+        return a[1] - c[1];
+      });
+      var m = {};
+      for (var i = 0; i < arr.length; i++) m[arr[i][0]] = i;
+      return m;
+    }
+    var _lapRk = _hasOe ? _oeRankMap("lap_time") : {};
+    var _turnRk = _hasOe ? _oeRankMap("turn_time") : {};
+    var _strRk = _hasOe ? _oeRankMap("straight_time") : {};
+    function _oeCls(rk) {
+      return rk === 0 ? "hl-rank1" : rk === 1 ? "hl-rank2" : rk === 2 ? "hl-rank3" : "";
+    }
+    var exhHtml = "";
+    if (preview && preview.boats) {
+      exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
+      exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
+      var _lapLabel = String(sid) === "1" ? "\u534A\u5468" : "\u4E00\u5468";
+      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th>" + (_hasOe ? "<th>" + _lapLabel + "</th><th>\u307E\u308F\u308A\u8DB3</th><th>\u76F4\u7DDA</th>" : "") + "<th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var pv = pvMap[bn];
+        var _oebST = _oeRace && _oeRace[bn] || {};
+        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : _oebST.st_time != null ? _oebST.st_time : null;
+        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : (_oebST.ex_time || 0) > 0 ? _oebST.ex_time : null;
+        var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
+        var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
+        var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
+        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
+        var etRk = etRankMap[bn];
+        var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
+        var stRk = stRankMap[bn];
+        var stCls = stRk === 0 ? "hl-rank1" : stRk === 1 ? "hl-rank2" : stRk === 2 ? "hl-rank3" : "";
+        var stDisp = stVal !== null ? "." + String(Math.abs(pf(stVal) * 100).toFixed(0)).padStart(2, "0") : "---";
+        if (stVal !== null && pf(stVal) < 0) stDisp = "F" + stDisp;
+        var maintDisp = "";
+        if (propVal)
+          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' + escText(propVal) + "</span> ";
+        if (partsVal)
+          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
+        if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
+        var adjDisp = adjVal > 0 ? '<span style="color:var(--warn);font-weight:700">+' + adjVal.toFixed(1) + "</span>" : '<span style="color:#CCC">-</span>';
+        exhHtml += "<tr>";
+        exhHtml += '<td style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";font-weight:700;border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "</td>";
+        exhHtml += '<td class="' + stCls + '">' + stDisp + "</td>";
+        exhHtml += '<td class="' + etCls + '">' + (etVal !== null ? etVal : "---") + "</td>";
+        exhHtml += "<td>" + (tiltVal !== null ? tiltVal : "---") + "</td>";
+        if (_hasOe) {
+          var _oeb2 = _oeRace[bn] || {};
+          var _lap = (_oeb2.lap_time || 0) > 0 ? _oeb2.lap_time.toFixed(2) : "---";
+          var _turn = (_oeb2.turn_time || 0) > 0 ? _oeb2.turn_time.toFixed(2) : "---";
+          var _str = (_oeb2.straight_time || 0) > 0 ? _oeb2.straight_time.toFixed(2) : "---";
+          exhHtml += '<td class="' + _oeCls(_lapRk[bn]) + '">' + _lap + '</td><td class="' + _oeCls(_turnRk[bn]) + '">' + _turn + '</td><td class="' + _oeCls(_strRk[bn]) + '">' + _str + "</td>";
+        }
+        exhHtml += '<td class="fs-9">' + maintDisp + "</td>";
+        exhHtml += "<td>" + adjDisp + "</td>";
+        exhHtml += "</tr>";
+      }
+      exhHtml += "</tbody></table></div>";
+      if (_hasOe) {
+        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">' + _lapLabel + "\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>";
+      } else {
+        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
+      }
+      if (preview.boats) {
+        var courseEntries = [];
+        var hasCourse = false;
+        for (var ci = 1; ci <= 6; ci++) {
+          var cpv = preview.boats[String(ci)];
+          var cn = cpv && cpv.racer_course_number != null ? cpv.racer_course_number : ci;
+          if (cpv && cpv.racer_course_number != null) hasCourse = true;
+          courseEntries.push({ boat: ci, course: cn });
+        }
+        if (hasCourse) {
+          courseEntries.sort(function(a, b) {
+            return a.course - b.course;
+          });
+          exhHtml += '<div style="margin:8px 0;text-align:center;font-size:11px;font-weight:700;color:var(--text-sub)">\u9032\u5165\u30B3\u30FC\u30B9</div>';
+          exhHtml += '<div class="course-grid">';
+          courseEntries.forEach(function(e) {
+            exhHtml += '<div class="course-entry" style="background:' + BOAT_COLORS[e.boat] + ";color:" + BOAT_TEXT[e.boat] + ";border:1px solid " + (e.boat === 1 ? "#ccc" : "transparent") + '">' + e.boat + "</div>";
+          });
+          exhHtml += "</div>";
+        }
+      }
+    }
+    document.getElementById("detailExhibition").innerHTML = exhHtml;
+    _renderRaceDetailPrediction({
+      sid,
+      rn,
+      race,
+      pred,
+      preview,
+      result,
+      popularity,
+      raceOdds
+    });
+    document.getElementById("detailOdds").innerHTML = renderOddsSection(sid, rn, raceOdds, pred, race);
+    showPage("detail");
+    try {
+      _kickOffLiveOddsRefresh(sid, rn);
+    } catch (_) {
+    }
+  }
+  globalThis.openRace = openRace;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL:END */
 
 
 /* BUILD:REPORTING_RACE_DETAIL_PREDICTION:START */
