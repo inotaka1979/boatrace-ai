@@ -55,7 +55,11 @@ function _renderRaceDetailBoats(ctx) {
             ? pf(pvi.racer_exhibition_time)
             : 999,
       });
-      stTimes.push({ boat: ri, val: pvi && pvi.racer_start_timing != null ? pf(pvi.racer_start_timing) : 999 });
+      // ST は 0 以上で小さいほど良い。フライング(負)は最良ではなく失格＝最悪なので
+      //   999 に飛ばして上位色付けの対象外にする(従来は負が最速扱いで誤色付けされていた)。
+      var _stv = pvi && pvi.racer_start_timing != null ? pf(pvi.racer_start_timing) : 999;
+      if (_stv < 0) _stv = 999;
+      stTimes.push({ boat: ri, val: _stv });
     }
     etTimes.sort(function (a, b) {
       return a.val - b.val;
