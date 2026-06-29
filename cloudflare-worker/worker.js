@@ -975,6 +975,29 @@ export default {
       }
       const jcdN = parseInt(jcd);
       const rr = String(parseInt(race)).padStart(2, '0');
+      // 宮島(17): JS 駆動。kaisai_reload.php に POST し応答全文(####区切り、
+      //   オリジナル展示表は part[7])を返す。クライアント側が表を検索して解析する。
+      if (jcdN === 17) {
+        try {
+          const res = await fetch('https://www.boatrace-miyajima.com/race_common/require/kaisai_reload.php', {
+            method: 'POST',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 boatrace-scrape-trigger',
+              'Referer': 'https://www.boatrace-miyajima.com/',
+              'X-Requested-With': 'XMLHttpRequest',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `race=${parseInt(race)}&date=${hd}`,
+          });
+          if (!res.ok) return new Response(`upstream ${res.status}`, { status: 502, headers: CORS });
+          const html = await res.text();
+          return new Response(html, {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
+          });
+        } catch (e) {
+          return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
+        }
+      }
       const base = ORIG_BASES[jcdN];
       // 場の形式に応じて upstream とヘッダを決める。
       //   ajax_yosou(鳴門系): ajax_yosou.php。蒲郡(7): recomend 静的htm。戸田(2): XML。

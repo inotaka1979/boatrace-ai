@@ -659,7 +659,12 @@ def scrape_suminoe_yoso(base, jcd, date_str):
 
 
 def _miyajima_post(base, race, date_str):
-    """宮島 kaisai_reload.php に POST し dt[8](周回タイム断片)を返す。"""
+    """宮島 kaisai_reload.php に POST し応答全文を返す。
+
+    実応答は '####' 区切り 49 パートで、オリジナル展示表は part[7] にあるが
+    開催/レースで index が動き得るため、全文を parse_miyajima_shukai に渡して
+    「一周/まわり足/直線 を含む表」を検索させる(part 番号に依存しない)。
+    """
     import urllib.parse
     import urllib.request
     data = urllib.parse.urlencode({"race": race, "date": date_str}).encode()
@@ -669,8 +674,7 @@ def _miyajima_post(base, race, date_str):
                  "X-Requested-With": "XMLHttpRequest",
                  "Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(req, timeout=12) as r:
-        parts = r.read().decode("utf-8", errors="replace").split("####")
-    return parts[8] if len(parts) > 8 else ""
+        return r.read().decode("utf-8", errors="replace")
 
 
 def scrape_miyajima_post(base, jcd, date_str):
@@ -682,12 +686,12 @@ def scrape_miyajima_post(base, jcd, date_str):
         for fut in as_completed(futs):
             rno = futs[fut]
             try:
-                dt8 = fut.result()
+                body = fut.result()
             except Exception:
                 continue
-            if not dt8:
+            if not body:
                 continue
-            race = parse_miyajima_shukai(dt8, jcd, rno)
+            race = parse_miyajima_shukai(body, jcd, rno)
             if race and _has_times(race):
                 out.append(race)
     out.sort(key=lambda r: r["race_number"])

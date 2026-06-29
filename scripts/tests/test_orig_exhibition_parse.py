@@ -228,6 +228,47 @@ class TestSuminoeYoso(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_MIYA_REAL = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'miyajima_reload_part7_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_MIYA_REAL),
+                     'bs4 or sample HTML missing')
+class TestMiyajimaReloadReal(unittest.TestCase):
+    """宮島(実 kaisai_reload 応答 part[7])の回帰テスト。
+
+    実データは 枠/選手名/体重/チルト/展示/一周/まわり足/直線 の位置ベース表
+    (td に col クラス無し、枠は先頭セルの 1-6)。parse_miyajima_shukai が
+    ヘッダ位置駆動でこれを解析できることを固定する(旧 dt[8]→全文検索の修正を担保)。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_MIYA_REAL, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_miyajima_shukai(f.read(), 17, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 17)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.71)
+        self.assertEqual(b['lap_time'], 37.13)
+        self.assertEqual(b['turn_time'], 5.48)
+        self.assertEqual(b['straight_time'], 7.19)
+
+    def test_all_laps(self):
+        laps = [b['lap_time'] for b in self.race['boats']]
+        self.assertEqual(laps, [37.13, 37.76, 38.06, 37.73, 37.76, 37.47])
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _KIRYU_EMPTY = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'kiryu_cyokuzen_R03_empty.html'
 )
