@@ -453,16 +453,6 @@ def scrape_ajax_yosou(base, jcd, date_str):
     return out
 
 
-def _cookie_get(opener, url, ref):
-    """cookie 維持のため opener 経由で GET。失敗時は例外。"""
-    import urllib.request
-    req = urllib.request.Request(url, headers={
-        "User-Agent": _UA, "Referer": ref,
-        "X-Requested-With": "XMLHttpRequest"})
-    with opener.open(req, timeout=12) as r:
-        return r.read().decode("utf-8", errors="replace")
-
-
 _TOBAN_RE = __import__("re").compile(r"toban=(\d{3,5})")
 
 
@@ -472,21 +462,18 @@ def _roster(html):
 
 
 def _fetch_one_cyokuzen(base, jcd, rno):
-    """桐生/福岡型: race=N ページで session を設定 → ajax_cyokuzen.php を取得。
+    """桐生/福岡型: ajax_cyokuzen.php?race=N を直接取得(race別データ)。
 
-    返す race には検証用の出走選手 roster(_roster)を添える。展示前(時刻無し)でも
-    roster は取れるため、レース選択が効いているかの判定に使える。
+    旧実装は cookie session(page→ajax)でレースを設定していたが、現行サイトでは
+    session でレースが切り替わらず全レースが同一データ=roster 重複で全抑止される
+    不具合があった。直接 ?race=N を付けると cookie 無しで race 別データが返るため
+    そちらに切替える。返す race には検証用 roster(_roster)を添える。
     """
-    import http.cookiejar
-    import urllib.request
-    page = base + f"/sp/index.php?page=yosou-cyokuzen&race={rno}"
-    ajax = base + "/sp/ajax/ajax_cyokuzen.php"
+    ajax = base + f"/sp/ajax/ajax_cyokuzen.php?race={rno}"
     try:
-        cj = http.cookiejar.CookieJar()
-        op = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cj))
-        _cookie_get(op, page, base + "/sp/")       # session にレースを設定
-        html = _cookie_get(op, ajax, page)
+        html = fetch_text(ajax, timeout=12, retries=1,
+                          headers={"Referer": base + "/sp/",
+                                   "X-Requested-With": "XMLHttpRequest"})
         race = parse_kiryu_cyokuzen(html, jcd, rno)
         if race and _has_times(race):
             race["_roster"] = _roster(html)

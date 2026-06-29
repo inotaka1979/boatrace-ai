@@ -1330,7 +1330,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1536,6 +1536,42 @@ function _parseMiyajimaReload(html){
     return Object.keys(bymap).length?bymap:null;
   }catch(e){ return null; }
 }
+// 桐生/福岡 ajax_cyokuzen.php 応答 → bymap。thead に (半周|一周)&まわり足&直線 を含む表を探し、
+//   td.col1=枠 / td.col4=展示 / col5-1=半(一)周 / col5-2=まわり足 / col5-3=直線。展示前は col5-7
+//   (データ無し merge セル)があるため時刻 0 のまま。col5-N が無ければ col4 の後ろ3セルにフォールバック。
+//   桐生は「半周」を独自計測するが順位ベース加点に使うので lap_time に格納(Python parse_kiryu_cyokuzen と一致)。
+function _parseKiryu(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var head=tables[i].querySelector('thead'); if(!head) continue;
+      var t=head.textContent||'';
+      if(((t.indexOf('半周')>=0)||(t.indexOf('一周')>=0))&&t.indexOf('まわり足')>=0&&t.indexOf('直線')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var body=target.querySelector('tbody')||target;
+    var trs=body.querySelectorAll('tr'), bymap={};
+    var f=function(td){if(!td) return 0; var x=parseFloat((td.textContent||'').trim()); return (x>0)?x:0;};
+    for(var r=0;r<trs.length;r++){
+      var c1=trs[r].querySelector('td.col1'); if(!c1) continue;
+      var waku=parseInt((c1.textContent||'').trim(),10);
+      if(!(waku>=1&&waku<=6)) continue;
+      var rec={racer_boat_number:waku,ex_time:f(trs[r].querySelector('td.col4')),lap_time:0,turn_time:0,straight_time:0};
+      if(!trs[r].querySelector('td.col5-7')){
+        var cells=[trs[r].querySelector('td.col5-1'),trs[r].querySelector('td.col5-2'),trs[r].querySelector('td.col5-3')];
+        if(!cells[0]&&!cells[1]&&!cells[2]){
+          var tds=trs[r].querySelectorAll('td'), idx=-1;
+          for(var k=0;k<tds.length;k++){ if((' '+(tds[k].className||'')+' ').indexOf(' col4 ')>=0){idx=k;break;} }
+          if(idx>=0) cells=[tds[idx+1]||null,tds[idx+2]||null,tds[idx+3]||null];
+        }
+        rec.lap_time=f(cells[0]); rec.turn_time=f(cells[1]); rec.straight_time=f(cells[2]);
+      }
+      bymap[waku]=rec;
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 function _loadOrigExhibitionLive(sid,rno){
   try{
@@ -1555,7 +1591,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
