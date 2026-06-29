@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""津(9) がオリジナル展示(一周/まわり足/直線)を公開しているか発見するプローブ。
+"""津(9) の「オリジナル展示」サブタブの AJAX 経路を発見するプローブ。
 
-津の ajax_yosou req=cyokuzen は直前情報(展示評価)のみで一周/まわり足/直線が無いと判明。
-鳴門(n14)は req=cyokuzen に在るので津は別実装。津のページ/別 req を当たって、
-オリジナル展示タブ/エンドポイントの有無を確定する。確認後撤去。
+津は実際にはオリジナル展示(枠/展示/一周/まわり足/直線)を公開している(SP の
+展示情報→オリジナル展示タブ)。req=cyokuzen は別タブ(直前情報=展示評価)だった。
+SP ページの JS から オリジナル展示 を読む正しい req/URL を突き止める。確認後撤去。
 """
 import os
 import re
@@ -16,8 +16,7 @@ from http_utils import fetch_bytes  # noqa: E402
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.boatrace-tsu.com"
-KW = ("オリジナル展示", "一周", "半周", "まわり足", "直線", "周回", "展示タイム",
-      "展示評価", "スタート展示", "展示")
+KW = ("オリジナル展示", "一周", "まわり足", "直線", "展示タイム", "スタート展示", "waku")
 
 
 def _marks(txt):
@@ -27,49 +26,49 @@ def _marks(txt):
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    h_ajax = {"Referer": BASE + "/sp/", "X-Requested-With": "XMLHttpRequest"}
     h_pg = {"Referer": BASE + "/"}
+    h_ajax = {"Referer": BASE + "/sp/", "X-Requested-With": "XMLHttpRequest"}
 
-    # 1) ホスト側ページ(タブのリンク/JSを見る)
-    print("== 津 pages ==")
+    # 1) SP のタブを持つページを取得し、ajax_yosou の req 一覧と オリジナル展示 周辺を吸い出す
+    print("== 津 SP pages ==")
     for name, url in [
         ("sp", f"{BASE}/sp/"),
-        ("sp_yosou_cyokuzen", f"{BASE}/sp/index.php?page=yosou-cyokuzen&race=1"),
-        ("top", f"{BASE}/"),
+        ("sp_index_race1", f"{BASE}/sp/index.php?race=1"),
     ]:
         try:
             raw = fetch_bytes(url, timeout=12, retries=1, headers=h_pg)
             txt = raw.decode("utf-8", errors="replace")
             print(f"[{name}] ({len(raw)}B) {_marks(txt)}")
-            refs = re.findall(
-                r'''(?:href|src|data-[\w-]+|onclick)=["']?'''
-                r'''([^"'<> )]*(?:cyokuzen|original|tenji|req=|kind=|周回)'''
-                r'''[^"'<> )]*)''', txt)
-            for r in sorted(set(refs))[:25]:
-                print(f"    ref: {r}")
-            # 「オリジナル展示」近傍を表示
-            i = txt.find("オリジナル展示")
-            if i >= 0:
-                print(f"    near: {re.sub(chr(9),'',txt[i-150:i+120])}")
-            if name == "sp_yosou_cyokuzen":
-                with open(os.path.join(OUTDIR, "tsu_yosou_cyokuzen.html"),
-                          "wb") as f:
-                    f.write(raw)
+            # ajax_yosou.php を呼ぶ JS の req 値を全部拾う
+            reqs = sorted(set(re.findall(r'req=([A-Za-z0-9_]+)', txt)))
+            print(f"    req values seen: {reqs}")
+            # 「オリジナル展示」近傍(タブ定義の data-* / onclick)
+            for m in re.finditer("オリジナル展示", txt):
+                seg = re.sub(r'\s+', ' ', txt[m.start()-220:m.start()+40])
+                print(f"    near: ...{seg}")
+            with open(os.path.join(OUTDIR, f"tsu_{name}.html"), "wb") as f:
+                f.write(raw)
         except Exception as e:
             print(f"[{name}] FAIL: {str(e)[:70]}")
 
-    # 2) 別 req 候補を直叩き
-    print("== 津 ajax req candidates ==")
-    for req in ("cyokuzen2", "original", "cyokuzen_o", "shukai", "syuukai",
-                "tenji", "cyokuzen&kind=2"):
+    # 2) 拾った req を全部 ajax_yosou.php で叩いて オリジナル展示(一周&まわり足)を探す
+    print("== try ajax_yosou.php with discovered/likely reqs ==")
+    cand = ["cyokuzen", "cyokuzendetail", "cyokuzen_detail", "original",
+            "cyokuzen_original", "tenjidetail", "tenji_detail", "shusso",
+            "cyokuzen2", "syussou", "cyokuzeninfo"]
+    for req in cand:
         url = (f"{BASE}/sp/ajax/ajax_yosou.php"
                f"?targetday={hd}&race=1&req={req}&run=0")
         try:
             raw = fetch_bytes(url, timeout=10, retries=0, headers=h_ajax)
             txt = raw.decode("utf-8", errors="replace")
-            print(f"[req={req}] ({len(raw)}B) {_marks(txt)}")
+            hit = ("一周" in txt) and ("まわり足" in txt)
+            print(f"[req={req}] ({len(raw)}B) {_marks(txt)} {'<<< ORIG!' if hit else ''}")
+            if hit:
+                with open(os.path.join(OUTDIR, f"tsu_orig_{req}.html"), "wb") as f:
+                    f.write(raw)
         except Exception as e:
-            print(f"[req={req}] -- {str(e)[:45]}")
+            print(f"[req={req}] -- {str(e)[:40]}")
     return 0
 
 
