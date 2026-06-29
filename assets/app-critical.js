@@ -1335,7 +1335,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1346,6 +1346,10 @@ var _oeLiveTried={};
 /* MOVED: function _parseTodaXml */
 // 蒲郡 recomend(table.ta_recomend: cho_waku + ori_time×4[展示/一周/まわり足/直線]) → bymap。
 /* MOVED: function _parseGamagoriRecomendHtml */
+// 住之江 yoso05RR(直前情報予想)→ bymap。時刻列 th が全て col10・枠セルが waku01.. の
+//   ため col 駆動が効かない。ヘッダ th の並び(枠/選手名/体重/チルト/展示/一周/まわり足)から
+//   位置を取り td を位置で読む(直線列なし)。
+/* MOVED: function _parseSuminoeYoso */
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 /* MOVED: function _loadOrigExhibitionLive */
 // X6: 対戦相性 DB

@@ -1003,6 +1003,11 @@ export default {
         // びわこ独自CMS。オリジナル展示はタブ kind=2(col5-8=展示/一周/まわり足/直線)。
         upstream = `https://www.boatrace-biwako.jp/modules/yosou/cyokuzen.php?day=${hd}&race=${parseInt(race)}&if=0&kind=2`;
         fetchHeaders.Referer = 'https://www.boatrace-biwako.jp/';
+      } else if (jcdN === 12) {
+        // 住之江: SP iframe の直前情報予想タブ = /asp/kyogi/12/sp/yoso05{RR}.htm
+        //   (枠/展示/一周/まわり足、直線なし)。
+        upstream = `https://www.boatrace-suminoe.jp/asp/kyogi/12/sp/yoso05${rr}.htm`;
+        fetchHeaders.Referer = 'https://www.boatrace-suminoe.jp/sp/';
       }
       if (!upstream) {
         return new Response('unsupported jcd', { status: 400, headers: CORS });

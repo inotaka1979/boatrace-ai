@@ -187,6 +187,47 @@ class TestBiwakoModules(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_SUMINOE = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'suminoe_yoso0505.htm'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_SUMINOE),
+                     'bs4 or sample HTML missing')
+class TestSuminoeYoso(unittest.TestCase):
+    """住之江型(yoso05RR=直前情報予想)の回帰テスト。
+
+    時刻列 th が全て col10・枠セルが waku01.. で col 駆動が効かないため、
+    ヘッダ並び順に基づく位置ベースの parse_suminoe_yoso で解析する(直線列なし)。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_SUMINOE, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_suminoe_yoso(f.read(), 12, 5)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 12)
+        self.assertEqual(self.race['race_number'], 5)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.87)       # 展示
+        self.assertEqual(b['lap_time'], 37.55)     # 一周
+        self.assertEqual(b['turn_time'], 11.55)    # まわり足
+        self.assertEqual(b['straight_time'], 0.0)  # 直線列なし
+
+    def test_all_boats(self):
+        laps = [b['lap_time'] for b in self.race['boats']]
+        self.assertEqual(laps, [37.55, 37.56, 38.05, 37.33, 38.64, 38.28])
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _KIRYU_EMPTY = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'kiryu_cyokuzen_R03_empty.html'
 )
