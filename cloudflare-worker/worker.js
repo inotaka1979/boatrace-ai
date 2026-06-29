@@ -995,6 +995,10 @@ export default {
           `https://www.boatrace-toda.jp/race/xml/kaisai/${hd}/race_table_original_${rr}.xml`,
         ];
         fetchHeaders.Referer = 'https://www.boatrace-toda.jp/';
+      } else if (jcdN === 11) {
+        // びわこ独自CMS。オリジナル展示はタブ kind=2(col5-8=展示/一周/まわり足/直線)。
+        upstream = `https://www.boatrace-biwako.jp/modules/yosou/cyokuzen.php?day=${hd}&race=${parseInt(race)}&if=0&kind=2`;
+        fetchHeaders.Referer = 'https://www.boatrace-biwako.jp/';
       }
       if (!upstream) {
         return new Response('unsupported jcd', { status: 400, headers: CORS });

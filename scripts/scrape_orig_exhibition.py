@@ -54,12 +54,17 @@ G = "gamagori_recomend"
 #   {race,date} のレスポンスを '####' で split、dt[8]=周回タイム断片を
 #   parse_miyajima_shukai で解析(ヘッダ駆動)。
 M = "miyajima_post"
+# platform "biwako_modules": びわこ型。独自CMS。直前はタブ式で、オリジナル展示は
+#   /modules/yosou/cyokuzen.php?day=YYYYMMDD&race=N&if=0&kind=2 にある
+#   (kind=0直前情報/1スタート展示/2オリジナル展示)。表は col5-8=展示/一周/まわり足/直線
+#   のヘッダ駆動形式のため parse_naruto_cyokuzen で解析可能。
+BW = "biwako_modules"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
-    3: {"platform": C, "base": "https://www.boatrace-edogawa.com"},    # 江戸川(同ベンダー yosou.js)
-    11: {"platform": C, "base": "https://www.boatrace-biwako.jp"},     # びわこ(同ベンダー共通フレーム)
+    # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外
+    11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     2: {"platform": T, "base": "https://www.boatrace-toda.jp"},        # 戸田(XML)
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
@@ -587,12 +592,36 @@ def scrape_miyajima_post(base, jcd, date_str):
     return out
 
 
+def scrape_biwako_modules(base, jcd, date_str):
+    """びわこ型: /modules/yosou/cyokuzen.php?...&kind=2 を全12R取得し展示後のみ返す。
+
+    表は col5-8=展示/一周/まわり足/直線 のヘッダ駆動形式のため
+    parse_naruto_cyokuzen を流用する。
+    """
+    out = []
+    for rno in range(1, 13):
+        url = (f"{base}/modules/yosou/cyokuzen.php"
+               f"?day={date_str}&race={rno}&if=0&kind=2")
+        try:
+            html = fetch_text(url, timeout=12, retries=1,
+                              headers={"Referer": base + "/"})
+        except Exception:
+            continue  # 欠番/展示前は静かに skip
+        race = parse_naruto_cyokuzen(html, jcd, rno)
+        if race and _has_times(race):
+            out.append(race)
+    out.sort(key=lambda r: r["race_number"])
+    return out
+
+
 def scrape_venue(jcd, cfg, date_str):
     """レジストリの platform に応じて場のオリジナル展示を取得する。"""
     if cfg["platform"] == "ajax_yosou":
         return scrape_ajax_yosou(cfg["base"], jcd, date_str)
     if cfg["platform"] == "ajax_cyokuzen":
         return scrape_ajax_cyokuzen(cfg["base"], jcd, date_str)
+    if cfg["platform"] == "biwako_modules":
+        return scrape_biwako_modules(cfg["base"], jcd, date_str)
     if cfg["platform"] == "toda_xml":
         return scrape_toda_xml(cfg["base"], jcd, date_str)
     if cfg["platform"] == "gamagori_recomend":

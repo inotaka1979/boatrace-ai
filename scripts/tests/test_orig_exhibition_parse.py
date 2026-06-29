@@ -100,6 +100,50 @@ class TestTokuyamaCyokuzen(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_BIWAKO = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'biwako_cyokuzen_kind2_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_BIWAKO),
+                     'bs4 or sample HTML missing')
+class TestBiwakoModules(unittest.TestCase):
+    """びわこ型(独自CMS modules/yosou/cyokuzen.php?kind=2)の回帰テスト。
+
+    表は col5-8=展示/一周/まわり足/直線 のヘッダ駆動形式で、ajax_yosou と同じ
+    parse_naruto_cyokuzen で解析できることを固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_BIWAKO, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_naruto_cyokuzen(f.read(), 11, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 11)
+        self.assertEqual(self.race['race_number'], 1)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.78)       # col5 展示
+        self.assertEqual(b['lap_time'], 37.82)     # col6 一周
+        self.assertEqual(b['turn_time'], 5.85)     # col7 まわり足
+        self.assertEqual(b['straight_time'], 8.07)  # col8 直線
+
+    def test_value_ranges(self):
+        for b in self.race['boats']:
+            self.assertTrue(6.0 <= b['ex_time'] <= 8.0, b)
+            self.assertTrue(34.0 <= b['lap_time'] <= 40.0, b)
+            self.assertTrue(4.5 <= b['turn_time'] <= 8.0, b)
+            self.assertTrue(7.0 <= b['straight_time'] <= 9.0, b)
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _KIRYU_EMPTY = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'kiryu_cyokuzen_R03_empty.html'
 )
