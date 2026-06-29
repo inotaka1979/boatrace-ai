@@ -224,6 +224,13 @@ class TestSuminoeYoso(unittest.TestCase):
         laps = [b['lap_time'] for b in self.race['boats']]
         self.assertEqual(laps, [37.55, 37.56, 38.05, 37.33, 38.64, 38.28])
 
+    def test_start_timing(self):
+        # スタート展示 ST(dl dt/dd.boatN)。boat2 は F.03=フライング(負)。
+        st = {b['racer_boat_number']: b.get('st_time') for b in self.race['boats']}
+        self.assertEqual(st[1], 0.10)
+        self.assertEqual(st[2], -0.03)
+        self.assertEqual(st[4], 0.01)
+
     def test_has_times(self):
         self.assertTrue(S._has_times(self.race))
 

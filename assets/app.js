@@ -1444,6 +1444,18 @@ function _parseSuminoeYoso(html){
       var v=function(n){var x=(n>=0&&n<tds.length)?parseFloat((tds[n].textContent||'').trim()):0; return (x>0)?x:0;};
       bymap[waku]={racer_boat_number:waku,ex_time:v(iEx),lap_time:v(iLap),turn_time:v(iTurn),straight_time:v(iStr)};
     }
+    // スタート展示 ST も抽出(dl: dt=ST文字列, dd.boatN=艇番)。".10"→0.10/"F.03"→負(フライング)。
+    //   boatrace.jp 直前情報が未取得でも ST/展示タイムを補完できる。
+    var dls=doc.querySelectorAll('dl');
+    for(var d=0;d<dls.length;d++){
+      var dt=dls[d].querySelector('dt'), dd=dls[d].querySelector('dd');
+      if(!dt||!dd) continue;
+      var mb=/boat([1-6])/.exec(dd.className||''); if(!mb) continue;
+      var bn=parseInt(mb[1],10); if(!bymap[bn]) continue;
+      var st=(dt.textContent||'').trim();
+      var sv=parseFloat(st.replace(/[^0-9.]/g,''));
+      if(!isNaN(sv)) bymap[bn].st_time=(/f/i.test(st)?-sv:sv);
+    }
     return Object.keys(bymap).length?bymap:null;
   }catch(e){ return null; }
 }
@@ -8242,8 +8254,9 @@ async function _loadNextOpen(){
       exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th>" + (_hasOe ? "<th>\u4E00\u5468</th><th>\u307E\u308F\u308A\u8DB3</th><th>\u76F4\u7DDA</th>" : "") + "<th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
       for (var bn = 1; bn <= 6; bn++) {
         var pv = pvMap[bn];
-        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : null;
-        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : null;
+        var _oebST = _oeRace && _oeRace[bn] || {};
+        var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing : _oebST.st_time != null ? _oebST.st_time : null;
+        var etVal = pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time : (_oebST.ex_time || 0) > 0 ? _oebST.ex_time : null;
         var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
         var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
         var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
