@@ -264,6 +264,28 @@ function openRace(sid, rn) {
     }
   }
 
+  // オリジナル展示(一周/まわり足/直線)の順位マップ。展示タイム同様、値が小さい
+  //   (速い)ほど上位。waku -> rank(0,1,2,...)。上位3つを hl-rank1/2/3 で色付け。
+  function _oeRankMap(field) {
+    var arr = [];
+    for (var b = 1; b <= 6; b++) {
+      var v = (_oeRace && _oeRace[b] && _oeRace[b][field]) || 0;
+      if (v > 0) arr.push([b, v]);
+    }
+    arr.sort(function (a, c) {
+      return a[1] - c[1];
+    });
+    var m = {};
+    for (var i = 0; i < arr.length; i++) m[arr[i][0]] = i;
+    return m;
+  }
+  var _lapRk = _hasOe ? _oeRankMap('lap_time') : {};
+  var _turnRk = _hasOe ? _oeRankMap('turn_time') : {};
+  var _strRk = _hasOe ? _oeRankMap('straight_time') : {};
+  function _oeCls(rk) {
+    return rk === 0 ? 'hl-rank1' : rk === 1 ? 'hl-rank2' : rk === 2 ? 'hl-rank3' : '';
+  }
+
   var exhHtml = '';
   if (preview && preview.boats) {
     exhHtml = '<div class="section-title">展示情報</div>';
@@ -334,7 +356,10 @@ function openRace(sid, rn) {
         var _lap = (_oeb2.lap_time || 0) > 0 ? _oeb2.lap_time.toFixed(2) : '---';
         var _turn = (_oeb2.turn_time || 0) > 0 ? _oeb2.turn_time.toFixed(2) : '---';
         var _str = (_oeb2.straight_time || 0) > 0 ? _oeb2.straight_time.toFixed(2) : '---';
-        exhHtml += '<td>' + _lap + '</td><td>' + _turn + '</td><td>' + _str + '</td>';
+        exhHtml +=
+          '<td class="' + _oeCls(_lapRk[bn]) + '">' + _lap + '</td>' +
+          '<td class="' + _oeCls(_turnRk[bn]) + '">' + _turn + '</td>' +
+          '<td class="' + _oeCls(_strRk[bn]) + '">' + _str + '</td>';
       }
       exhHtml += '<td class="fs-9">' + maintDisp + '</td>';
       exhHtml += '<td>' + adjDisp + '</td>';
