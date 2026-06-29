@@ -3425,7 +3425,8 @@ function pf(v){return parseFloat(v)||0}
     let conn = "";
     if (fetchAt) {
       const fsec = Math.floor((now - fetchAt) / 1e3);
-      conn = fsec < 300 ? '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK</span>' : '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>";
+      const fetchAgo = fsec < 5 ? "\u305F\u3063\u305F\u4ECA" : _ago(now - fetchAt);
+      conn = fsec < 300 ? '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK(\u53D6\u5F97 ' + fetchAgo + ")</span>" : '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>";
     } else {
       conn = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u672A\u63A5\u7D9A</span>';
     }

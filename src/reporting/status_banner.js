@@ -99,13 +99,16 @@ function _renderFreshness() {
     color = '#BDBDBD';
   }
 
-  // 副次 = 接続状態（アプリが今もデータを取りに行けているか）
+  // 副次 = 接続状態（アプリが今もデータを取りに行けているか）。
+  //   「更新しても変わらない」誤認対策: fetch 成功の経過時間も併記し、更新ボタンを
+  //   押すと「接続OK(取得 たった今)」が可視で変わるようにする(データ世代は主表示で正直)。
   let conn = '';
   if (fetchAt) {
     const fsec = Math.floor((now - fetchAt) / 1000);
+    const fetchAgo = fsec < 5 ? 'たった今' : _ago(now - fetchAt);
     conn =
       fsec < 300
-        ? '<span style="color:#81C784;font-size:0.85em"> ・📡接続OK</span>'
+        ? '<span style="color:#81C784;font-size:0.85em"> ・📡接続OK(取得 ' + fetchAgo + ')</span>'
         : '<span style="color:#FF8A80;font-size:0.85em"> ・📡接続不調(' + _ago(now - fetchAt) + ')</span>';
   } else {
     conn = '<span style="color:#FFCC80;font-size:0.85em"> ・📡未接続</span>';
