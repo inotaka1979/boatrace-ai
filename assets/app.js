@@ -1421,18 +1421,21 @@ function _loadOrigExhibitionLive(sid,rno){
     if(!/^\d{8}$/.test(hd)) return;
     var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
     if(!base) return;
+    // 空振り(展示前/失敗)はガードを解除し、後で再オープン時に再取得できるようにする。
+    //   展示は締切30-40分前に出るため、展示前に開いた後でも取りに行ける必要がある。
+    var _retry=function(){ _oeLiveTried[key]=false; };
     fetch(base+'/orig-exhibition-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
-        if(!html) return;
+        if(!html){ _retry(); return; }
         var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):_parseOrigExhibitionHtml(html);
-        if(!bymap) return;
+        if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
         if(String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
-          openRace(sid,rno);  // 再描画(predictRace も最新展示で再計算)。_oeLiveTried ガードで再 fetch しない
+          openRace(sid,rno);  // 再描画(predictRace も最新展示で再計算)。
         }
-      }).catch(function(){});
+      }).catch(function(){ _retry(); });
   }catch(e){}
 }
 // X6: 対戦相性 DB
