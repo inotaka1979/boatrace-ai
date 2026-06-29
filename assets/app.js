@@ -1339,10 +1339,11 @@ function _parseOrigExhibitionHtml(html){
     var tables=doc.querySelectorAll('table'), target=null;
     for(var i=0;i<tables.length;i++){
       var tx=tables[i].textContent||'';
-      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり足')>=0&&tx.indexOf('直線')>=0){target=tables[i];break;}
+      // 直線は任意(徳山は 展示/一周/まわり足 のみ)。一周&まわり足 で表を特定。
+      if(tx.indexOf('一周')>=0&&tx.indexOf('まわり足')>=0){target=tables[i];break;}
     }
     if(!target) return null;
-    var LABELS={'展示':'ex_time','一周':'lap_time','まわり足':'turn_time','直線':'straight_time'};
+    var LABELS={'展示':'ex_time','展示タイム':'ex_time','一周':'lap_time','まわり足':'turn_time','直線':'straight_time'};
     var colmap={}, trs=target.querySelectorAll('tr');
     for(var r=0;r<trs.length;r++){
       var ths=trs[r].querySelectorAll('th');
@@ -1353,7 +1354,7 @@ function _parseOrigExhibitionHtml(html){
         if(cls.length) colmap[f]=cls[0];
       }
     }
-    if(!(colmap.lap_time&&colmap.turn_time&&colmap.straight_time)) return null;
+    if(!(colmap.lap_time&&colmap.turn_time)) return null;  // 直線は任意
     var bymap={};
     for(var r2=0;r2<trs.length;r2++){
       var wtd=trs[r2].querySelector('td.waku'); if(!wtd) continue;

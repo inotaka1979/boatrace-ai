@@ -65,6 +65,41 @@ class TestNarutoCyokuzen(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_TOKUYAMA = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'tokuyama_cyokuzen_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_TOKUYAMA),
+                     'bs4 or sample HTML missing')
+class TestTokuyamaCyokuzen(unittest.TestCase):
+    """徳山型(ajax_yosou だが直線列なし=展示/一周/まわり足のみ)の回帰テスト。
+
+    直線を必須にしていたため徳山が弾かれていた不具合の修正を固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_TOKUYAMA, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_naruto_cyokuzen(f.read(), 18, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 18)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_no_straight(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.85)      # 展示タイム
+        self.assertEqual(b['lap_time'], 37.14)    # 一周
+        self.assertEqual(b['turn_time'], 11.50)   # まわり足
+        self.assertEqual(b['straight_time'], 0.0)  # 直線列なし → 0
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _KIRYU_EMPTY = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'kiryu_cyokuzen_R03_empty.html'
 )
