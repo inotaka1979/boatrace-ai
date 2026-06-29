@@ -1330,7 +1330,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1447,6 +1447,44 @@ function _parseSuminoeYoso(html){
     return Object.keys(bymap).length?bymap:null;
   }catch(e){ return null; }
 }
+// 宮島 kaisai_reload.php 応答全文(####区切り)→ bymap。位置ベース: 一周/まわり足/直線 を
+//   含む表を探し、ヘッダのラベル位置で列特定、各行の先頭付近 1-6 を枠として読む。
+function _parseMiyajimaReload(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), target=null;
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(tx.indexOf('一周')>=0&&(tx.indexOf('まわり足')>=0||tx.indexOf('回り足')>=0)&&tx.indexOf('直線')>=0){target=tables[i];break;}
+    }
+    if(!target) return null;
+    var LAB={'展示':'ex_time','展示タイム':'ex_time','一周':'lap_time','まわり足':'turn_time','回り足':'turn_time','直線':'straight_time'};
+    var trs=target.querySelectorAll('tr'), colidx=null;
+    for(var r=0;r<trs.length;r++){
+      var cs=trs[r].querySelectorAll('th,td'), found={};
+      for(var c=0;c<cs.length;c++){
+        var f=LAB[(cs[c].textContent||'').replace(/\s+/g,'')];
+        if(f&&!(f in found)) found[f]=c;
+      }
+      if(('lap_time' in found)&&('turn_time' in found)&&('straight_time' in found)){ colidx=found; break; }
+    }
+    if(!colidx) return null;
+    var bymap={}, seen={};
+    for(var r2=0;r2<trs.length;r2++){
+      var cells=trs[r2].querySelectorAll('td');
+      if(cells.length<=colidx.straight_time) continue;
+      var waku=null;
+      for(var k=0;k<3&&k<cells.length;k++){
+        var t2=(cells[k].textContent||'').trim();
+        if(/^[1-6]$/.test(t2)){ waku=parseInt(t2,10); break; }
+      }
+      if(waku===null||seen[waku]) continue; seen[waku]=1;
+      var v=function(f){var ix=colidx[f]; if(ix==null||ix<0||ix>=cells.length) return 0; var x=parseFloat((cells[ix].textContent||'').trim()); return (x>0)?x:0;};
+      bymap[waku]={racer_boat_number:waku,ex_time:v('ex_time'),lap_time:v('lap_time'),turn_time:v('turn_time'),straight_time:v('straight_time')};
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 function _loadOrigExhibitionLive(sid,rno){
   try{
@@ -1466,7 +1504,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
