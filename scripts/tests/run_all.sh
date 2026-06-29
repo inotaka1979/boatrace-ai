@@ -165,6 +165,10 @@ step "X6 series / pairwise tests" \
 step "X7 backtest engine tests" \
      "node scripts/tests/test_backtest.js"
 
+# 15b) 履歴重複 dedup テスト (2026-06-29: 型不一致二重登録の回帰防止)
+step "history dedup tests" \
+     "node scripts/tests/test_history_dedup.js"
+
 # 16) F13 自己決まり手スコアテスト
 step "F13 self-style score tests" \
      "node scripts/tests/test_self_style.js"

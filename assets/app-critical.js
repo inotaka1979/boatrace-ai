@@ -3305,6 +3305,13 @@ var _workerHeavyLoaded = false;
 // 再構築するので最終状態は正しい。
 /* MOVED: function _migrateDropStaleTodayHistory */
 
+// 2026-06-29: savePrediction の型不一致重複バグ(string sid vs number sid)で
+//   生じた boatrace_history の二重登録を一掃する。(date, stadium, race) を
+//   数値正規化したキーで畳み込み、actual あり > なし、actual 同士なら払戻が
+//   多い方を残す。型も number に正規化して以後の === 比較を安定させる。
+//   毎回呼ばれるが冪等で、変化が無ければ書込まない（軽量）。
+/* MOVED: function _dedupHistory */
+
 // 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
 // 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
 // 保存してしまった garbage を一掃）。resultData ロード後のみ実行。

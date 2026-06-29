@@ -4,978 +4,6 @@
 // window.load 後に lazy load される (assets/app-rest-stats.js は別 sub-chunk)
 'use strict';
 
-/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
-"use strict";
-(() => {
-  // ../src/analysis/predict_program.js
-  function predictRaceProgram(sid, raceNum) {
-    if (!programData) return null;
-    var stadiumProg = programData[String(sid)];
-    if (!stadiumProg) return null;
-    var race = stadiumProg[String(raceNum)];
-    if (!race || !race.boats) return null;
-    var boats = race.boats;
-    if (!Array.isArray(boats)) return null;
-    var predictedEntries = predictEntryCourses(boats, sid);
-    var l1scores = [];
-    boats.forEach(function(b) {
-      var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries, raceNum);
-      l1scores.push(s);
-    });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
-    }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
-    });
-    var features6 = boats.map(function(b) {
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
-    });
-    var l2probs = l2Predict(features6);
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 600 / (600 + dbSize);
-    var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      var idx = boats.indexOf(b);
-      var fp = alpha * l1probs[idx] + beta * l2probs[idx];
-      return {
-        boat: b.racer_boat_number,
-        prob: fp,
-        score: l1s.score,
-        course: l1s.course,
-        reasons: l1s.reasons,
-        risks: l1s.risks,
-        motorLabel: l1s.motorLabel,
-        motorEmoji: l1s.motorEmoji,
-        motorRate: l1s.motorRate,
-        classNum: l1s.classNum
-      };
-    });
-    finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
-      var l1 = l1scores.find(function(s) {
-        return s.boat === p.boat;
-      });
-      var fc = l1 ? l1.fc || 0 : 0;
-      var lc = l1 ? l1.lc || 0 : 0;
-      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
-      p.prob *= mult;
-    });
-    var _sum2 = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sum2;
-      });
-    }
-    finalProbs.sort(function(a, b) {
-      return b.prob - a.prob;
-    });
-    finalProbs.forEach(function(p, i) {
-      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
-    });
-    var topProb = finalProbs[0].prob;
-    var top2Prob = finalProbs[0].prob + finalProbs[1].prob;
-    var raceType, typeLabel;
-    var RT2 = TUNING.RACE_TYPE;
-    if (topProb > RT2.HONMEI_TOP1_MIN && top2Prob > RT2.HONMEI_TOP2_MIN) {
-      raceType = "honmei";
-      typeLabel = "\u672C\u547D";
-    } else if (topProb < RT2.ANA_TOP1_MAX) {
-      raceType = "ana";
-      typeLabel = "\u7A74";
-    } else {
-      raceType = "middle";
-      typeLabel = "\u6DF7\u6226";
-    }
-    return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
-  }
-  globalThis.predictRaceProgram = predictRaceProgram;
-})();
-
-/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
-
-
-/* BUILD:ANALYSIS_PREDICT_RACE:START */
-"use strict";
-(() => {
-  // ../src/analysis/predict_race.js
-  function predictRaceAsync(sid, raceNum) {
-    var w = _getAppWorker();
-    if (!w) {
-      return Promise.resolve(predictRace(sid, raceNum));
-    }
-    var reqId = ++_appWorkerReqId;
-    return new Promise(function(resolve, reject) {
-      _appWorkerCallbacks.set(reqId, function(msg) {
-        if (msg.type === "predict_done") resolve(msg.result);
-        else if (msg.type === "error") {
-          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
-          try {
-            resolve(predictRace(sid, raceNum));
-          } catch (e) {
-            reject(e);
-          }
-        } else {
-          reject(new Error("unexpected worker message: " + JSON.stringify(msg).slice(0, 200)));
-        }
-      });
-      w.postMessage({
-        type: "predict",
-        reqId,
-        input: {
-          sid,
-          raceNum
-          // state を毎回送るのは重いので省略、init/sync_state で同期済み前提
-        }
-      });
-    });
-  }
-  function predictRace(sid, raceNum) {
-    if (!programData) return null;
-    var stadiumProg = programData[String(sid)];
-    if (!stadiumProg) return null;
-    var race = stadiumProg[String(raceNum)];
-    if (!race || !race.boats) return null;
-    var preview = null, weather = null;
-    if (previewData && previewData[String(sid)] && previewData[String(sid)][String(raceNum)]) {
-      preview = previewData[String(sid)][String(raceNum)];
-      weather = preview.weather || preview;
-    }
-    var boats = race.boats;
-    if (!Array.isArray(boats)) return null;
-    var predictedEntries = null;
-    if (!preview || !preview.boats || Object.keys(preview.boats).every(function(k) {
-      return preview.boats[k].racer_course_number == null;
-    })) {
-      predictedEntries = predictEntryCourses(boats, sid);
-    }
-    var l1scores = [];
-    boats.forEach(function(b) {
-      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
-      var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
-      l1scores.push(s);
-    });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
-    }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
-    });
-    var stRanks = [];
-    if (preview && preview.boats) {
-      var sts = [];
-      for (var si = 1; si <= 6; si++) {
-        var spv = preview.boats[String(si)];
-        var stVal = spv && spv.racer_start_timing != null ? pf(spv.racer_start_timing) : 99;
-        sts.push({ boat: si, st: stVal });
-      }
-      sts.sort(function(a, b) {
-        return a.st - b.st;
-      });
-      for (var sr = 0; sr < sts.length; sr++) stRanks[sts[sr].boat] = sr;
-    }
-    var features6 = boats.map(function(b) {
-      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
-    });
-    var l2probs = l2Predict(features6);
-    if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
-      try {
-        var l2logits = l2probs.map(function(p) {
-          var clipped = Math.min(0.9999, Math.max(1e-4, p));
-          return Math.log(clipped / (1 - clipped));
-        });
-        var blended = _blendGBDTPrediction(l2logits, features6, TUNING.PREDICTION.GBDT_BLEND_WEIGHT);
-        if (Array.isArray(blended) && blended.length === l2probs.length) {
-          var maxL = -Infinity;
-          for (var bi = 0; bi < blended.length; bi++) if (blended[bi] > maxL) maxL = blended[bi];
-          var sumE = 0;
-          var expL = blended.map(function(l) {
-            var e = Math.exp(l - maxL);
-            sumE += e;
-            return e;
-          });
-          if (sumE > 0) l2probs = expL.map(function(e) {
-            return e / sumE;
-          });
-        }
-      } catch (e) {
-      }
-    }
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 300 / (300 + dbSize);
-    var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
-      var l1s = l1scores.find(function(s) {
-        return s.boat === b.racer_boat_number;
-      });
-      var idx = boats.indexOf(b);
-      var fp2 = alpha * l1probs[idx] + beta * l2probs[idx];
-      return {
-        boat: b.racer_boat_number,
-        prob: fp2,
-        score: l1s.score,
-        course: l1s.course,
-        etRank: l1s.etRank,
-        etTime: l1s.etTime,
-        reasons: l1s.reasons,
-        risks: l1s.risks,
-        motorLabel: l1s.motorLabel,
-        motorEmoji: l1s.motorEmoji,
-        motorRate: l1s.motorRate,
-        boatRate: l1s.boatRate,
-        form: l1s.form,
-        classNum: l1s.classNum
-      };
-    });
-    finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
-      var l1 = l1scores.find(function(s) {
-        return s.boat === p.boat;
-      });
-      var fc = l1 ? l1.fc || 0 : 0;
-      var lc = l1 ? l1.lc || 0 : 0;
-      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
-      p.prob *= mult;
-    });
-    var _sumCalib = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sumCalib;
-      });
-    }
-    finalProbs.sort(function(a, b) {
-      return b.prob - a.prob;
-    });
-    var marks = finalProbs.map(function(p, i) {
-      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
-      return p;
-    });
-    var topProb = marks[0].prob;
-    var top2Prob = marks[0].prob + marks[1].prob;
-    var raceType, typeLabel, typeCls;
-    var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
-    var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
-    var RT = TUNING.RACE_TYPE;
-    if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
-      raceType = "honmei";
-      typeLabel = "\u672C\u547D";
-      typeCls = "type-honmei";
-    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
-      raceType = "ana";
-      typeLabel = "\u7A74";
-      typeCls = "type-ana";
-    } else {
-      raceType = "middle";
-      typeLabel = "\u6DF7\u6226";
-      typeCls = "type-middle";
-    }
-    var betCount3 = parseInt(settings.betCount3) || 10;
-    var betCount2 = parseInt(settings.betCount2) || 5;
-    var method = settings.betMethod || "auto";
-    var evMode = settings.evMode === true || settings.evMode === "true";
-    var kpiMode = settings.kpiMode || "balanced";
-    var TYPE_EVMIN = {
-      roi: { honmei: 1.2, middle: 1.25, ana: 1.35 },
-      balanced: { honmei: 1.1, middle: 1.15, ana: 1.25 },
-      hit: { honmei: 1, middle: 1.05, ana: 1.1 }
-    };
-    var TYPE_MAXBETS = {
-      roi: { honmei: 4, middle: 5, ana: 3 },
-      balanced: { honmei: 6, middle: 8, ana: 5 },
-      hit: { honmei: 10, middle: 12, ana: 8 }
-    };
-    var defEvMin = parseFloat(settings.evMin) || 1.15;
-    var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
-    var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
-    var evOpt = {
-      evMin: modeEvMin != null ? modeEvMin : defEvMin,
-      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
-      bankroll: parseInt(settings.bankroll) || 1e4
-    };
-    var raceOddsForEV = null;
-    if (oddsData && oddsData.odds) {
-      var found = oddsData.odds.find(function(o) {
-        return o.stadium === parseInt(sid) && o.race === parseInt(raceNum);
-      });
-      if (found) raceOddsForEV = found;
-    }
-    if (method === "auto") {
-      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
-      else if (raceType === "honmei") method = "prob";
-      else if (raceType === "ana") method = "box";
-      else method = "formation";
-    }
-    var grade = race.race_grade_number || 0;
-    var scenarioRes = predictWithScenarios(boats, preview, weather, sid, grade);
-    var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
-    bets.marks = marks;
-    bets.evApplied = method === "ev";
-    bets.scenarios = scenarioRes.scenarios;
-    bets.scenarioDist = scenarioRes.dist;
-    bets.grade = grade;
-    if (raceOddsForEV && raceOddsForEV.win) {
-      var aiByBoat = [];
-      for (var bi = 1; bi <= 6; bi++) {
-        var fp = finalProbs.find(function(p) {
-          return p.boat === bi;
-        });
-        aiByBoat.push(fp ? fp.prob : 0);
-      }
-      bets.divergence = calcOddsDivergence(aiByBoat, raceOddsForEV.win);
-    }
-    bets.raceType = raceType;
-    bets.typeLabel = typeLabel;
-    bets.typeCls = typeCls;
-    bets.weather = weather;
-    bets.method = method;
-    bets.features6 = features6;
-    var conf = Math.round(topProb * 100);
-    bets.confidence = conf;
-    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
-    bets.ana = function() {
-      var anaTopN = parseInt(settings.betCountAna) || 3;
-      if (anaTopN < 1) anaTopN = 1;
-      else if (anaTopN > 6) anaTopN = 6;
-      var excludeCombos = (bets.trifecta || []).map(function(t) {
-        return t.combo;
-      });
-      if (raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length > 0) {
-        var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
-          minOdds: 30,
-          minEV: 1,
-          minOddsLoose: 15,
-          topN: anaTopN,
-          excludeCombos
-        });
-        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-        return picks.map(function(p) {
-          return p.combo;
-        });
-      }
-      if (marks && marks.length >= 3) {
-        var dist = buildTrifectaProbDist(marks);
-        var top1Boat = marks[0].boat;
-        var excludeSet = {};
-        excludeCombos.forEach(function(c) {
-          if (c) excludeSet[String(c)] = true;
-        });
-        var cands = [];
-        for (var k in dist) {
-          if (!Object.prototype.hasOwnProperty.call(dist, k)) continue;
-          if (k.split("-")[0] === String(top1Boat)) continue;
-          if (excludeSet[k]) continue;
-          cands.push({ combo: k, prob: dist[k] });
-        }
-        cands.sort(function(a, b) {
-          return b.prob - a.prob;
-        });
-        return cands.slice(0, anaTopN).map(function(c) {
-          return c.combo;
-        });
-      }
-      return [];
-    }();
-    return bets;
-  }
-  globalThis.predictRace = predictRace;
-  globalThis.predictRaceAsync = predictRaceAsync;
-})();
-
-/* BUILD:ANALYSIS_PREDICT_RACE:END */
-
-
-/* BUILD:ANALYSIS_LEARNING:START */
-"use strict";
-(() => {
-  // ../src/analysis/learning.js
-  async function learnFromResultsViaWorker() {
-    var w = _getAppWorker();
-    if (!w || !resultData || !programData || !previewData) return null;
-    return new Promise(function(resolve) {
-      var reqId = ++_appWorkerReqId;
-      _appWorkerCallbacks.set(reqId, function(msg) {
-        if (msg.type !== "batch_learn_done" || !msg.result) {
-          resolve(null);
-          return;
-        }
-        var r = msg.result;
-        if (Array.isArray(r.l2weights)) l2weights = r.l2weights;
-        if (r.featureStats) _featureStats = r.featureStats;
-        if (typeof r.trainStep === "number") l2trainStep = r.trainStep;
-        if (r.learnedKeys) l2learnedKeys = r.learnedKeys;
-        try {
-          safeSet("boatrace_weights", l2weights);
-        } catch (_) {
-        }
-        try {
-          safeSet("boatrace_trainstep", l2trainStep);
-        } catch (_) {
-        }
-        try {
-          safeSet("boatrace_featurestats", _featureStats);
-        } catch (_) {
-        }
-        try {
-          safeSet("boatrace_learned", l2learnedKeys);
-        } catch (_) {
-        }
-        console.log("[PG-9] worker learned " + r.learnedThisCall + " new races");
-        resolve(r);
-      });
-      w.postMessage({
-        type: "batch_learn",
-        reqId,
-        input: {
-          resultData,
-          programData,
-          previewData,
-          state: {
-            l2weights,
-            featureStats: _featureStats,
-            trainStep: l2trainStep,
-            learnedKeys: l2learnedKeys
-          }
-        }
-      });
-    });
-  }
-  async function learnFromResults() {
-    if (!resultData || !programData || !previewData) return;
-    if (_getAppWorker()) {
-      var workerResult = await learnFromResultsViaWorker();
-      if (workerResult) return;
-    }
-    var dateKey = function() {
-      try {
-        for (var s in programData) {
-          var stadiums = programData[s];
-          for (var r in stadiums) {
-            var pgm = stadiums[r];
-            if (pgm && pgm.race_date) return String(pgm.race_date).replace(/-/g, "");
-          }
-        }
-      } catch (_) {
-      }
-      return jstYmd(0);
-    }();
-    var learnedThisCall = 0;
-    var iterCount = 0;
-    for (var sid in resultData) {
-      var races = resultData[sid];
-      for (var rn in races) {
-        var race = races[rn];
-        if (!race || !race.isFinished || !race.results || !race.results.length) continue;
-        var prog = programData[sid] && programData[sid][rn];
-        var prev = previewData[sid] && previewData[sid][rn];
-        if (!prog || !prog.boats || !Array.isArray(prog.boats)) continue;
-        var key = dateKey + "_" + sid + "_" + rn;
-        if (l2learnedKeys[key]) continue;
-        var sorted = race.results.slice().sort(function(a, b) {
-          return a.place - b.place;
-        });
-        var winnerBoat = sorted[0].racer_boat_number;
-        var stRanks = {};
-        if (prev && prev.boats) {
-          var sts = [];
-          for (var si = 1; si <= 6; si++) {
-            var spv = prev.boats[String(si)];
-            var stVal = spv && spv.racer_start_timing != null ? pf(spv.racer_start_timing) : 99;
-            sts.push({ boat: si, st: stVal });
-          }
-          sts.sort(function(a, b) {
-            return a.st - b.st;
-          });
-          sts.forEach(function(s, idx) {
-            stRanks[s.boat] = idx;
-          });
-        }
-        var etRanks = {};
-        if (prev && prev.boats) {
-          var ets = [];
-          for (var ei = 1; ei <= 6; ei++) {
-            var epv = prev.boats[String(ei)];
-            var etVal = epv && epv.racer_exhibition_time != null ? pf(epv.racer_exhibition_time) : 99;
-            ets.push({ boat: ei, et: etVal });
-          }
-          ets.sort(function(a, b) {
-            return a.et - b.et;
-          });
-          ets.forEach(function(e, idx) {
-            etRanks[e.boat] = idx;
-          });
-        }
-        var weather = prev && prev.weather ? prev.weather : null;
-        var features6 = prog.boats.map(function(b) {
-          var pv = prev && prev.boats ? prev.boats[String(b.racer_boat_number)] : null;
-          return getL2Features(
-            b,
-            pv,
-            weather,
-            etRanks[b.racer_boat_number] != null ? etRanks[b.racer_boat_number] : 5,
-            stRanks[b.racer_boat_number] != null ? stRanks[b.racer_boat_number] : 5,
-            sid
-          );
-        });
-        var winnerIdx = prog.boats.findIndex(function(b) {
-          return b.racer_boat_number === winnerBoat;
-        });
-        if (winnerIdx >= 0) {
-          l2Update(features6, winnerIdx);
-          l2learnedKeys[key] = 1;
-          learnedThisCall++;
-        }
-        iterCount++;
-        if (iterCount % 6 === 0) await _yieldToMain();
-      }
-    }
-    if (learnedThisCall > 0) {
-      var keys = Object.keys(l2learnedKeys);
-      if (keys.length > L2_KEY_LIMIT) {
-        var keep = keys.slice(-L2_KEY_LIMIT);
-        var trimmed = {};
-        for (var i = 0; i < keep.length; i++) trimmed[keep[i]] = 1;
-        l2learnedKeys = trimmed;
-      }
-      safeSet("boatrace_learned", l2learnedKeys);
-      console.log(
-        "[L2] learned " + learnedThisCall + " new races (total t=" + l2trainStep + ", tracked keys=" + Object.keys(l2learnedKeys).length + ")"
-      );
-    }
-  }
-  globalThis.learnFromResults = learnFromResults;
-  globalThis.learnFromResultsViaWorker = learnFromResultsViaWorker;
-})();
-
-/* BUILD:ANALYSIS_LEARNING:END */
-
-
-/* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
-"use strict";
-(() => {
-  // ../src/analysis/predict_scenarios.js
-  function predictScenarios(boats, preview, weather, sid, grade) {
-    var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
-    var scen = Object.assign({}, prior);
-    var sdb = stadiumDB[String(sid)];
-    if (sdb && sdb.courseWinRate && sdb.courseWinRate[1]) {
-      var cwr = sdb.courseWinRate[1];
-      if (cwr.races >= 30) {
-        var rate = cwr.win / cwr.races;
-        var delta = (rate - 0.55) * 0.5;
-        scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
-      }
-    }
-    if (weather) {
-      var ws = weather.wind_speed || weather.race_wind || 0;
-      var wh = weather.wave_height || weather.race_wave || 0;
-      if (ws >= 5 || wh >= 7) {
-        scen.nige *= 0.7;
-        scen.makuri *= 1.3;
-        scen.other *= 1.5;
-      }
-    }
-    var sum = 0;
-    for (var k in scen) sum += scen[k];
-    if (sum > 0) {
-      for (var k2 in scen) scen[k2] = scen[k2] / sum;
-    }
-    return scen;
-  }
-  function predictWithScenarios(boats, preview, weather, sid, grade) {
-    var sc = predictScenarios(boats, preview, weather, sid, grade);
-    var dist = {};
-    Object.keys(SCENARIO_DIST).forEach(function(scKey) {
-      var w = sc[scKey] || 0;
-      var template = SCENARIO_DIST[scKey];
-      Object.keys(template).forEach(function(combo) {
-        dist[combo] = (dist[combo] || 0) + w * template[combo];
-      });
-    });
-    var allCombos = [];
-    for (var i = 1; i <= 6; i++)
-      for (var j = 1; j <= 6; j++)
-        for (var k = 1; k <= 6; k++) {
-          if (i !== j && j !== k && i !== k) allCombos.push(i + "-" + j + "-" + k);
-        }
-    var residual = 0.05 / allCombos.length;
-    allCombos.forEach(function(c3) {
-      if (dist[c3] == null) dist[c3] = residual;
-    });
-    var s = 0;
-    for (var c in dist) s += dist[c];
-    if (s > 0) for (var c2 in dist) dist[c2] = dist[c2] / s;
-    return { dist, scenarios: sc };
-  }
-  function predictEntryCourses(boats, sid) {
-    var dists = boats.map(function(b) {
-      return {
-        boat: b.racer_boat_number,
-        rid: b.racer_number,
-        dist: getEntryDist(b.racer_number, b.racer_boat_number, sid)
-      };
-    });
-    var permutations = [];
-    function perm(arr, current) {
-      if (arr.length === 0) {
-        permutations.push(current);
-        return;
-      }
-      for (var i2 = 0; i2 < arr.length; i2++) {
-        var rest = arr.slice(0, i2).concat(arr.slice(i2 + 1));
-        perm(rest, current.concat([arr[i2]]));
-      }
-    }
-    perm([1, 2, 3, 4, 5, 6], []);
-    var best = null, bestScore = -Infinity;
-    permutations.forEach(function(p) {
-      var s = 0;
-      var valid = true;
-      for (var i2 = 0; i2 < dists.length; i2++) {
-        var pr = dists[i2].dist[String(p[i2])] || 0;
-        if (pr <= 0) {
-          valid = false;
-          break;
-        }
-        s += Math.log(pr);
-      }
-      if (valid && s > bestScore) {
-        bestScore = s;
-        best = p;
-      }
-    });
-    if (!best) {
-      var by = {};
-      var c = {};
-      boats.forEach(function(b) {
-        by[b.racer_boat_number] = b.racer_boat_number;
-        c[b.racer_boat_number] = 0.5;
-      });
-      return { byBoat: by, conf: c };
-    }
-    var byBoat = {}, conf = {};
-    for (var i = 0; i < dists.length; i++) {
-      byBoat[dists[i].boat] = best[i];
-      conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
-    }
-    return { byBoat, conf };
-  }
-  globalThis.predictScenarios = predictScenarios;
-  globalThis.predictWithScenarios = predictWithScenarios;
-  globalThis.predictEntryCourses = predictEntryCourses;
-})();
-
-/* BUILD:ANALYSIS_PREDICT_SCENARIOS:END */
-
-
-/* BUILD:ANALYSIS_CALIBRATION:START */
-"use strict";
-(() => {
-  // ../src/analysis/calibration.js
-  function _initFeatureStats() {
-    return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
-  }
-  function _updateFeatureStats(featRow) {
-    if (!Array.isArray(featRow)) return;
-    _featureStats.n += 1;
-    var n = _featureStats.n;
-    for (var i = 0; i < FEATURE_DIM; i++) {
-      var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
-      var delta = x - _featureStats.mean[i];
-      _featureStats.mean[i] += delta / n;
-      var delta2 = x - _featureStats.mean[i];
-      _featureStats.m2[i] += delta * delta2;
-    }
-  }
-  function _normalizeFeatures(featRow) {
-    if (!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
-    var n = _featureStats.n;
-    if (n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
-    var means = _featureStats.mean;
-    var m2s = _featureStats.m2;
-    var divisor = n > 1 ? n - 1 : 1;
-    var out = new Array(FEATURE_DIM);
-    for (var i = 0; i < FEATURE_DIM; i++) {
-      var variance = m2s[i] / divisor;
-      var std = Math.sqrt(variance + 1e-6);
-      var x = featRow[i] || 0;
-      out[i] = (x - means[i]) / std;
-    }
-    return out;
-  }
-  function _applyPlattCalibration(p, sid) {
-    if (!TUNING.PREDICTION.ENABLE_PLATT) return p;
-    var a = _plattCoeffs.a, b = _plattCoeffs.b;
-    if (sid != null && typeof _plattCoeffsByStadium === "object" && _plattCoeffsByStadium) {
-      var ps = _plattCoeffsByStadium[String(sid)];
-      if (ps && Number.isFinite(ps.a) && Number.isFinite(ps.b) && ps.n >= 100) {
-        a = ps.a;
-        b = ps.b;
-      }
-    }
-    if (a === 1 && b === 0) return p;
-    var clipped = Math.min(0.9999, Math.max(1e-4, p));
-    var logit = Math.log(clipped / (1 - clipped));
-    var z = a * logit + b;
-    if (z > 30) return 1;
-    if (z < -30) return 0;
-    return 1 / (1 + Math.exp(-z));
-  }
-  function _applyIsotonicCalibration(p) {
-    if (!_isotonicCoeffs || !Array.isArray(_isotonicCoeffs.points)) return p;
-    var pts = _isotonicCoeffs.points;
-    if (pts.length < 2) return p;
-    if (p <= pts[0].x) return pts[0].y;
-    if (p >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
-    var lo = 0, hi = pts.length - 1;
-    while (hi - lo > 1) {
-      var mid = lo + hi >> 1;
-      if (pts[mid].x <= p) lo = mid;
-      else hi = mid;
-    }
-    var dx = pts[hi].x - pts[lo].x;
-    if (dx <= 0) return pts[lo].y;
-    var t = (p - pts[lo].x) / dx;
-    return pts[lo].y + t * (pts[hi].y - pts[lo].y);
-  }
-  function _applyCalibration(p, sid) {
-    var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
-    if (method === "isotonic") return _applyIsotonicCalibration(p);
-    if (method === "none") return p;
-    return _applyPlattCalibration(p, sid);
-  }
-  function _stackedPredict(features6, l1probs) {
-    if (TUNING.PREDICTION.STACKING_MODE !== "residual") return l1probs;
-    var feats = features6.map(_normalizeFeatures);
-    var l2Logits = feats.map(function(feat, b) {
-      var z = L2_BIAS + (COURSE_LOG_PRIOR[b] || 0);
-      for (var i = 0; i < feat.length; i++) z += feat[i] * (l2weights[i] || 0);
-      return z;
-    });
-    var combinedLogits = l1probs.map(function(p, b) {
-      var clipped = Math.min(0.9999, Math.max(1e-4, p));
-      var l1Logit = Math.log(clipped / (1 - clipped));
-      return l1Logit + _stackingGamma * l2Logits[b];
-    });
-    return softmax(combinedLogits);
-  }
-  function _extractPlattPairs(history) {
-    if (!Array.isArray(history)) return [];
-    var samples = history.filter(function(h) {
-      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
-    });
-    if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
-    var pairs = [];
-    samples.forEach(function(h) {
-      var winner = h.actual[0];
-      var probs = {};
-      h.mark_probs.forEach(function(mp) {
-        probs[mp.boat] = mp.prob;
-      });
-      var pWin = probs[winner];
-      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
-      pairs.push({ p: pWin, y: 1 });
-      for (var b = 1; b <= 6; b++) {
-        if (b === winner) continue;
-        var pb = probs[b];
-        if (Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({ p: pb, y: 0 });
-      }
-    });
-    return pairs;
-  }
-  async function _refitPlattCoeffs(history) {
-    var pairs = _extractPlattPairs(history);
-    if (pairs.length < 100) return null;
-    var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
-    var globalResult;
-    if (w) {
-      globalResult = await new Promise(function(resolve) {
-        var onMsg = function(e) {
-          if (!e.data || e.data.type !== "platt_refit_done") return;
-          w.removeEventListener("message", onMsg);
-          resolve(e.data.result);
-        };
-        w.addEventListener("message", onMsg);
-        w.postMessage({ type: "platt_refit", samples: pairs });
-      });
-    }
-    if (!globalResult) {
-      var bestA = 1, bestB = 0, bestLoss = Infinity;
-      for (var a = 0.5; a <= 2; a += 0.1) {
-        for (var b = -1; b <= 1; b += 0.1) {
-          var loss = 0;
-          for (var i = 0; i < pairs.length; i++) {
-            var pi = pairs[i];
-            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
-            var logit = Math.log(clipped / (1 - clipped));
-            var z = a * logit + b;
-            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
-            pp = Math.min(0.9999, Math.max(1e-4, pp));
-            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
-          }
-          if (loss < bestLoss) {
-            bestLoss = loss;
-            bestA = a;
-            bestB = b;
-          }
-        }
-      }
-      globalResult = { a: bestA, b: bestB, n: pairs.length };
-    }
-    _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
-    safeSet("boatrace_platt", _plattCoeffs);
-    try {
-      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
-      safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
-    } catch (_) {
-    }
-    try {
-      var iso = _refitIsotonicCalibration(history);
-      if (iso) {
-        _isotonicCoeffs = iso;
-        safeSet("boatrace_isotonic", _isotonicCoeffs);
-      }
-    } catch (_) {
-    }
-    try {
-      var chosen = _chooseCalibrationMethod(history);
-      _calibrationMethod = chosen;
-      try {
-        localStorage.setItem("boatrace_calib_method", chosen);
-      } catch (_) {
-      }
-    } catch (_) {
-    }
-    return _plattCoeffs;
-  }
-  function _refitIsotonicCalibration(history) {
-    var pairs = _extractPlattPairs(history);
-    if (pairs.length < 200) return null;
-    pairs.sort(function(a, b) {
-      return a.p - b.p;
-    });
-    var blocks = pairs.map(function(pi) {
-      return { x: pi.p, sumY: pi.y, sumX: pi.p, count: 1 };
-    });
-    var changed = true;
-    while (changed) {
-      changed = false;
-      for (var i = 0; i < blocks.length - 1; i++) {
-        var meanI = blocks[i].sumY / blocks[i].count;
-        var meanJ = blocks[i + 1].sumY / blocks[i + 1].count;
-        if (meanI > meanJ) {
-          blocks[i].sumY += blocks[i + 1].sumY;
-          blocks[i].sumX += blocks[i + 1].sumX;
-          blocks[i].count += blocks[i + 1].count;
-          blocks.splice(i + 1, 1);
-          changed = true;
-          if (i > 0) i--;
-        }
-      }
-    }
-    var points = blocks.map(function(b) {
-      return { x: b.sumX / b.count, y: b.sumY / b.count };
-    });
-    var compressed = [];
-    for (var k = 0; k < points.length; k++) {
-      if (k > 0 && k < points.length - 1 && Math.abs(points[k].y - points[k - 1].y) < 1e-9 && Math.abs(points[k].y - points[k + 1].y) < 1e-9) {
-        continue;
-      }
-      compressed.push(points[k]);
-    }
-    return { points: compressed, fittedAt: Date.now(), n: pairs.length };
-  }
-  function _refitPerStadiumPlatt(history) {
-    if (!Array.isArray(history)) return {};
-    var bySid = {};
-    history.forEach(function(h) {
-      if (!h || !h.stadium) return;
-      var sid2 = String(h.stadium);
-      if (!bySid[sid2]) bySid[sid2] = [];
-      bySid[sid2].push(h);
-    });
-    var out = {};
-    for (var sid in bySid) {
-      var subPairs = _extractPlattPairs(bySid[sid]);
-      if (subPairs.length < 100) continue;
-      var bestA = 1, bestB = 0, bestLoss = Infinity;
-      for (var a = 0.5; a <= 2; a += 0.1) {
-        for (var b = -1; b <= 1; b += 0.1) {
-          var loss = 0;
-          for (var i = 0; i < subPairs.length; i++) {
-            var pi = subPairs[i];
-            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
-            var logit = Math.log(clipped / (1 - clipped));
-            var z = a * logit + b;
-            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
-            pp = Math.min(0.9999, Math.max(1e-4, pp));
-            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
-          }
-          if (loss < bestLoss) {
-            bestLoss = loss;
-            bestA = a;
-            bestB = b;
-          }
-        }
-      }
-      out[sid] = { a: bestA, b: bestB, n: subPairs.length, fittedAt: Date.now() };
-    }
-    return out;
-  }
-  function _chooseCalibrationMethod(history) {
-    var pairs = _extractPlattPairs(history);
-    if (pairs.length < 300) return "platt";
-    var split = Math.floor(pairs.length * 0.8);
-    var heldOut = pairs.slice(split);
-    if (heldOut.length < 50) return "platt";
-    var plattLoss = 0, isoLoss = 0;
-    var iso = _isotonicCoeffs;
-    for (var i = 0; i < heldOut.length; i++) {
-      var pi = heldOut[i];
-      var pPlatt = _applyPlattCalibration(pi.p);
-      var pIso = iso ? _applyIsotonicCalibration(pi.p) : pi.p;
-      pPlatt = Math.min(0.9999, Math.max(1e-4, pPlatt));
-      pIso = Math.min(0.9999, Math.max(1e-4, pIso));
-      plattLoss += pi.y ? -Math.log(pPlatt) : -Math.log(1 - pPlatt);
-      isoLoss += pi.y ? -Math.log(pIso) : -Math.log(1 - pIso);
-    }
-    return isoLoss < plattLoss ? "isotonic" : "platt";
-  }
-  globalThis._initFeatureStats = _initFeatureStats;
-  globalThis._updateFeatureStats = _updateFeatureStats;
-  globalThis._normalizeFeatures = _normalizeFeatures;
-  globalThis._applyPlattCalibration = _applyPlattCalibration;
-  globalThis._applyIsotonicCalibration = _applyIsotonicCalibration;
-  globalThis._applyCalibration = _applyCalibration;
-  globalThis._stackedPredict = _stackedPredict;
-  globalThis._extractPlattPairs = _extractPlattPairs;
-  globalThis._refitPlattCoeffs = _refitPlattCoeffs;
-  globalThis._refitIsotonicCalibration = _refitIsotonicCalibration;
-  globalThis._refitPerStadiumPlatt = _refitPerStadiumPlatt;
-  globalThis._chooseCalibrationMethod = _chooseCalibrationMethod;
-})();
-
-/* BUILD:ANALYSIS_CALIBRATION:END */
-
-
 /* BUILD:ANALYSIS_L2_FEATURES:START */
 "use strict";
 (() => {
@@ -1153,65 +181,122 @@
 /* BUILD:ANALYSIS_L2_FEATURES:END */
 
 
-/* BUILD:ANALYSIS_GBDT_RUNTIME:START */
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:START */
 "use strict";
 (() => {
-  // ../src/analysis/gbdt_runtime.js
-  var _g = (
-    /** @type {any} */
-    globalThis
-  );
-  function _traverseTree(tree, features) {
-    if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) return 0;
-    let idx = 0;
-    for (let depth = 0; depth < 64; depth++) {
-      const node = tree.nodes[idx];
-      if (!node) return 0;
-      if (typeof node.value === "number" && Number.isFinite(node.value)) {
-        return node.value;
+  // ../src/analysis/predict_scenarios.js
+  function predictScenarios(boats, preview, weather, sid, grade) {
+    var prior = SCENARIO_PRIORS_BY_GRADE[grade || 0] || SCENARIO_PRIORS_BY_GRADE[0];
+    var scen = Object.assign({}, prior);
+    var sdb = stadiumDB[String(sid)];
+    if (sdb && sdb.courseWinRate && sdb.courseWinRate[1]) {
+      var cwr = sdb.courseWinRate[1];
+      if (cwr.races >= 30) {
+        var rate = cwr.win / cwr.races;
+        var delta = (rate - 0.55) * 0.5;
+        scen.nige = Math.max(0.2, Math.min(0.8, scen.nige + delta));
       }
-      if (typeof node.feat !== "number" || typeof node.thr !== "number") return 0;
-      const fv = features[node.feat];
-      const fvNum = Number.isFinite(fv) ? fv : 0;
-      idx = fvNum <= node.thr ? node.left || 0 : node.right || 0;
-      if (idx <= 0 || idx >= tree.nodes.length) return 0;
     }
-    return 0;
-  }
-  function gbdtPredictLogits(model, features) {
-    if (!model || !Array.isArray(model.trees)) return [0, 0, 0, 0, 0, 0];
-    const lr = Number.isFinite(model.learning_rate) ? model.learning_rate : 0.1;
-    const nClasses = model.n_classes || 6;
-    const logits = new Array(nClasses).fill(0);
-    for (let t = 0; t < model.trees.length; t++) {
-      const tree = model.trees[t];
-      if (!tree || typeof tree.class !== "number") continue;
-      if (tree.class < 0 || tree.class >= nClasses) continue;
-      logits[tree.class] += lr * _traverseTree(tree, features);
+    if (weather) {
+      var ws = weather.wind_speed || weather.race_wind || 0;
+      var wh = weather.wave_height || weather.race_wave || 0;
+      if (ws >= 5 || wh >= 7) {
+        scen.nige *= 0.7;
+        scen.makuri *= 1.3;
+        scen.other *= 1.5;
+      }
     }
-    return logits;
-  }
-  function _blendGBDTPrediction(currentLogits, features6, weight) {
-    const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
-    if (!enabled) return currentLogits;
-    const model = _g._gbdtModel;
-    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
-    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
-    const w = Number.isFinite(weight) ? weight : 0.3;
-    const out = currentLogits.slice();
-    for (let b = 0; b < out.length && b < 6; b++) {
-      const gbdtLogits = gbdtPredictLogits(model, features6[b] || []);
-      const gbdtSelf = gbdtLogits[b] || 0;
-      out[b] = (1 - w) * out[b] + w * gbdtSelf;
+    var sum = 0;
+    for (var k in scen) sum += scen[k];
+    if (sum > 0) {
+      for (var k2 in scen) scen[k2] = scen[k2] / sum;
     }
-    return out;
+    return scen;
   }
-  _g._traverseTree = _traverseTree;
-  _g.gbdtPredictLogits = gbdtPredictLogits;
-  _g._blendGBDTPrediction = _blendGBDTPrediction;
+  function predictWithScenarios(boats, preview, weather, sid, grade) {
+    var sc = predictScenarios(boats, preview, weather, sid, grade);
+    var dist = {};
+    Object.keys(SCENARIO_DIST).forEach(function(scKey) {
+      var w = sc[scKey] || 0;
+      var template = SCENARIO_DIST[scKey];
+      Object.keys(template).forEach(function(combo) {
+        dist[combo] = (dist[combo] || 0) + w * template[combo];
+      });
+    });
+    var allCombos = [];
+    for (var i = 1; i <= 6; i++)
+      for (var j = 1; j <= 6; j++)
+        for (var k = 1; k <= 6; k++) {
+          if (i !== j && j !== k && i !== k) allCombos.push(i + "-" + j + "-" + k);
+        }
+    var residual = 0.05 / allCombos.length;
+    allCombos.forEach(function(c3) {
+      if (dist[c3] == null) dist[c3] = residual;
+    });
+    var s = 0;
+    for (var c in dist) s += dist[c];
+    if (s > 0) for (var c2 in dist) dist[c2] = dist[c2] / s;
+    return { dist, scenarios: sc };
+  }
+  function predictEntryCourses(boats, sid) {
+    var dists = boats.map(function(b) {
+      return {
+        boat: b.racer_boat_number,
+        rid: b.racer_number,
+        dist: getEntryDist(b.racer_number, b.racer_boat_number, sid)
+      };
+    });
+    var permutations = [];
+    function perm(arr, current) {
+      if (arr.length === 0) {
+        permutations.push(current);
+        return;
+      }
+      for (var i2 = 0; i2 < arr.length; i2++) {
+        var rest = arr.slice(0, i2).concat(arr.slice(i2 + 1));
+        perm(rest, current.concat([arr[i2]]));
+      }
+    }
+    perm([1, 2, 3, 4, 5, 6], []);
+    var best = null, bestScore = -Infinity;
+    permutations.forEach(function(p) {
+      var s = 0;
+      var valid = true;
+      for (var i2 = 0; i2 < dists.length; i2++) {
+        var pr = dists[i2].dist[String(p[i2])] || 0;
+        if (pr <= 0) {
+          valid = false;
+          break;
+        }
+        s += Math.log(pr);
+      }
+      if (valid && s > bestScore) {
+        bestScore = s;
+        best = p;
+      }
+    });
+    if (!best) {
+      var by = {};
+      var c = {};
+      boats.forEach(function(b) {
+        by[b.racer_boat_number] = b.racer_boat_number;
+        c[b.racer_boat_number] = 0.5;
+      });
+      return { byBoat: by, conf: c };
+    }
+    var byBoat = {}, conf = {};
+    for (var i = 0; i < dists.length; i++) {
+      byBoat[dists[i].boat] = best[i];
+      conf[dists[i].boat] = dists[i].dist[String(best[i])] || 0;
+    }
+    return { byBoat, conf };
+  }
+  globalThis.predictScenarios = predictScenarios;
+  globalThis.predictWithScenarios = predictWithScenarios;
+  globalThis.predictEntryCourses = predictEntryCourses;
 })();
 
-/* BUILD:ANALYSIS_GBDT_RUNTIME:END */
+/* BUILD:ANALYSIS_PREDICT_SCENARIOS:END */
 
 
 /* BUILD:ANALYSIS_SCORE_BOAT:START */
@@ -1581,6 +666,921 @@
 })();
 
 /* BUILD:ANALYSIS_SCORE_BOAT:END */
+
+
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_program.js
+  function predictRaceProgram(sid, raceNum) {
+    if (!programData) return null;
+    var stadiumProg = programData[String(sid)];
+    if (!stadiumProg) return null;
+    var race = stadiumProg[String(raceNum)];
+    if (!race || !race.boats) return null;
+    var boats = race.boats;
+    if (!Array.isArray(boats)) return null;
+    var predictedEntries = predictEntryCourses(boats, sid);
+    var l1scores = [];
+    boats.forEach(function(b) {
+      var s = scoreBoatV2(b, null, null, boats, null, sid, predictedEntries, raceNum);
+      l1scores.push(s);
+    });
+    var l1total = l1scores.reduce(function(a, s) {
+      return a + Math.exp(s.score / 15);
+    }, 0);
+    var l1probs = l1scores.map(function(s) {
+      return Math.exp(s.score / 15) / l1total;
+    });
+    var features6 = boats.map(function(b) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
+    });
+    var l2probs = l2Predict(features6);
+    var dbSize = Object.keys(racerDB).length;
+    var alpha = 600 / (600 + dbSize);
+    var beta = 1 - alpha;
+    var finalProbs = boats.map(function(b, i) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      var idx = boats.indexOf(b);
+      var fp = alpha * l1probs[idx] + beta * l2probs[idx];
+      return {
+        boat: b.racer_boat_number,
+        prob: fp,
+        score: l1s.score,
+        course: l1s.course,
+        reasons: l1s.reasons,
+        risks: l1s.risks,
+        motorLabel: l1s.motorLabel,
+        motorEmoji: l1s.motorEmoji,
+        motorRate: l1s.motorRate,
+        classNum: l1s.classNum
+      };
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    finalProbs.forEach(function(p) {
+      var l1 = l1scores.find(function(s) {
+        return s.boat === p.boat;
+      });
+      var fc = l1 ? l1.fc || 0 : 0;
+      var lc = l1 ? l1.lc || 0 : 0;
+      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
+      p.prob *= mult;
+    });
+    var _sum2 = finalProbs.reduce(function(a, p) {
+      return a + p.prob;
+    }, 0);
+    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
+      finalProbs.forEach(function(p) {
+        p.prob = p.prob / _sum2;
+      });
+    }
+    finalProbs.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    finalProbs.forEach(function(p, i) {
+      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
+    });
+    var topProb = finalProbs[0].prob;
+    var top2Prob = finalProbs[0].prob + finalProbs[1].prob;
+    var raceType, typeLabel;
+    var RT2 = TUNING.RACE_TYPE;
+    if (topProb > RT2.HONMEI_TOP1_MIN && top2Prob > RT2.HONMEI_TOP2_MIN) {
+      raceType = "honmei";
+      typeLabel = "\u672C\u547D";
+    } else if (topProb < RT2.ANA_TOP1_MAX) {
+      raceType = "ana";
+      typeLabel = "\u7A74";
+    } else {
+      raceType = "middle";
+      typeLabel = "\u6DF7\u6226";
+    }
+    return { marks: finalProbs, raceType, typeLabel, confidence: Math.round(topProb * 100) };
+  }
+  globalThis.predictRaceProgram = predictRaceProgram;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_PROGRAM:END */
+
+
+/* BUILD:ANALYSIS_LEARNING:START */
+"use strict";
+(() => {
+  // ../src/analysis/learning.js
+  async function learnFromResultsViaWorker() {
+    var w = _getAppWorker();
+    if (!w || !resultData || !programData || !previewData) return null;
+    return new Promise(function(resolve) {
+      var reqId = ++_appWorkerReqId;
+      _appWorkerCallbacks.set(reqId, function(msg) {
+        if (msg.type !== "batch_learn_done" || !msg.result) {
+          resolve(null);
+          return;
+        }
+        var r = msg.result;
+        if (Array.isArray(r.l2weights)) l2weights = r.l2weights;
+        if (r.featureStats) _featureStats = r.featureStats;
+        if (typeof r.trainStep === "number") l2trainStep = r.trainStep;
+        if (r.learnedKeys) l2learnedKeys = r.learnedKeys;
+        try {
+          safeSet("boatrace_weights", l2weights);
+        } catch (_) {
+        }
+        try {
+          safeSet("boatrace_trainstep", l2trainStep);
+        } catch (_) {
+        }
+        try {
+          safeSet("boatrace_featurestats", _featureStats);
+        } catch (_) {
+        }
+        try {
+          safeSet("boatrace_learned", l2learnedKeys);
+        } catch (_) {
+        }
+        console.log("[PG-9] worker learned " + r.learnedThisCall + " new races");
+        resolve(r);
+      });
+      w.postMessage({
+        type: "batch_learn",
+        reqId,
+        input: {
+          resultData,
+          programData,
+          previewData,
+          state: {
+            l2weights,
+            featureStats: _featureStats,
+            trainStep: l2trainStep,
+            learnedKeys: l2learnedKeys
+          }
+        }
+      });
+    });
+  }
+  async function learnFromResults() {
+    if (!resultData || !programData || !previewData) return;
+    if (_getAppWorker()) {
+      var workerResult = await learnFromResultsViaWorker();
+      if (workerResult) return;
+    }
+    var dateKey = function() {
+      try {
+        for (var s in programData) {
+          var stadiums = programData[s];
+          for (var r in stadiums) {
+            var pgm = stadiums[r];
+            if (pgm && pgm.race_date) return String(pgm.race_date).replace(/-/g, "");
+          }
+        }
+      } catch (_) {
+      }
+      return jstYmd(0);
+    }();
+    var learnedThisCall = 0;
+    var iterCount = 0;
+    for (var sid in resultData) {
+      var races = resultData[sid];
+      for (var rn in races) {
+        var race = races[rn];
+        if (!race || !race.isFinished || !race.results || !race.results.length) continue;
+        var prog = programData[sid] && programData[sid][rn];
+        var prev = previewData[sid] && previewData[sid][rn];
+        if (!prog || !prog.boats || !Array.isArray(prog.boats)) continue;
+        var key = dateKey + "_" + sid + "_" + rn;
+        if (l2learnedKeys[key]) continue;
+        var sorted = race.results.slice().sort(function(a, b) {
+          return a.place - b.place;
+        });
+        var winnerBoat = sorted[0].racer_boat_number;
+        var stRanks = {};
+        if (prev && prev.boats) {
+          var sts = [];
+          for (var si = 1; si <= 6; si++) {
+            var spv = prev.boats[String(si)];
+            var stVal = spv && spv.racer_start_timing != null ? pf(spv.racer_start_timing) : 99;
+            sts.push({ boat: si, st: stVal });
+          }
+          sts.sort(function(a, b) {
+            return a.st - b.st;
+          });
+          sts.forEach(function(s, idx) {
+            stRanks[s.boat] = idx;
+          });
+        }
+        var etRanks = {};
+        if (prev && prev.boats) {
+          var ets = [];
+          for (var ei = 1; ei <= 6; ei++) {
+            var epv = prev.boats[String(ei)];
+            var etVal = epv && epv.racer_exhibition_time != null ? pf(epv.racer_exhibition_time) : 99;
+            ets.push({ boat: ei, et: etVal });
+          }
+          ets.sort(function(a, b) {
+            return a.et - b.et;
+          });
+          ets.forEach(function(e, idx) {
+            etRanks[e.boat] = idx;
+          });
+        }
+        var weather = prev && prev.weather ? prev.weather : null;
+        var features6 = prog.boats.map(function(b) {
+          var pv = prev && prev.boats ? prev.boats[String(b.racer_boat_number)] : null;
+          return getL2Features(
+            b,
+            pv,
+            weather,
+            etRanks[b.racer_boat_number] != null ? etRanks[b.racer_boat_number] : 5,
+            stRanks[b.racer_boat_number] != null ? stRanks[b.racer_boat_number] : 5,
+            sid
+          );
+        });
+        var winnerIdx = prog.boats.findIndex(function(b) {
+          return b.racer_boat_number === winnerBoat;
+        });
+        if (winnerIdx >= 0) {
+          l2Update(features6, winnerIdx);
+          l2learnedKeys[key] = 1;
+          learnedThisCall++;
+        }
+        iterCount++;
+        if (iterCount % 6 === 0) await _yieldToMain();
+      }
+    }
+    if (learnedThisCall > 0) {
+      var keys = Object.keys(l2learnedKeys);
+      if (keys.length > L2_KEY_LIMIT) {
+        var keep = keys.slice(-L2_KEY_LIMIT);
+        var trimmed = {};
+        for (var i = 0; i < keep.length; i++) trimmed[keep[i]] = 1;
+        l2learnedKeys = trimmed;
+      }
+      safeSet("boatrace_learned", l2learnedKeys);
+      console.log(
+        "[L2] learned " + learnedThisCall + " new races (total t=" + l2trainStep + ", tracked keys=" + Object.keys(l2learnedKeys).length + ")"
+      );
+    }
+  }
+  globalThis.learnFromResults = learnFromResults;
+  globalThis.learnFromResultsViaWorker = learnFromResultsViaWorker;
+})();
+
+/* BUILD:ANALYSIS_LEARNING:END */
+
+
+/* BUILD:ANALYSIS_GBDT_RUNTIME:START */
+"use strict";
+(() => {
+  // ../src/analysis/gbdt_runtime.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  function _traverseTree(tree, features) {
+    if (!tree || !Array.isArray(tree.nodes) || tree.nodes.length === 0) return 0;
+    let idx = 0;
+    for (let depth = 0; depth < 64; depth++) {
+      const node = tree.nodes[idx];
+      if (!node) return 0;
+      if (typeof node.value === "number" && Number.isFinite(node.value)) {
+        return node.value;
+      }
+      if (typeof node.feat !== "number" || typeof node.thr !== "number") return 0;
+      const fv = features[node.feat];
+      const fvNum = Number.isFinite(fv) ? fv : 0;
+      idx = fvNum <= node.thr ? node.left || 0 : node.right || 0;
+      if (idx <= 0 || idx >= tree.nodes.length) return 0;
+    }
+    return 0;
+  }
+  function gbdtPredictLogits(model, features) {
+    if (!model || !Array.isArray(model.trees)) return [0, 0, 0, 0, 0, 0];
+    const lr = Number.isFinite(model.learning_rate) ? model.learning_rate : 0.1;
+    const nClasses = model.n_classes || 6;
+    const logits = new Array(nClasses).fill(0);
+    for (let t = 0; t < model.trees.length; t++) {
+      const tree = model.trees[t];
+      if (!tree || typeof tree.class !== "number") continue;
+      if (tree.class < 0 || tree.class >= nClasses) continue;
+      logits[tree.class] += lr * _traverseTree(tree, features);
+    }
+    return logits;
+  }
+  function _blendGBDTPrediction(currentLogits, features6, weight) {
+    const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
+    if (!enabled) return currentLogits;
+    const model = _g._gbdtModel;
+    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
+    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
+    const w = Number.isFinite(weight) ? weight : 0.3;
+    const out = currentLogits.slice();
+    for (let b = 0; b < out.length && b < 6; b++) {
+      const gbdtLogits = gbdtPredictLogits(model, features6[b] || []);
+      const gbdtSelf = gbdtLogits[b] || 0;
+      out[b] = (1 - w) * out[b] + w * gbdtSelf;
+    }
+    return out;
+  }
+  _g._traverseTree = _traverseTree;
+  _g.gbdtPredictLogits = gbdtPredictLogits;
+  _g._blendGBDTPrediction = _blendGBDTPrediction;
+})();
+
+/* BUILD:ANALYSIS_GBDT_RUNTIME:END */
+
+
+/* BUILD:ANALYSIS_PREDICT_RACE:START */
+"use strict";
+(() => {
+  // ../src/analysis/predict_race.js
+  function predictRaceAsync(sid, raceNum) {
+    var w = _getAppWorker();
+    if (!w) {
+      return Promise.resolve(predictRace(sid, raceNum));
+    }
+    var reqId = ++_appWorkerReqId;
+    return new Promise(function(resolve, reject) {
+      _appWorkerCallbacks.set(reqId, function(msg) {
+        if (msg.type === "predict_done") resolve(msg.result);
+        else if (msg.type === "error") {
+          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
+          try {
+            resolve(predictRace(sid, raceNum));
+          } catch (e) {
+            reject(e);
+          }
+        } else {
+          reject(new Error("unexpected worker message: " + JSON.stringify(msg).slice(0, 200)));
+        }
+      });
+      w.postMessage({
+        type: "predict",
+        reqId,
+        input: {
+          sid,
+          raceNum
+          // state を毎回送るのは重いので省略、init/sync_state で同期済み前提
+        }
+      });
+    });
+  }
+  function predictRace(sid, raceNum) {
+    if (!programData) return null;
+    var stadiumProg = programData[String(sid)];
+    if (!stadiumProg) return null;
+    var race = stadiumProg[String(raceNum)];
+    if (!race || !race.boats) return null;
+    var preview = null, weather = null;
+    if (previewData && previewData[String(sid)] && previewData[String(sid)][String(raceNum)]) {
+      preview = previewData[String(sid)][String(raceNum)];
+      weather = preview.weather || preview;
+    }
+    var boats = race.boats;
+    if (!Array.isArray(boats)) return null;
+    var predictedEntries = null;
+    if (!preview || !preview.boats || Object.keys(preview.boats).every(function(k) {
+      return preview.boats[k].racer_course_number == null;
+    })) {
+      predictedEntries = predictEntryCourses(boats, sid);
+    }
+    var l1scores = [];
+    boats.forEach(function(b) {
+      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
+      var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
+      l1scores.push(s);
+    });
+    var l1total = l1scores.reduce(function(a, s) {
+      return a + Math.exp(s.score / 15);
+    }, 0);
+    var l1probs = l1scores.map(function(s) {
+      return Math.exp(s.score / 15) / l1total;
+    });
+    var stRanks = [];
+    if (preview && preview.boats) {
+      var sts = [];
+      for (var si = 1; si <= 6; si++) {
+        var spv = preview.boats[String(si)];
+        var stVal = spv && spv.racer_start_timing != null ? pf(spv.racer_start_timing) : 99;
+        sts.push({ boat: si, st: stVal });
+      }
+      sts.sort(function(a, b) {
+        return a.st - b.st;
+      });
+      for (var sr = 0; sr < sts.length; sr++) stRanks[sts[sr].boat] = sr;
+    }
+    var features6 = boats.map(function(b) {
+      var pv = preview && preview.boats ? preview.boats[String(b.racer_boat_number)] : null;
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+    });
+    var l2probs = l2Predict(features6);
+    if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
+      try {
+        var l2logits = l2probs.map(function(p) {
+          var clipped = Math.min(0.9999, Math.max(1e-4, p));
+          return Math.log(clipped / (1 - clipped));
+        });
+        var blended = _blendGBDTPrediction(l2logits, features6, TUNING.PREDICTION.GBDT_BLEND_WEIGHT);
+        if (Array.isArray(blended) && blended.length === l2probs.length) {
+          var maxL = -Infinity;
+          for (var bi = 0; bi < blended.length; bi++) if (blended[bi] > maxL) maxL = blended[bi];
+          var sumE = 0;
+          var expL = blended.map(function(l) {
+            var e = Math.exp(l - maxL);
+            sumE += e;
+            return e;
+          });
+          if (sumE > 0) l2probs = expL.map(function(e) {
+            return e / sumE;
+          });
+        }
+      } catch (e) {
+      }
+    }
+    var dbSize = Object.keys(racerDB).length;
+    var alpha = 300 / (300 + dbSize);
+    var beta = 1 - alpha;
+    var finalProbs = boats.map(function(b, i) {
+      var l1s = l1scores.find(function(s) {
+        return s.boat === b.racer_boat_number;
+      });
+      var idx = boats.indexOf(b);
+      var fp2 = alpha * l1probs[idx] + beta * l2probs[idx];
+      return {
+        boat: b.racer_boat_number,
+        prob: fp2,
+        score: l1s.score,
+        course: l1s.course,
+        etRank: l1s.etRank,
+        etTime: l1s.etTime,
+        reasons: l1s.reasons,
+        risks: l1s.risks,
+        motorLabel: l1s.motorLabel,
+        motorEmoji: l1s.motorEmoji,
+        motorRate: l1s.motorRate,
+        boatRate: l1s.boatRate,
+        form: l1s.form,
+        classNum: l1s.classNum
+      };
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    finalProbs.forEach(function(p) {
+      var l1 = l1scores.find(function(s) {
+        return s.boat === p.boat;
+      });
+      var fc = l1 ? l1.fc || 0 : 0;
+      var lc = l1 ? l1.lc || 0 : 0;
+      var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
+      p.prob *= mult;
+    });
+    var _sumCalib = finalProbs.reduce(function(a, p) {
+      return a + p.prob;
+    }, 0);
+    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
+      finalProbs.forEach(function(p) {
+        p.prob = p.prob / _sumCalib;
+      });
+    }
+    finalProbs.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    var marks = finalProbs.map(function(p, i) {
+      p.mark = i === 0 ? "\u25CE" : i === 1 ? "\u25CB" : i === 2 ? "\u25B2" : i === 3 ? "\u25B3" : "\xD7";
+      return p;
+    });
+    var topProb = marks[0].prob;
+    var top2Prob = marks[0].prob + marks[1].prob;
+    var raceType, typeLabel, typeCls;
+    var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
+    var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var RT = TUNING.RACE_TYPE;
+    if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
+      raceType = "honmei";
+      typeLabel = "\u672C\u547D";
+      typeCls = "type-honmei";
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+      raceType = "ana";
+      typeLabel = "\u7A74";
+      typeCls = "type-ana";
+    } else {
+      raceType = "middle";
+      typeLabel = "\u6DF7\u6226";
+      typeCls = "type-middle";
+    }
+    var betCount3 = parseInt(settings.betCount3) || 10;
+    var betCount2 = parseInt(settings.betCount2) || 5;
+    var method = settings.betMethod || "auto";
+    var evMode = settings.evMode === true || settings.evMode === "true";
+    var kpiMode = settings.kpiMode || "balanced";
+    var TYPE_EVMIN = {
+      roi: { honmei: 1.2, middle: 1.25, ana: 1.35 },
+      balanced: { honmei: 1.1, middle: 1.15, ana: 1.25 },
+      hit: { honmei: 1, middle: 1.05, ana: 1.1 }
+    };
+    var TYPE_MAXBETS = {
+      roi: { honmei: 4, middle: 5, ana: 3 },
+      balanced: { honmei: 6, middle: 8, ana: 5 },
+      hit: { honmei: 10, middle: 12, ana: 8 }
+    };
+    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
+    var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
+    var evOpt = {
+      evMin: modeEvMin != null ? modeEvMin : defEvMin,
+      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+      bankroll: parseInt(settings.bankroll) || 1e4
+    };
+    var raceOddsForEV = null;
+    if (oddsData && oddsData.odds) {
+      var found = oddsData.odds.find(function(o) {
+        return o.stadium === parseInt(sid) && o.race === parseInt(raceNum);
+      });
+      if (found) raceOddsForEV = found;
+    }
+    if (method === "auto") {
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      else if (raceType === "honmei") method = "prob";
+      else if (raceType === "ana") method = "box";
+      else method = "formation";
+    }
+    var grade = race.race_grade_number || 0;
+    var scenarioRes = predictWithScenarios(boats, preview, weather, sid, grade);
+    var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
+    bets.marks = marks;
+    bets.evApplied = method === "ev";
+    bets.scenarios = scenarioRes.scenarios;
+    bets.scenarioDist = scenarioRes.dist;
+    bets.grade = grade;
+    if (raceOddsForEV && raceOddsForEV.win) {
+      var aiByBoat = [];
+      for (var bi = 1; bi <= 6; bi++) {
+        var fp = finalProbs.find(function(p) {
+          return p.boat === bi;
+        });
+        aiByBoat.push(fp ? fp.prob : 0);
+      }
+      bets.divergence = calcOddsDivergence(aiByBoat, raceOddsForEV.win);
+    }
+    bets.raceType = raceType;
+    bets.typeLabel = typeLabel;
+    bets.typeCls = typeCls;
+    bets.weather = weather;
+    bets.method = method;
+    bets.features6 = features6;
+    var conf = Math.round(topProb * 100);
+    bets.confidence = conf;
+    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+    bets.ana = function() {
+      var anaTopN = parseInt(settings.betCountAna) || 3;
+      if (anaTopN < 1) anaTopN = 1;
+      else if (anaTopN > 6) anaTopN = 6;
+      var excludeCombos = (bets.trifecta || []).map(function(t) {
+        return t.combo;
+      });
+      if (raceOddsForEV && raceOddsForEV.trifecta && Object.keys(raceOddsForEV.trifecta).length > 0) {
+        var anaRes = _pickAnaCandidates(marks, raceOddsForEV.trifecta, {
+          minOdds: 30,
+          minEV: 1,
+          minOddsLoose: 15,
+          topN: anaTopN,
+          excludeCombos
+        });
+        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
+        return picks.map(function(p) {
+          return p.combo;
+        });
+      }
+      if (marks && marks.length >= 3) {
+        var dist = buildTrifectaProbDist(marks);
+        var top1Boat = marks[0].boat;
+        var excludeSet = {};
+        excludeCombos.forEach(function(c) {
+          if (c) excludeSet[String(c)] = true;
+        });
+        var cands = [];
+        for (var k in dist) {
+          if (!Object.prototype.hasOwnProperty.call(dist, k)) continue;
+          if (k.split("-")[0] === String(top1Boat)) continue;
+          if (excludeSet[k]) continue;
+          cands.push({ combo: k, prob: dist[k] });
+        }
+        cands.sort(function(a, b) {
+          return b.prob - a.prob;
+        });
+        return cands.slice(0, anaTopN).map(function(c) {
+          return c.combo;
+        });
+      }
+      return [];
+    }();
+    return bets;
+  }
+  globalThis.predictRace = predictRace;
+  globalThis.predictRaceAsync = predictRaceAsync;
+})();
+
+/* BUILD:ANALYSIS_PREDICT_RACE:END */
+
+
+/* BUILD:ANALYSIS_CALIBRATION:START */
+"use strict";
+(() => {
+  // ../src/analysis/calibration.js
+  function _initFeatureStats() {
+    return { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATURE_DIM).fill(0), n: 0 };
+  }
+  function _updateFeatureStats(featRow) {
+    if (!Array.isArray(featRow)) return;
+    _featureStats.n += 1;
+    var n = _featureStats.n;
+    for (var i = 0; i < FEATURE_DIM; i++) {
+      var x = Number.isFinite(featRow[i]) ? featRow[i] : 0;
+      var delta = x - _featureStats.mean[i];
+      _featureStats.mean[i] += delta / n;
+      var delta2 = x - _featureStats.mean[i];
+      _featureStats.m2[i] += delta * delta2;
+    }
+  }
+  function _normalizeFeatures(featRow) {
+    if (!TUNING.PREDICTION.ENABLE_ZSCORE) return featRow;
+    var n = _featureStats.n;
+    if (n < TUNING.PREDICTION.ZSCORE_WARMUP_N) return featRow;
+    var means = _featureStats.mean;
+    var m2s = _featureStats.m2;
+    var divisor = n > 1 ? n - 1 : 1;
+    var out = new Array(FEATURE_DIM);
+    for (var i = 0; i < FEATURE_DIM; i++) {
+      var variance = m2s[i] / divisor;
+      var std = Math.sqrt(variance + 1e-6);
+      var x = featRow[i] || 0;
+      out[i] = (x - means[i]) / std;
+    }
+    return out;
+  }
+  function _applyPlattCalibration(p, sid) {
+    if (!TUNING.PREDICTION.ENABLE_PLATT) return p;
+    var a = _plattCoeffs.a, b = _plattCoeffs.b;
+    if (sid != null && typeof _plattCoeffsByStadium === "object" && _plattCoeffsByStadium) {
+      var ps = _plattCoeffsByStadium[String(sid)];
+      if (ps && Number.isFinite(ps.a) && Number.isFinite(ps.b) && ps.n >= 100) {
+        a = ps.a;
+        b = ps.b;
+      }
+    }
+    if (a === 1 && b === 0) return p;
+    var clipped = Math.min(0.9999, Math.max(1e-4, p));
+    var logit = Math.log(clipped / (1 - clipped));
+    var z = a * logit + b;
+    if (z > 30) return 1;
+    if (z < -30) return 0;
+    return 1 / (1 + Math.exp(-z));
+  }
+  function _applyIsotonicCalibration(p) {
+    if (!_isotonicCoeffs || !Array.isArray(_isotonicCoeffs.points)) return p;
+    var pts = _isotonicCoeffs.points;
+    if (pts.length < 2) return p;
+    if (p <= pts[0].x) return pts[0].y;
+    if (p >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+    var lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) {
+      var mid = lo + hi >> 1;
+      if (pts[mid].x <= p) lo = mid;
+      else hi = mid;
+    }
+    var dx = pts[hi].x - pts[lo].x;
+    if (dx <= 0) return pts[lo].y;
+    var t = (p - pts[lo].x) / dx;
+    return pts[lo].y + t * (pts[hi].y - pts[lo].y);
+  }
+  function _applyCalibration(p, sid) {
+    var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
+    if (method === "isotonic") return _applyIsotonicCalibration(p);
+    if (method === "none") return p;
+    return _applyPlattCalibration(p, sid);
+  }
+  function _stackedPredict(features6, l1probs) {
+    if (TUNING.PREDICTION.STACKING_MODE !== "residual") return l1probs;
+    var feats = features6.map(_normalizeFeatures);
+    var l2Logits = feats.map(function(feat, b) {
+      var z = L2_BIAS + (COURSE_LOG_PRIOR[b] || 0);
+      for (var i = 0; i < feat.length; i++) z += feat[i] * (l2weights[i] || 0);
+      return z;
+    });
+    var combinedLogits = l1probs.map(function(p, b) {
+      var clipped = Math.min(0.9999, Math.max(1e-4, p));
+      var l1Logit = Math.log(clipped / (1 - clipped));
+      return l1Logit + _stackingGamma * l2Logits[b];
+    });
+    return softmax(combinedLogits);
+  }
+  function _extractPlattPairs(history) {
+    if (!Array.isArray(history)) return [];
+    var samples = history.filter(function(h) {
+      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    });
+    if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
+    var pairs = [];
+    samples.forEach(function(h) {
+      var winner = h.actual[0];
+      var probs = {};
+      h.mark_probs.forEach(function(mp) {
+        probs[mp.boat] = mp.prob;
+      });
+      var pWin = probs[winner];
+      if (!Number.isFinite(pWin) || pWin <= 0 || pWin >= 1) return;
+      pairs.push({ p: pWin, y: 1 });
+      for (var b = 1; b <= 6; b++) {
+        if (b === winner) continue;
+        var pb = probs[b];
+        if (Number.isFinite(pb) && pb > 0 && pb < 1) pairs.push({ p: pb, y: 0 });
+      }
+    });
+    return pairs;
+  }
+  async function _refitPlattCoeffs(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 100) return null;
+    var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
+    var globalResult;
+    if (w) {
+      globalResult = await new Promise(function(resolve) {
+        var onMsg = function(e) {
+          if (!e.data || e.data.type !== "platt_refit_done") return;
+          w.removeEventListener("message", onMsg);
+          resolve(e.data.result);
+        };
+        w.addEventListener("message", onMsg);
+        w.postMessage({ type: "platt_refit", samples: pairs });
+      });
+    }
+    if (!globalResult) {
+      var bestA = 1, bestB = 0, bestLoss = Infinity;
+      for (var a = 0.5; a <= 2; a += 0.1) {
+        for (var b = -1; b <= 1; b += 0.1) {
+          var loss = 0;
+          for (var i = 0; i < pairs.length; i++) {
+            var pi = pairs[i];
+            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
+            var logit = Math.log(clipped / (1 - clipped));
+            var z = a * logit + b;
+            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
+            pp = Math.min(0.9999, Math.max(1e-4, pp));
+            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+          }
+          if (loss < bestLoss) {
+            bestLoss = loss;
+            bestA = a;
+            bestB = b;
+          }
+        }
+      }
+      globalResult = { a: bestA, b: bestB, n: pairs.length };
+    }
+    _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
+    safeSet("boatrace_platt", _plattCoeffs);
+    try {
+      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+      safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
+    } catch (_) {
+    }
+    try {
+      var iso = _refitIsotonicCalibration(history);
+      if (iso) {
+        _isotonicCoeffs = iso;
+        safeSet("boatrace_isotonic", _isotonicCoeffs);
+      }
+    } catch (_) {
+    }
+    try {
+      var chosen = _chooseCalibrationMethod(history);
+      _calibrationMethod = chosen;
+      try {
+        localStorage.setItem("boatrace_calib_method", chosen);
+      } catch (_) {
+      }
+    } catch (_) {
+    }
+    return _plattCoeffs;
+  }
+  function _refitIsotonicCalibration(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 200) return null;
+    pairs.sort(function(a, b) {
+      return a.p - b.p;
+    });
+    var blocks = pairs.map(function(pi) {
+      return { x: pi.p, sumY: pi.y, sumX: pi.p, count: 1 };
+    });
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (var i = 0; i < blocks.length - 1; i++) {
+        var meanI = blocks[i].sumY / blocks[i].count;
+        var meanJ = blocks[i + 1].sumY / blocks[i + 1].count;
+        if (meanI > meanJ) {
+          blocks[i].sumY += blocks[i + 1].sumY;
+          blocks[i].sumX += blocks[i + 1].sumX;
+          blocks[i].count += blocks[i + 1].count;
+          blocks.splice(i + 1, 1);
+          changed = true;
+          if (i > 0) i--;
+        }
+      }
+    }
+    var points = blocks.map(function(b) {
+      return { x: b.sumX / b.count, y: b.sumY / b.count };
+    });
+    var compressed = [];
+    for (var k = 0; k < points.length; k++) {
+      if (k > 0 && k < points.length - 1 && Math.abs(points[k].y - points[k - 1].y) < 1e-9 && Math.abs(points[k].y - points[k + 1].y) < 1e-9) {
+        continue;
+      }
+      compressed.push(points[k]);
+    }
+    return { points: compressed, fittedAt: Date.now(), n: pairs.length };
+  }
+  function _refitPerStadiumPlatt(history) {
+    if (!Array.isArray(history)) return {};
+    var bySid = {};
+    history.forEach(function(h) {
+      if (!h || !h.stadium) return;
+      var sid2 = String(h.stadium);
+      if (!bySid[sid2]) bySid[sid2] = [];
+      bySid[sid2].push(h);
+    });
+    var out = {};
+    for (var sid in bySid) {
+      var subPairs = _extractPlattPairs(bySid[sid]);
+      if (subPairs.length < 100) continue;
+      var bestA = 1, bestB = 0, bestLoss = Infinity;
+      for (var a = 0.5; a <= 2; a += 0.1) {
+        for (var b = -1; b <= 1; b += 0.1) {
+          var loss = 0;
+          for (var i = 0; i < subPairs.length; i++) {
+            var pi = subPairs[i];
+            var clipped = Math.min(0.9999, Math.max(1e-4, pi.p));
+            var logit = Math.log(clipped / (1 - clipped));
+            var z = a * logit + b;
+            var pp = z > 30 ? 1 : z < -30 ? 0 : 1 / (1 + Math.exp(-z));
+            pp = Math.min(0.9999, Math.max(1e-4, pp));
+            loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
+          }
+          if (loss < bestLoss) {
+            bestLoss = loss;
+            bestA = a;
+            bestB = b;
+          }
+        }
+      }
+      out[sid] = { a: bestA, b: bestB, n: subPairs.length, fittedAt: Date.now() };
+    }
+    return out;
+  }
+  function _chooseCalibrationMethod(history) {
+    var pairs = _extractPlattPairs(history);
+    if (pairs.length < 300) return "platt";
+    var split = Math.floor(pairs.length * 0.8);
+    var heldOut = pairs.slice(split);
+    if (heldOut.length < 50) return "platt";
+    var plattLoss = 0, isoLoss = 0;
+    var iso = _isotonicCoeffs;
+    for (var i = 0; i < heldOut.length; i++) {
+      var pi = heldOut[i];
+      var pPlatt = _applyPlattCalibration(pi.p);
+      var pIso = iso ? _applyIsotonicCalibration(pi.p) : pi.p;
+      pPlatt = Math.min(0.9999, Math.max(1e-4, pPlatt));
+      pIso = Math.min(0.9999, Math.max(1e-4, pIso));
+      plattLoss += pi.y ? -Math.log(pPlatt) : -Math.log(1 - pPlatt);
+      isoLoss += pi.y ? -Math.log(pIso) : -Math.log(1 - pIso);
+    }
+    return isoLoss < plattLoss ? "isotonic" : "platt";
+  }
+  globalThis._initFeatureStats = _initFeatureStats;
+  globalThis._updateFeatureStats = _updateFeatureStats;
+  globalThis._normalizeFeatures = _normalizeFeatures;
+  globalThis._applyPlattCalibration = _applyPlattCalibration;
+  globalThis._applyIsotonicCalibration = _applyIsotonicCalibration;
+  globalThis._applyCalibration = _applyCalibration;
+  globalThis._stackedPredict = _stackedPredict;
+  globalThis._extractPlattPairs = _extractPlattPairs;
+  globalThis._refitPlattCoeffs = _refitPlattCoeffs;
+  globalThis._refitIsotonicCalibration = _refitIsotonicCalibration;
+  globalThis._refitPerStadiumPlatt = _refitPerStadiumPlatt;
+  globalThis._chooseCalibrationMethod = _chooseCalibrationMethod;
+})();
+
+/* BUILD:ANALYSIS_CALIBRATION:END */
 
 
 function _parseOrigExhibitionHtml(html){
@@ -2984,6 +2984,34 @@ function generateBetsV2(marks,method,count3,count2){
   };
 }
 
+function _dedupHistory(){
+  var hist = safeParse('boatrace_history', []);
+  if(!Array.isArray(hist) || hist.length===0) return;
+  var before = hist.length;
+  var map = {};
+  var order = [];
+  hist.forEach(function(h){
+    if(!h || h.date==null) return;
+    var sid = parseInt(h.stadium), rn = parseInt(h.race);
+    var k = h.date+'|'+sid+'|'+rn;
+    h.stadium = sid; h.race = rn;   // 型正規化
+    var ex = map[k];
+    if(!ex){ map[k]=h; order.push(k); return; }
+    var exA = !!(ex.actual && ex.actual.length>0);
+    var hA  = !!(h.actual && h.actual.length>0);
+    if(hA && !exA){ map[k]=h; return; }          // actual あり優先
+    if(exA && !hA){ return; }
+    if(hA && exA){                                // 両方 actual → 払戻多い方
+      if(((h.payout3||0)+(h.payout2||0)) > ((ex.payout3||0)+(ex.payout2||0))) map[k]=h;
+    }
+    // 両方 actual 無し → 先勝ち
+  });
+  if(order.length === before) return;             // 重複なし → 何もしない
+  var out = order.map(function(k){ return map[k]; });
+  safeSet('boatrace_history', out);
+  console.warn('[history] deduped '+before+' -> '+out.length+' entries (型不一致の二重登録を解消)');
+}
+
 async function _backfillTodayPredictions(){
   if(!programData || !resultData) return;
   _cleanStaleHistoryToday();   // 古いゴミを掃除してから backfill
@@ -3026,11 +3054,18 @@ async function _backfillTodayPredictions(){
 
 function savePrediction(date,sid,rn,pred,result){
   try{
+    // 2026-06-29 FIX: sid/rn を数値に正規化。_backfillTodayPredictions は
+    //   for-in のキー(=文字列)で、openStadium は数値で savePrediction を呼ぶため、
+    //   下の重複判定 (===) が型不一致で外れ、同一レースが二重登録されていた
+    //   （成績「本日 場別」で R 数が 12 を超える＝芦屋24/三国24/桐生20 の原因）。
+    sid = parseInt(sid); rn = parseInt(rn);
+    if(!(sid>=1) || !(rn>=1)) return;
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
     var existIdx = -1;
     for(var i=0;i<history.length;i++){
-      if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
+      // 既存エントリは型混在しうるので parseInt で比較を頑健化
+      if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
     }
     // F19b: 既存エントリ更新ポリシー (カウント安定化版)
     //   - 既存が actual あり (確定済) → ロックイン、常に skip
@@ -3766,6 +3801,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
 function calcTodayStats(){
   if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _dedupHistory==='function') _dedupHistory();
   if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5

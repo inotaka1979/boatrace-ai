@@ -6618,6 +6618,39 @@ function _migrateDropStaleTodayHistory(){
   try { localStorage.setItem(key, '1'); } catch(e){}
 }
 
+// 2026-06-29: savePrediction の型不一致重複バグ(string sid vs number sid)で
+//   生じた boatrace_history の二重登録を一掃する。(date, stadium, race) を
+//   数値正規化したキーで畳み込み、actual あり > なし、actual 同士なら払戻が
+//   多い方を残す。型も number に正規化して以後の === 比較を安定させる。
+//   毎回呼ばれるが冪等で、変化が無ければ書込まない（軽量）。
+function _dedupHistory(){
+  var hist = safeParse('boatrace_history', []);
+  if(!Array.isArray(hist) || hist.length===0) return;
+  var before = hist.length;
+  var map = {};
+  var order = [];
+  hist.forEach(function(h){
+    if(!h || h.date==null) return;
+    var sid = parseInt(h.stadium), rn = parseInt(h.race);
+    var k = h.date+'|'+sid+'|'+rn;
+    h.stadium = sid; h.race = rn;   // 型正規化
+    var ex = map[k];
+    if(!ex){ map[k]=h; order.push(k); return; }
+    var exA = !!(ex.actual && ex.actual.length>0);
+    var hA  = !!(h.actual && h.actual.length>0);
+    if(hA && !exA){ map[k]=h; return; }          // actual あり優先
+    if(exA && !hA){ return; }
+    if(hA && exA){                                // 両方 actual → 払戻多い方
+      if(((h.payout3||0)+(h.payout2||0)) > ((ex.payout3||0)+(ex.payout2||0))) map[k]=h;
+    }
+    // 両方 actual 無し → 先勝ち
+  });
+  if(order.length === before) return;             // 重複なし → 何もしない
+  var out = order.map(function(k){ return map[k]; });
+  safeSet('boatrace_history', out);
+  console.warn('[history] deduped '+before+' -> '+out.length+' entries (型不一致の二重登録を解消)');
+}
+
 // 起動時に呼ばれる: history 内の「entry.date=今日 だが内容は別日」の
 // 不整合エントリを除去（昨日の _backfillTodayPredictions が「今日」として
 // 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
@@ -6688,11 +6721,18 @@ async function _backfillTodayPredictions(){
 
 function savePrediction(date,sid,rn,pred,result){
   try{
+    // 2026-06-29 FIX: sid/rn を数値に正規化。_backfillTodayPredictions は
+    //   for-in のキー(=文字列)で、openStadium は数値で savePrediction を呼ぶため、
+    //   下の重複判定 (===) が型不一致で外れ、同一レースが二重登録されていた
+    //   （成績「本日 場別」で R 数が 12 を超える＝芦屋24/三国24/桐生20 の原因）。
+    sid = parseInt(sid); rn = parseInt(rn);
+    if(!(sid>=1) || !(rn>=1)) return;
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
     var existIdx = -1;
     for(var i=0;i<history.length;i++){
-      if(history[i].date===date && history[i].stadium===sid && history[i].race===rn){ existIdx = i; break; }
+      // 既存エントリは型混在しうるので parseInt で比較を頑健化
+      if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
     }
     // F19b: 既存エントリ更新ポリシー (カウント安定化版)
     //   - 既存が actual あり (確定済) → ロックイン、常に skip
@@ -8327,7 +8367,8 @@ async function _loadNextOpen(){
     if (preview && preview.boats) {
       exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
       exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
-      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th>" + (_hasOe ? "<th>\u4E00\u5468</th><th>\u307E\u308F\u308A\u8DB3</th><th>\u76F4\u7DDA</th>" : "") + "<th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
+      var _lapLabel = String(sid) === "1" ? "\u534A\u5468" : "\u4E00\u5468";
+      exhHtml += "<thead><tr><th>\u67A0</th><th>ST</th><th>\u5C55\u793A</th><th>\u30C1\u30EB\u30C8</th>" + (_hasOe ? "<th>" + _lapLabel + "</th><th>\u307E\u308F\u308A\u8DB3</th><th>\u76F4\u7DDA</th>" : "") + "<th>\u6574\u5099</th><th>\u8ABF\u6574</th></tr></thead><tbody>";
       for (var bn = 1; bn <= 6; bn++) {
         var pv = pvMap[bn];
         var _oebST = _oeRace && _oeRace[bn] || {};
@@ -8368,7 +8409,7 @@ async function _loadNextOpen(){
       }
       exhHtml += "</tbody></table></div>";
       if (_hasOe) {
-        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>';
+        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">' + _lapLabel + "\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>";
       } else {
         exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
       }
@@ -9136,6 +9177,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 //   ・場別 (全場): 場ごとに R数 / 3連単的中 / 投資 / 払戻 / 回収率
 function calcTodayStats(){
   if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
+  if(typeof _dedupHistory==='function') _dedupHistory();
   if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
