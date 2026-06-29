@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""江戸川(3) の直前モジュールにオリジナル展示(一周/まわり足/直線)があるか確認するプローブ。
+"""びわこ(11) のオリジナル展示(一周/まわり足/直線)のデータ経路と表構造を採取するプローブ。
 
-江戸川は独自CMS。top の JS から、直前データは iframe で
-  /modules/yosou/cyokuzen.php?day=YYYYMMDD&race=N
-  /modules/yosou/cyokuzen_info.php?day=YYYYMMDD&race=N
-として読まれると判明。これらを取得し、オリジナル展示の有無と表構造を確認する。
-無ければ「江戸川は非公開」と結論。確認後撤去。
+江戸川は非公開と確定(対応対象外)。びわこは存在が確認できたため、実装に必要な
+URL とテーブル構造(列順/クラス/値)をログと保存HTMLの両方で採取する。確認後撤去。
 """
 import os
 import re
@@ -17,39 +14,90 @@ from http_utils import fetch_bytes  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
-BASE = "https://www.boatrace-edogawa.com"
+BASE = "https://www.boatrace-biwako.jp"
+KW = ("オリジナル展示", "一周", "半周", "まわり足", "直線", "周回", "展示タイム",
+      "展示", "<table", "<th")
+
+
+def _marks(txt):
+    return " ".join(f"{m}={txt.count(m)}" for m in KW)
+
+
+def _dump_table(txt):
+    """一周/まわり足/直線 を含むテーブルの thead と先頭数行を吐く(構造把握用)。"""
+    try:
+        from bs4 import BeautifulSoup
+    except Exception:
+        return
+    soup = BeautifulSoup(txt, "html.parser")
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if ("まわり足" in t) and (("一周" in t) or ("半周" in t)):
+            ths = [th.get_text(strip=True) for th in tbl.find_all("th")]
+            print(f"      THEAD: {ths}")
+            for i, row in enumerate(tbl.find_all("tr")[:8]):
+                tds = []
+                for td in row.find_all("td"):
+                    cls = "/".join(td.get("class") or [])
+                    tds.append(f"{cls}:{td.get_text(strip=True)}")
+                if tds:
+                    print(f"      row{i}: {tds[:10]}")
+            return True
+    return False
 
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    headers = {"Referer": BASE + "/"}
-    mods = ["cyokuzen", "cyokuzen_info"]
+
+    # 1) top から直前/オリジナル展示への参照を発見
+    print("== biwako top discovery ==")
+    try:
+        raw = fetch_bytes(BASE + "/", timeout=12, retries=1,
+                          headers={"Referer": BASE + "/"})
+        txt = raw.decode("utf-8", errors="replace")
+        print(f"[top] ({len(raw)}B) {_marks(txt)}")
+        refs = re.findall(
+            r'''['"]([^'"<> ]*(?:modules|cyokuzen|tenji|yosou|ajax)'''
+            r'''[^'"<> ]*\.php)['"]''', txt)
+        for r in sorted(set(refs))[:40]:
+            print(f"    ref: {r}")
+        for m in re.findall(r'["\'][^"\']*\.php["\']\s*\+\s*[^;]{0,70}', txt):
+            print(f"    param: {re.sub(chr(9),'',m)[:100]}")
+        with open(os.path.join(OUTDIR, "biwako_top.html"), "wb") as f:
+            f.write(raw)
+    except Exception as e:
+        print(f"[top] FAIL: {str(e)[:70]}")
+
+    # 2) 候補エンドポイントを叩く(edogawa 系 + 一般的な命名)
+    print("== biwako endpoint candidates ==")
+    cands = [
+        "/modules/yosou/cyokuzen.php?day={hd}&race={r}",
+        "/modules/yosou/cyokuzen_info.php?day={hd}&race={r}",
+        "/sp/ajax/ajax_cyokuzen.php",
+        "/race/xml/kaisai/{hd}/race_table_original_{rr}.xml",
+        "/xml/kaisai/{hd}/race_table_original_{rr}.xml",
+    ]
     saved = set()
-    for mod in mods:
-        for race in (1, 2, 3):
-            url = f"{BASE}/modules/yosou/{mod}.php?day={hd}&race={race}"
+    for tmpl in cands:
+        for r in (1, 2):
+            path = tmpl.format(hd=hd, r=r, rr=f"{r:02d}")
             try:
-                raw = fetch_bytes(url, timeout=12, retries=1, headers=headers)
+                raw = fetch_bytes(BASE + path, timeout=10, retries=0,
+                                  headers={"Referer": BASE + "/"})
                 txt = raw.decode("utf-8", errors="replace")
-                marks = " ".join(f"{m}={txt.count(m)}" for m in
-                                 ("オリジナル展示", "一周", "半周", "まわり足",
-                                  "直線", "周回", "展示タイム", "展示", "<table",
-                                  "<th"))
-                # th ラベル一覧(列構成把握)
-                ths = [re.sub(r"<[^>]+>", "", t).strip()
-                       for t in re.findall(r"<th[^>]*>.*?</th>", txt, re.S)]
-                ths = [t for t in ths if t][:16]
-                print(f"[{mod} R{race}] ({len(raw)}B) {marks}")
-                print(f"    th={ths}")
-                if mod not in saved and len(raw) > 300:
-                    p = os.path.join(OUTDIR, f"edogawa_{mod}_R{race:02d}.html")
-                    with open(p, "wb") as f:
-                        f.write(raw)
-                    print(f"    saved {p}")
-                    saved.add(mod)
+                print(f"[{path}] ({len(raw)}B) {_marks(txt)}")
+                got = _dump_table(txt)
+                key = tmpl.split("?")[0]
+                if (got or len(raw) > 500) and key not in saved:
+                    fn = re.sub(r"[^a-z0-9]+", "_", key.strip("/"))
+                    with open(os.path.join(OUTDIR, f"biwako_{fn}.html"),
+                              "wb") as fp:
+                        fp.write(raw)
+                    print(f"      saved biwako_{fn}.html")
+                    saved.add(key)
             except Exception as e:
-                print(f"[{mod} R{race}] FAIL: {str(e)[:70]}")
+                print(f"[{path}] -- {str(e)[:45]}")
     return 0
 
 
