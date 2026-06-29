@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""住之江(12) のオリジナル展示のデータ経路と表構造を発見するプローブ。
+"""住之江(12) の ASP 静的ページから オリジナル展示(一周/まわり足/直線)を探すプローブ。
 
-住之江は未登録。これまでの各パターン(ajax_yosou の cyokuzen/sttenji、
-modules/yosou の kind=2、戸田XML 等)を一通り当たり、オリジナル展示
-(一周/まわり足/直線)を返すエンドポイントと表構造を採取する。確認後撤去。
+住之江は ASP 静的サイト。top の有望リンク:
+  /asp/kyogi/12/pc/today_tenbo_detail.htm (展望詳細)
+  /asp/suminoe/kyogi/kyogihtml/index.htm
+を起点に、周回/オリジナル展示データと per-race htm の URL 規則を突き止める。確認後撤去。
 """
 import os
 import re
@@ -17,80 +18,45 @@ JST = timezone(timedelta(hours=9))
 OUTDIR = "data/_debug"
 BASE = "https://www.boatrace-suminoe.jp"
 KW = ("オリジナル展示", "一周", "半周", "まわり足", "直線", "周回", "展示タイム",
-      "展示評価", "スタート展示", "waku")
+      "展示", "周回展示", "ﾏﾜﾘ", "ﾁﾙﾄ")
 
 
 def _marks(t):
     return " ".join(f"{m}={t.count(m)}" for m in KW)
 
 
-def _dump(txt):
-    try:
-        from bs4 import BeautifulSoup
-    except Exception:
-        return
-    soup = BeautifulSoup(txt, "html.parser")
-    for tbl in soup.find_all("table"):
-        t = tbl.get_text()
-        if ("まわり足" in t) and (("一周" in t) or ("半周" in t)):
-            for ri, row in enumerate(tbl.find_all("tr")[:9]):
-                cells = [("/".join(td.get("class") or [])) + ":" +
-                         td.get_text(strip=True)
-                         for td in row.find_all(["td", "th"])]
-                if cells:
-                    print(f"      row{ri}: {cells[:11]}")
-            return True
-    return False
-
-
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
     hd = datetime.now(JST).strftime("%Y%m%d")
-    h_pg = {"Referer": BASE + "/"}
-    h_ajax = {"Referer": BASE + "/sp/", "X-Requested-With": "XMLHttpRequest"}
+    h = {"Referer": BASE + "/"}
 
-    # 1) 構造発見: top/sp で vendor を判定
-    print("== suminoe discovery ==")
-    for name, url in [("top", f"{BASE}/"), ("sp", f"{BASE}/sp/"),
-                      ("yosou", f"{BASE}/sp/index.php?page=yosou-yosou&race=1")]:
-        try:
-            raw = fetch_bytes(url, timeout=12, retries=1, headers=h_pg)
-            txt = raw.decode("utf-8", errors="replace")
-            print(f"[{name}] ({len(raw)}B) {_marks(txt)}")
-            print("   data-req:", sorted(set(re.findall(
-                r'data-req=[\"\']([^\"\']+)[\"\']', txt))))
-            print("   ajax php:", sorted(set(re.findall(
-                r'/(?:sp/)?ajax/([a-z_]+\.php)', txt))))
-            print("   modules:", sorted(set(re.findall(
-                r'(/modules/yosou/[a-z_]+\.php)', txt))))
-            with open(os.path.join(OUTDIR, f"suminoe_{name}.html"), "wb") as f:
-                f.write(raw)
-        except Exception as e:
-            print(f"[{name}] FAIL: {str(e)[:60]}")
-
-    # 2) 候補エンドポイントを総当たり
-    print("== endpoint candidates ==")
-    cands = [
-        f"/sp/ajax/ajax_yosou.php?targetday={hd}&race=1&req=cyokuzen&run=0",
-        f"/sp/ajax/ajax_yosou.php?targetday={hd}&race=1&req=sttenji&run=0",
-        f"/modules/yosou/cyokuzen.php?day={hd}&race=1&if=0&kind=2",
-        f"/sp/ajax/ajax_cyokuzen.php?targetday={hd}&race=1",
+    pages = [
+        ("tenbo_detail", f"{BASE}/asp/kyogi/12/pc/today_tenbo_detail.htm"),
+        ("kyogi_index", f"{BASE}/asp/suminoe/kyogi/kyogihtml/index.htm"),
+        ("tenbo_jumper", f"{BASE}/asp/htmlmade/Race/Tenbo/12/PC/jumper.htm"),
+        # 蒲郡型 per-race recomend 類推
+        ("recomend_r1", f"{BASE}/asp/suminoe/kyogi/kyogihtml/recomend/recomend{hd}12 01.htm".replace(" ", "")),
+        # per-race 展望 類推
+        ("tenbo_r1", f"{BASE}/asp/kyogi/12/pc/{hd}12 01_tenbo.htm".replace(" ", "")),
     ]
-    for path in cands:
+    for name, url in pages:
         try:
-            raw = fetch_bytes(BASE + path, timeout=10, retries=0, headers=h_ajax)
+            raw = fetch_bytes(url, timeout=12, retries=1, headers=h)
             txt = raw.decode("utf-8", errors="replace")
-            hit = ("一周" in txt or "半周" in txt) and ("まわり足" in txt)
-            tag = " <<< ORIG!" if hit else ""
-            print(f"[{path[:55]}] ({len(raw)}B) {_marks(txt)}{tag}")
-            if hit:
-                _dump(txt)
-                fn = re.sub(r"[^a-z0-9]+", "_", path.split("?")[0].strip("/"))
+            print(f"[{name}] {url[len(BASE):]} ({len(raw)}B) {_marks(txt)}")
+            # per-race htm リンク / iframe / data ファイル参照
+            refs = sorted(set(re.findall(
+                r'(?:href|src)=[\"\']([^\"\']*(?:recomend|tenbo|syuukai|'
+                r'shukai|cyokuzen|周回|orig|kyogihtml)[^\"\']*\.(?:htm|html|php))'
+                r'[\"\']', txt, re.I)))
+            for r in refs[:25]:
+                print(f"    ref: {r}")
+            if len(raw) > 300:
+                fn = re.sub(r"[^a-z0-9]+", "_", name)
                 with open(os.path.join(OUTDIR, f"suminoe_{fn}.html"), "wb") as f:
                     f.write(raw)
-                print(f"      saved suminoe_{fn}.html")
         except Exception as e:
-            print(f"[{path[:55]}] -- {str(e)[:40]}")
+            print(f"[{name}] {url[len(BASE):]} FAIL: {str(e)[:55]}")
     return 0
 
 
