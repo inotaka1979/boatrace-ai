@@ -1031,6 +1031,11 @@ export default {
         //   (枠/展示/一周/まわり足、直線なし)。
         upstream = `https://www.boatrace-suminoe.jp/asp/kyogi/12/sp/yoso05${rr}.htm`;
         fetchHeaders.Referer = 'https://www.boatrace-suminoe.jp/sp/';
+      } else if (jcdN === 24) {
+        // 大村(独自ドメイン): /yosou/sp/syussou/?day=&race= に直前展示表がインライン
+        //   (枠/ST/展示タイム/一周/まわり足/直線)。
+        upstream = `https://omurakyotei.jp/yosou/sp/syussou/?day=${hd}&race=${rr}`;
+        fetchHeaders.Referer = 'https://omurakyotei.jp/yosou/sp/syussou/';
       }
       if (!upstream) {
         return new Response('unsupported jcd', { status: 400, headers: CORS });
