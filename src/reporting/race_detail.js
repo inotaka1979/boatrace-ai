@@ -47,6 +47,20 @@ function openRace(sid, rn) {
   // オリジナル展示(一周/まわり足/直線)を Worker 経由でオンデマンド取得(対応場のみ)。
   //   GHA schedule では鮮度不足のため、閲覧した瞬間に最新を取りに行き、取得後に再描画する。
   if (typeof globalThis._loadOrigExhibitionLive === 'function') globalThis._loadOrigExhibitionLive(sid, rn);
+  // レース結果のオンデマンド補完: 締切を過ぎたのに結果/払戻が欠けるレースを開いた瞬間に
+  //   Worker /result-proxy で取り直す(bulk が夜に止まっても閲覧レースは必ず最新化)。
+  if (typeof globalThis._loadResultLive === 'function' && typeof globalThis._isResultIncomplete === 'function') {
+    var _rd = (globalThis.resultData || {})[sid] || {};
+    var _closed = programData && programData[sid] && programData[sid][rn] && programData[sid][rn].race_closed_at;
+    var _closedMs = 0;
+    if (_closed) {
+      var _m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(_closed);
+      if (_m) _closedMs = Date.UTC(+_m[1], +_m[2] - 1, +_m[3], +_m[4] - 9, +_m[5], +_m[6]);
+    }
+    if (_closedMs && Date.now() > _closedMs + 3 * 60000 && globalThis._isResultIncomplete(_rd[rn] || null)) {
+      globalThis._loadResultLive(sid, rn);
+    }
+  }
   var name = STADIUMS[parseInt(sid)] || '場' + sid;
   var race = programData[sid][rn];
   var closedAt = race ? race.race_closed_at || '' : '';
