@@ -988,22 +988,34 @@ export default {
         upstream = `https://www.gamagori-kyotei.com/asp/gamagori/sp/kyogi/kyogihtml/recomend/recomend${hd}07${rr}.htm`;
         fetchHeaders.Referer = 'https://www.gamagori-kyotei.com/';
       } else if (jcdN === 2) {
-        upstream = `https://www.boatrace-toda.jp/race/xml/kaisai/${hd}/race_table_original_${rr}.xml`;
+        // 戸田の XML パスはイベント/サイト更新でプレフィックスが変わる
+        //   (現行は /xml/kaisai/、過去は /race/xml/kaisai/)。両方を順に試す。
+        upstream = [
+          `https://www.boatrace-toda.jp/xml/kaisai/${hd}/race_table_original_${rr}.xml`,
+          `https://www.boatrace-toda.jp/race/xml/kaisai/${hd}/race_table_original_${rr}.xml`,
+        ];
         fetchHeaders.Referer = 'https://www.boatrace-toda.jp/';
       }
       if (!upstream) {
         return new Response('unsupported jcd', { status: 400, headers: CORS });
       }
+      const candidates = Array.isArray(upstream) ? upstream : [upstream];
       try {
-        const res = await fetch(upstream, {
-          headers: fetchHeaders,
-          cf: { cacheTtl: 20, cacheEverything: true },
-        });
-        if (!res.ok) return new Response(`upstream ${res.status}`, { status: 502, headers: CORS });
-        const html = await res.text();
-        return new Response(html, {
-          headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
-        });
+        let lastStatus = 0;
+        for (const cand of candidates) {
+          const res = await fetch(cand, {
+            headers: fetchHeaders,
+            cf: { cacheTtl: 20, cacheEverything: true },
+          });
+          if (res.ok) {
+            const html = await res.text();
+            return new Response(html, {
+              headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
+            });
+          }
+          lastStatus = res.status;
+        }
+        return new Response(`upstream ${lastStatus}`, { status: 502, headers: CORS });
       } catch (e) {
         return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
       }
