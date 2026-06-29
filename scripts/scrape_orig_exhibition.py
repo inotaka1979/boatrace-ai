@@ -505,13 +505,12 @@ def scrape_ajax_cyokuzen(base, jcd, date_str):
     レース割当を出さない=silent な予想劣化を防ぐ)。
     """
     out = []
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        futs = [ex.submit(_fetch_one_cyokuzen, base, jcd, rno)
-                for rno in range(1, 13)]
-        for fut in as_completed(futs):
-            race = fut.result()
-            if race:
-                out.append(race)
+    # 逐次取得: 並行だと cookie/IP セッションが衝突して全レースが同一データを返し
+    #   (roster 重複→全抑止)、桐生/福岡が空になる。1 レースずつ session を確立して取る。
+    for rno in range(1, 13):
+        race = _fetch_one_cyokuzen(base, jcd, rno)
+        if race:
+            out.append(race)
 
     # 出走選手 roster でレース選択の妥当性を検証: cookie でレースを切替えられない
     # 実装差異があると全レースが同一 roster を返す → 重複したら誤割当を避けて全抑止。
