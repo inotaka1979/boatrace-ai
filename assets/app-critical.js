@@ -1368,7 +1368,11 @@ var _oeLiveTried={};
 //   (20件/run・締切+360分窓) で夜のナイター場が処理しきれず、結果/払戻が「途中で
 //   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
 var _resLiveTried={};
-// 結果が「未確定」または「確定済だが3連単払戻が空」なら補完対象。
+var _resLiveAttempts={};   // レース毎の補完試行回数(無限リトライ防止)
+var _RES_MAX_ATTEMPTS=6;
+// 結果が「未確定」または「確定済だが払戻(3連単/2連単)が欠ける」なら補完対象。
+//   成績は 3連単 と 2連単 の回収率を出すため、両方の払戻が揃って初めて完了とみなす
+//   (「結果は反映済なのに払戻未取得」= 着順だけ先に来て払戻が遅延しているケースを拾う)。
 /* MOVED: function _isResultIncomplete */
 // 既存 entry を新 entry で更新。新が払戻を持たず既存が持つ種別は退行させない。
 /* MOVED: function _mergeResultEntry */

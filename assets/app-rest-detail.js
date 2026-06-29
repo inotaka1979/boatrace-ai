@@ -4,6 +4,262 @@
 // page_router.js の _ensureRaceDetailChunk() が race click 時に動的 load。
 'use strict';
 
+/* BUILD:REPORTING_RACE_DETAIL_BOATS:START */
+"use strict";
+(() => {
+  // ../src/reporting/race_detail_boats.js
+  function _renderRaceDetailBoats(ctx) {
+    var race = ctx.race;
+    var preview = ctx.preview;
+    var pred = ctx.pred;
+    var rdForRace = ctx.rdForRace;
+    var boatsHtml = "";
+    if (race && race.boats && Array.isArray(race.boats)) {
+      var boatMap = {};
+      race.boats.forEach(function(bt2) {
+        if (bt2 && bt2.racer_boat_number) boatMap[bt2.racer_boat_number] = bt2;
+      });
+      var pvMap = {};
+      if (preview && preview.boats) {
+        for (var pi = 1; pi <= 6; pi++) {
+          if (preview.boats[String(pi)]) pvMap[pi] = preview.boats[String(pi)];
+        }
+      }
+      var etTimes = [], stTimes = [];
+      for (var ri = 1; ri <= 6; ri++) {
+        var pvi = pvMap[ri];
+        etTimes.push({
+          boat: ri,
+          val: pvi && pvi.racer_exhibition_time != null && pvi.racer_exhibition_time > 0 ? pf(pvi.racer_exhibition_time) : 999
+        });
+        var _stv = pvi && pvi.racer_start_timing != null ? pf(pvi.racer_start_timing) : 999;
+        if (_stv < 0) _stv = 999;
+        stTimes.push({ boat: ri, val: _stv });
+      }
+      etTimes.sort(function(a, b) {
+        return a.val - b.val;
+      });
+      stTimes.sort(function(a, b) {
+        return a.val - b.val;
+      });
+      var etRankMap = {}, stRankMap = {};
+      etTimes.forEach(function(e, i2) {
+        etRankMap[e.boat] = i2;
+      });
+      stTimes.forEach(function(e, i2) {
+        stRankMap[e.boat] = i2;
+      });
+      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868</div>';
+      boatsHtml += '<div class="detail-table-wrap"><table class="detail-table">';
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        boatsHtml += '<td class="boat-col-header" style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "\u53F7\u8247</td>";
+      }
+      boatsHtml += "<th>\u67A0</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var cn = bt.racer_class_number || 4;
+        boatsHtml += '<td><span style="background:' + CLASS_COLOR[cn] + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:700">' + CLASS_NAME[cn] + "</span></td>";
+      }
+      boatsHtml += "<th>\u7D1A</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var rid = bt.racer_number || 0;
+        boatsHtml += "<td><b>" + rid + '</b> <span class="fs-9 c-dim">-\u671F</span></td>';
+      }
+      boatsHtml += "<th>\u767B\u756A</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var nameColor = bn === 1 ? "var(--text)" : BOAT_COLORS[bn];
+        if (bn === 5) nameColor = "#B8860B";
+        var m = pred ? pred.marks.find(function(x) {
+          return x.boat === bn;
+        }) : null;
+        var markStr = m ? ' <span style="font-size:10px;color:var(--accent)">' + m.mark + "</span>" : "";
+        var rid = bt.racer_number || 0;
+        var photoHtml = rid ? '<img class="racer-photo" src="data/photos/' + rid + `.jpg" loading="lazy" alt="" onerror="this.dataset.broken='1'">` : "";
+        boatsHtml += "<td>" + photoHtml + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
+      }
+      boatsHtml += "<th>\u9078\u624B</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var age = bt.racer_age || "-";
+        var branch = bt.racer_branch_name || "-";
+        var weight = bt.racer_weight || "-";
+        boatsHtml += '<td style="font-size:10px">' + age + "\u6B73/" + escText(branch) + "<br>" + weight + "kg</td>";
+      }
+      boatsHtml += "<th>\u5E74\u9F62\u7B49</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var form = getRacerForm(bt.racer_number || 0);
+        var div = pred && pred.divergence ? pred.divergence[bn] : null;
+        var badges = racerBadges(bt, form, div);
+        boatsHtml += "<td>" + (badges || "-") + "</td>";
+      }
+      boatsHtml += "<th>\u7279\u5FB4</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var mr = pf(bt.racer_assigned_motor_top_2_percent);
+        var me = motorEvalGrade(mr);
+        boatsHtml += '<td><span class="' + me.cls + '">' + me.grade + '</span> <span style="font-size:9px;color:var(--text-sub)">' + me.label + "</span></td>";
+      }
+      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var wr = pf(bt.racer_national_top_1_percent);
+        var t2 = pf(bt.racer_national_top_2_percent);
+        var hlCls = wr >= 6 ? "hl-pink" : "";
+        boatsHtml += '<td class="' + hlCls + '"><b>' + wr.toFixed(2) + '</b><br><span class="fs-9">2\u9023:' + t2.toFixed(1) + "%</span></td>";
+      }
+      boatsHtml += "<th>\u5168\u56FD\u52DD\u7387</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var lwr = pf(bt.racer_local_top_1_percent);
+        var lt2 = pf(bt.racer_local_top_2_percent);
+        var hlCls = lwr >= 6 ? "hl-pink" : "";
+        boatsHtml += '<td class="' + hlCls + '"><b>' + lwr.toFixed(2) + '</b><br><span class="fs-9">2\u9023:' + lt2.toFixed(1) + "%</span></td>";
+      }
+      boatsHtml += "<th>\u5F53\u5730\u52DD\u7387</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var avgSt = pf(bt.racer_average_start_timing);
+        boatsHtml += "<td>" + (bt.racer_average_start_timing != null ? avgSt.toFixed(2) : "---") + "</td>";
+      }
+      boatsHtml += "<th>\u5E73\u5747ST</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var mNum = bt.racer_assigned_motor_number || "-";
+        var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
+        var hlCls = mr2 >= 40 ? "hl-pink" : "";
+        boatsHtml += '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + "%</span></td>";
+      }
+      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var bNum = bt.racer_assigned_boat_number || "-";
+        var br2 = pf(bt.racer_assigned_boat_top_2_percent);
+        var hlCls = br2 >= 40 ? "hl-pink" : "";
+        boatsHtml += '<td class="' + hlCls + '"><b>' + bNum + '</b><br><span class="fs-9">' + br2.toFixed(1) + "%</span></td>";
+      }
+      boatsHtml += "<th>\u30DC\u30FC\u30C8</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
+        var fc = bt.racer_flying_count || 0;
+        var lc = bt.racer_late_start_count_in_current_term || 0;
+        var flStr = "F" + fc + "/L" + lc;
+        if (fc > 0) flStr = '<span style="color:var(--danger);font-weight:700">F' + fc + "</span>/L" + lc;
+        boatsHtml += "<td>" + flStr + "</td>";
+      }
+      boatsHtml += "<th>F/L</th></tr>";
+      if (rdForRace && rdForRace.boats) {
+        var boatsSeries = [];
+        var maxNonNull = 0;
+        for (var bn = 1; bn <= 6; bn++) {
+          var bt = boatMap[bn];
+          var rid = bt ? bt.racer_number || 0 : 0;
+          var rdBoat = rdForRace.boats ? rdForRace.boats.find(function(rb) {
+            return rb.boat_number === bn || rb.racer_number === rid;
+          }) : null;
+          var arr = rdBoat ? rdBoat.current_series_results || [] : [];
+          boatsSeries.push(arr);
+          for (var i = 0; i < arr.length; i++) {
+            if (arr[i] != null && i + 1 > maxNonNull) maxNonNull = i + 1;
+          }
+        }
+        if (maxNonNull > 0) {
+          var pairs = Math.ceil(maxNonNull / 2);
+          var DAY_LABELS = ["\u521D\u65E5", "2\u65E5\u76EE", "3\u65E5\u76EE", "4\u65E5\u76EE", "5\u65E5\u76EE", "\u6E96\u512A", "\u6700\u7D42"];
+          for (var p = 0; p < pairs; p++) {
+            for (var slot = 0; slot < 2; slot++) {
+              var idx = p * 2 + slot;
+              if (idx >= maxNonNull) break;
+              boatsHtml += "<tr>";
+              for (var bi = 0; bi < 6; bi++) {
+                boatsHtml += renderSeriesCell(boatsSeries[bi][idx]);
+              }
+              if (slot === 0) {
+                var rs = idx + 1 < maxNonNull ? 2 : 1;
+                boatsHtml += '<th rowspan="' + rs + '" class="series-day-th">' + (DAY_LABELS[p] || p + 1 + "\u65E5\u76EE") + "</th>";
+              }
+              boatsHtml += "</tr>";
+            }
+          }
+        }
+      }
+      boatsHtml += "</table></div>";
+    }
+    document.getElementById("detailBoats").innerHTML = boatsHtml;
+    ctx.boatMap = boatMap;
+    ctx.pvMap = pvMap;
+    ctx.etRankMap = etRankMap;
+    ctx.stRankMap = stRankMap;
+  }
+  globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
+})();
+
+/* BUILD:REPORTING_RACE_DETAIL_BOATS:END */
+
+
 /* BUILD:REPORTING_RACE_DETAIL_BETS:START */
 "use strict";
 (() => {
@@ -305,262 +561,6 @@
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_PREDICTION:END */
-
-
-/* BUILD:REPORTING_RACE_DETAIL_BOATS:START */
-"use strict";
-(() => {
-  // ../src/reporting/race_detail_boats.js
-  function _renderRaceDetailBoats(ctx) {
-    var race = ctx.race;
-    var preview = ctx.preview;
-    var pred = ctx.pred;
-    var rdForRace = ctx.rdForRace;
-    var boatsHtml = "";
-    if (race && race.boats && Array.isArray(race.boats)) {
-      var boatMap = {};
-      race.boats.forEach(function(bt2) {
-        if (bt2 && bt2.racer_boat_number) boatMap[bt2.racer_boat_number] = bt2;
-      });
-      var pvMap = {};
-      if (preview && preview.boats) {
-        for (var pi = 1; pi <= 6; pi++) {
-          if (preview.boats[String(pi)]) pvMap[pi] = preview.boats[String(pi)];
-        }
-      }
-      var etTimes = [], stTimes = [];
-      for (var ri = 1; ri <= 6; ri++) {
-        var pvi = pvMap[ri];
-        etTimes.push({
-          boat: ri,
-          val: pvi && pvi.racer_exhibition_time != null && pvi.racer_exhibition_time > 0 ? pf(pvi.racer_exhibition_time) : 999
-        });
-        var _stv = pvi && pvi.racer_start_timing != null ? pf(pvi.racer_start_timing) : 999;
-        if (_stv < 0) _stv = 999;
-        stTimes.push({ boat: ri, val: _stv });
-      }
-      etTimes.sort(function(a, b) {
-        return a.val - b.val;
-      });
-      stTimes.sort(function(a, b) {
-        return a.val - b.val;
-      });
-      var etRankMap = {}, stRankMap = {};
-      etTimes.forEach(function(e, i2) {
-        etRankMap[e.boat] = i2;
-      });
-      stTimes.forEach(function(e, i2) {
-        stRankMap[e.boat] = i2;
-      });
-      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868</div>';
-      boatsHtml += '<div class="detail-table-wrap"><table class="detail-table">';
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        boatsHtml += '<td class="boat-col-header" style="background:' + BOAT_COLORS[bn] + ";color:" + BOAT_TEXT[bn] + ";border:1px solid " + (bn === 1 ? "#ccc" : "transparent") + '">' + bn + "\u53F7\u8247</td>";
-      }
-      boatsHtml += "<th>\u67A0</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var cn = bt.racer_class_number || 4;
-        boatsHtml += '<td><span style="background:' + CLASS_COLOR[cn] + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:700">' + CLASS_NAME[cn] + "</span></td>";
-      }
-      boatsHtml += "<th>\u7D1A</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var rid = bt.racer_number || 0;
-        boatsHtml += "<td><b>" + rid + '</b> <span class="fs-9 c-dim">-\u671F</span></td>';
-      }
-      boatsHtml += "<th>\u767B\u756A</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var nameColor = bn === 1 ? "var(--text)" : BOAT_COLORS[bn];
-        if (bn === 5) nameColor = "#B8860B";
-        var m = pred ? pred.marks.find(function(x) {
-          return x.boat === bn;
-        }) : null;
-        var markStr = m ? ' <span style="font-size:10px;color:var(--accent)">' + m.mark + "</span>" : "";
-        var rid = bt.racer_number || 0;
-        var photoHtml = rid ? '<img class="racer-photo" src="data/photos/' + rid + `.jpg" loading="lazy" alt="" onerror="this.dataset.broken='1'">` : "";
-        boatsHtml += "<td>" + photoHtml + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
-      }
-      boatsHtml += "<th>\u9078\u624B</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var age = bt.racer_age || "-";
-        var branch = bt.racer_branch_name || "-";
-        var weight = bt.racer_weight || "-";
-        boatsHtml += '<td style="font-size:10px">' + age + "\u6B73/" + escText(branch) + "<br>" + weight + "kg</td>";
-      }
-      boatsHtml += "<th>\u5E74\u9F62\u7B49</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var form = getRacerForm(bt.racer_number || 0);
-        var div = pred && pred.divergence ? pred.divergence[bn] : null;
-        var badges = racerBadges(bt, form, div);
-        boatsHtml += "<td>" + (badges || "-") + "</td>";
-      }
-      boatsHtml += "<th>\u7279\u5FB4</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var mr = pf(bt.racer_assigned_motor_top_2_percent);
-        var me = motorEvalGrade(mr);
-        boatsHtml += '<td><span class="' + me.cls + '">' + me.grade + '</span> <span style="font-size:9px;color:var(--text-sub)">' + me.label + "</span></td>";
-      }
-      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var wr = pf(bt.racer_national_top_1_percent);
-        var t2 = pf(bt.racer_national_top_2_percent);
-        var hlCls = wr >= 6 ? "hl-pink" : "";
-        boatsHtml += '<td class="' + hlCls + '"><b>' + wr.toFixed(2) + '</b><br><span class="fs-9">2\u9023:' + t2.toFixed(1) + "%</span></td>";
-      }
-      boatsHtml += "<th>\u5168\u56FD\u52DD\u7387</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var lwr = pf(bt.racer_local_top_1_percent);
-        var lt2 = pf(bt.racer_local_top_2_percent);
-        var hlCls = lwr >= 6 ? "hl-pink" : "";
-        boatsHtml += '<td class="' + hlCls + '"><b>' + lwr.toFixed(2) + '</b><br><span class="fs-9">2\u9023:' + lt2.toFixed(1) + "%</span></td>";
-      }
-      boatsHtml += "<th>\u5F53\u5730\u52DD\u7387</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var avgSt = pf(bt.racer_average_start_timing);
-        boatsHtml += "<td>" + (bt.racer_average_start_timing != null ? avgSt.toFixed(2) : "---") + "</td>";
-      }
-      boatsHtml += "<th>\u5E73\u5747ST</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var mNum = bt.racer_assigned_motor_number || "-";
-        var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
-        var hlCls = mr2 >= 40 ? "hl-pink" : "";
-        boatsHtml += '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + "%</span></td>";
-      }
-      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var bNum = bt.racer_assigned_boat_number || "-";
-        var br2 = pf(bt.racer_assigned_boat_top_2_percent);
-        var hlCls = br2 >= 40 ? "hl-pink" : "";
-        boatsHtml += '<td class="' + hlCls + '"><b>' + bNum + '</b><br><span class="fs-9">' + br2.toFixed(1) + "%</span></td>";
-      }
-      boatsHtml += "<th>\u30DC\u30FC\u30C8</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var fc = bt.racer_flying_count || 0;
-        var lc = bt.racer_late_start_count_in_current_term || 0;
-        var flStr = "F" + fc + "/L" + lc;
-        if (fc > 0) flStr = '<span style="color:var(--danger);font-weight:700">F' + fc + "</span>/L" + lc;
-        boatsHtml += "<td>" + flStr + "</td>";
-      }
-      boatsHtml += "<th>F/L</th></tr>";
-      if (rdForRace && rdForRace.boats) {
-        var boatsSeries = [];
-        var maxNonNull = 0;
-        for (var bn = 1; bn <= 6; bn++) {
-          var bt = boatMap[bn];
-          var rid = bt ? bt.racer_number || 0 : 0;
-          var rdBoat = rdForRace.boats ? rdForRace.boats.find(function(rb) {
-            return rb.boat_number === bn || rb.racer_number === rid;
-          }) : null;
-          var arr = rdBoat ? rdBoat.current_series_results || [] : [];
-          boatsSeries.push(arr);
-          for (var i = 0; i < arr.length; i++) {
-            if (arr[i] != null && i + 1 > maxNonNull) maxNonNull = i + 1;
-          }
-        }
-        if (maxNonNull > 0) {
-          var pairs = Math.ceil(maxNonNull / 2);
-          var DAY_LABELS = ["\u521D\u65E5", "2\u65E5\u76EE", "3\u65E5\u76EE", "4\u65E5\u76EE", "5\u65E5\u76EE", "\u6E96\u512A", "\u6700\u7D42"];
-          for (var p = 0; p < pairs; p++) {
-            for (var slot = 0; slot < 2; slot++) {
-              var idx = p * 2 + slot;
-              if (idx >= maxNonNull) break;
-              boatsHtml += "<tr>";
-              for (var bi = 0; bi < 6; bi++) {
-                boatsHtml += renderSeriesCell(boatsSeries[bi][idx]);
-              }
-              if (slot === 0) {
-                var rs = idx + 1 < maxNonNull ? 2 : 1;
-                boatsHtml += '<th rowspan="' + rs + '" class="series-day-th">' + (DAY_LABELS[p] || p + 1 + "\u65E5\u76EE") + "</th>";
-              }
-              boatsHtml += "</tr>";
-            }
-          }
-        }
-      }
-      boatsHtml += "</table></div>";
-    }
-    document.getElementById("detailBoats").innerHTML = boatsHtml;
-    ctx.boatMap = boatMap;
-    ctx.pvMap = pvMap;
-    ctx.etRankMap = etRankMap;
-    ctx.stRankMap = stRankMap;
-  }
-  globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
-})();
-
-/* BUILD:REPORTING_RACE_DETAIL_BOATS:END */
 
 
 /* BUILD:REPORTING_RACE_DETAIL:START */
