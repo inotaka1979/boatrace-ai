@@ -1606,11 +1606,17 @@ function _loadOrigExhibitionLive(sid,rno){
 //   (20件/run・締切+360分窓) で夜のナイター場が処理しきれず、結果/払戻が「途中で
 //   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
 var _resLiveTried={};
-// 結果が「未確定」または「確定済だが3連単払戻が空」なら補完対象。
+var _resLiveAttempts={};   // レース毎の補完試行回数(無限リトライ防止)
+var _RES_MAX_ATTEMPTS=6;
+// 結果が「未確定」または「確定済だが払戻(3連単/2連単)が欠ける」なら補完対象。
+//   成績は 3連単 と 2連単 の回収率を出すため、両方の払戻が揃って初めて完了とみなす
+//   (「結果は反映済なのに払戻未取得」= 着順だけ先に来て払戻が遅延しているケースを拾う)。
 function _isResultIncomplete(res){
   if(!res || !res.isFinished || !res.results || !res.results.length) return true;
   var rf=res.refund||{};
-  return !(Array.isArray(rf.trifecta) && rf.trifecta.length>0);
+  var hasTri=Array.isArray(rf.trifecta) && rf.trifecta.length>0;
+  var hasExa=Array.isArray(rf.exacta) && rf.exacta.length>0;
+  return !(hasTri && hasExa);
 }
 // 既存 entry を新 entry で更新。新が払戻を持たず既存が持つ種別は退行させない。
 function _mergeResultEntry(oldR, newR){
@@ -1634,11 +1640,14 @@ function _loadResultLive(sid,rno){
     if(!(sid>=1&&rno>=1)) return;
     var key=sid+'-'+rno;
     if(_resLiveTried[key]) return; _resLiveTried[key]=true;
+    _resLiveAttempts[key]=(_resLiveAttempts[key]||0)+1;
     var hd=(typeof todayStr==='function')?todayStr():'';
     if(!/^\d{8}$/.test(hd)) return;
     var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
     if(!base || typeof indexResults!=='function') return;
-    var _retry=function(){ _resLiveTried[key]=false; };
+    // 試行上限に達するまではガードを解除して後続 sweep で再取得を許す(払戻遅延対策)。
+    //   上限超過後は tried=true のまま据え置き、CF への無駄打ちを止める。
+    var _retry=function(){ if((_resLiveAttempts[key]||0) < _RES_MAX_ATTEMPTS) _resLiveTried[key]=false; };
     fetch(base+'/result-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(obj){
@@ -1654,8 +1663,8 @@ function _loadResultLive(sid,rno){
         resultData[sid][rno]=_mergeResultEntry(prev, rr);
         var cur=resultData[sid][rno];
         var afterPay=!!(cur.refund&&Array.isArray(cur.refund.trifecta)&&cur.refund.trifecta.length>0);
-        // 着順は出たが払戻未掲載 → ガード解除して後の sweep で払戻だけ取り直す
-        if(!afterPay) _retry();
+        // 着順は出たが払戻(3連単/2連単)が未掲載 → ガード解除して後の sweep で取り直す
+        if(_isResultIncomplete(cur)) _retry();
         try{ if(programData && typeof updateDBFromResults==='function') updateDBFromResults(resultData, programData); }catch(e){}
         try{ if(typeof updateHistoryWithResults==='function') updateHistoryWithResults(); }catch(e){}
         // 実際に改善した時(新規確定 or 払戻新着)だけ閲覧中レースを再描画
@@ -9284,6 +9293,8 @@ function calcTodayStats(){
   if(typeof _migrateDropStaleTodayHistory==='function') _migrateDropStaleTodayHistory();
   if(typeof _dedupHistory==='function') _dedupHistory();
   if(typeof _cleanStaleHistoryToday==='function') _cleanStaleHistoryToday();
+  // 成績表示の度に、締切超過で結果/払戻が欠けるレースをオンデマンド補完(更新/成績タブで即発火)。
+  if(typeof _sweepMissingResults==='function') _sweepMissingResults(8);
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});

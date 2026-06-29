@@ -66,11 +66,14 @@ t('null は未完(補完対象)', () => {
 t('未確定 (isFinished=false) は未完', () => {
   assert.strictEqual(ctx._isResultIncomplete({ isFinished: false, results: [], refund: {} }), true);
 });
-t('着順あり・3連単払戻なし は未完(=払戻未取得)', () => {
-  assert.strictEqual(ctx._isResultIncomplete({ isFinished: true, results: [{ place: 1 }], refund: { trifecta: [] } }), true);
+t('着順あり・払戻なし は未完(=払戻未取得)', () => {
+  assert.strictEqual(ctx._isResultIncomplete({ isFinished: true, results: [{ place: 1 }], refund: { trifecta: [], exacta: [] } }), true);
 });
-t('着順あり・3連単払戻あり は完了', () => {
-  assert.strictEqual(ctx._isResultIncomplete({ isFinished: true, results: [{ place: 1 }], refund: { trifecta: [{ combination: '1-2-3', amount: 1200 }] } }), false);
+t('3連単払戻はあるが2連単が空 は未完(2連単払戻未取得を拾う)', () => {
+  assert.strictEqual(ctx._isResultIncomplete({ isFinished: true, results: [{ place: 1 }], refund: { trifecta: [{ combination: '1-2-3', amount: 1200 }], exacta: [] } }), true);
+});
+t('3連単・2連単とも払戻あり は完了', () => {
+  assert.strictEqual(ctx._isResultIncomplete({ isFinished: true, results: [{ place: 1 }], refund: { trifecta: [{ combination: '1-2-3', amount: 1200 }], exacta: [{ combination: '1-2', amount: 400 }] } }), false);
 });
 
 console.log('[_mergeResultEntry]');
@@ -120,7 +123,7 @@ t('完了済レースは補完対象にしない', () => {
   ctx._loadResultLive = (sid, rno) => { calls.push([sid, rno]); };
   ctx._resLiveTried = {};
   ctx.programData = { 12: { 1: { race_closed_at: closedAgo(40) } } };
-  ctx.resultData = { 12: { 1: { isFinished: true, results: [{ place: 1 }], refund: { trifecta: [{ amount: 800 }] } } } };
+  ctx.resultData = { 12: { 1: { isFinished: true, results: [{ place: 1 }], refund: { trifecta: [{ amount: 800 }], exacta: [{ amount: 300 }] } } } };
   ctx._sweepMissingResults(6);
   assert.strictEqual(calls.length, 0);
 });
