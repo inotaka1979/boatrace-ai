@@ -133,6 +133,8 @@ REST_ANCHORS = {
     'boatBadge', 'predictRaceProgram',
     # 2026-06-29: レース結果オンデマンド補完 (loadAllData/poll から呼ぶが rest に置く)
     '_sweepMissingResults', '_loadResultLive', '_isResultIncomplete', '_mergeResultEntry',
+    # 2026-06-30: 直前情報(展示情報)オンデマンド補完
+    '_sweepMissingPreviews', '_loadPreviewLive', '_isPreviewIncomplete', '_sweepMissing',
 }
 
 

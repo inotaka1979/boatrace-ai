@@ -1701,6 +1701,95 @@ function _sweepMissingResults(maxN){
     for(var i=0;i<cands.length && i<maxN;i++) _loadResultLive(cands[i].sid, cands[i].rno);
   }catch(e){}
 }
+// === 直前情報(展示情報テーブル)のオンデマンド取得 (2026-06-30) ===
+//   bulk /api/previews は朝の一斉展示で Worker cron が全場を覆いきれず、一部の場
+//   (三国/唐津/児島 等)の「展示情報」テーブルが丸ごと出ない(テーブルは preview が
+//   無いと描画されない)。Worker /beforeinfo-proxy で 1 レース単位に補完する。
+var _pvLiveTried={};
+var _pvLiveAttempts={};
+var _PV_MAX_ATTEMPTS=6;
+// preview が無い / boats に展示タイムが1つも無ければ補完対象。
+function _isPreviewIncomplete(pv){
+  if(!pv || !pv.boats) return true;
+  for(var k in pv.boats){ if((pv.boats[k]&&pv.boats[k].racer_exhibition_time||0)>0) return false; }
+  return true;
+}
+function _loadPreviewLive(sid,rno){
+  try{
+    sid=parseInt(sid); rno=parseInt(rno);
+    if(!(sid>=1&&rno>=1)) return;
+    var key=sid+'-'+rno;
+    if(_pvLiveTried[key]) return; _pvLiveTried[key]=true;
+    _pvLiveAttempts[key]=(_pvLiveAttempts[key]||0)+1;
+    var hd=(typeof todayStr==='function')?todayStr():'';
+    if(!/^\d{8}$/.test(hd)) return;
+    var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
+    if(!base) return;
+    var _retry=function(){ if((_pvLiveAttempts[key]||0) < _PV_MAX_ATTEMPTS) _pvLiveTried[key]=false; };
+    fetch(base+'/beforeinfo-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(obj){
+        if(!obj || obj.pending || !obj.boats){ _retry(); return; }
+        if(!previewData) previewData={};
+        if(!previewData[sid]) previewData[sid]={};
+        var prev=previewData[sid][rno];
+        if(prev && prev.boats){
+          // 既存(天候など)を保持しつつ、展示/ST/チルト等を埋める(値ありのみ上書き=退行防止)
+          for(var bn in obj.boats){
+            var s=obj.boats[bn];
+            if(!prev.boats[bn]){ prev.boats[bn]=s; continue; }
+            var d=prev.boats[bn];
+            if((s.racer_exhibition_time||0)>0) d.racer_exhibition_time=s.racer_exhibition_time;
+            if(s.racer_start_timing!=null) d.racer_start_timing=s.racer_start_timing;
+            if(s.racer_course_number!=null) d.racer_course_number=s.racer_course_number;
+            if(s.racer_tilt_adjustment!=null) d.racer_tilt_adjustment=s.racer_tilt_adjustment;
+            if(s.racer_propeller) d.racer_propeller=s.racer_propeller;
+            if(s.racer_parts_replaced) d.racer_parts_replaced=s.racer_parts_replaced;
+            if(s.racer_adjust_weight!=null) d.racer_adjust_weight=s.racer_adjust_weight;
+          }
+        } else {
+          // 新規エントリ。downstream(predictRace)が weather を参照するため空 weather を付与。
+          obj.weather={wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0,weather_number:0};
+          previewData[sid][rno]=obj;
+        }
+        // 展示が埋まったら相性の良い場はオリジナル展示も取りに行く
+        if(typeof _loadOrigExhibitionLive==='function') _loadOrigExhibitionLive(sid,rno);
+        if(String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
+          openRace(sid,rno);
+        }
+      }).catch(function(){ _retry(); });
+  }catch(e){}
+}
+// 展示窓(締切-45分〜+15分)で展示情報が欠けるレースを締切が近い順に最大 N 件補完。
+function _sweepMissingPreviews(maxN){
+  try{
+    if(!programData) return;
+    maxN=maxN||6;
+    var now=Date.now();
+    var cands=[];
+    for(var sid in programData){
+      var st=programData[sid];
+      for(var rn in st){
+        var p=st[rn], closed=p&&p.race_closed_at;
+        if(!closed) continue;
+        var m=/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(closed);
+        if(!m) continue;
+        var closeMs=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]);
+        if(now < closeMs-45*60000 || now > closeMs+15*60000) continue;  // 展示窓外
+        if(!_isPreviewIncomplete((previewData&&previewData[sid]&&previewData[sid][rn])||null)) continue;
+        if(_pvLiveTried[parseInt(sid)+'-'+parseInt(rn)]) continue;
+        cands.push({sid:parseInt(sid),rno:parseInt(rn),closeMs:closeMs});
+      }
+    }
+    cands.sort(function(a,b){return a.closeMs-b.closeMs;});   // 締切が近い順
+    for(var i=0;i<cands.length && i<maxN;i++) _loadPreviewLive(cands[i].sid, cands[i].rno);
+  }catch(e){}
+}
+// 結果と直前情報の取りこぼしをまとめて補完(critical 側の呼出を 1 本化して bundle 予算を維持)。
+function _sweepMissing(maxN){
+  if(typeof _sweepMissingResults==='function') _sweepMissingResults(maxN);
+  if(typeof _sweepMissingPreviews==='function') _sweepMissingPreviews(maxN);
+}
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
@@ -2216,8 +2305,8 @@ async function forceRefresh(){
       }
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
-    // 2026-06-29: 起動時点で締切超過なのに結果/払戻が欠けるレースをオンデマンド補完。
-    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(8);
+    // 2026-06-29/30: 起動時点で締切超過の結果/払戻 + 展示窓内の展示情報の取りこぼしを補完。
+    if(typeof _sweepMissing === 'function') _sweepMissing(8);
     // F17: 全場の確定レースに対して予想 backfill
     if(typeof _backfillTodayPredictions === 'function') await _backfillTodayPredictions();   // PE-9
     // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完
@@ -8314,6 +8403,18 @@ async function _loadNextOpen(){
   function openRace(sid, rn) {
     currentStadium = sid;
     currentRace = rn;
+    if (typeof globalThis._loadPreviewLive === "function" && typeof globalThis._isPreviewIncomplete === "function") {
+      var _pv = (globalThis.previewData || {})[sid] || {};
+      var _pclosed = programData && programData[sid] && programData[sid][rn] && programData[sid][rn].race_closed_at;
+      var _pcMs = 0;
+      if (_pclosed) {
+        var _pm = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(_pclosed);
+        if (_pm) _pcMs = Date.UTC(+_pm[1], +_pm[2] - 1, +_pm[3], +_pm[4] - 9, +_pm[5], +_pm[6]);
+      }
+      if (_pcMs && Date.now() > _pcMs - 45 * 6e4 && Date.now() < _pcMs + 15 * 6e4 && globalThis._isPreviewIncomplete(_pv[rn] || null)) {
+        globalThis._loadPreviewLive(sid, rn);
+      }
+    }
     if (typeof globalThis._loadOrigExhibitionLive === "function") globalThis._loadOrigExhibitionLive(sid, rn);
     if (typeof globalThis._loadResultLive === "function" && typeof globalThis._isResultIncomplete === "function") {
       var _rd = (globalThis.resultData || {})[sid] || {};
@@ -10607,9 +10708,9 @@ setManagedInterval(async function(){
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
-    // 2026-06-29: bulk results が間引き/無料枠で夜に止まっても、締切超過で結果/払戻が
-    //   欠けるレースを古い順に最大6件オンデマンド補完(背景で backlog を drain)。
-    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(6);
+    // 2026-06-29/30: bulk が間引き/無料枠で止まっても、締切超過の結果/払戻 + 展示窓内の
+    //   展示情報の取りこぼしを古い/近い順に最大6件ずつオンデマンド補完(背景で drain)。
+    if(typeof _sweepMissing === 'function') _sweepMissing(6);
     var od=_val(3);
     // rt-fix2 P0-A: 無条件全置換 (oddsData=od) をやめ単調性ガード付きマージへ
     if(od){ _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }

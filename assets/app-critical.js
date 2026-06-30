@@ -1380,6 +1380,20 @@ var _RES_MAX_ATTEMPTS=6;
 // 締切を過ぎたのに結果/払戻が欠けるレースを古い順に最大 N 件だけオンデマンド補完。
 //   bulk が止まっても背景で backlog を drain する。1 回 N 件に絞り CF CPU/サブリクエストを抑える。
 /* MOVED: function _sweepMissingResults */
+// === 直前情報(展示情報テーブル)のオンデマンド取得 (2026-06-30) ===
+//   bulk /api/previews は朝の一斉展示で Worker cron が全場を覆いきれず、一部の場
+//   (三国/唐津/児島 等)の「展示情報」テーブルが丸ごと出ない(テーブルは preview が
+//   無いと描画されない)。Worker /beforeinfo-proxy で 1 レース単位に補完する。
+var _pvLiveTried={};
+var _pvLiveAttempts={};
+var _PV_MAX_ATTEMPTS=6;
+// preview が無い / boats に展示タイムが1つも無ければ補完対象。
+/* MOVED: function _isPreviewIncomplete */
+/* MOVED: function _loadPreviewLive */
+// 展示窓(締切-45分〜+15分)で展示情報が欠けるレースを締切が近い順に最大 N 件補完。
+/* MOVED: function _sweepMissingPreviews */
+// 結果と直前情報の取りこぼしをまとめて補完(critical 側の呼出を 1 本化して bundle 予算を維持)。
+/* MOVED: function _sweepMissing */
 // X6: 対戦相性 DB
 var pairwiseDB=_bootParseLS('boatrace_pairwiseDB', {});
 var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
@@ -4164,9 +4178,9 @@ setManagedInterval(async function(){
       await learnFromResults();   // PE-9: async
       updateHistoryWithResults();
     }
-    // 2026-06-29: bulk results が間引き/無料枠で夜に止まっても、締切超過で結果/払戻が
-    //   欠けるレースを古い順に最大6件オンデマンド補完(背景で backlog を drain)。
-    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(6);
+    // 2026-06-29/30: bulk が間引き/無料枠で止まっても、締切超過の結果/払戻 + 展示窓内の
+    //   展示情報の取りこぼしを古い/近い順に最大6件ずつオンデマンド補完(背景で drain)。
+    if(typeof _sweepMissing === 'function') _sweepMissing(6);
     var od=_val(3);
     // rt-fix2 P0-A: 無条件全置換 (oddsData=od) をやめ単調性ガード付きマージへ
     if(od){ _mergeOddsSnapshot(od); _noteUpdatedAt(od.updated_at); }
@@ -4372,8 +4386,8 @@ async function forceRefresh(){
       }
     }catch(e){}
     updateHistoryWithResults();   // 二回目: マージ後の最新 resultData で payout 補完
-    // 2026-06-29: 起動時点で締切超過なのに結果/払戻が欠けるレースをオンデマンド補完。
-    if(typeof _sweepMissingResults === 'function') _sweepMissingResults(8);
+    // 2026-06-29/30: 起動時点で締切超過の結果/払戻 + 展示窓内の展示情報の取りこぼしを補完。
+    if(typeof _sweepMissing === 'function') _sweepMissing(8);
     // F17: 全場の確定レースに対して予想 backfill
     if(typeof _backfillTodayPredictions === 'function') await _backfillTodayPredictions();   // PE-9
     // F18: backfill で新規追加された的中エントリの payout3/payout2 を再度補完

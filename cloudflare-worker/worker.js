@@ -1100,6 +1100,50 @@ export default {
         return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
       }
     }
+    // 直前情報(展示タイム/ST/チルト/ペラ/部品/調整重量)のオンデマンド取得 (2026-06-30)。
+    //   bulk /api/previews は朝の一斉展示で Worker cron(20件/run)が全場を覆いきれず、
+    //   一部の場(三国/唐津/児島 等)の「展示情報」テーブルが丸ごと出ない。
+    //   既存 scrapeBeforeinfo を 1 レース公開し、openapi 互換の boats(object)で返す。
+    if (url.pathname === '/beforeinfo-proxy') {
+      const jcd = url.searchParams.get('jcd') || '';
+      const race = url.searchParams.get('race') || '';
+      const hd = url.searchParams.get('hd') || '';
+      if (!/^\d+$/.test(jcd) || !/^\d+$/.test(race) || !/^\d{8}$/.test(hd)) {
+        return new Response('bad params', { status: 400, headers: CORS });
+      }
+      const sidNum = parseInt(jcd);
+      if (sidNum < 1 || sidNum > 24) return new Response('bad sid', { status: 400, headers: CORS });
+      const raceDate = `${hd.slice(0, 4)}-${hd.slice(4, 6)}-${hd.slice(6, 8)}`;
+      try {
+        const boats = await scrapeBeforeinfo(sidNum, parseInt(race), hd);
+        // 展示前(boats=null)は pending。クライアントは tried を解除して後で再取得。
+        if (!boats) {
+          return new Response(JSON.stringify({ pending: true }), {
+            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS },
+          });
+        }
+        const outBoats = {};
+        for (const bn of Object.keys(boats)) {
+          const src = boats[bn];
+          outBoats[bn] = {
+            racer_boat_number: parseInt(bn),
+            racer_exhibition_time: src.exhibition_time,
+            racer_start_timing: src.start_timing,
+            racer_course_number: src.course,
+            racer_tilt_adjustment: src.tilt,
+            racer_propeller: src.propeller,
+            racer_parts_replaced: src.parts_replaced,
+            racer_adjust_weight: src.adjust_weight,
+          };
+        }
+        const out = { race_stadium_number: sidNum, race_number: parseInt(race), race_date: raceDate, boats: outBoats };
+        return new Response(JSON.stringify(out), {
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
+        });
+      } catch (e) {
+        return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
+      }
+    }
     return new Response('boatrace-scrape-trigger (scrape-engine-v3)\n', { headers: CORS });
   },
 };
