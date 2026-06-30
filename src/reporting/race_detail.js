@@ -44,6 +44,22 @@
 function openRace(sid, rn) {
   currentStadium = sid;
   currentRace = rn;
+  // 直前情報(展示情報テーブル)のオンデマンド補完: bulk previews が朝の一斉展示で
+  //   一部の場(三国/唐津/児島 等)を覆えず「展示情報」が丸ごと出ないため、展示窓内で
+  //   preview が欠けるレースを開いた瞬間に Worker /beforeinfo-proxy で取り直す。
+  if (typeof globalThis._loadPreviewLive === 'function' && typeof globalThis._isPreviewIncomplete === 'function') {
+    var _pv = (globalThis.previewData || {})[sid] || {};
+    var _pclosed = programData && programData[sid] && programData[sid][rn] && programData[sid][rn].race_closed_at;
+    var _pcMs = 0;
+    if (_pclosed) {
+      var _pm = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(_pclosed);
+      if (_pm) _pcMs = Date.UTC(+_pm[1], +_pm[2] - 1, +_pm[3], +_pm[4] - 9, +_pm[5], +_pm[6]);
+    }
+    // 展示窓(締切-45分〜+15分)で、展示が欠けていれば取りに行く。
+    if (_pcMs && Date.now() > _pcMs - 45 * 60000 && Date.now() < _pcMs + 15 * 60000 && globalThis._isPreviewIncomplete(_pv[rn] || null)) {
+      globalThis._loadPreviewLive(sid, rn);
+    }
+  }
   // オリジナル展示(一周/まわり足/直線)を Worker 経由でオンデマンド取得(対応場のみ)。
   //   GHA schedule では鮮度不足のため、閲覧した瞬間に最新を取りに行き、取得後に再描画する。
   if (typeof globalThis._loadOrigExhibitionLive === 'function') globalThis._loadOrigExhibitionLive(sid, rn);

@@ -173,6 +173,10 @@ step "history dedup tests" \
 step "result on-demand tests" \
      "node scripts/tests/test_result_ondemand.js"
 
+# 15d) 直前情報(展示情報)オンデマンド補完テスト (2026-06-30: 朝の展示取りこぼし解消)
+step "preview on-demand tests" \
+     "node scripts/tests/test_preview_ondemand.js"
+
 # 16) F13 自己決まり手スコアテスト
 step "F13 self-style score tests" \
      "node scripts/tests/test_self_style.js"
