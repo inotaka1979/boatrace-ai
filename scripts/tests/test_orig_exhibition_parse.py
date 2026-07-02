@@ -224,6 +224,48 @@ class TestKiryuCyokuzenReal(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_KARATSU = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'karatsu_yosou_cyokuzen_R01.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_KARATSU),
+                     'bs4 or sample HTML missing')
+class TestKaratsuYosouCyokuzen(unittest.TestCase):
+    """唐津(yosou-cyokuzen フルページ)の回帰テスト。
+
+    唐津は ajax_cyokuzen.php が 404 で、同ベンダーの表を含むフルページ
+    /sp/index.php?page=yosou-cyokuzen&race=N から取得する(probe 2026-07-02)。
+    本体セルが col5-1/col5-2/col5-3 の主経路で解析できることを固定
+    (桐生実データは col4 後ろ3セルのフォールバック経路のみカバー)。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_KARATSU, encoding='utf-8', errors='replace') as f:
+            cls.race = S.parse_kiryu_cyokuzen(f.read(), 23, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 23)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.75)        # col4 展示
+        self.assertEqual(b['lap_time'], 36.95)      # col5-1 一周
+        self.assertEqual(b['turn_time'], 5.62)      # col5-2 まわり足
+        self.assertEqual(b['straight_time'], 7.31)  # col5-3 直線
+
+    def test_all_boats_primary_path(self):
+        laps = [b['lap_time'] for b in self.race['boats']]
+        self.assertEqual(laps, [36.95, 37.20, 37.41, 36.88, 37.60, 37.33])
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _SUMINOE = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'suminoe_yoso0505.htm'
 )

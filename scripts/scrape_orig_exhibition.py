@@ -80,7 +80,9 @@ VENUES = {
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
     22: {"platform": C, "base": "https://www.boatrace-fukuoka.com"},   # 福岡(同ベンダー)
-    23: {"platform": C, "base": "https://www.boatrace-karatsu.jp"},    # 唐津(同ベンダー推定: ajax_cyokuzen)
+    # 唐津: ajax_cyokuzen.php は 404。同ベンダーの表を含むフルページから取得(probe 2026-07-02)
+    23: {"platform": C, "base": "https://www.boatrace-karatsu.jp",
+         "path": "/sp/index.php?page=yosou-cyokuzen&race={rno}"},
     5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
     6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
     8: {"platform": A, "base": "https://www.boatrace-tokoname.jp"},    # 常滑(同ベンダー)
@@ -462,15 +464,18 @@ def _roster(html):
     return tuple(_TOBAN_RE.findall(html)[:6])
 
 
-def _fetch_one_cyokuzen(base, jcd, rno):
+def _fetch_one_cyokuzen(base, jcd, rno, path_fmt=None):
     """桐生/福岡型: ajax_cyokuzen.php?race=N を直接取得(race別データ)。
 
+    path_fmt で URL パターンを差し替え可能(唐津は ajax が 404 で、同ベンダー表を
+    含むフルページ /sp/index.php?page=yosou-cyokuzen&race=N から取得する)。
     旧実装は cookie session(page→ajax)でレースを設定していたが、現行サイトでは
     session でレースが切り替わらず全レースが同一データ=roster 重複で全抑止される
     不具合があった。直接 ?race=N を付けると cookie 無しで race 別データが返るため
     そちらに切替える。返す race には検証用 roster(_roster)を添える。
     """
-    ajax = base + f"/sp/ajax/ajax_cyokuzen.php?race={rno}"
+    path_fmt = path_fmt or "/sp/ajax/ajax_cyokuzen.php?race={rno}"
+    ajax = base + path_fmt.format(rno=rno)
     try:
         html = fetch_text(ajax, timeout=12, retries=1,
                           headers={"Referer": base + "/sp/",
@@ -484,7 +489,7 @@ def _fetch_one_cyokuzen(base, jcd, rno):
     return None
 
 
-def scrape_ajax_cyokuzen(base, jcd, date_str):
+def scrape_ajax_cyokuzen(base, jcd, date_str, path_fmt=None):
     """桐生/福岡型の全 12R を取得。レース選択不具合による重複は抑止する。
 
     cookie session でレースを選べない実装差異があると全レースが同一データを
@@ -496,7 +501,7 @@ def scrape_ajax_cyokuzen(base, jcd, date_str):
     # 逐次取得: 並行だと cookie/IP セッションが衝突して全レースが同一データを返し
     #   (roster 重複→全抑止)、桐生/福岡が空になる。1 レースずつ session を確立して取る。
     for rno in range(1, 13):
-        race = _fetch_one_cyokuzen(base, jcd, rno)
+        race = _fetch_one_cyokuzen(base, jcd, rno, path_fmt)
         if race:
             out.append(race)
 
@@ -837,7 +842,7 @@ def scrape_venue(jcd, cfg, date_str):
     if cfg["platform"] == "ajax_yosou":
         return scrape_ajax_yosou(cfg["base"], jcd, date_str)
     if cfg["platform"] == "ajax_cyokuzen":
-        return scrape_ajax_cyokuzen(cfg["base"], jcd, date_str)
+        return scrape_ajax_cyokuzen(cfg["base"], jcd, date_str, cfg.get("path"))
     if cfg["platform"] == "biwako_modules":
         return scrape_biwako_modules(cfg["base"], jcd, date_str)
     if cfg["platform"] == "suminoe_yoso":

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><title>ボートレースからつ 直前情報</title></head>
+<body>
+<!-- probe 2026-07-02 のログで確認した thead 構造を再現した synthetic fixture。
+     唐津は ajax_cyokuzen.php が 404 で、同ベンダーの表を含むフルページ
+     /sp/index.php?page=yosou-cyokuzen&race=N から取得する。
+     本体セルは col5-1/col5-2/col5-3(主経路)を使う想定。 -->
+<div class="cyoku yosou_default">
+<table class="default">
+<thead>
+<tr>
+<th class="col1" rowspan="2">艇番</th>
+<th class="col2">体重</th>
+<th class="col3" rowspan="2">チルト</th>
+<th class="col4" rowspan="2">展示</th>
+<th class="col5" colspan="3">オリジナル展示データ</th>
+<th class="col6" rowspan="2">展示<br/>評価</th>
+</tr>
+<tr>
+<th class="col2_1">調整</th>
+<th class="col5-1">一周</th>
+<th class="col5-2">まわり足</th>
+<th class="col5-3">直線</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="col1 im_color1" rowspan="2">1</td>
+<td class="col2">52.0</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.75</td>
+<td class="col5-1" rowspan="2">36.95</td>
+<td class="col5-2" rowspan="2">5.62</td>
+<td class="col5-3" rowspan="2">7.31</td>
+<td class="col6" rowspan="2">◎</td>
+</tr>
+<tr class="odd"><td class="col2_1">0.0</td></tr>
+<tr class="even">
+<td class="col1 im_color2" rowspan="2">2</td>
+<td class="col2">51.5</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.82</td>
+<td class="col5-1" rowspan="2">37.20</td>
+<td class="col5-2" rowspan="2">5.74</td>
+<td class="col5-3" rowspan="2">7.45</td>
+<td class="col6" rowspan="2">○</td>
+</tr>
+<tr class="even"><td class="col2_1"></td></tr>
+<tr class="odd">
+<td class="col1 im_color3" rowspan="2">3</td>
+<td class="col2">53.0</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.90</td>
+<td class="col5-1" rowspan="2">37.41</td>
+<td class="col5-2" rowspan="2">5.80</td>
+<td class="col5-3" rowspan="2">7.52</td>
+<td class="col6" rowspan="2">△</td>
+</tr>
+<tr class="odd"><td class="col2_1">1.5</td></tr>
+<tr class="even">
+<td class="col1 im_color4" rowspan="2">4</td>
+<td class="col2">52.5</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.71</td>
+<td class="col5-1" rowspan="2">36.88</td>
+<td class="col5-2" rowspan="2">5.59</td>
+<td class="col5-3" rowspan="2">7.28</td>
+<td class="col6" rowspan="2">◎</td>
+</tr>
+<tr class="even"><td class="col2_1"></td></tr>
+<tr class="odd">
+<td class="col1 im_color5" rowspan="2">5</td>
+<td class="col2">54.0</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.95</td>
+<td class="col5-1" rowspan="2">37.60</td>
+<td class="col5-2" rowspan="2">5.91</td>
+<td class="col5-3" rowspan="2">7.60</td>
+<td class="col6" rowspan="2">×</td>
+</tr>
+<tr class="odd"><td class="col2_1">0.5</td></tr>
+<tr class="even">
+<td class="col1 im_color6" rowspan="2">6</td>
+<td class="col2">51.0</td>
+<td class="col3" rowspan="2">-0.5</td>
+<td class="col4" rowspan="2">6.85</td>
+<td class="col5-1" rowspan="2">37.33</td>
+<td class="col5-2" rowspan="2">5.77</td>
+<td class="col5-3" rowspan="2">7.48</td>
+<td class="col6" rowspan="2">△</td>
+</tr>
+<tr class="even"><td class="col2_1"></td></tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>

@@ -1037,12 +1037,15 @@ export default {
         upstream = `https://omurakyotei.jp/yosou/sp/syussou/?day=${hd}&race=${rr}`;
         fetchHeaders.Referer = 'https://omurakyotei.jp/yosou/sp/syussou/';
       } else if (jcdN === 1 || jcdN === 22 || jcdN === 23) {
-        // 桐生(1)/福岡(22)/唐津(23): ajax_cyokuzen.php?race=N を直接(cookie不要でrace別)。
-        //   col4=展示/col5=半周(桐生は一周でなく半周)/col6=まわり足/col7=直線。
+        // 桐生(1)/福岡(22)/唐津(23): 同ベンダーの直前情報表(col4=展示/col5-1=一周(桐生は半周)/
+        //   col5-2=まわり足/col5-3=直線)。桐生/福岡は ajax_cyokuzen.php?race=N 直接、
+        //   唐津は ajax が 404 のため同じ表を含むフルページ(yosou-cyokuzen)から取得(probe 2026-07-02)。
         const cb = jcdN === 1 ? 'https://www.kiryu-kyotei.com'
           : jcdN === 22 ? 'https://www.boatrace-fukuoka.com'
           : 'https://www.boatrace-karatsu.jp';
-        upstream = `${cb}/sp/ajax/ajax_cyokuzen.php?race=${parseInt(race)}`;
+        upstream = jcdN === 23
+          ? `${cb}/sp/index.php?page=yosou-cyokuzen&race=${parseInt(race)}`
+          : `${cb}/sp/ajax/ajax_cyokuzen.php?race=${parseInt(race)}`;
         fetchHeaders.Referer = cb + '/sp/';
         fetchHeaders['X-Requested-With'] = 'XMLHttpRequest';
       }
