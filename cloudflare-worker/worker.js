@@ -1036,16 +1036,22 @@ export default {
         //   (枠/ST/展示タイム/一周/まわり足/直線)。
         upstream = `https://omurakyotei.jp/yosou/sp/syussou/?day=${hd}&race=${rr}`;
         fetchHeaders.Referer = 'https://omurakyotei.jp/yosou/sp/syussou/';
-      } else if (jcdN === 1 || jcdN === 22 || jcdN === 23) {
-        // 桐生(1)/福岡(22)/唐津(23): 同ベンダーの直前情報表(col4=展示/col5-1=一周(桐生は半周)/
-        //   col5-2=まわり足/col5-3=直線)。桐生/福岡は ajax_cyokuzen.php?race=N 直接、
+      } else if (jcdN === 1 || jcdN === 22 || jcdN === 23 || jcdN === 16) {
+        // 桐生(1)/福岡(22)/唐津(23)/児島(16): 同ベンダーの直前情報表(col4=展示/col5-1=一周
+        //   (桐生は半周)/col5-2=まわり足/col5-3=直線)。桐生/福岡は ajax_cyokuzen.php?race=N 直接、
         //   唐津は ajax が 404 のため同じ表を含むフルページ(yosou-cyokuzen)から取得(probe 2026-07-02)。
+        //   児島は /sp/ に同ベンダー表があることをユーザー実証済みだが URL 変種が未確定のため
+        //   ajax → フルページの順に候補を試す(下の candidates ループが最初の 200 を採用)。
         const cb = jcdN === 1 ? 'https://www.kiryu-kyotei.com'
           : jcdN === 22 ? 'https://www.boatrace-fukuoka.com'
-          : 'https://www.boatrace-karatsu.jp';
+          : jcdN === 23 ? 'https://www.boatrace-karatsu.jp'
+          : 'https://www.kojimaboat.jp';
         upstream = jcdN === 23
           ? `${cb}/sp/index.php?page=yosou-cyokuzen&race=${parseInt(race)}`
-          : `${cb}/sp/ajax/ajax_cyokuzen.php?race=${parseInt(race)}`;
+          : jcdN === 16
+            ? [`${cb}/sp/ajax/ajax_cyokuzen.php?race=${parseInt(race)}`,
+               `${cb}/sp/index.php?page=yosou-cyokuzen&race=${parseInt(race)}`]
+            : `${cb}/sp/ajax/ajax_cyokuzen.php?race=${parseInt(race)}`;
         fetchHeaders.Referer = cb + '/sp/';
         fetchHeaders['X-Requested-With'] = 'XMLHttpRequest';
       }

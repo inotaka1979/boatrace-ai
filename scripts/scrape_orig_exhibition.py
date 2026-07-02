@@ -73,8 +73,13 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外
-    # 児島(16)も非公開(probe 2026-07-02: 静的ASP配信で直前情報ページ自体が無く、
-    #   レース中データは公式へ委譲、kyogi ライブ系も気象のみ)のため登録から除外
+    # 児島(16): PC トップからは直前情報に到達できないが、/sp/(モバイル)に桐生/唐津と
+    #   同一ベンダーのオリジナル展示表がある(ユーザー実証 2026-07-02)。URL 変種が
+    #   不明のため福岡型 ajax → 唐津型フルページの順に試す(どちらも該当構造が
+    #   無ければパーサが None を返し、誤データは出さない)。
+    16: {"platform": C, "base": "https://www.kojimaboat.jp",
+         "path": ["/sp/ajax/ajax_cyokuzen.php?race={rno}",
+                  "/sp/index.php?page=yosou-cyokuzen&race={rno}"]},
     11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     12: {"platform": SU, "base": "https://www.boatrace-suminoe.jp"},   # 住之江(iframe yoso05RR)
     24: {"platform": OM, "base": "https://omurakyotei.jp"},            # 大村(独自ドメイン syussou)
@@ -477,17 +482,19 @@ def _fetch_one_cyokuzen(base, jcd, rno, path_fmt=None):
     そちらに切替える。返す race には検証用 roster(_roster)を添える。
     """
     path_fmt = path_fmt or "/sp/ajax/ajax_cyokuzen.php?race={rno}"
-    ajax = base + path_fmt.format(rno=rno)
-    try:
-        html = fetch_text(ajax, timeout=12, retries=1,
-                          headers={"Referer": base + "/sp/",
-                                   "X-Requested-With": "XMLHttpRequest"})
-        race = parse_kiryu_cyokuzen(html, jcd, rno)
-        if race and _has_times(race):
-            race["_roster"] = _roster(html)
-            return race
-    except Exception:
-        pass  # 非対応/欠番/展示前は静かに skip(誤データを出さない)
+    # 児島のように URL 変種が不明な場は list で複数候補を順に試す
+    fmts = path_fmt if isinstance(path_fmt, (list, tuple)) else [path_fmt]
+    for fmt in fmts:
+        try:
+            html = fetch_text(base + fmt.format(rno=rno), timeout=12, retries=1,
+                              headers={"Referer": base + "/sp/",
+                                       "X-Requested-With": "XMLHttpRequest"})
+            race = parse_kiryu_cyokuzen(html, jcd, rno)
+            if race and _has_times(race):
+                race["_roster"] = _roster(html)
+                return race
+        except Exception:
+            continue  # 非対応/欠番/展示前は静かに次の候補へ(誤データを出さない)
     return None
 
 
