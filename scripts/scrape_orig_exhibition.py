@@ -80,6 +80,7 @@ VENUES = {
     7: {"platform": G, "base": "https://www.gamagori-kyotei.com"},     # 蒲郡(予想紙htm)
     17: {"platform": M, "base": "https://www.boatrace-miyajima.com"},  # 宮島(POST dt[8])
     22: {"platform": C, "base": "https://www.boatrace-fukuoka.com"},   # 福岡(同ベンダー)
+    23: {"platform": C, "base": "https://www.boatrace-karatsu.jp"},    # 唐津(同ベンダー推定: ajax_cyokuzen)
     5: {"platform": A, "base": "https://www.boatrace-tamagawa.com"},   # 多摩川 ✓
     6: {"platform": A, "base": "https://www.boatrace-hamanako.jp"},    # 浜名湖(同ベンダー)
     8: {"platform": A, "base": "https://www.boatrace-tokoname.jp"},    # 常滑(同ベンダー)
