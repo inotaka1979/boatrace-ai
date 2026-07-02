@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""児島(16): オリジナル展示(直前情報)のデータ源を探すプローブ。
+"""児島(16) 最終確認: kyogi ライブ系サブシステムに展示データが無いか走査。
 
-kojimaboat.jp は /asp/htmlmade/Race/<Cat>/16/*.htm 型の静的 ASP 配信。
-採取済みトップは非開催日のもので本日レースメニューが無かった。開催日の
-トップから直前系リンクを抽出し、候補パス(Cyokuzen 等の jumper.htm)も走査する。
-サンプルは data/_debug に保存。確認後撤去。
+サイト全メニュー解析で直前情報/オリジナル展示ページは見当たらず(展望/出走予定/
+PDF/リプレイ/結果/気象LIVE のみ)、レース中データは公式 boatrace.jp へ委譲。
+唯一のライブ系 /asp/kyogi/16/weather/ の隣接に展示系が無いか最終確認する。
+無ければ児島は江戸川と同じ「オリジナル展示 非公開」と結論する。確認後撤去。
 """
 import os
 import re
@@ -16,19 +16,17 @@ from http_utils import fetch_bytes  # noqa: E402
 OUTDIR = "data/_debug"
 BASE = "https://www.kojimaboat.jp"
 
-# Race カテゴリ jumper.htm パターン + 既知の today ページ
 CANDIDATES = [
-    ("top_live", f"{BASE}/"),
-    ("today_touban", f"{BASE}/asp/htmlmade/kojima/today_syussou/touban.htm"),
-    ("race_cyokuzen_jumper", f"{BASE}/asp/htmlmade/Race/Cyokuzen/16/jumper.htm"),
-    ("race_chokuzen_jumper", f"{BASE}/asp/htmlmade/Race/Chokuzen/16/jumper.htm"),
-    ("race_tyokuzen_jumper", f"{BASE}/asp/htmlmade/Race/Tyokuzen/16/jumper.htm"),
-    ("race_yosou_jumper", f"{BASE}/asp/htmlmade/Race/Yosou/16/jumper.htm"),
-    ("race_tenji_jumper", f"{BASE}/asp/htmlmade/Race/Tenji/16/jumper.htm"),
+    ("kyogi_weather", f"{BASE}/asp/kyogi/16/weather/index.html"),
+    ("kyogi_root", f"{BASE}/asp/kyogi/16/"),
+    ("kyogi_tenji", f"{BASE}/asp/kyogi/16/tenji/index.html"),
+    ("kyogi_cyokuzen", f"{BASE}/asp/kyogi/16/cyokuzen/index.html"),
+    ("kyogi_live", f"{BASE}/asp/kyogi/16/live/index.html"),
+    ("kyogi_race", f"{BASE}/asp/kyogi/16/race/index.html"),
 ]
 
-MARK = ["オリジナル展示", "直前情報", "直前", "展示タイム", "一周", "まわり足",
-        "回り足", "直線", "半周", "cyokuzen", "chokuzen", "tenji", "Tenji"]
+MARK = ["オリジナル展示", "直前情報", "直前", "展示タイム", "展示", "一周",
+        "まわり足", "回り足", "直線", "半周", "tenji", "cyokuzen", "ST"]
 
 
 def probe(name, url, save=False):
@@ -41,19 +39,15 @@ def probe(name, url, save=False):
         return None
     html = raw.decode("utf-8", errors="replace")
     print(f"  len={len(html)}")
-    hits = [m for m in MARK if m in html]
-    print(f"  markers: {hits}")
-    # /asp/ 配下の Race/直前/展示系リンクを列挙
-    links = dict.fromkeys(re.findall(
-        r'["\'(]([^"\'()]*(?:Race|cyokuzen|chokuzen|tenji|yosou|choku)[^"\'()]*?\.(?:htm|html|php)[^"\'()]*)["\')]',
-        html, re.I))
-    for a in list(links)[:25]:
-        print(f"  link: {a[:130]}")
-    for key in ("オリジナル展示", "直前情報", "まわり足", "展示タイム"):
-        i = html.find(key)
-        if i >= 0:
-            print(f"  [{key}] ..." + re.sub(r"\s+", " ", html[max(0, i-150):i+350]) + "...")
-            break
+    print(f"  markers: {[m for m in MARK if m in html]}")
+    # ページ内の全リンク/iframe/script(タブや隣接ライブページを発見するため)
+    for pat, label in [
+        (r'<a[^>]+href=["\']([^"\']+)["\']', "link"),
+        (r'<iframe[^>]+src=["\']([^"\']+)["\']', "iframe"),
+        (r'<script[^>]+src=["\']([^"\']+)["\']', "script"),
+    ]:
+        for v in list(dict.fromkeys(re.findall(pat, html)))[:12]:
+            print(f"  {label}: {v[:120]}")
     if save:
         with open(os.path.join(OUTDIR, f"kojima_{name}.html"), "wb") as f:
             f.write(raw)
@@ -62,23 +56,8 @@ def probe(name, url, save=False):
 
 def main() -> int:
     os.makedirs(OUTDIR, exist_ok=True)
-    top = probe("top_live", CANDIDATES[0][1], save=True)
-    # トップから直前/展示らしきリンクを見つけたら追撃で 2 件まで採取
-    followed = 0
-    if top:
-        cands = dict.fromkeys(re.findall(
-            r'href=["\']([^"\']+)["\'][^>]*>[^<]{0,20}(?:直前|展示)', top))
-        cands2 = dict.fromkeys(re.findall(
-            r'["\'(]([^"\'()]*(?:yokuzen|cyokuzen|chokuzen|tenji)[^"\'()]*)["\')]', top, re.I))
-        for u in list(cands) + list(cands2):
-            if followed >= 2:
-                break
-            full = u if u.startswith("http") else BASE + (u if u.startswith("/") else "/" + u)
-            h = probe(f"follow{followed}", full, save=True)
-            if h:
-                followed += 1
-    for name, url in CANDIDATES[1:]:
-        probe(name, url, save=(name == "today_touban"))
+    for i, (name, url) in enumerate(CANDIDATES):
+        probe(name, url, save=(i == 0))
     return 0
 
 
