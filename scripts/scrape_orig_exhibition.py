@@ -73,6 +73,8 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外
+    # 児島(16)も非公開(probe 2026-07-02: 静的ASP配信で直前情報ページ自体が無く、
+    #   レース中データは公式へ委譲、kyogi ライブ系も気象のみ)のため登録から除外
     11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     12: {"platform": SU, "base": "https://www.boatrace-suminoe.jp"},   # 住之江(iframe yoso05RR)
     24: {"platform": OM, "base": "https://omurakyotei.jp"},            # 大村(独自ドメイン syussou)
