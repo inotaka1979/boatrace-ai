@@ -1,0 +1,173 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="content-style-type" content="text/css">
+<meta http-equiv="content-script-type" content="text/javascript">
+<link rel="Stylesheet" type="text/css" href="Resource/Style/Common.css" />
+    <script type="text/javascript" src="./Resource/Script/jquery-1.7.1.min.js"></script>
+
+    <title>
+	リアルタイム気象モニタ - リアルタイム気象システム（IoT）
+</title>
+
+
+    <link rel="Stylesheet" type="text/css" href="./Resource/Style/WeatherView.css" />
+    <script type="text/javascript" src="./Resource/Script/jquery.blockUI.js"></script>
+    <script type="text/javascript" src="./Resource/Script/WeatherView.js"></script>
+
+    <script type="text/javascript">
+        var Page = null;
+
+        $(function() {
+            Page = new WeatherViewPage;
+            Page.Window = $(window);
+            Page.Document = $(document);
+
+            Page.InfoPanel = $('#InfoPanel');
+            Page.WindSpeedPanel = $('#WindSpeedPanel');
+            Page.TemperaturePanel = $('#TemperaturePanel');
+            Page.HumidityPanel = $('#HumidityPanel');
+            Page.PressurePanel = $('#PressurePanel');
+
+            Page.WaterTrPanel = $('#WaterTrPanel');
+            Page.SlwdepPanel = $('#SlwdepPanel');
+
+            Page.WindImagePanel = $('#WindImagePanel');
+            Page.AdminButtonPanel = $('#AdminButtonPanel');
+            Page.AdminPanel = $('#AdminPanel');
+
+            Page.WindSm1mPanel = $('#WindSm1mPanel');
+            Page.WindDirectionPanel = $('#WindDirectionPanel');
+            Page.WindDirection1mPanel = $('#WindDirection1mPanel');
+            Page.RainRcPanel = $('#RainRcPanel');
+            Page.RainRiPanel = $('#RainRiPanel');
+
+            Page.BaseImage = $('#ctl00_ctl00_ctl00_body_body_Detail_BaseImage');
+            Page.WindImage = $('#WindImage');
+            Page.TailWindImage = $('#TailWindImage');
+
+            Page.WindSpeedLabel = $('#WindSpeedLabel');
+            Page.TemperatureLabel = $('#TemperatureLabel');
+            Page.HumidityLabel = $('#HumidityLabel');
+            Page.PressureLabel = $('#PressureLabel');
+
+            Page.WaterTrLabel = $('#WaterTrLabel');
+            Page.SlwdepLabel = $('#SlwdepLabel');
+
+            Page.OccurredTimeLabel = $('#OccurredTimeLabel');
+
+            Page.WindSm1mLabel = $('#WindSm1mLabel');
+            Page.WindDirectionLabel = $('#WindDirectionLabel');
+            Page.WindDirection1mLabel = $('#WindDirection1mLabel');
+            Page.RainRcLabel = $('#RainRcLabel');
+            Page.RainRiLabel = $('#RainRiLabel');
+
+            Page.AdminInfo = $('#AdminInfo');
+            Page.hfPointCD = $('#ctl00_ctl00_ctl00_body_body_Detail_hfPointCD');
+            Page.hfIsAdmin = $('#ctl00_ctl00_ctl00_body_body_Detail_hfIsAdmin');
+            Page.hfPageRefreshInterval = $('#ctl00_ctl00_ctl00_body_body_Detail_hfPageRefreshInterval');
+
+            Page.lblPointCD = $('#ctl00_ctl00_ctl00_body_body_Detail_lblPointCD');
+            Page.lblPointName1 = $('#ctl00_ctl00_ctl00_body_body_Detail_lblPointName1');
+            Page.lblIPAddress = $('#ctl00_ctl00_ctl00_body_body_Detail_lblIPAddress');
+            Page.lblBaseAngle = $('#ctl00_ctl00_ctl00_body_body_Detail_lblBaseAngle');
+            Page.RawWindDirection = $('#RawWindDirection');
+            Page.ValidWindDirection = $('#ValidWindDirection');
+            Page.ECntWindDirection = $('#ECntWindDirection');
+            Page.RawWindSpeed = $('#RawWindSpeed');
+            Page.ValidWindSpeed = $('#ValidWindSpeed');
+            Page.ECntWindSpeed = $('#ECntWindSpeed');
+            Page.RawTemperature = $('#RawTemperature');
+            Page.ValidTemperature = $('#ValidTemperature');
+            Page.ECntTemperature = $('#ECntTemperature');
+            Page.RawHumidity = $('#RawHumidity');
+            Page.ValidHumidity = $('#ValidHumidity');
+            Page.ECntHumidity = $('#ECntHumidity');
+            Page.RawPressure = $('#RawPressure');
+            Page.ValidPressure = $('#ValidPressure');
+            Page.ECntPressure = $('#ECntPressure');
+
+            Page.Ready();
+
+        });
+    </script>
+
+</head>
+
+<body>
+    <form name="aspnetForm" method="post" action="/WeatherView.xxxx?PointCD=5" id="aspnetForm">
+    <div>
+
+
+<div><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="" /></div>
+<div>
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="31164967" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="" />
+</div>
+
+
+<div><!-- 角度補正 /--><input type="hidden" name="winddirectcorrection" id="winddirectcorrectionid" value="285"/></div>
+<div><!-- 矢印描画場所Left /--><input type="hidden" name="arrowleft" id="arrowleftid" value="50"/></div>
+<div><!-- 矢印描画場所Top /--><input type="hidden" name="arrowtop" id="arrowtopid" value="40"/></div>
+<div><!-- 場所コード /--><input type="hidden" name="localecd" id="localeid" value="016"/></div>
+<div><!-- デバイス /--><input type="hidden" name="clientid" id="clientid" value="devid016"/></div>
+
+
+    <div id="InfoPanel">
+      <img src="Resource/Image/base/16.jpg" id="ctl00_ctl00_ctl00_body_body_Detail_BaseImage" alt="anyehere" />
+
+      <div id="WindSpeedPanel">
+        <span id="WindSpeedLabel" class="DataLarge"></span>
+      </div>
+      <div id="TemperaturePanel">
+        <span id="TemperatureLabel" class="DataMini"></span>
+      </div>
+      <div id="HumidityPanel">
+        <span id="HumidityLabel" class="DataMini"></span>
+      </div>
+      <div id="PressurePanel">
+        <span id="PressureLabel" class="DataMini"></span>
+      </div>
+      <div id="WindSm1mPanel">
+        <span id="WindSm1mLabel" class="DataMini"></span>
+      </div>
+      <div id="WindDirection1mPanel">
+        <span id="WindDirection1mLabel" class="DataMini"></span>
+      </div>
+      <div id="WindDirectionPanel">
+        <span id="WindDirectionLabel" class="DataMidium"></span>
+      </div>
+      <div id="WaterTrPanel">
+        <span id="WaterTrLabel" class="DataMini"></span>
+      </div>
+      <div id="SlwdepPanel">
+        <span id="SlwdepLabel" class="DataMini"></span>
+      </div>
+      <div id="RainRcPanel">
+        <span id="RainRcLabel" class="DataMini"></span>
+      </div>
+      <div id="RainRiPanel">
+        <span id="RainRiLabel" class="DataMini"></span>
+      </div>
+
+      <table id="WindImagePanel" class="imagePanel" cellpadding="0" cellspacing="0">
+        <tbody>
+        <tr>
+          <td>
+            <img id="WindImage" src="./Resource/Image/EmptyImage.gif" alt="" />
+          </td>
+        </tr>
+        </tbody>
+        </table>
+
+
+        <input type="hidden" name="ctl00$ctl00$ctl00$body$body$Detail$hfPointCD" id="ctl00_ctl00_ctl00_body_body_Detail_hfPointCD" value="016">
+        <input type="hidden" name="ctl00$ctl00$ctl00$body$body$Detail$hfIsAdmin" id="ctl00_ctl00_ctl00_body_body_Detail_hfIsAdmin" value="True">
+        <input type="hidden" name="ctl00$ctl00$ctl00$body$body$Detail$hfPageRefreshInterval" id="ctl00_ctl00_ctl00_body_body_Detail_hfPageRefreshInterval" value="3">
+    </div>
+
+    </div>
+    </form>
+</body>
+</html>
