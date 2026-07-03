@@ -715,11 +715,61 @@ def parse_kojima_yoso(html, sid, rno):
     }
 
 
+def parse_heiwajima_yoso(html, sid, rno):
+    """平和島型(kyogi yoso05{RR}.htm 直前情報)→ race dict | None。
+
+    kyogi 第三の変種(probe 2026-07-03)。ヘッダは 枠/選手名/(空)/「1周」/「周り足」/
+    直線 で表記が 一周/まわり足 と異なる。データ行は td.waku0N + 選手名 td +
+    th「タイム」+ 時刻 3 セル(2 行目は th「時速」で waku 無し=自然に除外)。
+    末尾 3 td を 1周/周り足/直線 として読む。展示タイム列は無い(boatrace.jp 側で取得)。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    boats = []
+    seen = set()
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if not (((("1周" in t) or ("一周" in t))
+                 and (("周り足" in t) or ("まわり足" in t)) and ("直線" in t))):
+            continue
+        for tr in tbl.find_all("tr"):
+            first = tr.find("td")
+            if not first:
+                continue
+            m = re.search(r"(?:^|\s)waku0*([1-6])(?:\s|$)",
+                          " ".join(first.get("class") or []))
+            if not m:
+                continue
+            tds = tr.find_all("td")
+            if len(tds) < 5:
+                continue  # 時速行(3セル)や別表を除外
+            waku = int(m.group(1))
+            if waku in seen:
+                continue
+            seen.add(waku)
+            vals = [_f(td.get_text(strip=True)) for td in tds[-3:]]
+            boats.append({
+                "racer_boat_number": waku,
+                "ex_time": 0.0,
+                "lap_time": vals[0],
+                "turn_time": vals[1],
+                "straight_time": vals[2],
+            })
+        if boats:
+            break
+    if not boats:
+        return None
+    return {
+        "race_stadium_number": int(sid),
+        "race_number": int(rno),
+        "boats": boats,
+    }
+
+
 def scrape_suminoe_yoso(base, jcd, date_str):
-    """住之江/児島型: 直前情報予想 /asp/kyogi/{jcd}/sp/yoso05{RR}.htm を全12R取得。
+    """住之江/児島/平和島型: 直前情報予想 /asp/kyogi/{jcd}/sp/yoso05{RR}.htm を全12R取得。
 
     SP は iframe で per-race htm を読む。直前情報予想タブ = yoso05{RR:02d}.htm。
-    表レイアウトは場により変種があるため 住之江型 → 児島型 の順にパーサを試す。
+    表レイアウトは場により変種があるため 住之江型 → 児島型 → 平和島型 の順に試す。
     展示後のみ(時刻あり)返す。
     """
     out = []
@@ -731,7 +781,8 @@ def scrape_suminoe_yoso(base, jcd, date_str):
         except Exception:
             continue
         race = (parse_suminoe_yoso(html, jcd, rno)
-                or parse_kojima_yoso(html, jcd, rno))
+                or parse_kojima_yoso(html, jcd, rno)
+                or parse_heiwajima_yoso(html, jcd, rno))
         if race and _has_times(race):
             out.append(race)
     out.sort(key=lambda r: r["race_number"])

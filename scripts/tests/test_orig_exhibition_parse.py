@@ -312,6 +312,59 @@ class TestKojimaYoso(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_HEIWA_PRE = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'heiwajima_yoso0501_pre.html'
+)
+_HEIWA_FILLED = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'heiwajima_yoso0501_filled.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_HEIWA_PRE)
+                     and os.path.exists(_HEIWA_FILLED),
+                     'bs4 or sample HTML missing')
+class TestHeiwajimaYoso(unittest.TestCase):
+    """平和島(kyogi 第三の変種、probe 2026-07-03 採取)の回帰テスト。
+
+    ヘッダが「1周」「周り足」表記のため住之江/児島パーサは None(フォールバック
+    順序の検証を含む)。pre=実データ(展示前・全0)で構造解析、filled=値注入版で
+    末尾3セルの位置抽出を固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_HEIWA_PRE, encoding='utf-8', errors='replace') as f:
+            cls.pre_html = f.read()
+        with open(_HEIWA_FILLED, encoding='utf-8', errors='replace') as f:
+            cls.filled_html = f.read()
+
+    def test_pre_structure(self):
+        r = S.parse_heiwajima_yoso(self.pre_html, 4, 1)
+        self.assertIsNotNone(r)
+        self.assertEqual(len(r['boats']), 6)
+        self.assertFalse(S._has_times(r))   # 展示前は全 0 → scrape で skip
+
+    def test_filled_values(self):
+        r = S.parse_heiwajima_yoso(self.filled_html, 4, 1)
+        self.assertIsNotNone(r)
+        b = r['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['lap_time'], 37.20)      # 末尾3セル: 1周
+        self.assertEqual(b['turn_time'], 5.85)      # 周り足
+        self.assertEqual(b['straight_time'], 7.10)  # 直線
+        self.assertTrue(S._has_times(r))
+
+    def test_filled_all_boats(self):
+        r = S.parse_heiwajima_yoso(self.filled_html, 4, 1)
+        laps = [b['lap_time'] for b in r['boats']]
+        self.assertEqual(laps, [37.20, 37.45, 37.05, 37.60, 37.33, 37.50])
+
+    def test_other_parsers_return_none(self):
+        # 「1周」「周り足」表記のため住之江/児島パーサは None → フォールバックが平和島を拾う
+        self.assertIsNone(S.parse_suminoe_yoso(self.filled_html, 4, 1))
+        self.assertIsNone(S.parse_kojima_yoso(self.filled_html, 4, 1))
+
+
 _SUMINOE = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'suminoe_yoso0505.htm'
 )
