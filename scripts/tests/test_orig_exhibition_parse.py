@@ -266,6 +266,52 @@ class TestKaratsuYosouCyokuzen(unittest.TestCase):
         self.assertTrue(S._has_times(self.race))
 
 
+_KOJIMA = os.path.join(
+    os.path.dirname(__file__), 'fixtures', 'kojima_yoso0501.html'
+)
+
+
+@unittest.skipUnless(_HAVE_DEPS and os.path.exists(_KOJIMA),
+                     'bs4 or sample HTML missing')
+class TestKojimaYoso(unittest.TestCase):
+    """児島(実 kyogi yoso0501.htm、probe 2026-07-03 採取)の回帰テスト。
+
+    住之江と同じ kyogi 配信だがヘッダ 2 行 + 位置ベース 7 セルの変種のため
+    parse_kojima_yoso で解析する。住之江パーサでは None になる(=フォールバック
+    順序が効いている)ことも固定する。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_KOJIMA, encoding='utf-8', errors='replace') as f:
+            cls.html = f.read()
+        cls.race = S.parse_kojima_yoso(cls.html, 16, 1)
+
+    def test_shape(self):
+        self.assertIsNotNone(self.race)
+        self.assertEqual(self.race['race_stadium_number'], 16)
+        self.assertEqual(len(self.race['boats']), 6)
+
+    def test_boat1_values(self):
+        b = self.race['boats'][0]
+        self.assertEqual(b['racer_boat_number'], 1)
+        self.assertEqual(b['ex_time'], 6.81)        # 位置3 展示タイム
+        self.assertEqual(b['lap_time'], 37.13)      # 位置4 一周
+        self.assertEqual(b['turn_time'], 6.00)      # 位置5 まわり足
+        self.assertEqual(b['straight_time'], 6.67)  # 位置6 直線
+
+    def test_all_boats(self):
+        laps = [b['lap_time'] for b in self.race['boats']]
+        self.assertEqual(laps, [37.13, 36.77, 37.37, 37.0, 37.17, 36.93])
+
+    def test_suminoe_parser_returns_none(self):
+        # 2 行ヘッダのため住之江パーサは None → scrape 側のフォールバックが児島を拾う
+        self.assertIsNone(S.parse_suminoe_yoso(self.html, 16, 1))
+
+    def test_has_times(self):
+        self.assertTrue(S._has_times(self.race))
+
+
 _SUMINOE = os.path.join(
     os.path.dirname(__file__), 'fixtures', 'suminoe_yoso0505.htm'
 )

@@ -73,13 +73,10 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外
-    # 児島(16): PC トップからは直前情報に到達できないが、/sp/(モバイル)に桐生/唐津と
-    #   同一ベンダーのオリジナル展示表がある(ユーザー実証 2026-07-02)。URL 変種が
-    #   不明のため福岡型 ajax → 唐津型フルページの順に試す(どちらも該当構造が
-    #   無ければパーサが None を返し、誤データは出さない)。
-    16: {"platform": C, "base": "https://www.kojimaboat.jp",
-         "path": ["/sp/ajax/ajax_cyokuzen.php?race={rno}",
-                  "/sp/index.php?page=yosou-cyokuzen&race={rno}"]},
+    # 児島(16): 住之江と同じ kyogi 配信 /asp/kyogi/16/sp/yoso05{RR}.htm (probe 2026-07-03)。
+    #   表は 2 行ヘッダ + 位置ベース(waku0N/体重/チルト/展示/一周/まわり足/直線)の変種で、
+    #   parse_kojima_yoso が解析(scrape_suminoe_yoso 内でフォールバック)。
+    16: {"platform": SU, "base": "https://www.kojimaboat.jp"},
     11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     12: {"platform": SU, "base": "https://www.boatrace-suminoe.jp"},   # 住之江(iframe yoso05RR)
     24: {"platform": OM, "base": "https://omurakyotei.jp"},            # 大村(独自ドメイン syussou)
@@ -665,10 +662,60 @@ def parse_suminoe_yoso(html, sid, rno):
     }
 
 
+def parse_kojima_yoso(html, sid, rno):
+    """児島型(kyogi yoso05{RR}.htm 直前情報)→ race dict | None。
+
+    住之江と同じ kyogi 配信だがヘッダが 2 行(枠/体重/チルト/展示タイム/オリジナル
+    展示データ + 調整/一周/まわり足/直線)のため、住之江の 1 行ヘッダ位置対応が
+    効かない。データ行は td.waku0N + クラス無し位置ベース 7 セル
+    (枠/体重/チルト/展示/一周/まわり足/直線) で、位置固定で読む(probe 2026-07-03 実証)。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    boats = []
+    seen = set()
+    for tbl in soup.find_all("table"):
+        t = tbl.get_text()
+        if not (("一周" in t) and ("まわり足" in t)
+                and ("直線" in t) and ("展示" in t)):
+            continue
+        for tr in tbl.find_all("tr"):
+            first = tr.find("td")
+            if not first:
+                continue
+            m = re.search(r"(?:^|\s)waku0*([1-6])(?:\s|$)",
+                          " ".join(first.get("class") or []))
+            if not m:
+                continue
+            tds = tr.find_all("td")
+            if len(tds) < 7:
+                continue  # 調整行(1セル)や出走選手一覧(6セル)を除外
+            waku = int(m.group(1))
+            if waku in seen:
+                continue
+            seen.add(waku)
+            boats.append({
+                "racer_boat_number": waku,
+                "ex_time": _f(tds[3].get_text(strip=True)),
+                "lap_time": _f(tds[4].get_text(strip=True)),
+                "turn_time": _f(tds[5].get_text(strip=True)),
+                "straight_time": _f(tds[6].get_text(strip=True)),
+            })
+        if boats:
+            break
+    if not boats:
+        return None
+    return {
+        "race_stadium_number": int(sid),
+        "race_number": int(rno),
+        "boats": boats,
+    }
+
+
 def scrape_suminoe_yoso(base, jcd, date_str):
-    """住之江型: 直前情報予想 /asp/kyogi/12/sp/yoso05{RR}.htm を全12R取得。
+    """住之江/児島型: 直前情報予想 /asp/kyogi/{jcd}/sp/yoso05{RR}.htm を全12R取得。
 
     SP は iframe で per-race htm を読む。直前情報予想タブ = yoso05{RR:02d}.htm。
+    表レイアウトは場により変種があるため 住之江型 → 児島型 の順にパーサを試す。
     展示後のみ(時刻あり)返す。
     """
     out = []
@@ -679,7 +726,8 @@ def scrape_suminoe_yoso(base, jcd, date_str):
                               headers={"Referer": base + "/sp/"})
         except Exception:
             continue
-        race = parse_suminoe_yoso(html, jcd, rno)
+        race = (parse_suminoe_yoso(html, jcd, rno)
+                or parse_kojima_yoso(html, jcd, rno))
         if race and _has_times(race):
             out.append(race)
     out.sort(key=lambda r: r["race_number"])

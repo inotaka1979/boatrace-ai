@@ -1335,7 +1335,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kiryu'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kojima'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1361,6 +1361,11 @@ var _oeLiveTried={};
 //   (データ無し merge セル)があるため時刻 0 のまま。col5-N が無ければ col4 の後ろ3セルにフォールバック。
 //   桐生は「半周」を独自計測するが順位ベース加点に使うので lap_time に格納(Python parse_kiryu_cyokuzen と一致)。
 /* MOVED: function _parseKiryu */
+// 児島 kyogi yoso05RR.htm → bymap。住之江と同じ kyogi 配信だがヘッダが 2 行
+//   (枠/体重/チルト/展示タイム/オリジナル展示データ + 調整/一周/まわり足/直線)の変種。
+//   データ行は td.waku0N + クラス無し位置ベース 7 セル(枠/体重/チルト/展示/一周/まわり足/直線)。
+//   Python parse_kojima_yoso と同一ロジック(probe 2026-07-03 で実データ解析を実証済)。
+/* MOVED: function _parseKojima */
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 /* MOVED: function _loadOrigExhibitionLive */
 // === レース結果のオンデマンド取得 (2026-06-29) ===
