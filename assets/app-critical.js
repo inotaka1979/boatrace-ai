@@ -1366,6 +1366,13 @@ var _oeLiveTried={};
 //   データ行は td.waku0N + クラス無し位置ベース 7 セル(枠/体重/チルト/展示/一周/まわり足/直線)。
 //   Python parse_kojima_yoso と同一ロジック(probe 2026-07-03 で実データ解析を実証済)。
 /* MOVED: function _parseKojima */
+// bymap に正の時刻が 1 つでもあるか(展示前の全 0 は null 扱いにして後で再取得させる)。
+/* MOVED: function _oeHasAnyTime */
+// 平和島 kyogi yoso05RR.htm → bymap。kyogi 第三の変種(probe 2026-07-03)。
+//   ヘッダは 枠/選手名/(空)/「1周」/「周り足」/直線(一周/まわり足と表記が違う)。
+//   データ行は td.waku0N + 選手名 td + th「タイム」+ 時刻3セル(2行目は th「時速」で waku 無し)。
+//   末尾 3 td を 1周/周り足/直線 として読む。展示タイム列は無い(boatrace.jp 側で取得)。
+/* MOVED: function _parseHeiwajima */
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 /* MOVED: function _loadOrigExhibitionLive */
 // === レース結果のオンデマンド取得 (2026-06-29) ===

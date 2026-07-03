@@ -1595,7 +1595,44 @@ function _parseKojima(html){
       }
       if(Object.keys(bymap).length) break;
     }
-    return Object.keys(bymap).length?bymap:null;
+    return _oeHasAnyTime(bymap)?bymap:null;
+  }catch(e){ return null; }
+}
+// bymap に正の時刻が 1 つでもあるか(展示前の全 0 は null 扱いにして後で再取得させる)。
+function _oeHasAnyTime(bymap){
+  for(var k in bymap){
+    var b=bymap[k];
+    if(b&&((b.ex_time||0)>0||(b.lap_time||0)>0||(b.turn_time||0)>0||(b.straight_time||0)>0)) return true;
+  }
+  return false;
+}
+// 平和島 kyogi yoso05RR.htm → bymap。kyogi 第三の変種(probe 2026-07-03)。
+//   ヘッダは 枠/選手名/(空)/「1周」/「周り足」/直線(一周/まわり足と表記が違う)。
+//   データ行は td.waku0N + 選手名 td + th「タイム」+ 時刻3セル(2行目は th「時速」で waku 無し)。
+//   末尾 3 td を 1周/周り足/直線 として読む。展示タイム列は無い(boatrace.jp 側で取得)。
+function _parseHeiwajima(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), bymap={};
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      var hasLap=tx.indexOf('1周')>=0||tx.indexOf('一周')>=0;
+      var hasTurn=tx.indexOf('周り足')>=0||tx.indexOf('まわり足')>=0;
+      if(!(hasLap&&hasTurn&&tx.indexOf('直線')>=0)) continue;
+      var trs=tables[i].querySelectorAll('tr');
+      for(var r=0;r<trs.length;r++){
+        var first=trs[r].querySelector('td'); if(!first) continue;
+        var m=/(?:^|\s)waku0*([1-6])(?:\s|$)/.exec(first.className||''); if(!m) continue;
+        var tds=trs[r].querySelectorAll('td');
+        if(tds.length<5) continue;   // 時速行(3セル)や別表を除外
+        var waku=parseInt(m[1],10); if(bymap[waku]) continue;
+        var f=function(td){var x=parseFloat((td&&td.textContent||'').trim()); return (x>0)?x:0;};
+        var n=tds.length;
+        bymap[waku]={racer_boat_number:waku,ex_time:0,lap_time:f(tds[n-3]),turn_time:f(tds[n-2]),straight_time:f(tds[n-1])};
+      }
+      if(Object.keys(bymap).length) break;
+    }
+    return _oeHasAnyTime(bymap)?bymap:null;
   }catch(e){ return null; }
 }
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
@@ -1617,7 +1654,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):(fmt==='kojima')?_parseKojima(html):(fmt==='kyogi')?(_parseSuminoeYoso(html)||_parseKojima(html)):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):(fmt==='kojima')?_parseKojima(html):(fmt==='kyogi')?(_parseSuminoeYoso(html)||_parseKojima(html)||_parseHeiwajima(html)):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
