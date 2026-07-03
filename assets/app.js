@@ -1330,7 +1330,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kiryu'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kojima'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1572,6 +1572,32 @@ function _parseKiryu(html){
     return Object.keys(bymap).length?bymap:null;
   }catch(e){ return null; }
 }
+// 児島 kyogi yoso05RR.htm → bymap。住之江と同じ kyogi 配信だがヘッダが 2 行
+//   (枠/体重/チルト/展示タイム/オリジナル展示データ + 調整/一周/まわり足/直線)の変種。
+//   データ行は td.waku0N + クラス無し位置ベース 7 セル(枠/体重/チルト/展示/一周/まわり足/直線)。
+//   Python parse_kojima_yoso と同一ロジック(probe 2026-07-03 で実データ解析を実証済)。
+function _parseKojima(html){
+  try{
+    var doc=new DOMParser().parseFromString(html,'text/html');
+    var tables=doc.querySelectorAll('table'), bymap={};
+    for(var i=0;i<tables.length;i++){
+      var tx=tables[i].textContent||'';
+      if(!(tx.indexOf('一周')>=0&&tx.indexOf('まわり足')>=0&&tx.indexOf('直線')>=0&&tx.indexOf('展示')>=0)) continue;
+      var trs=tables[i].querySelectorAll('tr');
+      for(var r=0;r<trs.length;r++){
+        var first=trs[r].querySelector('td'); if(!first) continue;
+        var m=/(?:^|\s)waku0*([1-6])(?:\s|$)/.exec(first.className||''); if(!m) continue;
+        var tds=trs[r].querySelectorAll('td');
+        if(tds.length<7) continue;   // 調整行(1セル)/出走選手一覧(6セル)を除外
+        var waku=parseInt(m[1],10); if(bymap[waku]) continue;
+        var f=function(n){var x=parseFloat((tds[n].textContent||'').trim()); return (x>0)?x:0;};
+        bymap[waku]={racer_boat_number:waku,ex_time:f(3),lap_time:f(4),turn_time:f(5),straight_time:f(6)};
+      }
+      if(Object.keys(bymap).length) break;
+    }
+    return Object.keys(bymap).length?bymap:null;
+  }catch(e){ return null; }
+}
 // 閲覧中レースのオリジナル展示を Worker 経由でオンデマンド取得 → index 更新 → 同レース閲覧中なら再描画。
 function _loadOrigExhibitionLive(sid,rno){
   try{
@@ -1591,7 +1617,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):(fmt==='kojima')?_parseKojima(html):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
