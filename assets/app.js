@@ -9827,23 +9827,30 @@ function loadSettings(){
 function _renderDataSourcesPanel(){
   var panel = document.getElementById('dataSourcesPanel');
   if(!panel) return;
+  // 2026-07-03: しきい値をソース別に。programs(出走表)は日次データで朝確定後は
+  //   変わらないため 30 分基準だと常に赤=誤警報だった。previews/results は
+  //   ライブ経路なので従来の 10/30 分を維持。openapi/ローカルはフォールバック
+  //   (Worker が緑なら赤でも実害なし)であることをラベルで明示する。
   var sources = [
-    { key: 'worker_previews',   label: 'Worker /api/previews',    url: WORKER_BASE + '/api/previews?_=' + Date.now() },
-    { key: 'worker_programs',   label: 'Worker /api/programs',    url: WORKER_BASE + '/api/programs?_=' + Date.now() },
-    { key: 'worker_results',    label: 'Worker /api/results',     url: WORKER_BASE + '/api/results?_=' + Date.now() },
-    { key: 'openapi_previews',  label: 'openapi previews',        url: 'https://boatraceopenapi.github.io/previews/v2/today.json?_=' + Date.now() },
-    { key: 'local_previews',    label: 'ローカル data/previews',  url: 'data/previews/today.json?_=' + Date.now() },
+    { key: 'worker_previews',   label: 'Worker /api/previews',    url: WORKER_BASE + '/api/previews?_=' + Date.now(), warn: 10, bad: 30 },
+    { key: 'worker_programs',   label: 'Worker /api/programs',    url: WORKER_BASE + '/api/programs?_=' + Date.now(), warn: 360, bad: 720 },
+    { key: 'worker_results',    label: 'Worker /api/results',     url: WORKER_BASE + '/api/results?_=' + Date.now(), warn: 10, bad: 30 },
+    { key: 'openapi_previews',  label: 'openapi previews ※予備',  url: 'https://boatraceopenapi.github.io/previews/v2/today.json?_=' + Date.now(), warn: 10, bad: 30, fallback: true },
+    { key: 'local_previews',    label: 'ローカル data/previews ※予備', url: 'data/previews/today.json?_=' + Date.now(), warn: 10, bad: 30, fallback: true },
   ];
-  function ageStr(ts){
+  function ageStr(ts, warn, bad, fallback){
     if(!ts) return '取得失敗';
     var d = new Date(ts);
     if(isNaN(d.getTime())) return '時刻不正';
     var min = Math.floor((Date.now() - d.getTime()) / 60000);
-    var color = min <= 10 ? '#2E7D32' : (min <= 30 ? '#E65100' : '#C62828');
-    var icon  = min <= 10 ? '🟢' : (min <= 30 ? '🟠' : '🔴');
+    var color = min <= warn ? '#2E7D32' : (min <= bad ? '#E65100' : '#C62828');
+    var icon  = min <= warn ? '🟢' : (min <= bad ? '🟠' : '🔴');
+    // 予備経路は主経路(Worker)が生きていれば赤でも実害がないため、警告色をグレーに落とす
+    if(fallback && min > bad){ color = '#9E9E9E'; icon = '⚪'; }
     var hh = String(d.getHours()).padStart(2,'0');
     var mm = String(d.getMinutes()).padStart(2,'0');
-    return '<span style="color:'+color+'">'+icon+' '+hh+':'+mm+' ('+min+'分前)</span>';
+    var ageTxt = min >= 60 ? (Math.floor(min/60) + '時間前') : (min + '分前');
+    return '<span style="color:'+color+'">'+icon+' '+hh+':'+mm+' ('+ageTxt+')</span>';
   }
   Promise.all(sources.map(function(s){
     return fetch(s.url, { cache:'no-store' })
@@ -9860,16 +9867,19 @@ function _renderDataSourcesPanel(){
         var ua = j.updated_at || (j.data && j.data.updated_at) || o.lastModified;
         return { label: s.label, ts: ua, ok: true };
       })
-      .catch(function(e){ return { label: s.label, ts: null, ok: false, err: String(e).slice(0,40) }; });
+      .catch(function(e){ return { label: s.label, ts: null, ok: false, err: String(e).slice(0,40),
+                                   warn: s.warn, bad: s.bad, fallback: s.fallback }; });
   })).then(function(rows){
     var html = '<div style="display:grid;grid-template-columns:auto auto;gap:4px 12px">';
-    rows.forEach(function(r){
+    rows.forEach(function(r, i){
+      var s = sources[i];
       html += '<div style="font-family:monospace">'+escText(r.label)+':</div>';
-      html += '<div>'+ageStr(r.ts)+'</div>';
+      html += '<div>'+ageStr(r.ts, s.warn, s.bad, s.fallback)+'</div>';
     });
     html += '</div>';
     html += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
-         + '🟢 ≤10分 / 🟠 ≤30分 / 🔴 >30分。Worker 経路が緑なら GHA / openapi 障害でも動作中。'
+         + 'previews/results は 🟢≤10分/🟠≤30分/🔴>30分。programs(出走表)は日次データのため'
+         + ' 🟢≤6時間。※予備 は Worker が緑なら ⚪(停止中)でも動作に影響なし。'
          + '</div>';
     panel.innerHTML = html;
   }).catch(function(){
