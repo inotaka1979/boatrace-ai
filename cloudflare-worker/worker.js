@@ -1037,6 +1037,11 @@ export default {
         //   クライアントは _parseKojima が解析。
         upstream = `https://www.kojimaboat.jp/asp/kyogi/16/sp/yoso05${rr}.htm`;
         fetchHeaders.Referer = 'https://www.kojimaboat.jp/';
+      } else if (jcdN === 4) {
+        // 平和島: kyogi 配信(トップ iframe /asp/kyogi/04/sp/top_syusso01.htm を確認)。
+        //   直前情報は同系の yoso05{RR}.htm。クライアントは住之江型→児島型の順に解析。
+        upstream = `https://www.heiwajima.gr.jp/asp/kyogi/04/sp/yoso05${rr}.htm`;
+        fetchHeaders.Referer = 'https://www.heiwajima.gr.jp/';
       } else if (jcdN === 24) {
         // 大村(独自ドメイン): /yosou/sp/syussou/?day=&race= に直前展示表がインライン
         //   (枠/ST/展示タイム/一周/まわり足/直線)。
