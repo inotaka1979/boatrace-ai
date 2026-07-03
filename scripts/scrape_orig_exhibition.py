@@ -77,6 +77,10 @@ VENUES = {
     #   表は 2 行ヘッダ + 位置ベース(waku0N/体重/チルト/展示/一周/まわり足/直線)の変種で、
     #   parse_kojima_yoso が解析(scrape_suminoe_yoso 内でフォールバック)。
     16: {"platform": SU, "base": "https://www.kojimaboat.jp"},
+    # 平和島(4): kyogi 配信(トップ iframe /asp/kyogi/04/sp/top_syusso01.htm を確認)。
+    #   直前情報は同系の yoso05{RR}.htm と推定。表レイアウトは住之江型/児島型の
+    #   どちらでも scrape_suminoe_yoso のパーサフォールバックが吸収する。
+    4: {"platform": SU, "base": "https://www.heiwajima.gr.jp"},
     11: {"platform": BW, "base": "https://www.boatrace-biwako.jp"},    # びわこ(独自CMS modules/kind=2)
     12: {"platform": SU, "base": "https://www.boatrace-suminoe.jp"},   # 住之江(iframe yoso05RR)
     24: {"platform": OM, "base": "https://omurakyotei.jp"},            # 大村(独自ドメイン syussou)

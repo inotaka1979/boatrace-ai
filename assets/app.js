@@ -1330,7 +1330,7 @@ var _origExhibIndex={};
 var _OE_VENUES={5:1,6:1,8:1,9:1,10:1,13:1,14:1,18:1,19:1,20:1,21:1,11:1};
 // 静的形式(別パーサ)でオンデマンド対応する場: 戸田(XML)/蒲郡(recomend htm)。
 //   GHA 定時スクレイプの遅延を埋めるため、閲覧時に Worker 経由で最新を取得する。
-var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kojima'};
+var _OE_FMT={2:'toda',7:'gama',12:'suminoe',17:'miyajima',24:'omura',1:'kiryu',22:'kiryu',23:'kiryu',16:'kojima',4:'kyogi'};
 var _oeLiveTried={};
 
 // Worker プロキシ応答(各場 cyokuzen HTML)を DOMParser で解析 → {waku -> {ex/lap/turn/straight}}。
@@ -1617,7 +1617,7 @@ function _loadOrigExhibitionLive(sid,rno){
       .then(function(r){return r.ok?r.text():null;})
       .then(function(html){
         if(!html){ _retry(); return; }
-        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):(fmt==='kojima')?_parseKojima(html):_parseOrigExhibitionHtml(html);
+        var bymap=(fmt==='toda')?_parseTodaXml(html):(fmt==='gama')?_parseGamagoriRecomendHtml(html):(fmt==='suminoe')?_parseSuminoeYoso(html):(fmt==='miyajima')?_parseMiyajimaReload(html):(fmt==='omura')?_parseOmura(html):(fmt==='kiryu')?_parseKiryu(html):(fmt==='kojima')?_parseKojima(html):(fmt==='kyogi')?(_parseSuminoeYoso(html)||_parseKojima(html)):_parseOrigExhibitionHtml(html);
         if(!bymap){ _retry(); return; }
         if(!_origExhibIndex[sid]) _origExhibIndex[sid]={};
         _origExhibIndex[sid][rno]=bymap;
