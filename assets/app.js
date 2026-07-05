@@ -8639,7 +8639,9 @@ async function _loadNextOpen(){
         var hit = pred.trifecta.some(function(t) {
           return t.combo === actualCombo;
         });
-        resHtml += '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' + (hit ? "hit" : "miss") + '">' + (hit ? "3\u9023\u5358 \u7684\u4E2D!" : "\u4E0D\u7684\u4E2D") + "</div>";
+        var anaHit = Array.isArray(pred.ana) && pred.ana.indexOf(actualCombo) >= 0;
+        var banner = hit && anaHit ? "3\u9023\u5358 \u7684\u4E2D! \uFF0B \u{1F525}\u7A74\u4E88\u60F3 \u7684\u4E2D!" : hit ? "3\u9023\u5358 \u7684\u4E2D!" : anaHit ? "\u{1F525}\u7A74\u4E88\u60F3 \u7684\u4E2D!" : "\u4E0D\u7684\u4E2D";
+        resHtml += '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' + (hit || anaHit ? "hit" : "miss") + '">' + banner + "</div>";
       } else if (pred && places.length < 3) {
         resHtml += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">\u7D50\u679C\u30C7\u30FC\u30BF\u53D6\u5F97\u4E2D (\u7740\u9806 ' + places.length + "/3 \u4EF6)</div>";
       }
@@ -9620,11 +9622,14 @@ function _rateColor(rate){
       var anaHitRate = s.ana.races > 0 ? (s.ana.hits / s.ana.races * 100).toFixed(0) : "-";
       recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:9px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
     }
-    var totInv = s.tri.invest + s.exa.invest;
-    var totPay = s.tri.payout + s.exa.payout;
+    var anaInv = s.ana ? s.ana.invest : 0;
+    var anaPay = s.ana ? s.ana.payout : 0;
+    var anaHits = s.ana ? s.ana.hits : 0;
+    var totInv = s.tri.invest + s.exa.invest + anaInv;
+    var totPay = s.tri.payout + s.exa.payout + anaPay;
     var totRate = totInv > 0 ? Math.round(totPay / totInv * 100) : 0;
     var net = totPay - totInv;
-    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
+    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits + anaHits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
     recHtml += "</tbody></table></div>";
     recHtml += '<div class="card" class="p-overflow-hidden">';
     recHtml += '<div class="card-header-row">\u672C\u65E5 \u30EC\u30FC\u30B9\u30BF\u30A4\u30D7\u5225 (3\u9023\u5358)</div>';

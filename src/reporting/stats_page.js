@@ -120,14 +120,18 @@ function renderStats() {
       anaR +
       '%</td></tr>';
   }
-  // 合計行
-  var totInv = s.tri.invest + s.exa.invest;
-  var totPay = s.tri.payout + s.exa.payout;
+  // 合計行 (2026-07-05: 🔥穴予想も合算。旧実装は穴行を表に出しながら合計は
+  //   3連単+2連単のみで、穴の的中・払戻が合計に反映されない矛盾があった)
+  var anaInv = s.ana ? s.ana.invest : 0;
+  var anaPay = s.ana ? s.ana.payout : 0;
+  var anaHits = s.ana ? s.ana.hits : 0;
+  var totInv = s.tri.invest + s.exa.invest + anaInv;
+  var totPay = s.tri.payout + s.exa.payout + anaPay;
   var totRate = totInv > 0 ? Math.round((totPay / totInv) * 100) : 0;
   var net = totPay - totInv;
   recHtml +=
     '<tr style="background:#F8F8F8;font-weight:700"><td>合計</td><td>' +
-    (s.tri.hits + s.exa.hits) +
+    (s.tri.hits + s.exa.hits + anaHits) +
     '</td><td>¥' +
     totInv.toLocaleString() +
     '</td><td>¥' +

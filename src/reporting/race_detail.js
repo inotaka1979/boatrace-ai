@@ -246,11 +246,18 @@ function openRace(sid, rn) {
       var hit = pred.trifecta.some(function (t) {
         return t.combo === actualCombo;
       });
+      // 2026-07-05: 🔥穴予想の的中も判定・表示する(旧実装は 3 連単買い目のみ判定で、
+      //   穴予想が的中しても「不的中」と表示されていた)
+      var anaHit = Array.isArray(pred.ana) && pred.ana.indexOf(actualCombo) >= 0;
+      var banner = hit && anaHit ? '3連単 的中! ＋ 🔥穴予想 的中!'
+        : hit ? '3連単 的中!'
+        : anaHit ? '🔥穴予想 的中!'
+        : '不的中';
       resHtml +=
         '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' +
-        (hit ? 'hit' : 'miss') +
+        (hit || anaHit ? 'hit' : 'miss') +
         '">' +
-        (hit ? '3連単 的中!' : '不的中') +
+        banner +
         '</div>';
     } else if (pred && places.length < 3) {
       resHtml +=

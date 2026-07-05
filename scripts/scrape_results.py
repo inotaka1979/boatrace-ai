@@ -23,9 +23,13 @@ INTERVAL = 3
 OUTPUT = "data/results/today.json"
 
 # 2026-05-16: 全 run が 30 分 timeout で cancel される問題対処
-#   並列 4 + per-request timeout 8s + retries 1 + 全体予算 1200s で hard guard。
+#   並列 4 + per-request timeout + retries 1 + 全体予算 1200s で hard guard。
 #   元の 3s INTERVAL は parallel 化で per-worker rate ≒ 1.3req/s に保たれ politeness 維持。
-FETCH_TIMEOUT = 8
+# 2026-07-05: FETCH_TIMEOUT 8→25s。GHA からの raceresult 取得が 168/168 全て
+#   「read timed out」で全滅する実障害(同 run の odds/previews は成功=接続自体は可、
+#   raceresult ページだけ datacenter IP への応答が遅い)。25s でも全滅なら
+#   WALL_BUDGET で従来どおり打ち切られるため悪化はしない。
+FETCH_TIMEOUT = 25
 FETCH_RETRIES = 1
 PARALLEL_WORKERS = 4
 WALL_BUDGET_SEC = 1200
