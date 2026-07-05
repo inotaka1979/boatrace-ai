@@ -138,5 +138,46 @@ t('結果窓(締切+360分)を過ぎたら対象外', () => {
   assert.strictEqual(calls.length, 0);
 });
 
+console.log('[_mergeResultIndex]');
+
+t('bulk に無い今日の確定済みレースを温存(オンデマンド取得分の保護)', () => {
+  const today = ctx.todayStr ? ctx.todayStr() : '';
+  const oldIdx = { 7: { 3: { isFinished: true, race_date: today, results: [{ place: 1 }],
+    refund: { trifecta: [{ amount: 1500 }] } } } };
+  const newIdx = { 7: { 1: { isFinished: true, race_date: today, results: [{ place: 1 }], refund: {} } } };
+  const m = ctx._mergeResultIndex(oldIdx, newIdx);
+  assert.ok(m[7][3], '古い bulk で消えない');
+  assert.strictEqual(m[7][3].refund.trifecta[0].amount, 1500);
+  assert.ok(m[7][1], '新規レースも維持');
+});
+
+t('確定→未確定の巻き戻りを防止(openapi の揺らぎ対策)', () => {
+  const today = ctx.todayStr ? ctx.todayStr() : '';
+  const oldIdx = { 5: { 2: { isFinished: true, race_date: today, results: [{ place: 1 }],
+    refund: { trifecta: [{ amount: 900 }] } } } };
+  const newIdx = { 5: { 2: { isFinished: false, race_date: today, results: [], refund: {} } } };
+  const m = ctx._mergeResultIndex(oldIdx, newIdx);
+  assert.strictEqual(m[5][2].isFinished, true, '確定が保持される');
+  assert.strictEqual(m[5][2].refund.trifecta[0].amount, 900);
+});
+
+t('両方確定なら新エントリ+払戻退行なしのマージ', () => {
+  const today = ctx.todayStr ? ctx.todayStr() : '';
+  const oldIdx = { 5: { 2: { isFinished: true, race_date: today, results: [{ place: 1 }],
+    refund: { trifecta: [{ amount: 900 }], exacta: [] } } } };
+  const newIdx = { 5: { 2: { isFinished: true, race_date: today, results: [{ place: 1 }],
+    refund: { trifecta: [], exacta: [{ amount: 300 }] } } } };
+  const m = ctx._mergeResultIndex(oldIdx, newIdx);
+  assert.strictEqual(m[5][2].refund.trifecta[0].amount, 900, '旧払戻を退行させない');
+  assert.strictEqual(m[5][2].refund.exacta[0].amount, 300, '新払戻を採用');
+});
+
+t('別日の残骸は温存しない(day rollover 対策)', () => {
+  const oldIdx = { 9: { 4: { isFinished: true, race_date: '2000-01-01', results: [{ place: 1 }], refund: {} } } };
+  const newIdx = { 9: {} };
+  const m = ctx._mergeResultIndex(oldIdx, newIdx);
+  assert.ok(!m[9][4], '前日の確定結果が今日のレースに化けない');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

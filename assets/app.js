@@ -1670,7 +1670,8 @@ function _loadOrigExhibitionLive(sid,rno){
 //   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
 var _resLiveTried={};
 var _resLiveAttempts={};   // レース毎の補完試行回数(無限リトライ防止)
-var _RES_MAX_ATTEMPTS=6;
+var _RES_MAX_ATTEMPTS=30;   // 2026-07-05: 6 だと締切後~9分で尽き、払戻掲出(5-15分後)に届かないことがあった
+var _resLiveLastAt={};        // レース毎の最終試行時刻(150秒間隔で無駄打ち抑制)
 // 結果が「未確定」または「確定済だが払戻(3連単/2連単)が欠ける」なら補完対象。
 //   成績は 3連単 と 2連単 の回収率を出すため、両方の払戻が揃って初めて完了とみなす
 //   (「結果は反映済なのに払戻未取得」= 着順だけ先に来て払戻が遅延しているケースを拾う)。
@@ -1697,6 +1698,49 @@ function _mergeResultEntry(oldR, newR){
   newR.refund=merged; newR.payouts=merged;
   return newR;
 }
+// resultData の単調マージ (2026-07-05)。旧実装は 90 秒 poll 毎に
+//   resultData=indexResults(rawR) と全置換しており、bulk(openapi/Worker KV)が
+//   遅れていると /result-proxy でオンデマンド取得済みの確定結果が消え、
+//   _resLiveTried ガードで再取得もされない=「結果が更新されない/巻き戻る」の主因。
+//   ルール: 確定→未確定の巻き戻り禁止 / 払戻は _mergeResultEntry で退行禁止 /
+//   bulk に無い今日の確定済みは温存(別日の残骸は day rollover で捨てる)。
+function _mergeResultIndex(oldIdx, newIdx){
+  if(!oldIdx) return newIdx;
+  if(!newIdx) return oldIdx;
+  var today=(typeof todayStr==='function')?todayStr():'';
+  for(var sid in oldIdx){
+    var st=oldIdx[sid];
+    for(var rn in st){
+      var o=st[rn];
+      if(!o) continue;
+      var n=newIdx[sid]&&newIdx[sid][rn];
+      if(n){
+        if(o.isFinished && !n.isFinished){
+          newIdx[sid][rn]=o;   // 確定済みを未確定で上書きしない(openapi の揺らぎ対策)
+        } else {
+          newIdx[sid][rn]=_mergeResultEntry(o,n);
+        }
+      } else if(o.isFinished){
+        var rdate=String(o.race_date||'').replace(/-/g,'');
+        if(!today || !rdate || rdate===today){   // 今日の確定分のみ温存
+          if(!newIdx[sid]) newIdx[sid]={};
+          newIdx[sid][rn]=o;
+        }
+      }
+    }
+  }
+  return newIdx;
+}
+// bulk results の適用処理を 1 関数に集約 (2026-07-05)。critical(初期ロード/90秒poll)
+//   からは typeof ガード経由で呼び、critical bundle にロジックを増やさない。
+async function _applyResultsRaw(rawR){
+  resultData=_mergeResultIndex(resultData,indexResults(rawR));
+  _noteUpdatedAt(rawR.updated_at);
+  _noteTodayDataFromRaw(rawR,'results');
+  if(programData) updateDBFromResults(resultData, programData);
+  await learnFromResults();
+  updateHistoryWithResults();
+}
 function _loadResultLive(sid,rno){
   try{
     sid=parseInt(sid); rno=parseInt(rno);
@@ -1704,6 +1748,7 @@ function _loadResultLive(sid,rno){
     var key=sid+'-'+rno;
     if(_resLiveTried[key]) return; _resLiveTried[key]=true;
     _resLiveAttempts[key]=(_resLiveAttempts[key]||0)+1;
+    _resLiveLastAt[key]=Date.now();
     var hd=(typeof todayStr==='function')?todayStr():'';
     if(!/^\d{8}$/.test(hd)) return;
     var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
@@ -1756,7 +1801,9 @@ function _sweepMissingResults(maxN){
         var closeMs=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]);
         if(now < closeMs+3*60000 || now > closeMs+360*60000) continue;  // 結果窓外
         if(!_isResultIncomplete((resultData&&resultData[sid]&&resultData[sid][rn])||null)) continue;
-        if(_resLiveTried[parseInt(sid)+'-'+parseInt(rn)]) continue;
+        var _rk=parseInt(sid)+'-'+parseInt(rn);
+        if(_resLiveTried[_rk]) continue;
+        if(Date.now()-(_resLiveLastAt[_rk]||0) < 150000) continue;   // 150秒間隔で再試行
         cands.push({sid:parseInt(sid),rno:parseInt(rn),closeMs:closeMs});
       }
     }
@@ -1770,7 +1817,8 @@ function _sweepMissingResults(maxN){
 //   無いと描画されない)。Worker /beforeinfo-proxy で 1 レース単位に補完する。
 var _pvLiveTried={};
 var _pvLiveAttempts={};
-var _PV_MAX_ATTEMPTS=6;
+var _PV_MAX_ATTEMPTS=30;
+var _pvLiveLastAt={};
 // preview が無い / boats に展示タイムが1つも無ければ補完対象。
 function _isPreviewIncomplete(pv){
   if(!pv || !pv.boats) return true;
@@ -1784,6 +1832,7 @@ function _loadPreviewLive(sid,rno){
     var key=sid+'-'+rno;
     if(_pvLiveTried[key]) return; _pvLiveTried[key]=true;
     _pvLiveAttempts[key]=(_pvLiveAttempts[key]||0)+1;
+    _pvLiveLastAt[key]=Date.now();
     var hd=(typeof todayStr==='function')?todayStr():'';
     if(!/^\d{8}$/.test(hd)) return;
     var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
@@ -1840,7 +1889,9 @@ function _sweepMissingPreviews(maxN){
         var closeMs=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]);
         if(now < closeMs-45*60000 || now > closeMs+15*60000) continue;  // 展示窓外
         if(!_isPreviewIncomplete((previewData&&previewData[sid]&&previewData[sid][rn])||null)) continue;
-        if(_pvLiveTried[parseInt(sid)+'-'+parseInt(rn)]) continue;
+        var _pk=parseInt(sid)+'-'+parseInt(rn);
+        if(_pvLiveTried[_pk]) continue;
+        if(Date.now()-(_pvLiveLastAt[_pk]||0) < 150000) continue;   // 150秒間隔で再試行
         cands.push({sid:parseInt(sid),rno:parseInt(rn),closeMs:closeMs});
       }
     }
@@ -2345,12 +2396,7 @@ async function forceRefresh(){
     }catch(_){}
     if(!rawR) rawR = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
-      resultData=indexResults(rawR);
-      _noteUpdatedAt(rawR.updated_at);
-      _noteTodayDataFromRaw(rawR,'results');
-      if(programData) updateDBFromResults(resultData, programData);
-      await learnFromResults();
-      updateHistoryWithResults();
+      if(typeof _applyResultsRaw==='function') await _applyResultsRaw(rawR);
     }
     try{
       var o = await fetch('data/odds/today.json?t='+t, {cache:'no-store'});
@@ -10774,12 +10820,7 @@ setManagedInterval(async function(){
     if(rawPv){ previewData=_mergePreviewIndex(indexPreviews(rawPv)); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
     var rawR=_val(2);
     if(rawR){
-      resultData=indexResults(rawR);
-      _noteUpdatedAt(rawR.updated_at);
-      _noteTodayDataFromRaw(rawR,'results');
-      if(programData)updateDBFromResults(resultData,programData);
-      await learnFromResults();   // PE-9: async
-      updateHistoryWithResults();
+      if(typeof _applyResultsRaw==='function') await _applyResultsRaw(rawR);
     }
     // 2026-06-29/30: bulk が間引き/無料枠で止まっても、締切超過の結果/払戻 + 展示窓内の
     //   展示情報の取りこぼしを古い/近い順に最大6件ずつオンデマンド補完(背景で drain)。

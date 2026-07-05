@@ -137,6 +137,23 @@ def _is_fresh_today(path: str, now_jst: datetime.datetime) -> bool:
         return False
 
 
+def _age_minutes(path: str) -> float:
+    """data ファイルの updated_at 経過分数。読めない/欠落は無限大扱い(要更新)。"""
+    full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
+    try:
+        with open(full, encoding="utf-8") as f:
+            ts = (json.load(f) or {}).get("updated_at")
+        if not ts:
+            return float("inf")
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
+        dt = datetime.datetime.fromisoformat(ts)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        return (now_utc - dt).total_seconds() / 60.0
+    except Exception:
+        return float("inf")
+
+
 def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Callable[[], int]]]:
     """JST 現在時刻から実行 task list を決定。
 
@@ -185,12 +202,13 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         tasks.append(("odds", _scrape_odds))
         tasks.append(("previews", _scrape_previews))
 
-    # results: race hours の 30 分境界周辺（gap を広く許容）
-    # 2026-05-16: 旧条件 (m<5 or 28<=m<=32) は GHA cron 遅延 5-15min と相性悪く、
-    #   実質 1 日 1-2 回しか走らない (data/results/today.json が 2026-05-11 で
-    #   5 日間停止していた)。窓を広げて 1 日 10+ 回に。concurrency:scrape-all で
-    #   並列実行は防止されるため頻度を上げても safe。
-    if 10 <= h <= 22 and (m < 10 or 25 <= m <= 35):
+    # results: 鮮度ベース (2026-07-05)。
+    # 旧条件は「実行時の分が 0-9 or 25-35」の分窓だったが、GHA の schedule 間引きで
+    #   実行時刻が不定になると丸一日 skip し得る(実障害: 07-05 に 10:17 実行で
+    #   results タスクが走らず、前日から results が空のまま)。
+    #   updated_at が 20 分より古ければ毎 tick で取得する(冪等。並列は
+    #   concurrency:scrape-all で防止されるため安全)。
+    if 10 <= h <= 22 and _age_minutes("data/results/today.json") >= 20:
         tasks.append(("results", _scrape_results))
 
     # racedata fresh だが next_open.json は古い場合 (前日跨ぎ等) の単独 refresh。
