@@ -1381,13 +1381,24 @@ var _oeLiveTried={};
 //   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
 var _resLiveTried={};
 var _resLiveAttempts={};   // レース毎の補完試行回数(無限リトライ防止)
-var _RES_MAX_ATTEMPTS=6;
+var _RES_MAX_ATTEMPTS=30;   // 2026-07-05: 6 だと締切後~9分で尽き、払戻掲出(5-15分後)に届かないことがあった
+var _resLiveLastAt={};        // レース毎の最終試行時刻(150秒間隔で無駄打ち抑制)
 // 結果が「未確定」または「確定済だが払戻(3連単/2連単)が欠ける」なら補完対象。
 //   成績は 3連単 と 2連単 の回収率を出すため、両方の払戻が揃って初めて完了とみなす
 //   (「結果は反映済なのに払戻未取得」= 着順だけ先に来て払戻が遅延しているケースを拾う)。
 /* MOVED: function _isResultIncomplete */
 // 既存 entry を新 entry で更新。新が払戻を持たず既存が持つ種別は退行させない。
 /* MOVED: function _mergeResultEntry */
+// resultData の単調マージ (2026-07-05)。旧実装は 90 秒 poll 毎に
+//   resultData=indexResults(rawR) と全置換しており、bulk(openapi/Worker KV)が
+//   遅れていると /result-proxy でオンデマンド取得済みの確定結果が消え、
+//   _resLiveTried ガードで再取得もされない=「結果が更新されない/巻き戻る」の主因。
+//   ルール: 確定→未確定の巻き戻り禁止 / 払戻は _mergeResultEntry で退行禁止 /
+//   bulk に無い今日の確定済みは温存(別日の残骸は day rollover で捨てる)。
+/* MOVED: function _mergeResultIndex */
+// bulk results の適用処理を 1 関数に集約 (2026-07-05)。critical(初期ロード/90秒poll)
+//   からは typeof ガード経由で呼び、critical bundle にロジックを増やさない。
+/* MOVED: function _applyResultsRaw */
 /* MOVED: function _loadResultLive */
 // 締切を過ぎたのに結果/払戻が欠けるレースを古い順に最大 N 件だけオンデマンド補完。
 //   bulk が止まっても背景で backlog を drain する。1 回 N 件に絞り CF CPU/サブリクエストを抑える。
@@ -1398,7 +1409,8 @@ var _RES_MAX_ATTEMPTS=6;
 //   無いと描画されない)。Worker /beforeinfo-proxy で 1 レース単位に補完する。
 var _pvLiveTried={};
 var _pvLiveAttempts={};
-var _PV_MAX_ATTEMPTS=6;
+var _PV_MAX_ATTEMPTS=30;
+var _pvLiveLastAt={};
 // preview が無い / boats に展示タイムが1つも無ければ補完対象。
 /* MOVED: function _isPreviewIncomplete */
 /* MOVED: function _loadPreviewLive */
@@ -4183,12 +4195,7 @@ setManagedInterval(async function(){
     if(rawPv){ previewData=_mergePreviewIndex(indexPreviews(rawPv)); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
     var rawR=_val(2);
     if(rawR){
-      resultData=indexResults(rawR);
-      _noteUpdatedAt(rawR.updated_at);
-      _noteTodayDataFromRaw(rawR,'results');
-      if(programData)updateDBFromResults(resultData,programData);
-      await learnFromResults();   // PE-9: async
-      updateHistoryWithResults();
+      if(typeof _applyResultsRaw==='function') await _applyResultsRaw(rawR);
     }
     // 2026-06-29/30: bulk が間引き/無料枠で止まっても、締切超過の結果/払戻 + 展示窓内の
     //   展示情報の取りこぼしを古い/近い順に最大6件ずつオンデマンド補完(背景で drain)。
@@ -4375,12 +4382,7 @@ async function forceRefresh(){
     }catch(_){}
     if(!rawR) rawR = await fetchWithFallback(API_BASE+'/results/v2/today.json?_='+t);
     if(rawR){
-      resultData=indexResults(rawR);
-      _noteUpdatedAt(rawR.updated_at);
-      _noteTodayDataFromRaw(rawR,'results');
-      if(programData) updateDBFromResults(resultData, programData);
-      await learnFromResults();
-      updateHistoryWithResults();
+      if(typeof _applyResultsRaw==='function') await _applyResultsRaw(rawR);
     }
     try{
       var o = await fetch('data/odds/today.json?t='+t, {cache:'no-store'});

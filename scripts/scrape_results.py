@@ -219,11 +219,21 @@ def main() -> None:
 
     programs = prog.get("programs", [])
     if not programs:
-        log.info("No programs today")
-        atomic_write_json(
-            OUTPUT,
-            {"results": [], "updated_at": utc_iso_seconds()},
-        )
+        # 2026-07-05: 旧版は空 results で上書きし、当日ぶんの蓄積を破壊していた
+        #   (実障害: 07-04 18:46 に entries=0 で上書き→翌日昼まで結果が空のまま)。
+        #   programs が一時的に取れないだけの可能性があるため、既存 results を
+        #   保持して updated_at のみ refresh する(fetch 失敗時と同じ保護)。
+        log.warning("No programs today — preserving existing results (empty-wipe 防止)")
+        existing = {}
+        try:
+            with open(OUTPUT, "r", encoding="utf-8") as f:
+                existing = json.load(f) or {}
+        except Exception:
+            existing = {}
+        existing["updated_at"] = utc_iso_seconds()
+        existing.setdefault("results", [])
+        existing.setdefault("_meta", {})["fetch_error"] = "no programs"
+        atomic_write_json(OUTPUT, existing)
         return
 
     races = set()
