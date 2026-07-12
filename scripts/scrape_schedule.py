@@ -30,6 +30,7 @@ BoatRace Oracle - 月間開催日程取得スクリプト
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone, timedelta, date as DateCls
@@ -61,20 +62,134 @@ GRADE_MAP = {
     "is-gradeColorG3": "G3",
     "is-gradeColorIppan": "一般",
     "is-gradeColorLady": "女子",
+    # 2026-07-12: 未対応 3 グレードで節ごと欠落していた実障害を修正
+    #   (三国=マスターズ Takumi, びわこ=ヴィーナス Venus が本日開催なのに脱落)
+    "is-gradeColorRookie": "ルーキー",
+    "is-gradeColorVenus": "ヴィーナス",
+    "is-gradeColorTakumi": "マスターズ",
 }
+# 将来グレードが増えても欠落しないよう、未知の is-gradeColor* も開催として拾う
+_GRADE_CLS_RE = re.compile(r"^is-gradeColor(\w+)$")
+
+# ヘッダ日付セル ('27土' / '1水' 等) から日数字を取る
+_HEADER_DAY_RE = re.compile(r"^(\d{1,2})")
 
 
-def _build_date_axis(year: int, month: int, n_cols: int) -> list[str]:
+def _build_date_axis(year: int, month: int, n_cols: int,
+                     first_header_text: str | None = None) -> list[str]:
     """ヘッダ行 (n_cols 列) に対応する YYYY-MM-DD 配列を構築。
 
-    monthlyschedule は当月の前月末週から始まり翌月頭週まで含む。
-    n_cols = 39 (場名 col を除いた値) などになる。
-    第 1 列の日付 = 当月 1 日が含まれる週の月曜日。
+    monthlyschedule は当月の前月末から始まり翌月頭まで含む(n_cols=39 等)。
+
+    2026-07-12 修正: 旧実装は「第1列 = 当月1日を含む週の月曜」と仮定していたが、
+    実ページは土曜始まり等があり(202607 は 6/27(土) 始まり)、全開催日が
+    +2 日ズレて記録される実障害が発生(多摩川/平和島/江戸川が本日開催なのに
+    節の記録範囲から外れて欠落)。ヘッダ先頭セルの日数字('27土'→27)を
+    アンカーに実カレンダーへ張り付ける。day>15 なら前月の日付と解釈する。
+    ヘッダが読めない場合のみ旧ロジック(月曜仮定)へフォールバック。
     """
-    first_of_month = DateCls(year, month, 1)
-    # 月曜=0, 日曜=6
-    start = first_of_month - timedelta(days=first_of_month.weekday())
-    return [(start + timedelta(days=i)).isoformat() for i in range(n_cols)]
+    anchor = None
+    if first_header_text:
+        m = _HEADER_DAY_RE.match(first_header_text.strip())
+        if m:
+            day = int(m.group(1))
+            y, mo = year, month
+            if day > 15:  # 前月末始まり
+                mo -= 1
+                if mo == 0:
+                    mo, y = 12, y - 1
+            try:
+                anchor = DateCls(y, mo, day)
+            except ValueError:
+                anchor = None
+    if anchor is None:
+        # フォールバック: 当月 1 日を含む週の月曜(旧仮定)
+        first_of_month = DateCls(year, month, 1)
+        anchor = first_of_month - timedelta(days=first_of_month.weekday())
+    return [(anchor + timedelta(days=i)).isoformat() for i in range(n_cols)]
+
+
+def parse_schedule_html(html: str, year: int, month: int) -> dict:
+    """monthlyschedule HTML → {"events": [...], "stadium_dates": {...}}。
+
+    scrape_month から分離した純関数(テスト用)。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.select("table.is-spritedNone1")
+    events: list[dict] = []
+    # sid -> set of date strings
+    per_stadium: dict[str, set[str]] = {}
+
+    for table in tables:
+        rows = table.select("tr")
+        if not rows:
+            continue
+        # ヘッダ行から列数推定 (場名 col を除く)
+        header_cells = rows[0].select("th, td")
+        n_date_cols = len(header_cells) - 1
+        if n_date_cols <= 0:
+            continue
+        # 2026-07-12: ヘッダ先頭の日付セル('27土'等)をアンカーに実カレンダーへ張り付ける
+        first_hdr = header_cells[1].get_text(strip=True) if len(header_cells) > 1 else None
+        date_axis = _build_date_axis(year, month, n_date_cols, first_hdr)
+
+        for row in rows[1:]:
+            # 1 列目は場の <th> with anchor jcd
+            first = row.select_one("th, td")
+            if not first:
+                continue
+            a = first.select_one("a[href*='jcd=']")
+            if not a:
+                continue
+            href = a.get("href", "")
+            try:
+                jcd_str = href.split("jcd=")[1].split("&")[0]
+                sid = int(jcd_str)
+            except (ValueError, IndexError):
+                continue
+            if sid not in STADIUMS:
+                continue
+
+            # 残りの cell を colspan で展開
+            date_cells = row.select("td")
+            idx = 0
+            for cell in date_cells:
+                span = int(cell.get("colspan") or 1)
+                cls_list = cell.get("class") or []
+                grade = None
+                for cls_name, g in GRADE_MAP.items():
+                    if cls_name in cls_list:
+                        grade = g
+                        break
+                if grade is None:
+                    # 2026-07-12: 未知の is-gradeColor* も開催として拾う(将来グレード対応)
+                    for cls_name in cls_list:
+                        m = _GRADE_CLS_RE.match(cls_name)
+                        if m:
+                            grade = m.group(1)
+                            break
+                if grade is not None:
+                    # 期間内の日付を全て登録
+                    seg_dates = []
+                    for k in range(span):
+                        di = idx + k
+                        if 0 <= di < len(date_axis):
+                            seg_dates.append(date_axis[di])
+                    if seg_dates:
+                        title = cell.get_text(" ", strip=True)
+                        events.append({
+                            "stadium": sid,
+                            "stadium_name": STADIUMS[sid],
+                            "grade": grade,
+                            "title": title,
+                            "dates": seg_dates,
+                        })
+                        per_stadium.setdefault(str(sid), set()).update(seg_dates)
+                idx += span
+
+    # set -> sorted list
+    per_stadium_sorted = {sid: sorted(d) for sid, d in per_stadium.items()}
+    return {"events": events, "stadium_dates": per_stadium_sorted}
 
 
 def scrape_month(year_month: str) -> dict:
@@ -89,76 +204,9 @@ def scrape_month(year_month: str) -> dict:
     url = SCHEDULE_URL.format(ym=year_month)
     year = int(year_month[:4])
     month = int(year_month[4:6])
-    today_iso = datetime.now(JST).date().isoformat()
     try:
         html = fetch_text(url)
-        soup = BeautifulSoup(html, "html.parser")
-        tables = soup.select("table.is-spritedNone1")
-        events: list[dict] = []
-        # sid -> set of date strings
-        per_stadium: dict[str, set[str]] = {}
-
-        for table in tables:
-            rows = table.select("tr")
-            if not rows:
-                continue
-            # ヘッダ行から列数推定 (場名 col を除く)
-            header_cells = rows[0].select("th, td")
-            n_date_cols = len(header_cells) - 1
-            if n_date_cols <= 0:
-                continue
-            date_axis = _build_date_axis(year, month, n_date_cols)
-
-            for row in rows[1:]:
-                # 1 列目は場の <th> with anchor jcd
-                first = row.select_one("th, td")
-                if not first:
-                    continue
-                a = first.select_one("a[href*='jcd=']")
-                if not a:
-                    continue
-                href = a.get("href", "")
-                try:
-                    jcd_str = href.split("jcd=")[1].split("&")[0]
-                    sid = int(jcd_str)
-                except (ValueError, IndexError):
-                    continue
-                if sid not in STADIUMS:
-                    continue
-
-                # 残りの cell を colspan で展開
-                date_cells = row.select("td")
-                idx = 0
-                for cell in date_cells:
-                    span = int(cell.get("colspan") or 1)
-                    cls_list = cell.get("class") or []
-                    grade = None
-                    for cls_name, g in GRADE_MAP.items():
-                        if cls_name in cls_list:
-                            grade = g
-                            break
-                    if grade is not None:
-                        # 期間内の日付を全て登録
-                        seg_dates = []
-                        for k in range(span):
-                            di = idx + k
-                            if 0 <= di < len(date_axis):
-                                seg_dates.append(date_axis[di])
-                        if seg_dates:
-                            title = cell.get_text(" ", strip=True)
-                            events.append({
-                                "stadium": sid,
-                                "stadium_name": STADIUMS[sid],
-                                "grade": grade,
-                                "title": title,
-                                "dates": seg_dates,
-                            })
-                            per_stadium.setdefault(str(sid), set()).update(seg_dates)
-                    idx += span
-
-        # set -> sorted list
-        per_stadium_sorted = {sid: sorted(d) for sid, d in per_stadium.items()}
-        return {"events": events, "stadium_dates": per_stadium_sorted}
+        return parse_schedule_html(html, year, month)
     except Exception as e:
         print(f"  スケジュール解析失敗 ({year_month}): {e}", file=sys.stderr)
         return {"events": [], "stadium_dates": {}}
