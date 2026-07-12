@@ -93,8 +93,13 @@ def _scrape_schedule_quick() -> int:
 
 
 def _scrape_schedule_full() -> int:
-    """月間日程のフル再取得(current.json 再生成)。HTTP 2 本で軽量。"""
-    return _run_subprocess("scrape_schedule.py", timeout_sec=180)
+    """月間日程のフル再取得(current.json 再生成)。HTTP 2 本で軽量。
+
+    2026-07-12: --full 必須。無印だと scrape_schedule.py 側の _is_current_fresh()
+    (2 日以内なら skip) に握り潰され、パーサ修正後も壊れた current.json が
+    再生成されない実障害 (schedule(full) が 0.2s で exit 0)。
+    """
+    return _run_subprocess("scrape_schedule.py", ["--full"], timeout_sec=180)
 
 
 def _today_venue_sets() -> tuple[set[int], set[int]]:
