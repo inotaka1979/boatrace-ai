@@ -295,9 +295,13 @@ def _refresh_next_open_only() -> int | None:
 
 def main():
     # --quick: HTTP fetch を避けて next_open.json だけ更新（毎日呼んで OK）
+    # --full: 鮮度チェックを無視して必ずフル再取得（自己回復用）。
+    #   2026-07-12: パーサ修正後の再生成が _is_current_fresh() (2 日以内 skip) に
+    #   握り潰され、壊れた current.json が直らない実障害への対処。
     quick = "--quick" in sys.argv
+    full = "--full" in sys.argv
 
-    if quick or _is_current_fresh():
+    if not full and (quick or _is_current_fresh()):
         # FIX: TOCTOU を避けるため exists() チェックを撤去し、
         #   _refresh_next_open_only() 内部の try/except でハンドル。None なら full fetch。
         if _refresh_next_open_only() is not None:
