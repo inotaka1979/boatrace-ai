@@ -92,6 +92,50 @@ def _scrape_schedule_quick() -> int:
     return _run_subprocess("scrape_schedule.py", ["--quick"], timeout_sec=120)
 
 
+def _scrape_schedule_full() -> int:
+    """月間日程のフル再取得(current.json 再生成)。HTTP 2 本で軽量。"""
+    return _run_subprocess("scrape_schedule.py", timeout_sec=180)
+
+
+def _today_venue_sets() -> tuple[set[int], set[int]]:
+    """(schedule の本日開催場, programs の場) を返す。読めない側は空 set。"""
+    today = _jst_now().date().isoformat()
+    sched: set[int] = set()
+    progs: set[int] = set()
+    try:
+        with open(os.path.join(ROOT, "data/schedule/current.json"), encoding="utf-8") as f:
+            sd = (json.load(f) or {}).get("stadium_dates", {})
+        sched = {int(k) for k, v in sd.items() if isinstance(v, list) and today in v}
+    except Exception:
+        pass
+    try:
+        with open(os.path.join(ROOT, "data/programs/today.json"), encoding="utf-8") as f:
+            d = json.load(f) or {}
+        if str(d.get("race_date", "")) == today:
+            progs = {p.get("race_stadium_number") for p in d.get("programs", [])
+                     if p.get("race_stadium_number")}
+    except Exception:
+        pass
+    return sched, progs
+
+
+def _programs_if_venue_mismatch() -> int:
+    """run 時評価: schedule の本日場 ⊄ programs なら programs を作り直す。
+
+    2026-07-12: schedule パーサ修正で場が増えた日、programs は _is_fresh_today で
+    skip されて欠落を継承し続けるため、場集合の差分で自己回復させる。
+    schedule 側が空(未生成/非開催日)のときは何もしない。
+    """
+    sched, progs = _today_venue_sets()
+    missing = sched - progs
+    if not sched or not missing:
+        log.info("  programs(sync): 本日場一致 (schedule=%d, programs=%d) → skip",
+                 len(sched), len(progs))
+        return 0
+    log.warning("  programs(sync): 欠落場 %s を検知 → programs 再生成", sorted(missing))
+    return _scrape_programs()
+
+
 def _scrape_tide() -> int:
     return _run_subprocess("scrape_tide.py", timeout_sec=300)
 
@@ -196,6 +240,18 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         if not any(name == "schedule(quick)" for name, _ in tasks):
             tasks.append(("schedule(quick)", _scrape_schedule_quick))
         tasks.append(("programs", _scrape_programs))
+
+    # 2026-07-12: schedule/programs の場欠落 自己回復。
+    #   実障害: 月間日程パーサの不具合で本日開催 16 場中 5 場が schedule から欠落し、
+    #   programs も同じ欠落を継承(_is_fresh_today だけでは「今日ぶんはあるが場が
+    #   足りない」を検知できない)。対策:
+    #   (a) current.json が 6 時間より古ければフル再取得(1 日 1 回程度、HTTP 2 本で軽量)
+    #   (b) その後 run 時評価で schedule と programs の本日場集合を比較し、
+    #       不一致なら programs を作り直す(タスク実行は逐次なので (a) の結果を見られる)
+    if racedata_window and _age_minutes("data/schedule/current.json") >= 360:
+        tasks.append(("schedule(full)", _scrape_schedule_full))
+    if racedata_window:
+        tasks.append(("programs(sync)", _programs_if_venue_mismatch))
 
     # 共通: race hours (JST 08-22) は odds + previews を毎 tick
     if 8 <= h <= 22:
