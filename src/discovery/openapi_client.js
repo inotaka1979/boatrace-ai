@@ -325,7 +325,15 @@ function indexResults(apiJson) {
  * @returns {any}
  */
 function _filterStalePreviews(raw) {
-  if (!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
+  // 2026-07-17: 上流ミラー破損 (previews の中身が results キー等で届く) への防御。
+  //   schema 不正のまま indexPreviews に渡すと _apiHealth='fail' が貼り付き
+  //   「API取得失敗」バナーが常時表示される。空 previews に正規化する
+  //   (展示はオンデマンド補完 (_sweepMissingPreviews) と Worker 側合成が担う)。
+  if (raw && !Array.isArray(raw.previews)) {
+    console.warn('previews payload invalid shape — normalized to empty');
+    return { previews: [], updated_at: raw.updated_at };
+  }
+  if (!raw || !raw.previews.length) return raw;
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
   const firstDate = raw.previews[0].race_date || '';
   if (firstDate && firstDate !== today) {

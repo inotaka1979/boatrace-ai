@@ -109,6 +109,54 @@ async function fetchKindBase(kind) {
   return await fetchUpstream(UPSTREAM[kind]);
 }
 
+// 2026-07-17: 上流 openapi previews/v2/today.json が「programs の中身を results キーで
+//   包んだ」壊れたファイルを配信する実障害。壊れた base を透過すると
+//   (1) クライアントの validateApiPayload('previews') が恒常 fail →「API取得失敗」バナー貼付き、
+//   (2) mergeBoatraceJpExhibition が注入先 (previews.previews) を見つけられず展示が全滅する。
+//   previews base は形を検証し、壊れて/取れていなければ programs から最小 previews を合成、
+//   既存 KV の展示・気象は同一レース(同日)に限り温存する。
+function isValidPreviewsShape(d) {
+  return !!(d && Array.isArray(d.previews));
+}
+
+function synthesizePreviewsFromPrograms(programs) {
+  const rows = (programs && Array.isArray(programs.programs) ? programs.programs : []).map(p => ({
+    race_date: p.race_date,
+    race_stadium_number: p.race_stadium_number,
+    race_number: p.race_number,
+    race_closed_at: p.race_closed_at,
+    boats: {},
+  }));
+  return {
+    previews: rows,
+    updated_at: (programs && programs.updated_at) || new Date().toISOString(),
+    _synth: 'programs',
+  };
+}
+
+const PREVIEW_WEATHER_FIELDS = [
+  'race_wind', 'race_wind_direction_number', 'race_wave',
+  'race_temperature', 'race_water_temperature', 'race_weather_number',
+];
+
+// old (旧 KV previews) の boats / 気象を target (合成 previews) の同一レースへ引き継ぐ。
+//   race_date 一致を条件にするため日跨ぎ混入は起きない。
+function mergePreviewsBoatsFrom(target, old) {
+  if (!isValidPreviewsShape(target) || !isValidPreviewsShape(old)) return;
+  const byKey = new Map();
+  for (const r of old.previews) {
+    byKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
+  }
+  for (const row of target.previews) {
+    const o = byKey.get(`${row.race_stadium_number}-${row.race_number}`);
+    if (!o || o.race_date !== row.race_date) continue;
+    if (o.boats && Object.keys(o.boats).length) row.boats = o.boats;
+    for (const f of PREVIEW_WEATHER_FIELDS) {
+      if (o[f] != null && row[f] == null) row[f] = o[f];
+    }
+  }
+}
+
 // rt-fix P1-6 (2026-06-04): KV write を「内容が変化した時のみ」に変更。
 //   Cloudflare 無料枠 = 1000 writes/日。従来は毎 refresh で無条件 put し
 //   948/日と上限に貼り付いていた → わずかな超過で put が throw → catch 握り潰し
@@ -652,6 +700,24 @@ async function refreshAll(env) {
   try { results  = await fetchUpstream(UPSTREAM.results);  out.results  = { ok: true }; }
   catch (e) { out.results  = { ok: false, error: String(e).slice(0,200) }; }
 
+  // 2026-07-17: 上流 previews が壊れた形 (previews キー欠落) / 取得失敗なら programs から合成し、
+  //   既存 KV の展示・気象を温存する。壊れた base の KV 書込・配信を止める。
+  if (!isValidPreviewsShape(previews) && programs) {
+    out.previews.invalid_shape = !!previews;
+    previews = synthesizePreviewsFromPrograms(programs);
+    if (env.BOATRACE_KV) {
+      try {
+        const rawKvPv = await env.BOATRACE_KV.get(KV_KEYS.previews);
+        if (rawKvPv) {
+          const kvPv = JSON.parse(rawKvPv);
+          if (kvPv && kvPv.data) mergePreviewsBoatsFrom(previews, kvPv.data);
+        }
+      } catch (e) {
+        out.previews.kv_carry_err = String(e).slice(0, 100);
+      }
+    }
+  }
+
   // 2026-05-24: openapi 巻き戻り対策 — KV に既存 finished があれば preserve
   if (env.BOATRACE_KV && results) {
     try {
@@ -801,7 +867,15 @@ async function serveFromKV(env, kind, ctx) {
   // KV が無い or STALE (cron/KV write 失敗時の silent-halt を回避):
   //   上流 openapi を live fetch (edge cache、write 枠不要) して fresh を返す。
   try {
-    const data = await fetchKindBase(kind);
+    let data = await fetchKindBase(kind);
+    // 2026-07-17: 上流 previews 破損 (previews キー欠落) は programs から合成して返す。
+    //   壊れた payload の透過はクライアントの schema 検証 fail =「API取得失敗」バナー貼付きの直因。
+    //   stale KV に展示が残っていれば温存(合成 base は boats 空のため)。
+    if (kind === 'previews' && !isValidPreviewsShape(data)) {
+      const programsBase = await fetchProgramsBase();
+      data = synthesizePreviewsFromPrograms(programsBase);
+      if (kvWrapped && kvWrapped.data) mergePreviewsBoatsFrom(data, kvWrapped.data);
+    }
     // rt-fix2 (2026-06-11): results は opportunistic write しない。
     //   素の openapi results で KV を上書きすると、cron が boatrace.jp 直スクレイプで
     //   先取りした確定結果を mergeKVOverOpenapi (巻き戻り対策) を経由せず破壊するため。
