@@ -1,78 +1,30 @@
 #!/usr/bin/env python3
-"""API取得失敗バナー診断: クライアントが叩く全 tier のエンドポイントを外形プローブ。
+"""場別調査用の使い捨てプローブ雛形。
 
-2026-07-17: ユーザ報告「ここ数日 API取得失敗 が表示され続けている」。
-バナー条件 = _apiHealth[k]=='fail' (programs/previews/results/odds のどれかで
-Worker → 公式data → openapi → LS cache が全滅) または _workerHealthy=false。
-各 URL の status / 応答時間 / updated_at / entries / 本文先頭 を出力し、
-どの系がいつから死んでいるかを特定する。確認後撤去。
+調査対象が発生したらここに fetch+dump コードを書き、push→GHA probe-venue.yml
+のログで確認する。結論が出たら本体 scraper に反映し、このファイルは雛形に戻す。
+(workflow_dispatch は integration token では 403 のため、CI で走らせたい場合は
+draft PR + run_all.sh への一時ステップ追加でも代替できる。)
+
+調査メモ (確定済みの結論):
+- 江戸川(3): オリジナル展示タイムは非公開 (公式/場サイトとも配信なし)。
+- 平和島(4): kyogi 配信 (/asp/kyogi/04/sp/yoso05{RR}.htm) の heiwajima 変種。
+- 児島(16): kyogi 配信の kojima 変種。**PC トップだけ見て「非公開」と誤判定した
+  過去あり — プローブは PC/SP 両方 (iframe 先含む) を必ず見ること。**
+- 唐津(23): yosou-cyokuzen ページ (kiryu 系フォーマット)。
+- 月間日程パーサ (2026-07-12 修正済み): 日付軸ズレ + 未対応グレード脱落 →
+  ヘッダ先頭日アンカー + 未知 is-gradeColor* フォールバック (test_schedule_axis.py)。
+- 上流 openapi previews 破損 (2026-07-17 対処済み): previews/v2/today.json が
+  「programs の中身を results キーで包んだ」ファイルを配信 (サイズが programs と
+  1 バイト差で確認)。Worker が壊れた base を合成 previews に置換、クライアントは
+  _filterStalePreviews で空正規化。上流が直っても両対応で無害。
+- 残り未調査: 丸亀(15) のオリジナル展示 (開催日に実データで確認予定)。
 """
-import json
 import sys
-import time
-import urllib.request
-
-TARGETS = [
-    ("worker /health", "https://boatrace-scrape-trigger.inotaka1979.workers.dev/health"),
-    ("worker /health?strict=1", "https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1"),
-    ("worker /api/programs", "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs"),
-    ("worker /api/previews", "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/previews"),
-    ("worker /api/results", "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/results"),
-    ("openapi programs", "https://boatraceopenapi.github.io/programs/v2/today.json"),
-    ("openapi previews", "https://boatraceopenapi.github.io/previews/v2/today.json"),
-    ("openapi results", "https://boatraceopenapi.github.io/results/v2/today.json"),
-    ("pages data/programs", "https://inotaka1979.github.io/boatrace-ai/data/programs/today.json"),
-    ("pages data/odds", "https://inotaka1979.github.io/boatrace-ai/data/odds/today.json"),
-    ("pages data/previews", "https://inotaka1979.github.io/boatrace-ai/data/previews/today.json"),
-    ("pages data/results", "https://inotaka1979.github.io/boatrace-ai/data/results/today.json"),
-    ("pages index.html", "https://inotaka1979.github.io/boatrace-ai/index.html"),
-    # 仮説: openapi ミラー更新停止後、過去日付 results (buildInitialDB/学習が使用) が
-    # 404 → _setApiHealth('results','fail') が貼り付く
-    ("openapi results 昨日", "https://boatraceopenapi.github.io/results/v2/2026/20260716.json"),
-    ("openapi results 3日前", "https://boatraceopenapi.github.io/results/v2/2026/20260714.json"),
-    ("openapi results 6/25(停止前)", "https://boatraceopenapi.github.io/results/v2/2026/20260625.json"),
-]
-
-UA = "Mozilla/5.0 (probe; boatrace-ai diag)"
-
-
-def probe(label: str, url: str) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Cache-Control": "no-cache"})
-    t0 = time.monotonic()
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            body = r.read()
-            ms = (time.monotonic() - t0) * 1000
-            info = f"{label}: HTTP {r.status} {ms:.0f}ms {len(body)}B"
-            ctype = r.headers.get("Content-Type", "")
-            if "json" in ctype or url.endswith(".json") or "/api/" in url or "/health" in url:
-                try:
-                    d = json.loads(body)
-                    ua = d.get("updated_at") or d.get("fetched_at") or ""
-                    keys = [k for k in ("programs", "previews", "results", "odds") if k in d]
-                    n = len(d.get(keys[0], []) or []) if keys else None
-                    extra = {k: d[k] for k in ("ok", "cron_age_sec", "_source") if k in d}
-                    rd = ""
-                    if keys and d.get(keys[0]):
-                        first = (d[keys[0]] or [{}])[0]
-                        if isinstance(first, dict):
-                            rd = first.get("race_date", "")
-                    print(f"{info} updated_at={ua} entries[{keys[0] if keys else '-'}]={n} race_date={rd} {extra}")
-                    if "/health" in url:
-                        print(f"   health body: {body[:400].decode('utf-8', 'replace')}")
-                except Exception as e:
-                    print(f"{info} (JSON parse 失敗: {e}) head={body[:120]!r}")
-            else:
-                print(info)
-    except Exception as e:
-        ms = (time.monotonic() - t0) * 1000
-        print(f"{label}: FAIL {ms:.0f}ms {type(e).__name__}: {str(e)[:160]}")
 
 
 def main() -> int:
-    for label, url in TARGETS:
-        probe(label, url)
-        time.sleep(1)
+    print("probe: no active investigation")
     return 0
 
 

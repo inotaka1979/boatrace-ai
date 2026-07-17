@@ -2845,7 +2845,11 @@ window.addEventListener('unhandledrejection', function(e){
     return indexed;
   }
   function _filterStalePreviews(raw) {
-    if (!raw || !Array.isArray(raw.previews) || !raw.previews.length) return raw;
+    if (raw && !Array.isArray(raw.previews)) {
+      console.warn("previews payload invalid shape \u2014 normalized to empty");
+      return { previews: [], updated_at: raw.updated_at };
+    }
+    if (!raw || !raw.previews.length) return raw;
     const today = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
     const firstDate = raw.previews[0].race_date || "";
     if (firstDate && firstDate !== today) {

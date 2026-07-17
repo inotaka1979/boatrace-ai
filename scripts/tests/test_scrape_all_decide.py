@@ -148,11 +148,20 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         tasks = self._at(23, 0)
         self.assertEqual(tasks, [])
 
-    def test_results_window_30_minute_boundary(self):
-        # h=10, m in [25,35] → results
-        self.assertIn("results", self._at(10, 31))
-        # h=10, m=15 → no results
-        self.assertNotIn("results", self._at(10, 15))
+    def test_results_age_gated(self):
+        # 2026-07-05 (結果更新停止の3層修正): 旧「毎時 25-35 分の窓」から
+        # 「10-22 時 & results が 20 分以上古ければ毎 tick」の鮮度ゲートに変更。
+        # (旧テストは 30 分窓の仕様を固定しており、変更後は常に fail していた)
+        orig = scrape_all._age_minutes
+        try:
+            scrape_all._age_minutes = lambda path: 999.0
+            self.assertIn("results", self._at(10, 15))   # 窓内 + stale → 取る
+            self.assertIn("results", self._at(10, 31))
+            self.assertNotIn("results", self._at(9, 50))  # 窓外 (h<10)
+            scrape_all._age_minutes = lambda path: 5.0
+            self.assertNotIn("results", self._at(10, 31))  # fresh → skip
+        finally:
+            scrape_all._age_minutes = orig
 
 
 class TestDecideTasksIdempotency(unittest.TestCase):
