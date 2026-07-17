@@ -200,6 +200,12 @@ step "Status banner freshness semantics (rt-fix3)" \
 step "Day label extraction (rt-fix3)" \
      "python3 -m unittest scripts.tests.test_day_label -v"
 
+# TEMP-PROBE (2026-07-17): API取得失敗バナー診断。CI から全 tier を外形プローブ。
+#   結論が出たら本ブロックは撤去する (draft PR 専用、マージ対象にしない)。
+echo "=== TEMP-PROBE: API endpoints ==="
+python3 scripts/probe_venue.py || true
+echo "=== TEMP-PROBE end ==="
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

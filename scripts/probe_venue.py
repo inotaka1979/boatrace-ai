@@ -26,6 +26,11 @@ TARGETS = [
     ("pages data/previews", "https://inotaka1979.github.io/boatrace-ai/data/previews/today.json"),
     ("pages data/results", "https://inotaka1979.github.io/boatrace-ai/data/results/today.json"),
     ("pages index.html", "https://inotaka1979.github.io/boatrace-ai/index.html"),
+    # 仮説: openapi ミラー更新停止後、過去日付 results (buildInitialDB/学習が使用) が
+    # 404 → _setApiHealth('results','fail') が貼り付く
+    ("openapi results 昨日", "https://boatraceopenapi.github.io/results/v2/2026/20260716.json"),
+    ("openapi results 3日前", "https://boatraceopenapi.github.io/results/v2/2026/20260714.json"),
+    ("openapi results 6/25(停止前)", "https://boatraceopenapi.github.io/results/v2/2026/20260625.json"),
 ]
 
 UA = "Mozilla/5.0 (probe; boatrace-ai diag)"
