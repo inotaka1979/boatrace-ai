@@ -229,6 +229,8 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_GBDT_RUNTIME',
     # 成績タブ render (renderStats + renderStatsChart) は成績タブ open 時のみ。
     'REPORTING_STATS_PAGE',
+    # 日別成績ページ (2026-07-19) — 日別タブ open 時のみ
+    'REPORTING_DAILY_STATS',
     # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
     'ANALYSIS_PREDICT_SCENARIOS',
     'ANALYSIS_PREDICT_RACE',
@@ -250,6 +252,7 @@ REST_ONLY_BUILD_MARKERS = {
 REST_STATS_BUILD_MARKERS = {
     'ANALYSIS_BACKTEST',       # runBacktestEngine / runForwardChainBacktest / _computeCalibrationMetrics
     'REPORTING_STATS_PAGE',    # renderStats / renderStatsChart
+    'REPORTING_DAILY_STATS',   # calcDailyStats / renderDailyStats (2026-07-19 日別成績)
 }
 # 同 chunk に同梱する UI driver (canonical app.js の rest_parts に存在)
 REST_STATS_FUNCTION_NAMES = {

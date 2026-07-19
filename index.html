@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=31959c98" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=31959c98" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=47dda6fc" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=47dda6fc" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -497,6 +497,14 @@ button.action-btn:active{background:#F0F0F0}
   <div id="statDetail"></div>
 </div>
 
+<!-- Screen: Daily stats (2026-07-19 日別成績) -->
+<div class="page" id="pageDaily">
+  <div class="title-md">📅 日別成績</div>
+  <div class="stat-grid" id="dailySummary"></div>
+  <div class="chart-box"><canvas id="chartDaily"></canvas></div>
+  <div id="dailyTable"></div>
+</div>
+
 <!-- X7 Screen: Backtest -->
 <div class="page" id="pageBacktest">
   <div class="title-md">🧪 戦略バックテスト</div>
@@ -684,6 +692,7 @@ button.action-btn:active{background:#F0F0F0}
 <nav class="nav" role="navigation" aria-label="メインメニュー">
   <button class="nav-btn active" data-action="showPage" data-arg-page="top" id="navTop" aria-current="page"><span class="nav-icon" aria-hidden="true">🏠</span><span data-i18n="page.top">TOP</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="stats" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span><span data-i18n="page.stats">成績</span></button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="daily" id="navDaily"><span class="nav-icon" aria-hidden="true">📅</span><span data-i18n="page.daily">日別</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="backtest" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span><span data-i18n="page.backtest">検証</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="settings" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span><span data-i18n="page.settings">設定</span></button>
   <button class="nav-btn" data-action="forceRefresh" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span><span data-i18n="common.refresh">更新</span></button>
@@ -697,7 +706,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=31959c98" defer></script>
-<script src="assets/app-rest.min.js?v=31959c98" defer></script>
+<script src="assets/app-critical.min.js?v=47dda6fc" defer></script>
+<script src="assets/app-rest.min.js?v=47dda6fc" defer></script>
 </body>
 </html>

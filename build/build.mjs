@@ -127,6 +127,7 @@ async function main() {
     { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
     { marker: 'ANALYSIS_GBDT_RUNTIME', src: 'analysis/gbdt_runtime.js' },     // Tier 3 (2026-05-24) GBDT 評価ランタイム
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
+    { marker: 'REPORTING_DAILY_STATS', src: 'reporting/daily_stats_page.js' }, // 2026-07-19 日別成績ページ
     { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
     { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
@@ -326,9 +327,14 @@ async function main() {
     // rt-fix3 (2026-06-27): 98000 → 99500。鮮度バッジのデータ世代基準化 (P0-4) +
     //   stale 自動復旧 (P0-5) + Worker 死活検知 (P0-6) + オンデマンドオッズ全レース化 (P0-1)
     //   を critical に追加 (実測 +1.3KB)。LCP 影響は ~99KB に対し 0.1% 未満で無視可能。
-    { path: 'assets/app-critical.min.js', max: 99500,  level: 'fail' },   // v2 (24 dim) features 含む
+    // 2026-07-19: 99500 → 99800。日別成績ページの routing (showPage 'daily' 分岐 +
+    //   stats chunk 共通ヘルパ化、実測 +219B)。render 本体は stats sub-chunk 行きで
+    //   critical には routing のみ。
+    { path: 'assets/app-critical.min.js', max: 99800,  level: 'fail' },   // v2 (24 dim) features 含む
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
-    { path: 'assets/app-rest-stats.min.js',  max: 20000, level: 'warn' },  // 成績 + バックテスト sub-chunk
+    // 2026-07-19: 20000 → 27000。日別成績ページ (calcDailyStats + renderDailyStats +
+    //   複合チャート ~6KB) を stats sub-chunk に追加 (lazy load、起動 TBT に影響なし)。
+    { path: 'assets/app-rest-stats.min.js',  max: 27000, level: 'warn' },  // 成績 + バックテスト + 日別 sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
     { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
