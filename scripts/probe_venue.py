@@ -61,26 +61,27 @@ def dump_tables(html: str) -> None:
 def main() -> int:
     hd = datetime.now(JST).strftime("%Y%m%d")
     print(f"hd={hd}")
-    for race in (1, 7, 9):
-        for req in ("cyokuzen", "sttenji"):
-            url = f"{BASE}/sp/ajax/ajax_yosou.php?targetday={hd}&race={race}&req={req}&run=0"
-            st, html = get(url, referer=BASE + "/sp/", xhr=True)
-            print(f"\n== race={race} req={req}: HTTP {st}")
-            if html:
-                dump_tables(html)
-            time.sleep(1)
-    # 導線確認 (ajax が空/404 のときの調査材料)
-    for label, url, ref in (
-        ("SP top", BASE + "/sp/", ""),
-        ("PC 直前情報", BASE + "/modules/yosou/cyokuzen.php?race=7", BASE + "/"),
-    ):
-        st, html = get(url, referer=ref)
-        print(f"\n== {label}: HTTP {st} len={len(html)}")
-        if html:
-            for kw in ("ajax_yosou", "cyokuzen", "一周", "まわり足", "オリジナル展示"):
-                print(f"   '{kw}': {html.count(kw)}")
-            for m in re.findall(r'(?:src|href)="([^"]*(?:yosou|cyokuzen|tenji)[^"]*)"', html)[:10]:
-                print(f"   link: {m[:100]}")
+    # 第2弾: 「一周」を含む table の生 HTML を丸ごとダンプ (パーサ期待との突合用)
+    url = f"{BASE}/sp/ajax/ajax_yosou.php?targetday={hd}&race=7&req=cyokuzen&run=0"
+    st, html = get(url, referer=BASE + "/sp/", xhr=True)
+    print(f"== race=7 cyokuzen: HTTP {st} len={len(html)}")
+    if not html:
+        return 0
+    # table 境界を列挙し、一周 を含む table を raw 出力
+    for m in re.finditer(r"<table[^>]*>[\s\S]*?</table>", html):
+        tb = m.group(0)
+        if "一周" not in tb:
+            continue
+        raw = re.sub(r"\s+", " ", tb)
+        print(f"-- 一周入り table ({len(raw)}B):")
+        for i in range(0, min(len(raw), 4200), 1400):
+            print("   " + raw[i:i + 1400])
+        break
+    else:
+        # table 外にある場合: 出現位置の周辺をダンプ
+        idx = html.find("一周")
+        seg = re.sub(r"\s+", " ", html[max(0, idx - 1500): idx + 2500])
+        print(f"-- '一周' は table 内に無い。周辺 raw:\n   {seg}")
     return 0
 
 
