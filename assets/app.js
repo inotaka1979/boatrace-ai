@@ -7715,6 +7715,17 @@ async function loadDeferredData(rawPrograms, rawPreviews){
           (r.boats||[]).forEach(function(b){ if(b&&b.racer_boat_number) bymap[b.racer_boat_number]=b; });
           idx[sid][rno]=bymap;
         });
+        // 2026-07-19: 全置換 (_origExhibIndex=idx) を廃止。bulk は GHA 定時実行のため
+        //   後半レースを含まず、「更新」のたびにライブ取得済みの一周/まわり足/直線が
+        //   消える + _oeLiveTried ガードで再取得されない消失バグ (常滑で報告)。
+        //   bulk に無いレースの既存 entry を温存するマージに変更。
+        var _oldOe=_origExhibIndex||{};
+        for(var _os in _oldOe){
+          if(!idx[_os]) idx[_os]={};
+          for(var _orn in _oldOe[_os]){
+            if(!idx[_os][_orn]) idx[_os][_orn]=_oldOe[_os][_orn];
+          }
+        }
         _origExhibIndex=idx;
       }
     }catch(e){}
