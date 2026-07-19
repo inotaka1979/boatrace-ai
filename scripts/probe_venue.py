@@ -1,63 +1,33 @@
 #!/usr/bin/env python3
-"""結果反映遅延 第3弾: raceresult 払戻テーブルの現行 markup を生ダンプ。
+"""場別調査用の使い捨てプローブ雛形。
 
-第2弾の発見: 場5 だけでなく場2 (openapi にある「健全」レース) でも、
-worker パーサ前提の <tbody>内<th>ラベル構造が 1 件も見つからない。
-→ boatrace.jp が markup を変更し (th→td 等)、worker 自前スクレイプの払戻
-  抽出は全場で壊れている疑い。openapi ミラーに載る場は base で隠れ、
-  ミラー欠落場 (今日の場5) だけ症状が露呈していた。
-本プローブで '連単' を含む tbody の生 HTML と table class 一覧を出力し、
-新パーサの正確な仕様を得る。確認後撤去。
+調査対象が発生したらここに fetch+dump コードを書き、push→GHA probe-venue.yml
+のログで確認する。結論が出たら本体 scraper に反映し、このファイルは雛形に戻す。
+(workflow_dispatch は integration token では 403 のため、CI で走らせたい場合は
+draft PR + run_all.sh への一時ステップ追加でも代替できる。)
+
+調査メモ (確定済みの結論):
+- 江戸川(3): オリジナル展示タイムは非公開 (公式/場サイトとも配信なし)。
+- 平和島(4): kyogi 配信 (/asp/kyogi/04/sp/yoso05{RR}.htm) の heiwajima 変種。
+- 児島(16): kyogi 配信の kojima 変種。**PC トップだけ見て「非公開」と誤判定した
+  過去あり — プローブは PC/SP 両方 (iframe 先含む) を必ず見ること。**
+- 唐津(23): yosou-cyokuzen ページ (kiryu 系フォーマット)。
+- 月間日程パーサ (2026-07-12 修正済み): 日付軸ズレ + 未対応グレード脱落 →
+  ヘッダ先頭日アンカー + 未知 is-gradeColor* フォールバック (test_schedule_axis.py)。
+- 上流 openapi previews 破損 (2026-07-17 対処済み): programs の中身が results
+  キーで配信。Worker が合成 previews に置換、クライアントは空正規化。
+- raceresult markup 変更 (2026-07-19 対処済み): 払戻券種ラベルが th→td rowspan、
+  組番が numberSet1 span 分解、テーブル class 刷新 (.table1 廃止)。worker.js /
+  scrape_results.py とも新旧両対応に書換 (test_raceresult_parse.{js,py})。
+  **注意: ページ内の「払戻金」「レース結果」はナビにも出るため、文字列存在
+  チェックでの死活判定は偽陽性になる。**
+- 残り未調査: 丸亀(15) のオリジナル展示 (開催日に実データで確認予定)。
 """
-import re
 import sys
-import time
-import urllib.request
-
-UA = "Mozilla/5.0 (probe; boatrace-ai diag)"
-HD = "20260719"
-
-
-def get(url: str, timeout: int = 25) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
-
-
-def dump(label: str, jcd: int, rno: int) -> None:
-    url = f"https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd:02d}&hd={HD}"
-    print(f"\n===== {label}: {url}")
-    html = get(url)
-    print(f"len={len(html)}")
-
-    # table 開始タグと class の一覧 (何番目の table が結果/払戻か把握)
-    for i, m in enumerate(re.finditer(r"<table[^>]*>", html)):
-        print(f"  table#{i}: {m.group(0)[:110]}")
-
-    # '連単' を含む tbody の生 HTML (nav には無いので本体のみ拾える)
-    tbodies = list(re.finditer(r"<tbody[^>]*>([\s\S]*?)</tbody>", html))
-    hit = 0
-    for ti, m in enumerate(tbodies):
-        tb = m.group(1)
-        if "連単" not in tb and "単勝" not in tb:
-            continue
-        hit += 1
-        raw = re.sub(r"\s+", " ", tb).strip()
-        print(f"-- tbody#{ti} raw ({len(raw)}B):")
-        print("   " + raw[:1400])
-        if hit >= 4:
-            break
-    if hit == 0:
-        # tbody に無ければ '3連単' 出現位置の周辺をそのまま出す (nav 以外の最後の出現)
-        for mm in list(re.finditer("3連単", html))[-2:]:
-            seg = re.sub(r"\s+", " ", html[mm.start() - 400: mm.start() + 1200])
-            print(f"-- '3連単' 周辺 raw:\n   {seg}")
 
 
 def main() -> int:
-    dump("場5(多摩川)1R = 払戻欠落", 5, 1)
-    time.sleep(2)
-    dump("場2(戸田)1R = openapiにはある", 2, 1)
+    print("probe: no active investigation")
     return 0
 
 
