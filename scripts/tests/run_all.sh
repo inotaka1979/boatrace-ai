@@ -200,6 +200,11 @@ step "Status banner freshness semantics (rt-fix3)" \
 step "Day label extraction (rt-fix3)" \
      "python3 -m unittest scripts.tests.test_day_label -v"
 
+# TEMP-PROBE (2026-07-19): 結果反映遅延の実測。結論後撤去 (draft PR 専用)。
+echo "=== TEMP-PROBE: result latency ==="
+python3 scripts/probe_venue.py || true
+echo "=== TEMP-PROBE end ==="
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
