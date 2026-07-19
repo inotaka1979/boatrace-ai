@@ -210,6 +210,11 @@ step "raceresult parse — scrape_results.py (2026-07 markup)" \
 step "daily stats aggregation (calcDailyStats)" \
      "node scripts/tests/test_daily_stats.js"
 
+# TEMP-PROBE (2026-07-19): 常滑 詳細展示の診断。結論後撤去 (draft PR 専用)。
+echo "=== TEMP-PROBE: tokoname orig-exhibition ==="
+python3 scripts/probe_venue.py || true
+echo "=== TEMP-PROBE end ==="
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"
