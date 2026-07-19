@@ -58,30 +58,76 @@ def dump_tables(html: str) -> None:
     print(f"  td.waku 内容: {samples}")
 
 
-WORKER = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+def simulate_parser(html: str) -> None:
+    """_parseOrigExhibitionHtml のロジックを bs4 で忠実に再現して失敗点を特定する。"""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+    print(f"  tables={len(tables)}")
+    target = None
+    for i, tb in enumerate(tables):
+        tx = tb.get_text()
+        if "一周" in tx and "まわり足" in tx:
+            print(f"  → target = table#{i} class='{' '.join(tb.get('class') or [])}'")
+            target = tb
+            break
+    if target is None:
+        print("  → 一周&まわり足を含む table 無し (parse 失敗)")
+        return
+    labels = {"展示": "ex_time", "展示タイム": "ex_time", "一周": "lap_time",
+              "まわり足": "turn_time", "直線": "straight_time"}
+    colmap = {}
+    for tr in target.find_all("tr"):
+        for th in tr.find_all("th"):
+            lab = re.sub(r"\s+", "", th.get_text())
+            f = labels.get(lab)
+            if not f or f in colmap:
+                continue
+            cols = [c for c in (th.get("class") or []) if re.fullmatch(r"col\d+", c)]
+            if cols:
+                colmap[f] = cols[0]
+    print(f"  colmap={colmap}")
+    if not (colmap.get("lap_time") and colmap.get("turn_time")):
+        print("  → colmap 不足 (parse 失敗)")
+        return
+    bymap = {}
+    for tr in target.find_all("tr"):
+        wtd = tr.find("td", class_="waku")
+        if not wtd:
+            continue
+        try:
+            waku = int(wtd.get_text(strip=True))
+        except ValueError:
+            continue
+        if not 1 <= waku <= 6:
+            continue
+        rec = {}
+        for f, cls in colmap.items():
+            td = tr.find("td", class_=cls)
+            try:
+                v = float(td.get_text(strip=True)) if td else 0
+            except ValueError:
+                v = 0
+            rec[f] = v if v > 0 else 0
+        if waku not in bymap:
+            bymap[waku] = rec
+    print(f"  bymap({len(bymap)}艇): {bymap}")
 
 
 def main() -> int:
     hd = datetime.now(JST).strftime("%Y%m%d")
     print(f"hd={hd}")
-    # 第3弾: 直取得はテーブル健全 (tbl_oriten、パーサ期待通り) だったため、
-    # クライアントが実際に通る Worker /orig-exhibition-proxy 経由を検証。
-    # 比較対象に多摩川(5)/浜名湖?も。Worker→場サイトの到達性 (CF からのブロック) を切り分ける。
-    for jcd, name in ((8, "常滑"), (5, "多摩川"), (18, "徳山")):
-        url = f"{WORKER}/orig-exhibition-proxy?jcd={jcd}&race=7&hd={hd}"
-        st, html = get(url)
-        n_ori = html.count("一周") if html else 0
-        n_waku = len(re.findall(r'class="[^"]*waku', html)) if html else 0
-        head = re.sub(r"\s+", " ", html[:200]) if html else ""
-        print(f"== worker proxy jcd={jcd}({name}): HTTP {st} len={len(html)} "
-              f"一周={n_ori} waku={n_waku}")
-        if st != 200 or n_ori == 0:
-            print(f"   head: {head}")
-        time.sleep(1)
-    # 直取得 (GHA→常滑) の対照
+    # 第4弾: Worker/直取得とも健全のため、クライアントパーサのロジックを再現して失敗点を特定。
     url = f"{BASE}/sp/ajax/ajax_yosou.php?targetday={hd}&race=7&req=cyokuzen&run=0"
     st, html = get(url, referer=BASE + "/sp/", xhr=True)
-    print(f"== 直取得 常滑 race=7: HTTP {st} len={len(html)} 一周={html.count('一周') if html else 0}")
+    print(f"== 常滑 race=7: HTTP {st} len={len(html)}")
+    if not html:
+        return 0
+    # 一周 の全出現位置の前後 (どの要素に属すか)
+    for m in re.finditer("一周", html):
+        seg = re.sub(r"\s+", " ", html[max(0, m.start() - 150): m.start() + 60])
+        print(f"  一周@{m.start()}: …{seg}…")
+    simulate_parser(html)
     return 0
 
 
