@@ -58,30 +58,30 @@ def dump_tables(html: str) -> None:
     print(f"  td.waku 内容: {samples}")
 
 
+WORKER = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+
+
 def main() -> int:
     hd = datetime.now(JST).strftime("%Y%m%d")
     print(f"hd={hd}")
-    # 第2弾: 「一周」を含む table の生 HTML を丸ごとダンプ (パーサ期待との突合用)
+    # 第3弾: 直取得はテーブル健全 (tbl_oriten、パーサ期待通り) だったため、
+    # クライアントが実際に通る Worker /orig-exhibition-proxy 経由を検証。
+    # 比較対象に多摩川(5)/浜名湖?も。Worker→場サイトの到達性 (CF からのブロック) を切り分ける。
+    for jcd, name in ((8, "常滑"), (5, "多摩川"), (18, "徳山")):
+        url = f"{WORKER}/orig-exhibition-proxy?jcd={jcd}&race=7&hd={hd}"
+        st, html = get(url)
+        n_ori = html.count("一周") if html else 0
+        n_waku = len(re.findall(r'class="[^"]*waku', html)) if html else 0
+        head = re.sub(r"\s+", " ", html[:200]) if html else ""
+        print(f"== worker proxy jcd={jcd}({name}): HTTP {st} len={len(html)} "
+              f"一周={n_ori} waku={n_waku}")
+        if st != 200 or n_ori == 0:
+            print(f"   head: {head}")
+        time.sleep(1)
+    # 直取得 (GHA→常滑) の対照
     url = f"{BASE}/sp/ajax/ajax_yosou.php?targetday={hd}&race=7&req=cyokuzen&run=0"
     st, html = get(url, referer=BASE + "/sp/", xhr=True)
-    print(f"== race=7 cyokuzen: HTTP {st} len={len(html)}")
-    if not html:
-        return 0
-    # table 境界を列挙し、一周 を含む table を raw 出力
-    for m in re.finditer(r"<table[^>]*>[\s\S]*?</table>", html):
-        tb = m.group(0)
-        if "一周" not in tb:
-            continue
-        raw = re.sub(r"\s+", " ", tb)
-        print(f"-- 一周入り table ({len(raw)}B):")
-        for i in range(0, min(len(raw), 4200), 1400):
-            print("   " + raw[i:i + 1400])
-        break
-    else:
-        # table 外にある場合: 出現位置の周辺をダンプ
-        idx = html.find("一周")
-        seg = re.sub(r"\s+", " ", html[max(0, idx - 1500): idx + 2500])
-        print(f"-- '一周' は table 内に無い。周辺 raw:\n   {seg}")
+    print(f"== 直取得 常滑 race=7: HTTP {st} len={len(html)} 一周={html.count('一周') if html else 0}")
     return 0
 
 
