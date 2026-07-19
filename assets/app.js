@@ -8708,7 +8708,7 @@ async function _loadNextOpen(){
       return rk === 0 ? "hl-rank1" : rk === 1 ? "hl-rank2" : rk === 2 ? "hl-rank3" : "";
     }
     var exhHtml = "";
-    if (preview && preview.boats) {
+    if (preview && preview.boats || _hasOe) {
       exhHtml = '<div class="section-title">\u5C55\u793A\u60C5\u5831</div>';
       exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
       var _lapLabel = String(sid) === "1" ? "\u534A\u5468" : "\u4E00\u5468";
@@ -8757,7 +8757,7 @@ async function _loadNextOpen(){
       } else {
         exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
       }
-      if (preview.boats) {
+      if (preview && preview.boats) {
         var courseEntries = [];
         var hasCourse = false;
         for (var ci = 1; ci <= 6; ci++) {

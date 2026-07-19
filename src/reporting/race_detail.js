@@ -324,7 +324,11 @@ function openRace(sid, rn) {
   }
 
   var exhHtml = '';
-  if (preview && preview.boats) {
+  // 2026-07-19: preview 必須を撤廃し「preview または オリジナル展示」があれば描画。
+  //   旧条件 (preview && preview.boats) は、上流 previews 破損 (7/17) 以降
+  //   preview が欠けるレースでオリジナル展示列ごとセクションが消える実障害
+  //   (常滑で報告)。pvMap 欠損は各セルが "---" で安全に描画される。
+  if ((preview && preview.boats) || _hasOe) {
     exhHtml = '<div class="section-title">展示情報</div>';
     exhHtml += '<div class="detail-table-wrap"><table class="exhibition-table">';
     // F12: 展示テーブルに「持ペラ / 部品交換 / 調整重量」を追加
@@ -422,8 +426,8 @@ function openRace(sid, rn) {
         '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※ この場は一周・まわり足・直線のオリジナル展示に未対応（boatrace.jp 公式には非掲載）</div>';
     }
 
-    // Course entry grid
-    if (preview.boats) {
+    // Course entry grid (preview 無しで OE のみの場合は null ガード)
+    if (preview && preview.boats) {
       var courseEntries = [];
       var hasCourse = false;
       for (var ci = 1; ci <= 6; ci++) {
