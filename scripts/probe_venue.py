@@ -114,20 +114,45 @@ def simulate_parser(html: str) -> None:
     print(f"  bymap({len(bymap)}艇): {bymap}")
 
 
+WORKER = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
+
+
 def main() -> int:
-    hd = datetime.now(JST).strftime("%Y%m%d")
-    print(f"hd={hd}")
-    # 第4弾: Worker/直取得とも健全のため、クライアントパーサのロジックを再現して失敗点を特定。
-    url = f"{BASE}/sp/ajax/ajax_yosou.php?targetday={hd}&race=7&req=cyokuzen&run=0"
-    st, html = get(url, referer=BASE + "/sp/", xhr=True)
-    print(f"== 常滑 race=7: HTTP {st} len={len(html)}")
-    if not html:
+    import json as _json
+    # 第5弾: 詳細画面の展示情報セクション (オリジナル展示列を含む) は
+    # preview が無いと丸ごと非描画。Worker /api/previews の場別充足を確認する。
+    st, body = get(WORKER + "/api/previews")
+    print(f"/api/previews: HTTP {st} len={len(body)}")
+    try:
+        d = _json.loads(body)
+    except Exception as e:
+        print(f"JSON parse fail: {e}")
         return 0
-    # 一周 の全出現位置の前後 (どの要素に属すか)
-    for m in re.finditer("一周", html):
-        seg = re.sub(r"\s+", " ", html[max(0, m.start() - 150): m.start() + 60])
-        print(f"  一周@{m.start()}: …{seg}…")
-    simulate_parser(html)
+    print(f"top keys: {sorted(d.keys())[:8]} _source={d.get('_source','kv')} updated_at={d.get('updated_at')}")
+    rows = d.get("previews") or []
+    from collections import defaultdict
+    per = defaultdict(lambda: [0, 0, 0])  # sid -> [races, with_boats, with_exh]
+    for r in rows:
+        sid = r.get("race_stadium_number")
+        per[sid][0] += 1
+        boats = r.get("boats") or {}
+        if isinstance(boats, list):
+            boats = {str(i + 1): b for i, b in enumerate(boats)}
+        if boats:
+            per[sid][1] += 1
+            if any((b or {}).get("racer_exhibition_time") or 0 for b in boats.values()):
+                per[sid][2] += 1
+    print("sid: races/boatsあり/展示あり")
+    for sid in sorted(k for k in per if k is not None):
+        print(f"  {sid:2d}: {per[sid][0]:2d} / {per[sid][1]:2d} / {per[sid][2]:2d}")
+    # 場8 の行の詳細 (weather / boats sample)
+    s8 = [r for r in rows if r.get("race_stadium_number") == 8]
+    for r in s8[:4]:
+        boats = r.get("boats") or {}
+        if isinstance(boats, list):
+            boats = {str(i + 1): b for i, b in enumerate(boats)}
+        ex = [(k, (b or {}).get("racer_exhibition_time")) for k, b in sorted(boats.items())][:3]
+        print(f"場8 {r.get('race_number')}R: wind={r.get('race_wind')} boats={len(boats)} exh3={ex}")
     return 0
 
 
