@@ -127,9 +127,14 @@ function synthesizePreviewsFromPrograms(programs) {
     race_closed_at: p.race_closed_at,
     boats: {},
   }));
+  // 2026-07-19: updated_at は now (合成実行時刻)。旧実装は programs.updated_at を
+  //   継承していたが、programs は 1 日数回しか再生成されないため /api/previews の
+  //   世代表示が凍結し、展示が 5 分毎に流れていても鮮度 SLO が誤発報した
+  //   ([STALE] worker-previews issue)。Worker 自身がスクレイパとして生成する
+  //   payload なので「最後に合成した時刻」が世代の真値。
   return {
     previews: rows,
-    updated_at: (programs && programs.updated_at) || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     _synth: 'programs',
   };
 }
@@ -181,12 +186,22 @@ function _fnv1a(str) {
 async function kvWrite(env, key, data, src) {
   const now = new Date().toISOString();
   const newBody = JSON.stringify(data);
-  const newHash = _fnv1a(newBody);
+  // 2026-07-19: ハッシュから top-level updated_at を除外 (regex 1 パス、再 stringify を
+  //   避け CPU 節約)。合成 previews が毎 cron updated_at=now を刻むようになったため、
+  //   本文ハッシュに含めると「実質不変なのに毎回 write」となり無料枠 (1000/日) を焼く。
+  const newHash = _fnv1a(newBody.replace(/"updated_at":"[^"]*",?/, ''));
   let changed = true;
   try {
     // 本文は stream で受けて読まずに捨てる（metadata 比較のみ、CPU を消費しない）
     const prev = await env.BOATRACE_KV.getWithMetadata(key, { type: 'stream' });
-    if (prev && prev.metadata && prev.metadata.hash === newHash) changed = false;
+    if (prev && prev.metadata && prev.metadata.hash === newHash) {
+      changed = false;
+      // 2026-07-19: 内容不変でも 30 分毎に stamp refresh。保存済み data.updated_at が
+      //   serveFromKV の応答世代になるため、凍結すると鮮度 SLO が誤発報する
+      //   (実害: [STALE] worker-previews)。+~48 writes/日/キーで枠内。
+      const ageMs = Date.now() - new Date(prev.metadata.wrote_at || 0).getTime();
+      if (!(ageMs < 30 * 60 * 1000)) changed = true;
+    }
     if (prev && prev.value && prev.value.cancel) prev.value.cancel().catch(() => {});
   } catch (_) {
     // 比較失敗時は安全側で書き込む
