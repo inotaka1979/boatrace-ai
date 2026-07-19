@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""結果反映遅延 第2弾: 場5(多摩川)の払戻パース失敗の構造差を特定。
+"""結果反映遅延 第3弾: raceresult 払戻テーブルの現行 markup を生ダンプ。
 
-第1弾の実測: 49 レース中 46 は着順+払戻まで ~10 分で反映。場5 の 1R/2R だけ
-「worker=着順のみ・openapi=無」が 51/21 分継続、公式には払戻掲載済み。
-→ worker parseRaceresultHTML の払戻抽出が場5 のページでだけ失敗している。
-場5 1R と健全な場2 1R の払戻金テーブル HTML を比較 + worker の regex を
-Python に移植して各段の抽出結果を出力する。確認後撤去。
+第2弾の発見: 場5 だけでなく場2 (openapi にある「健全」レース) でも、
+worker パーサ前提の <tbody>内<th>ラベル構造が 1 件も見つからない。
+→ boatrace.jp が markup を変更し (th→td 等)、worker 自前スクレイプの払戻
+  抽出は全場で壊れている疑い。openapi ミラーに載る場は base で隠れ、
+  ミラー欠落場 (今日の場5) だけ症状が露呈していた。
+本プローブで '連単' を含む tbody の生 HTML と table class 一覧を出力し、
+新パーサの正確な仕様を得る。確認後撤去。
 """
 import re
 import sys
@@ -22,51 +24,40 @@ def get(url: str, timeout: int = 25) -> str:
         return r.read().decode("utf-8", "replace")
 
 
-def strip_tags(s: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", s)).strip()
-
-
-def analyze(label: str, jcd: int, rno: int) -> None:
+def dump(label: str, jcd: int, rno: int) -> None:
     url = f"https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd:02d}&hd={HD}"
     print(f"\n===== {label}: {url}")
     html = get(url)
-    print(f"len={len(html)} 払戻金出現={html.count('払戻金')} tbody数={len(re.findall(r'<tbody', html))}")
+    print(f"len={len(html)}")
 
-    # worker と同じ tbody 抽出
-    tbodies = re.findall(r"<tbody[^>]*>([\s\S]*?)</tbody>", html)
-    kw_hits = 0
-    for ti, tb in enumerate(tbodies):
-        if ("払戻" not in tb and "配当" not in tb and "連単" not in tb and "単勝" not in tb):
+    # table 開始タグと class の一覧 (何番目の table が結果/払戻か把握)
+    for i, m in enumerate(re.finditer(r"<table[^>]*>", html)):
+        print(f"  table#{i}: {m.group(0)[:110]}")
+
+    # '連単' を含む tbody の生 HTML (nav には無いので本体のみ拾える)
+    tbodies = list(re.finditer(r"<tbody[^>]*>([\s\S]*?)</tbody>", html))
+    hit = 0
+    for ti, m in enumerate(tbodies):
+        tb = m.group(1)
+        if "連単" not in tb and "単勝" not in tb:
             continue
-        kw_hits += 1
-        # worker と同じ tr/th/td 抽出
-        rows = re.findall(r"<tr[^>]*>([\s\S]*?)</tr>", tb)
-        parsed = []
-        for tr in rows:
-            thm = re.search(r"<th[^>]*>([\s\S]*?)</th>", tr)
-            if not thm:
-                parsed.append(("(th無)", None, None))
-                continue
-            lab = strip_tags(thm.group(1))
-            tds = [strip_tags(x) for x in re.findall(r"<td[^>]*>([\s\S]*?)</td>", tr)]
-            parsed.append((lab, tds[:3], len(tds)))
-        print(f"-- tbody#{ti} (キーワード一致, tr={len(rows)}) 抽出結果:")
-        for lab, tds, n in parsed[:14]:
-            print(f"   th='{lab}' tds={tds} (n={n})")
-    print(f"キーワード一致 tbody: {kw_hits}")
-
-    # 払戻金 周辺の生 HTML (構造の目視用)
-    idx = html.find("払戻金")
-    if idx >= 0:
-        seg = html[idx - 100: idx + 2600]
-        seg = re.sub(r"\s+", " ", seg)
-        print(f"-- 払戻金 周辺 raw (2.7KB):\n{seg}")
+        hit += 1
+        raw = re.sub(r"\s+", " ", tb).strip()
+        print(f"-- tbody#{ti} raw ({len(raw)}B):")
+        print("   " + raw[:1400])
+        if hit >= 4:
+            break
+    if hit == 0:
+        # tbody に無ければ '3連単' 出現位置の周辺をそのまま出す (nav 以外の最後の出現)
+        for mm in list(re.finditer("3連単", html))[-2:]:
+            seg = re.sub(r"\s+", " ", html[mm.start() - 400: mm.start() + 1200])
+            print(f"-- '3連単' 周辺 raw:\n   {seg}")
 
 
 def main() -> int:
-    analyze("場5(多摩川)1R = 払戻欠落", 5, 1)
+    dump("場5(多摩川)1R = 払戻欠落", 5, 1)
     time.sleep(2)
-    analyze("場2(戸田)1R = 健全", 2, 1)
+    dump("場2(戸田)1R = openapiにはある", 2, 1)
     return 0
 
 
