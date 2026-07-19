@@ -1,107 +1,72 @@
 #!/usr/bin/env python3
-"""結果反映遅延の実測プローブ (2026-07-19: 「相変わらず結果の反映が遅い」)。
+"""結果反映遅延 第2弾: 場5(多摩川)の払戻パース失敗の構造差を特定。
 
-締切から 6 分〜6 時間経過したレース (=結果が出ているはず) について、
-  a) Worker /api/results に着順 (race_technique_number) / 払戻 (trifecta) があるか
-  b) openapi results ミラーにあるか
-  c) (a で欠けるものは) boatrace.jp 公式 raceresult に結果が出ているか
-を突合し、どの層で遅延しているかを確定する。/health で cron 生死も見る。確認後撤去。
+第1弾の実測: 49 レース中 46 は着順+払戻まで ~10 分で反映。場5 の 1R/2R だけ
+「worker=着順のみ・openapi=無」が 51/21 分継続、公式には払戻掲載済み。
+→ worker parseRaceresultHTML の払戻抽出が場5 のページでだけ失敗している。
+場5 1R と健全な場2 1R の払戻金テーブル HTML を比較 + worker の regex を
+Python に移植して各段の抽出結果を出力する。確認後撤去。
 """
-import json
+import re
 import sys
 import time
 import urllib.request
-from datetime import datetime, timedelta, timezone
 
-JST = timezone(timedelta(hours=9))
-WORKER = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
 UA = "Mozilla/5.0 (probe; boatrace-ai diag)"
+HD = "20260719"
 
 
-def get(url: str, timeout: int = 20) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Cache-Control": "no-cache"})
+def get(url: str, timeout: int = 25) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        return r.read().decode("utf-8", "replace")
 
 
-def get_json(url: str) -> dict:
-    return json.loads(get(url))
+def strip_tags(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", s)).strip()
 
 
-def parse_closed(s: str):
-    try:
-        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
-    except Exception:
-        return None
+def analyze(label: str, jcd: int, rno: int) -> None:
+    url = f"https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd:02d}&hd={HD}"
+    print(f"\n===== {label}: {url}")
+    html = get(url)
+    print(f"len={len(html)} 払戻金出現={html.count('払戻金')} tbody数={len(re.findall(r'<tbody', html))}")
+
+    # worker と同じ tbody 抽出
+    tbodies = re.findall(r"<tbody[^>]*>([\s\S]*?)</tbody>", html)
+    kw_hits = 0
+    for ti, tb in enumerate(tbodies):
+        if ("払戻" not in tb and "配当" not in tb and "連単" not in tb and "単勝" not in tb):
+            continue
+        kw_hits += 1
+        # worker と同じ tr/th/td 抽出
+        rows = re.findall(r"<tr[^>]*>([\s\S]*?)</tr>", tb)
+        parsed = []
+        for tr in rows:
+            thm = re.search(r"<th[^>]*>([\s\S]*?)</th>", tr)
+            if not thm:
+                parsed.append(("(th無)", None, None))
+                continue
+            lab = strip_tags(thm.group(1))
+            tds = [strip_tags(x) for x in re.findall(r"<td[^>]*>([\s\S]*?)</td>", tr)]
+            parsed.append((lab, tds[:3], len(tds)))
+        print(f"-- tbody#{ti} (キーワード一致, tr={len(rows)}) 抽出結果:")
+        for lab, tds, n in parsed[:14]:
+            print(f"   th='{lab}' tds={tds} (n={n})")
+    print(f"キーワード一致 tbody: {kw_hits}")
+
+    # 払戻金 周辺の生 HTML (構造の目視用)
+    idx = html.find("払戻金")
+    if idx >= 0:
+        seg = html[idx - 100: idx + 2600]
+        seg = re.sub(r"\s+", " ", seg)
+        print(f"-- 払戻金 周辺 raw (2.7KB):\n{seg}")
 
 
 def main() -> int:
-    now = datetime.now(JST)
-    print(f"now JST: {now.isoformat()}")
-
-    health = get_json(WORKER + "/health")
-    print(f"health: ok={health.get('ok')} cron_age_sec={health.get('cron_age_sec')}")
-    for k, v in (health.get("keys") or {}).items():
-        print(f"  kv[{k}]: wrote_at={v.get('wrote_at')} age_sec={v.get('age_sec')} src={v.get('src')}")
-
-    progs = get_json(WORKER + "/api/programs")
-    res_w = get_json(WORKER + "/api/results")
-    print(f"worker results: updated_at={res_w.get('updated_at')} _source={res_w.get('_source','kv')} "
-          f"entries={len(res_w.get('results') or [])}")
-    try:
-        res_o = get_json("https://boatraceopenapi.github.io/results/v2/today.json")
-    except Exception as e:
-        res_o = {}
-        print(f"openapi results FAIL: {e}")
-
-    def idx(d):
-        m = {}
-        for r in d.get("results") or []:
-            m[(r.get("race_stadium_number"), r.get("race_number"))] = r
-        return m
-
-    iw, io = idx(res_w), idx(res_o)
-
-    def state(r):
-        if not r:
-            return "無"
-        t = r.get("race_technique_number") is not None
-        p = bool(((r.get("payouts") or {}).get("trifecta") or []))
-        return ("着順+払戻" if p else "着順のみ") if t else "未確定"
-
-    should_be_done = []
-    for p in progs.get("programs") or []:
-        c = parse_closed(p.get("race_closed_at") or "")
-        if not c:
-            continue
-        age_min = (now - c).total_seconds() / 60
-        if 6 <= age_min <= 360:
-            should_be_done.append((c, age_min, p))
-
-    should_be_done.sort(key=lambda x: x[0])
-    print(f"\n締切+6分〜6時間のレース: {len(should_be_done)} 件")
-    missing_in_worker = []
-    for c, age_min, p in should_be_done:
-        sid, rno = p["race_stadium_number"], p["race_number"]
-        sw, so = state(iw.get((sid, rno))), state(io.get((sid, rno)))
-        mark = "" if sw == "着順+払戻" else "  ★遅延"
-        print(f"  場{sid:2d} {rno:2d}R 締切+{age_min:5.1f}分  worker={sw:6s} openapi={so:6s}{mark}")
-        if sw != "着順+払戻":
-            missing_in_worker.append((sid, rno, p.get("race_date", ""), age_min))
-
-    # worker 欠落分は公式に出ているか確認 (最大 6 件)
-    print(f"\nworker 欠落/不完全: {len(missing_in_worker)} 件 → 公式確認 (最大6件)")
-    for sid, rno, rd, age_min in missing_in_worker[:6]:
-        hd = rd.replace("-", "")
-        url = f"https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={sid:02d}&hd={hd}"
-        try:
-            html = get(url, timeout=25).decode("utf-8", "replace")
-            has_result = "レース結果" in html and ("３連単" in html or "3連単" in html)
-            has_payout = "払戻金" in html
-            print(f"  場{sid:2d} {rno:2d}R (+{age_min:.0f}分): 公式結果={'有' if has_result else '無'} 払戻表記={'有' if has_payout else '無'} len={len(html)}")
-        except Exception as e:
-            print(f"  場{sid:2d} {rno:2d}R: 公式 fetch FAIL {type(e).__name__}: {str(e)[:80]}")
-        time.sleep(2)
+    analyze("場5(多摩川)1R = 払戻欠落", 5, 1)
+    time.sleep(2)
+    analyze("場2(戸田)1R = 健全", 2, 1)
     return 0
 
 
