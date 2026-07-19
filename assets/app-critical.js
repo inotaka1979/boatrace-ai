@@ -2260,6 +2260,7 @@ window.addEventListener('unhandledrejection', function(e){
       // page
       "page.top": "\u30C8\u30C3\u30D7",
       "page.stats": "\u6210\u7E3E",
+      "page.daily": "\u65E5\u5225",
       "page.backtest": "\u691C\u8A3C",
       "page.settings": "\u8A2D\u5B9A",
       // settings
@@ -2348,6 +2349,7 @@ window.addEventListener('unhandledrejection', function(e){
       // page
       "page.top": "Top",
       "page.stats": "Stats",
+      "page.daily": "Daily",
       "page.backtest": "Backtest",
       "page.settings": "Settings",
       // settings
@@ -2437,6 +2439,7 @@ window.addEventListener('unhandledrejection', function(e){
       // page
       "page.top": "\u9996\u9875",
       "page.stats": "\u4E1A\u7EE9",
+      "page.daily": "\u65E5\u62A5",
       "page.backtest": "\u56DE\u6D4B",
       "page.settings": "\u8BBE\u7F6E",
       // settings
@@ -3525,6 +3528,23 @@ var _backfillTimer = null;
   function _ensureRaceDetailChunk() {
     return _loadChunk("detail", "app-rest-detail.min.js");
   }
+  function _openStatsChunkPage(renderName) {
+    _ensureStatsChunk().then(
+      function() {
+        var f = (
+          /** @type {any} */
+          globalThis[renderName]
+        );
+        if (typeof f === "function") f();
+      },
+      function(err) {
+        try {
+          if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
+        } catch (_) {
+        }
+      }
+    );
+  }
   function showPage(page) {
     document.querySelectorAll(".page").forEach(function(p) {
       p.classList.remove("active");
@@ -3556,17 +3576,11 @@ var _backfillTimer = null;
     } else if (page === "stats") {
       document.getElementById("pageStats").classList.add("active");
       _setActive("navStats");
-      _ensureStatsChunk().then(
-        function() {
-          if (typeof renderStats === "function") renderStats();
-        },
-        function(err) {
-          try {
-            if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
-          } catch (_) {
-          }
-        }
-      );
+      _openStatsChunkPage("renderStats");
+    } else if (page === "daily") {
+      document.getElementById("pageDaily").classList.add("active");
+      _setActive("navDaily");
+      _openStatsChunkPage("renderDailyStats");
     } else if (page === "backtest") {
       document.getElementById("pageBacktest").classList.add("active");
       _setActive("navBacktest");
@@ -3960,6 +3974,7 @@ var _nextOpenMap = {};
 /* MOVED: function calcTodayStats */
 
 /* MOVED: function _rateColor */
+
 
 
 // PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）

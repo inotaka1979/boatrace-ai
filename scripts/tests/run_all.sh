@@ -206,6 +206,10 @@ step "raceresult parse — worker.js (2026-07 markup)" \
 step "raceresult parse — scrape_results.py (2026-07 markup)" \
      "python3 -m unittest scripts.tests.test_raceresult_parse -v"
 
+# 22) 2026-07-19: 日別成績ページ (的中率/回収率の日別集計) の回帰固定
+step "daily stats aggregation (calcDailyStats)" \
+     "node scripts/tests/test_daily_stats.js"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

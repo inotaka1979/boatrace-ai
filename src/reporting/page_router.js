@@ -68,6 +68,21 @@ function _ensureRaceDetailChunk() {
   return _loadChunk('detail', 'app-rest-detail.min.js');
 }
 
+// stats chunk を load して指定 render 関数を呼ぶ (stats / daily 共通)
+function _openStatsChunkPage(renderName) {
+  _ensureStatsChunk().then(
+    function () {
+      var f = /** @type {any} */ (globalThis)[renderName];
+      if (typeof f === 'function') f();
+    },
+    function (err) {
+      try {
+        if (typeof reportError === 'function') reportError({ type: 'chunk-load', msg: String(err) });
+      } catch (_) {}
+    }
+  );
+}
+
 function showPage(page) {
   document.querySelectorAll('.page').forEach(function (p) {
     p.classList.remove('active');
@@ -102,16 +117,12 @@ function showPage(page) {
   } else if (page === 'stats') {
     document.getElementById('pageStats').classList.add('active');
     _setActive('navStats');
-    _ensureStatsChunk().then(
-      function () {
-        if (typeof renderStats === 'function') renderStats();
-      },
-      function (err) {
-        try {
-          if (typeof reportError === 'function') reportError({ type: 'chunk-load', msg: String(err) });
-        } catch (_) {}
-      }
-    );
+    _openStatsChunkPage('renderStats');
+  } else if (page === 'daily') {
+    // 2026-07-19: 日別成績 (的中率・回収率の推移)。stats chunk に同梱。
+    document.getElementById('pageDaily').classList.add('active');
+    _setActive('navDaily');
+    _openStatsChunkPage('renderDailyStats');
   } else if (page === 'backtest') {
     document.getElementById('pageBacktest').classList.add('active');
     _setActive('navBacktest');

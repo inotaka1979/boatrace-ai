@@ -3051,6 +3051,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       // page
       "page.top": "\u30C8\u30C3\u30D7",
       "page.stats": "\u6210\u7E3E",
+      "page.daily": "\u65E5\u5225",
       "page.backtest": "\u691C\u8A3C",
       "page.settings": "\u8A2D\u5B9A",
       // settings
@@ -3139,6 +3140,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       // page
       "page.top": "Top",
       "page.stats": "Stats",
+      "page.daily": "Daily",
       "page.backtest": "Backtest",
       "page.settings": "Settings",
       // settings
@@ -3228,6 +3230,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       // page
       "page.top": "\u9996\u9875",
       "page.stats": "\u4E1A\u7EE9",
+      "page.daily": "\u65E5\u62A5",
       "page.backtest": "\u56DE\u6D4B",
       "page.settings": "\u8BBE\u7F6E",
       // settings
@@ -7932,6 +7935,23 @@ function racerBadges(boat,form,divergence){
   function _ensureRaceDetailChunk() {
     return _loadChunk("detail", "app-rest-detail.min.js");
   }
+  function _openStatsChunkPage(renderName) {
+    _ensureStatsChunk().then(
+      function() {
+        var f = (
+          /** @type {any} */
+          globalThis[renderName]
+        );
+        if (typeof f === "function") f();
+      },
+      function(err) {
+        try {
+          if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
+        } catch (_) {
+        }
+      }
+    );
+  }
   function showPage(page) {
     document.querySelectorAll(".page").forEach(function(p) {
       p.classList.remove("active");
@@ -7963,17 +7983,11 @@ function racerBadges(boat,form,divergence){
     } else if (page === "stats") {
       document.getElementById("pageStats").classList.add("active");
       _setActive("navStats");
-      _ensureStatsChunk().then(
-        function() {
-          if (typeof renderStats === "function") renderStats();
-        },
-        function(err) {
-          try {
-            if (typeof reportError === "function") reportError({ type: "chunk-load", msg: String(err) });
-          } catch (_) {
-          }
-        }
-      );
+      _openStatsChunkPage("renderStats");
+    } else if (page === "daily") {
+      document.getElementById("pageDaily").classList.add("active");
+      _setActive("navDaily");
+      _openStatsChunkPage("renderDailyStats");
     } else if (page === "backtest") {
       document.getElementById("pageBacktest").classList.add("active");
       _setActive("navBacktest");
@@ -9762,6 +9776,200 @@ function _rateColor(rate){
 })();
 
 /* BUILD:REPORTING_STATS_PAGE:END */
+
+/* BUILD:REPORTING_DAILY_STATS:START */
+"use strict";
+(() => {
+  // ../src/reporting/daily_stats_page.js
+  var _g = (
+    /** @type {any} */
+    globalThis
+  );
+  function calcDailyStats(history, betCount3, betCount2, maxDays) {
+    var unitBet = 100;
+    var byDate = {};
+    (history || []).forEach(function(h) {
+      if (!h || !h.date || !h.actual || !h.actual.length) return;
+      var d = byDate[h.date];
+      if (!d) {
+        d = byDate[h.date] = {
+          date: h.date,
+          total: 0,
+          hit3: 0,
+          hit2: 0,
+          anaRaces: 0,
+          anaHits: 0,
+          invest: 0,
+          payout: 0
+        };
+      }
+      d.total++;
+      d.invest += (betCount3 + betCount2) * unitBet;
+      if (h.trifecta_hit) {
+        d.hit3++;
+        d.payout += h.payout3 || 0;
+      }
+      if (h.exacta_hit) {
+        d.hit2++;
+        d.payout += h.payout2 || 0;
+      }
+      if (Array.isArray(h.ana_bets) && h.ana_bets.length > 0) {
+        d.anaRaces++;
+        d.invest += h.ana_bets.length * unitBet;
+        if (h.ana_hit) {
+          d.anaHits++;
+          d.payout += h.ana_payout || 0;
+        }
+      }
+    });
+    var days = Object.keys(byDate).sort().slice(-(maxDays || 30));
+    return days.map(function(k) {
+      var d = byDate[k];
+      d.rate3 = d.total > 0 ? d.hit3 / d.total * 100 : 0;
+      d.rate2 = d.total > 0 ? d.hit2 / d.total * 100 : 0;
+      d.recovery = d.invest > 0 ? d.payout / d.invest * 100 : 0;
+      return d;
+    });
+  }
+  function _fmtDate(yyyymmdd) {
+    var s = String(yyyymmdd);
+    return s.length === 8 ? s.slice(4, 6) + "/" + s.slice(6) : s;
+  }
+  function renderDailyStats() {
+    var history = _g.safeParse("boatrace_history", []);
+    var st = _g.settings || {};
+    var b3 = parseInt(st.betCount3) || 10;
+    var b2 = parseInt(st.betCount2) || 5;
+    var daily = calcDailyStats(history, b3, b2, 30);
+    var last7 = daily.slice(-7);
+    var t = { races: 0, hit3: 0, invest: 0, payout: 0 };
+    last7.forEach(function(d) {
+      t.races += d.total;
+      t.hit3 += d.hit3;
+      t.invest += d.invest;
+      t.payout += d.payout;
+    });
+    var sumRate = t.races > 0 ? (t.hit3 / t.races * 100).toFixed(1) : "0.0";
+    var sumRec = t.invest > 0 ? Math.round(t.payout / t.invest * 100) : 0;
+    var sumEl = document.getElementById("dailySummary");
+    if (sumEl) {
+      sumEl.innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + t.races + '</div><div class="stat-label">\u76F4\u8FD17\u65E5 \u5224\u5B9AR</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + sumRate + '%</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D\u7387</div></div><div class="stat-card"><div class="stat-num" style="color:' + (sumRec >= 100 ? "var(--success)" : "var(--danger)") + '">' + sumRec + '%</div><div class="stat-label">\u56DE\u53CE\u7387</div></div>';
+    }
+    var el = document.getElementById("dailyTable");
+    if (el) {
+      if (!daily.length) {
+        el.innerHTML = '<div class="card" style="padding:16px;text-align:center;color:var(--text-dim);font-size:12px">\u307E\u3060\u5224\u5B9A\u6E08\u307F\u306E\u30EC\u30FC\u30B9\u304C\u3042\u308A\u307E\u305B\u3093\u3002<br>\u4E88\u60F3\u3092\u958B\u3044\u305F\u65E5\u306E\u30EC\u30FC\u30B9\u304C\u78BA\u5B9A\u3059\u308B\u3068\u81EA\u52D5\u3067\u96C6\u8A08\u3055\u308C\u307E\u3059\u3002</div>';
+      } else {
+        var html = '<div class="card" class="p-overflow-hidden">';
+        html += '<div class="card-header-row">\u65E5\u5225 \u7684\u4E2D\u7387\u30FB\u56DE\u53CE\u7387 (\u76F4\u8FD130\u65E5)</div>';
+        html += '<table class="recovery-table">';
+        html += "<thead><tr><th>\u65E5\u4ED8</th><th>\u5224\u5B9AR</th><th>3\u9023\u5358</th><th>2\u9023\u5358</th><th>\u53CE\u652F</th><th>\u56DE\u53CE\u7387</th></tr></thead><tbody>";
+        daily.slice().reverse().forEach(function(d) {
+          var rec = Math.round(d.recovery);
+          var net = d.payout - d.invest;
+          html += "<tr><td><b>" + _fmtDate(d.date) + "</b></td><td>" + d.total + "</td><td>" + d.hit3 + " (" + d.rate3.toFixed(0) + "%)</td><td>" + d.hit2 + " (" + d.rate2.toFixed(0) + '%)</td><td style="color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + '</td><td class="' + _g._rateColor(rec) + '">' + rec + "%</td></tr>";
+        });
+        html += "</tbody></table>";
+        html += '<div style="font-size:9px;color:var(--text-dim);padding:6px 10px">\u203B \u6295\u8CC7\u984D\u306F\u73FE\u5728\u306E\u8A2D\u5B9A\u70B9\u6570 (3\u9023\u5358' + b3 + "\u70B9+2\u9023\u5358" + b2 + "\u70B9+\u7A74\u8CB7\u3044\u76EE\u3001\u5404\xA5100) \u3067\u7B97\u51FA</div>";
+        html += "</div>";
+        el.innerHTML = html;
+      }
+    }
+    _renderDailyChart(daily);
+  }
+  function _renderDailyChart(daily) {
+    var ctx = document.getElementById("chartDaily");
+    if (!ctx) return;
+    var box = ctx.parentNode;
+    if (!daily || daily.length < 2) {
+      if (box) box.style.display = "none";
+      return;
+    }
+    if (box) box.style.display = "";
+    _g.capabilities.refresh("chart");
+    if (!_g.capabilities.has("chart")) {
+      _g._loadChartLib().then(function() {
+        _renderDailyChart(daily);
+      }, function() {
+        if (box)
+          box.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
+      });
+      return;
+    }
+    if (_g._dailyChart) {
+      try {
+        _g._dailyChart.destroy();
+      } catch (_) {
+      }
+    }
+    var last14 = daily.slice(-14);
+    _g._dailyChart = new _g.Chart(ctx, {
+      data: {
+        labels: last14.map(function(d) {
+          return _fmtDate(d.date);
+        }),
+        datasets: [
+          {
+            type: "bar",
+            label: "3\u9023\u5358\u7684\u4E2D\u7387",
+            data: last14.map(function(d) {
+              return Math.round(d.rate3 * 10) / 10;
+            }),
+            backgroundColor: "rgba(25,118,210,0.45)",
+            borderColor: "#1976D2",
+            borderWidth: 1,
+            borderRadius: 4,
+            yAxisID: "y"
+          },
+          {
+            type: "line",
+            label: "\u56DE\u53CE\u7387",
+            data: last14.map(function(d) {
+              return Math.round(d.recovery);
+            }),
+            borderColor: "#A56A00",
+            backgroundColor: "#A56A00",
+            borderWidth: 2,
+            pointRadius: 3,
+            tension: 0.25,
+            yAxisID: "y1"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        plugins: {
+          legend: { display: true, labels: { font: { size: 10 }, color: "#666", boxWidth: 12 } },
+          title: { display: true, text: "\u65E5\u5225 \u7684\u4E2D\u7387\u3068\u56DE\u53CE\u7387 (\u76F4\u8FD114\u65E5)", color: "#666", font: { size: 11 } }
+        },
+        scales: {
+          x: { ticks: { font: { size: 9 }, color: "#999" }, grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            position: "left",
+            title: { display: true, text: "\u7684\u4E2D\u7387%", font: { size: 9 }, color: "#1976D2" },
+            ticks: { font: { size: 9 }, color: "#999" },
+            grid: { color: "rgba(0,0,0,0.06)" }
+          },
+          y1: {
+            beginAtZero: true,
+            position: "right",
+            title: { display: true, text: "\u56DE\u53CE\u7387%", font: { size: 9 }, color: "#A56A00" },
+            ticks: { font: { size: 9 }, color: "#999" },
+            grid: { drawOnChartArea: false }
+          }
+        }
+      }
+    });
+  }
+  _g.calcDailyStats = calcDailyStats;
+  _g.renderDailyStats = renderDailyStats;
+})();
+
+/* BUILD:REPORTING_DAILY_STATS:END */
 
 // PD-13b: Chart.js 動的 import（成績タブ初表示時のみロード）
 //   インターネット切断時はキャッシュ（PD-2 SW cdn-v1）から提供

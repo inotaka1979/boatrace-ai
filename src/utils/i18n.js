@@ -44,6 +44,7 @@ const I18N_TABLES = {
     // page
     'page.top': 'トップ',
     'page.stats': '成績',
+    'page.daily': '日別',
     'page.backtest': '検証',
     'page.settings': '設定',
     // settings
@@ -132,6 +133,7 @@ const I18N_TABLES = {
     // page
     'page.top': 'Top',
     'page.stats': 'Stats',
+    'page.daily': 'Daily',
     'page.backtest': 'Backtest',
     'page.settings': 'Settings',
     // settings
@@ -221,6 +223,7 @@ const I18N_TABLES = {
     // page
     'page.top': '首页',
     'page.stats': '业绩',
+    'page.daily': '日报',
     'page.backtest': '回测',
     'page.settings': '设置',
     // settings
