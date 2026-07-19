@@ -38,8 +38,10 @@ def get(url: str, referer: str = "", xhr: bool = False, timeout: int = 20) -> tu
 
 
 def dump_tables(html: str) -> None:
+    waku_cls_re = r'class="[^"]*waku'
+    n_waku = len(re.findall(waku_cls_re, html))
     print(f"  len={len(html)} 一周={html.count('一周')} まわり足={html.count('まわり足')} "
-          f"周り足={html.count('周り足')} 直線={html.count('直線')} waku={len(re.findall(r'class=\"[^\"]*waku', html))}")
+          f"周り足={html.count('周り足')} 直線={html.count('直線')} waku={n_waku}")
     # th ラベル + class の一覧 (colmap 判定の材料)
     ths = re.findall(r"<th([^>]*)>([\s\S]*?)</th>", html)
     labs = []
@@ -51,7 +53,9 @@ def dump_tables(html: str) -> None:
     print(f"  th: {' '.join(labs[:24])}")
     # td.waku サンプル
     wm = re.findall(r'<td[^>]*class="[^"]*waku[^"]*"[^>]*>([\s\S]*?)</td>', html)[:8]
-    print(f"  td.waku 内容: {[re.sub(r'<[^>]*>|\\s+', '', x)[:6] for x in wm]}")
+    strip_re = re.compile(r"<[^>]*>|\s+")
+    samples = [strip_re.sub("", x)[:6] for x in wm]
+    print(f"  td.waku 内容: {samples}")
 
 
 def main() -> int:
