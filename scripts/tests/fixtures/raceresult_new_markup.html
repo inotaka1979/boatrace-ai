@@ -1,0 +1,32 @@
+<!-- 2026-07-19 boatrace.jp raceresult 現行 markup の縮小フィクスチャ。
+     probe (場2 戸田 1R, 20260719) の実採取 HTML を元に構成:
+     - 着順: 1 tbody = 1 着、td0=着順(全角) / td1=艇番 / td2=選手(登番+氏名) / td3=タイム
+     - 払戻: 券種ラベルは <td rowspan="2">(旧 markup の th ではない)、組番は
+       numberSet1 の span 分解、金額は &yen; エンティティ、2 行目は &nbsp; 埋め草。
+     - 3連複 tbody は同着 (rowspan 継続 2 本目に実データ) のケースを含む。 -->
+<table class="is-w495">
+<tbody><tr><td>１</td><td>4</td><td><span>4444</span>ヤマダ タロウ</td><td>1'50"3</td></tr></tbody>
+<tbody><tr><td>２</td><td>2</td><td><span>5555</span>スズキ ジロウ</td><td>1'51"0</td></tr></tbody>
+<tbody><tr><td>３</td><td>3</td><td><span>3333</span>サトウ サブロウ</td><td>1'52"1</td></tr></tbody>
+<tbody><tr><td>４</td><td>1</td><td><span>1111</span>タナカ イチロウ</td><td>1'53"0</td></tr></tbody>
+<tbody><tr><td>５</td><td>5</td><td><span>2222</span>イトウ ゴロウ</td><td>1'54"2</td></tr></tbody>
+<tbody><tr><td>６</td><td>6</td><td><span>6666</span>ワタナベ ロクロウ</td><td>1'55"8</td></tr></tbody>
+</table>
+<table class="is-w495 is-h292__3rdadd">
+<tbody>
+<tr class="is-p3-0"> <td rowspan="2">3連単</td> <td> <div class="numberSet1 is-small"> <div class="numberSet1_row"> <span class="numberSet1_number is-type4">4</span><span class="numberSet1_text">-</span><span class="numberSet1_number is-type2">2</span><span class="numberSet1_text">-</span><span class="numberSet1_number is-type3">3</span> </div> </div> </td> <td><span class="is-payout1">&yen;5,350</span></td> <td>25</td> </tr>
+<tr class="is-p3-0"> <td>&nbsp; </td> <td><span class="is-payout1">&nbsp;</span></td> <td>&nbsp;</td> </tr>
+</tbody>
+<tbody>
+<tr class="is-p3-0"> <td rowspan="2">3連複</td> <td> <div class="numberSet1 is-small"> <div class="numberSet1_row"> <span class="numberSet1_number is-type2">2</span><span class="numberSet1_text">=</span><span class="numberSet1_number is-type3">3</span><span class="numberSet1_text">=</span><span class="numberSet1_number is-type4">4</span> </div> </div> </td> <td><span class="is-payout1">&yen;1,020</span></td> <td>3</td> </tr>
+<tr class="is-p3-0"> <td> <div class="numberSet1 is-small"> <div class="numberSet1_row"> <span class="numberSet1_number is-type1">1</span><span class="numberSet1_text">=</span><span class="numberSet1_number is-type2">2</span><span class="numberSet1_text">=</span><span class="numberSet1_number is-type4">4</span> </div> </div> </td> <td><span class="is-payout1">&yen;980</span></td> <td>2</td> </tr>
+</tbody>
+<tbody>
+<tr class="is-p3-0"> <td rowspan="2">2連単</td> <td> <div class="numberSet1 is-small"> <div class="numberSet1_row"><span class="numberSet1_number is-type4">4</span><span class="numberSet1_text">-</span><span class="numberSet1_number is-type2">2</span> </div> </div> </td> <td><span class="is-payout1">&yen;1,930</span></td> <td>11</td> </tr>
+<tr class="is-p3-0"> <td>&nbsp; </td> <td><span class="is-payout1">&nbsp;</span></td> <td>&nbsp;</td> </tr>
+</tbody>
+<tbody>
+<tr class="is-p3-0"> <td rowspan="2">単勝</td> <td> <div class="numberSet1 is-small"> <div class="numberSet1_row"> <span class="numberSet1_number is-type4" nbsp="true">4</span> </div> </div> </td> <td><span class="is-payout1">&yen;860</span></td> <td> </td> </tr>
+<tr class="is-p3-0"> <td>&nbsp; </td> <td><span class="is-payout1">&nbsp;</span></td> <td> </td> </tr>
+</tbody>
+</table>

@@ -56,6 +56,25 @@ def _fetch_one_race(args: tuple[int, int, str]) -> tuple[int, int, dict | None, 
         return sid, rn, None, str(e)[:80]
 
 
+# 2026-07-19: boatrace.jp raceresult の markup 変更 (テーブル class 刷新 +
+#   払戻券種ラベル th→td rowspan) で旧 .table1 ベースのパースが全滅
+#   (実障害: 07-18 は archive 180 レース全て finished=0)。
+#   worker.js parseRaceresultHTML と同じ「全 tbody 走査」方式に書き換え:
+#   - 着順: 各 tbody 先頭 tr の td0=着順 / td1=艇番 (全角数字対応)
+#   - 払戻: 先頭セル (th/td どちらでも) が券種名ならラベル行、rowspan 継続行
+#     (同着) は直前ラベルを引き継ぐ。&nbsp; 埋め草行は組番に数字が無いので除外。
+_PAYOUT_LABELS = {
+    "3連単": "trifecta", "3連複": "trio", "2連単": "exacta",
+    "2連複": "quinella", "拡連複": "quinella_place", "単勝": "win", "複勝": "place",
+}
+
+
+def _zen_to_int(s: str) -> int | None:
+    """全角/半角数字文字列を int に。数値でなければ None。"""
+    t = str(s or "").strip().translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    return int(t) if t.isdigit() else None
+
+
 def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
     """raceresult ページの HTML から 1 レース分の結果を抽出する。
 
@@ -65,8 +84,8 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
         race_num: レース番号 (1..12)
 
     Returns:
-        Open API 互換の dict。決勝に至っていなければ
-        race_technique_number=None / boats=[] が返る。
+        Open API 互換の dict。結果未掲載/パース不完全なら
+        race_technique_number=None が返る (KV/archive を汚さない)。
     """
     result = {
         "race_stadium_number": stadium,
@@ -87,91 +106,8 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
 
     try:
         from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # 着順テーブル
-        result_table = soup.select_one(".table1")
-        if result_table:
-            rows = result_table.select("tbody tr")
-            for row in rows:
-                tds = row.select("td")
-                if len(tds) < 3:
-                    continue
-
-                place_text = tds[0].get_text(strip=True)
-                boat_text = tds[1].get_text(strip=True)
-
-                try:
-                    place = int(place_text)
-                    boat_num = int(boat_text)
-                except ValueError:
-                    continue
-
-                name = tds[2].get_text(strip=True) if len(tds) > 2 else ""
-
-                boat_data = {
-                    "racer_boat_number": boat_num,
-                    "racer_place_number": place,
-                    "racer_course_number": boat_num,
-                    "racer_name": name,
-                    "racer_start_timing": None,
-                    "racer_number": None,
-                }
-                result["boats"].append(boat_data)
-
-            if result["boats"]:
-                result["race_technique_number"] = 1
-
-        # 払戻金テーブル
-        payout_tables = soup.select(".table1")
-        for table in payout_tables:
-            text = table.get_text()
-            if "払戻" not in text and "配当" not in text:
-                continue
-
-            rows = table.select("tr")
-            for row in rows:
-                tds = row.select("td")
-                if len(tds) < 2:
-                    continue
-
-                label = row.select_one("th")
-                if not label:
-                    continue
-                label_text = label.get_text(strip=True)
-
-                combo_text = tds[0].get_text(strip=True)
-                amount_text = (
-                    tds[1]
-                    .get_text(strip=True)
-                    .replace(",", "")
-                    .replace("円", "")
-                    .replace("¥", "")
-                )
-
-                try:
-                    amount = int(re.search(r"\d+", amount_text).group())
-                except (ValueError, AttributeError):
-                    continue
-
-                payout_entry = {"combination": combo_text, "amount": amount}
-
-                if "3連単" in label_text:
-                    result["payouts"]["trifecta"].append(payout_entry)
-                elif "3連複" in label_text:
-                    result["payouts"]["trio"].append(payout_entry)
-                elif "2連単" in label_text:
-                    result["payouts"]["exacta"].append(payout_entry)
-                elif "2連複" in label_text:
-                    result["payouts"]["quinella"].append(payout_entry)
-                elif "単勝" in label_text:
-                    result["payouts"]["win"].append(payout_entry)
-                elif "複勝" in label_text:
-                    result["payouts"]["place"].append(payout_entry)
-
     except ImportError:
-        # BeautifulSoupなしのフォールバック
+        # BeautifulSoupなしのフォールバック (従来挙動を維持)
         places = re.findall(r"<td[^>]*>(\d)</td>", html)
         if len(places) >= 6:
             for i in range(6):
@@ -186,6 +122,75 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
                     }
                 )
             result["race_technique_number"] = 1
+        return result
+
+    soup = BeautifulSoup(html, "html.parser")
+    places_seen: set[int] = set()
+    boats_seen: set[int] = set()
+
+    for tbody in soup.find_all("tbody"):
+        rows = tbody.find_all("tr")
+        if not rows:
+            continue
+
+        # (a) 着順 tbody: 1 tbody = 1 着 (先頭 tr の td0=着順, td1=艇番)
+        tds = rows[0].find_all("td")
+        if len(tds) >= 3:
+            place = _zen_to_int(tds[0].get_text(strip=True))
+            boat_num = _zen_to_int(tds[1].get_text(strip=True))
+            if (place is not None and boat_num is not None
+                    and 1 <= place <= 6 and 1 <= boat_num <= 6
+                    and place not in places_seen and boat_num not in boats_seen):
+                places_seen.add(place)
+                boats_seen.add(boat_num)
+                name = tds[2].get_text(" ", strip=True)
+                name = re.sub(r"\s*\d{4,5}\s*", "", name).strip()
+                result["boats"].append(
+                    {
+                        "racer_boat_number": boat_num,
+                        "racer_place_number": place,
+                        "racer_course_number": boat_num,
+                        "racer_name": name,
+                        "racer_start_timing": None,
+                        "racer_number": None,
+                    }
+                )
+                continue
+
+        # (b) 払戻 tbody
+        text = tbody.get_text()
+        if not any(k in text for k in _PAYOUT_LABELS):
+            continue
+        current = None
+        for row in rows:
+            cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
+            if not cells:
+                continue
+            first = re.sub(r"\s+", "", cells[0])
+            if first in _PAYOUT_LABELS:
+                current = _PAYOUT_LABELS[first]
+                combo = cells[1] if len(cells) > 1 else ""
+                amount_txt = cells[2] if len(cells) > 2 else ""
+            else:
+                combo = cells[0]
+                amount_txt = cells[1] if len(cells) > 1 else ""
+            if not current:
+                continue
+            combo = re.sub(r"\s+", "", combo)
+            if not re.search(r"\d", combo):
+                continue  # &nbsp; 埋め草行
+            m = re.search(r"\d[\d,]*", amount_txt.replace("¥", "").replace("円", ""))
+            if not m:
+                continue
+            amount = int(m.group().replace(",", ""))
+            if amount <= 0:
+                continue
+            result["payouts"][current].append({"combination": combo, "amount": amount})
+
+    # sanity check (worker と同一): 上位 3 着 + 1着 が揃って初めて確定扱い
+    has_first = any(b["racer_place_number"] == 1 for b in result["boats"])
+    if len(result["boats"]) >= 3 and has_first:
+        result["race_technique_number"] = 1
 
     return result
 

@@ -427,35 +427,49 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
     }
   }
 
-  // 払戻テーブル: tbody 内の <tr> で <th> + <td>×2 を含むもの
+  // 払戻テーブル (2026-07-19 markup 変更対応):
+  //   旧: <tr><th>3連単</th><td>組番</td><td>金額</td></tr>
+  //   新: <tr><td rowspan="2">3連単</td><td><div class="numberSet1">組番spans</div></td>
+  //        <td><span class="is-payout1">&yen;1,180</span></td><td>人気</td></tr>
+  //   券種ラベルが th→td になり旧パーサは全滅 (openapi ミラーに載る場は base で
+  //   隠れ、ミラー欠落場だけ「着順のみ・払戻なし」が露呈する実障害)。
+  //   th/td どちらでも「先頭セルが券種名ならラベル行」と解釈し、rowspan 継続行
+  //   (同着) は直前ラベルを引き継ぐ。
+  const PAYOUT_LABELS = {
+    '3連単': 'trifecta', '3連複': 'trio', '2連単': 'exacta',
+    '2連複': 'quinella', '拡連複': 'quinella_place', '単勝': 'win', '複勝': 'place',
+  };
   for (const tbody of tbodies) {
     if (tbody.indexOf('払戻') < 0 && tbody.indexOf('配当') < 0
-        && tbody.indexOf('連単') < 0 && tbody.indexOf('単勝') < 0) continue;
+        && tbody.indexOf('連単') < 0 && tbody.indexOf('連複') < 0
+        && tbody.indexOf('単勝') < 0 && tbody.indexOf('複勝') < 0) continue;
     const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
     let trM;
+    let currentKey = null;   // rowspan 継続行 (同着) 用
     while ((trM = trRe.exec(tbody)) !== null) {
       const tr = trM[1];
-      const thM = /<th[^>]*>([\s\S]*?)<\/th>/.exec(tr);
-      if (!thM) continue;
-      const label = stripTags(thM[1]);
-      const tdRe = /<td[^>]*>([\s\S]*?)<\/td>/g;
-      const tds = [];
+      const cellRe = /<(th|td)[^>]*>([\s\S]*?)<\/\1>/g;
+      const cells = [];
       let mm;
-      while ((mm = tdRe.exec(tr)) !== null) tds.push(stripTags(mm[1]));
-      if (tds.length < 2) continue;
-      const combo = tds[0];
-      const amountTxt = tds[1].replace(/[,円¥\s&;yen]/g, '');
-      const amountM = /\d+/.exec(amountTxt);
+      while ((mm = cellRe.exec(tr)) !== null) cells.push(stripTags(mm[2]));
+      if (!cells.length) continue;
+      let combo, amountTxt;
+      const first = cells[0].replace(/\s+/g, '');
+      if (PAYOUT_LABELS[first]) {
+        currentKey = PAYOUT_LABELS[first];
+        combo = cells[1]; amountTxt = cells[2];
+      } else {
+        // ラベル無し行: rowspan 継続 (同着の 2 本目) or 空行
+        combo = cells[0]; amountTxt = cells[1];
+      }
+      if (!currentKey || combo == null || amountTxt == null) continue;
+      combo = combo.replace(/\s+/g, '');   // "1 - 3 - 5" → "1-3-5"
+      if (!/\d/.test(combo)) continue;      // &nbsp; 埋め草行を除外
+      const amountM = /\d[\d,]*/.exec(String(amountTxt).replace(/[¥\s]|&yen;|円/g, ''));
       if (!amountM) continue;
-      const amount = parseInt(amountM[0]);
-      const entry = { combination: combo, amount: amount };
-      if (label.indexOf('3連単') >= 0) out.payouts.trifecta.push(entry);
-      else if (label.indexOf('3連複') >= 0) out.payouts.trio.push(entry);
-      else if (label.indexOf('2連単') >= 0) out.payouts.exacta.push(entry);
-      else if (label.indexOf('2連複') >= 0) out.payouts.quinella.push(entry);
-      else if (label.indexOf('拡連複') >= 0) out.payouts.quinella_place.push(entry);
-      else if (label.indexOf('単勝') >= 0) out.payouts.win.push(entry);
-      else if (label.indexOf('複勝') >= 0) out.payouts.place.push(entry);
+      const amount = parseInt(amountM[0].replace(/,/g, ''));
+      if (!(amount > 0)) continue;
+      out.payouts[currentKey].push({ combination: combo, amount: amount });
     }
   }
   return out;

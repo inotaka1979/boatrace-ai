@@ -200,6 +200,12 @@ step "Status banner freshness semantics (rt-fix3)" \
 step "Day label extraction (rt-fix3)" \
      "python3 -m unittest scripts.tests.test_day_label -v"
 
+# 21) 2026-07-19: raceresult markup 変更 (払戻ラベル th→td rowspan) の回帰固定
+step "raceresult parse — worker.js (2026-07 markup)" \
+     "node scripts/tests/test_raceresult_parse.js"
+step "raceresult parse — scrape_results.py (2026-07 markup)" \
+     "python3 -m unittest scripts.tests.test_raceresult_parse -v"
+
 echo "============================================================"
 echo "Result: ${PASS} passed, ${FAIL} failed"
 echo "============================================================"

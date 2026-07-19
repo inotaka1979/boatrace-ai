@@ -14,10 +14,13 @@ draft PR + run_all.sh への一時ステップ追加でも代替できる。)
 - 唐津(23): yosou-cyokuzen ページ (kiryu 系フォーマット)。
 - 月間日程パーサ (2026-07-12 修正済み): 日付軸ズレ + 未対応グレード脱落 →
   ヘッダ先頭日アンカー + 未知 is-gradeColor* フォールバック (test_schedule_axis.py)。
-- 上流 openapi previews 破損 (2026-07-17 対処済み): previews/v2/today.json が
-  「programs の中身を results キーで包んだ」ファイルを配信 (サイズが programs と
-  1 バイト差で確認)。Worker が壊れた base を合成 previews に置換、クライアントは
-  _filterStalePreviews で空正規化。上流が直っても両対応で無害。
+- 上流 openapi previews 破損 (2026-07-17 対処済み): programs の中身が results
+  キーで配信。Worker が合成 previews に置換、クライアントは空正規化。
+- raceresult markup 変更 (2026-07-19 対処済み): 払戻券種ラベルが th→td rowspan、
+  組番が numberSet1 span 分解、テーブル class 刷新 (.table1 廃止)。worker.js /
+  scrape_results.py とも新旧両対応に書換 (test_raceresult_parse.{js,py})。
+  **注意: ページ内の「払戻金」「レース結果」はナビにも出るため、文字列存在
+  チェックでの死活判定は偽陽性になる。**
 - 残り未調査: 丸亀(15) のオリジナル展示 (開催日に実データで確認予定)。
 """
 import sys
