@@ -1451,6 +1451,7 @@ var ACTION_HANDLERS = {
   },
   showPage:                function(el){ if(typeof showPage==='function') showPage(el.dataset.argPage); },
   showDetailTab:           function(el){ if(typeof _showDetailTab==='function') _showDetailTab(el.dataset.argTab); },
+  setRacesView:            function(el){ if(typeof _setRacesView==='function') _setRacesView(el.dataset.argView); },
   toggleRaceWatched:       function(el){ if(typeof _toggleRaceWatched==='function') _toggleRaceWatched(el.dataset.argSid, el.dataset.argRn); },
   enableNotifyPermission:  function(){ if(typeof _enableNotifyPermission==='function') _enableNotifyPermission(); },
   toggleCOI:               function(){ if(typeof _toggleCOI==='function') _toggleCOI(); },
@@ -3863,7 +3864,11 @@ var _backfillTimer = null;
       }
     });
     html += "</tbody></table>";
-    document.getElementById("racesList").innerHTML = html;
+    if (typeof _applyRacesView === "function") {
+      _applyRacesView(sid, html);
+    } else {
+      document.getElementById("racesList").innerHTML = html;
+    }
     document.getElementById("raceSummary").innerHTML = "";
     _prefetchLiveOddsForUpcoming(sid);
     showPage("races");
@@ -3909,6 +3914,7 @@ var _backfillTimer = null;
 })();
 
 /* BUILD:REPORTING_STADIUM_PAGES:END */
+
 
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
 //   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約

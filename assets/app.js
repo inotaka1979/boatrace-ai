@@ -1937,6 +1937,7 @@ var ACTION_HANDLERS = {
   },
   showPage:                function(el){ if(typeof showPage==='function') showPage(el.dataset.argPage); },
   showDetailTab:           function(el){ if(typeof _showDetailTab==='function') _showDetailTab(el.dataset.argTab); },
+  setRacesView:            function(el){ if(typeof _setRacesView==='function') _setRacesView(el.dataset.argView); },
   toggleRaceWatched:       function(el){ if(typeof _toggleRaceWatched==='function') _toggleRaceWatched(el.dataset.argSid, el.dataset.argRn); },
   enableNotifyPermission:  function(){ if(typeof _enableNotifyPermission==='function') _enableNotifyPermission(); },
   toggleCOI:               function(){ if(typeof _toggleCOI==='function') _toggleCOI(); },
@@ -8281,7 +8282,11 @@ function racerBadges(boat,form,divergence){
       }
     });
     html += "</tbody></table>";
-    document.getElementById("racesList").innerHTML = html;
+    if (typeof _applyRacesView === "function") {
+      _applyRacesView(sid, html);
+    } else {
+      document.getElementById("racesList").innerHTML = html;
+    }
     document.getElementById("raceSummary").innerHTML = "";
     _prefetchLiveOddsForUpcoming(sid);
     showPage("races");
@@ -8327,6 +8332,112 @@ function racerBadges(boat,form,divergence){
 })();
 
 /* BUILD:REPORTING_STADIUM_PAGES:END */
+
+/* BUILD:REPORTING_STADIUM_RESULTS:START */
+"use strict";
+(() => {
+  // ../src/reporting/stadium_results.js
+  function _getRacesView() {
+    return globalThis._racesView === "results" ? "results" : "predict";
+  }
+  function _syncRacesViewToggle() {
+    var v = _getRacesView();
+    var btns = document.querySelectorAll("#racesViewToggle .races-view-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].getAttribute("data-races-view") === v;
+      btns[i].classList.toggle("active", on);
+      btns[i].setAttribute("aria-selected", on ? "true" : "false");
+    }
+  }
+  function _setRacesView(view) {
+    globalThis._racesView = view === "results" ? "results" : "predict";
+    _syncRacesViewToggle();
+    if (typeof currentStadium !== "undefined" && currentStadium != null && typeof openStadium === "function") {
+      openStadium(currentStadium);
+    }
+  }
+  function _rlBadge(num) {
+    return '<span class="rl-badge" style="background:' + BOAT_COLORS[num] + ";color:" + BOAT_TEXT[num] + ";border:1px solid " + (num === 1 ? "#ccc" : "transparent") + '">' + num + "</span>";
+  }
+  function _rlCompactName(name) {
+    if (!name) return "";
+    var parts = String(name).split(/[　\s]+/).filter(Boolean);
+    if (parts.length <= 1) return parts[0] || "";
+    return parts[0] + " " + parts[parts.length - 1];
+  }
+  function _renderStadiumResultsHtml(sid) {
+    var prog = typeof programData !== "undefined" && programData ? programData[sid] : null;
+    var resAll = typeof resultData !== "undefined" && resultData ? resultData[sid] : null;
+    var rnSet = {};
+    if (prog) for (var k in prog) rnSet[k] = 1;
+    if (resAll) for (var k2 in resAll) rnSet[k2] = 1;
+    var rns = Object.keys(rnSet).sort(function(a, b) {
+      return parseInt(a) - parseInt(b);
+    });
+    if (rns.length === 0) return '<div class="card">\u7D50\u679C\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093</div>';
+    var jstNow = new Date(Date.now() + 9 * 36e5);
+    var nowMin = jstNow.getUTCHours() * 60 + jstNow.getUTCMinutes();
+    var finishedCount = 0;
+    var rows = "";
+    rns.forEach(function(rn) {
+      var race = prog ? prog[rn] : null;
+      var res = resAll ? resAll[rn] : null;
+      var finished = !!(res && res.isFinished);
+      var closedAt = race && race.race_closed_at ? String(race.race_closed_at) : "";
+      var closedTime = closedAt ? (closedAt.split(" ")[1] || "").slice(0, 5) : "";
+      rows += '<div class="result-row" data-action="openRace" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '" role="button" tabindex="0">';
+      rows += '<div class="rl-head"><span class="rl-rn">' + rn + 'R</span><span class="rl-time">' + closedTime + "</span></div>";
+      if (finished) {
+        finishedCount++;
+        var places = (Array.isArray(res.results) ? res.results : []).filter(function(p) {
+          return p && Number.isFinite(p.place) && p.racer_boat_number;
+        }).sort(function(a, b) {
+          return a.place - b.place;
+        }).slice(0, 3);
+        var fin = '<div class="rl-fin">';
+        places.forEach(function(p, i) {
+          if (i > 0) fin += '<span class="rl-sep">-</span>';
+          fin += '<span class="rl-boat">' + _rlBadge(p.racer_boat_number) + '<span class="rl-name">' + escText(_rlCompactName(p.racer_name)) + "</span></span>";
+        });
+        fin += "</div>";
+        rows += fin;
+        var payout = null;
+        if (res.refund && Array.isArray(res.refund.trifecta) && res.refund.trifecta[0]) {
+          var tri = res.refund.trifecta[0];
+          payout = tri.amount != null ? tri.amount : tri.payout;
+        }
+        rows += '<div class="rl-pay">' + (payout != null ? "\xA5" + Number(payout).toLocaleString() : "\u2014") + "</div>";
+        var tech = res.technique_number ? TECHNIQUE[res.technique_number] || "" : "";
+        rows += '<div class="rl-tech">' + escText(tech) + "</div>";
+      } else {
+        var onSale = false;
+        if (closedTime) {
+          var hp = closedTime.split(":");
+          var cm = parseInt(hp[0], 10) * 60 + parseInt(hp[1], 10);
+          onSale = Number.isFinite(cm) && cm > nowMin;
+        }
+        rows += '<div class="rl-fin rl-pending">' + (onSale ? "\u767A\u58F2\u4E2D" : "\u7DE0\u5207\u5F8C") + "</div>";
+        rows += '<div class="rl-pay"></div>';
+        rows += '<div class="rl-tech rl-unconf">\u672A\u78BA\u5B9A</div>';
+      }
+      rows += "</div>";
+    });
+    return '<div class="rl-summary">\u78BA\u5B9A ' + finishedCount + " / " + rns.length + ' R</div><div class="result-list">' + rows + "</div>";
+  }
+  function _applyRacesView(sid, predictHtml) {
+    _syncRacesViewToggle();
+    var el = document.getElementById("racesList");
+    if (!el) return;
+    el.innerHTML = _getRacesView() === "results" ? _renderStadiumResultsHtml(sid) : predictHtml;
+  }
+  globalThis._applyRacesView = _applyRacesView;
+  globalThis._getRacesView = _getRacesView;
+  globalThis._setRacesView = _setRacesView;
+  globalThis._syncRacesViewToggle = _syncRacesViewToggle;
+  globalThis._renderStadiumResultsHtml = _renderStadiumResultsHtml;
+})();
+
+/* BUILD:REPORTING_STADIUM_RESULTS:END */
 
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
 //   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約

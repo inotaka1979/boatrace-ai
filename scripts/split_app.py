@@ -239,6 +239,8 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_L2_FEATURES',
     # 学習バッチ (results 受信時のみ) — critical 起動には不要
     'ANALYSIS_LEARNING',
+    # マクール風 結果一覧ビュー — 場一覧の「結果」トグル選択時のみ。critical 起動には不要。
+    'REPORTING_STADIUM_RESULTS',
     # レース詳細 — 詳細を開いた時のみ (race_detail.js orchestrator + boats + prediction)
     'REPORTING_RACE_DETAIL',
     'REPORTING_RACE_DETAIL_BOATS',
@@ -275,7 +277,9 @@ REST_DETAIL_FUNCTION_NAMES: set[str] = set()
 rest_bundle_extracted: list[str] = []
 rest_stats_bundles: list[str] = []    # Phase 2 完遂続編: stats lazy sub-chunk
 rest_detail_bundles: list[str] = []   # Phase 2 完遂続編: race detail lazy sub-chunk
-for marker in REST_ONLY_BUILD_MARKERS:
+# sorted() で反復順を固定 — set 反復は PYTHONHASHSEED でプロセス毎に変わり、
+#   rest bundle の block 連結順 (= 出力) が非決定的になって build:check 再現性を壊すため。
+for marker in sorted(REST_ONLY_BUILD_MARKERS):
     start_tag = f'/* BUILD:{marker}:START */'
     end_tag = f'/* BUILD:{marker}:END */'
     s = src_remaining.find(start_tag)

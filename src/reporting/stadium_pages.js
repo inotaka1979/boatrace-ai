@@ -406,7 +406,14 @@ function openStadium(sid) {
   });
 
   html += '</tbody></table>';
-  document.getElementById('racesList').innerHTML = html;
+  // 予想 / 結果一覧 切替 (マクール風の結果ビュー)。トグル同期と結果描画は
+  //   rest bundle (src/reporting/stadium_results.js) の _applyRacesView に委譲。
+  //   rest 未 load 時は従来の AI予想ビューにフォールバック。
+  if (typeof _applyRacesView === 'function') {
+    _applyRacesView(sid, html);
+  } else {
+    document.getElementById('racesList').innerHTML = html;
+  }
   document.getElementById('raceSummary').innerHTML = '';
 
   // rt-fix2 P1-A' (2026-06-11): 締切が近いレースの実時間オッズを先回り取得。
