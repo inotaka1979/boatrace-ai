@@ -893,3 +893,35 @@ kvWrite 全文比較で CPU 10ms 超過の cron kill リスク。詳細: docs/RT
 
 検証: 34/34 テスト PASS、build:check 緑、tsc/eslint/prettier 0 errors、
 critical budget 96KB→98KB（P0 ヘルパー +1.2KB 分）。
+
+## 修正履歴 (2026-07-22: マクール風「結果一覧」ビュー追加)
+
+各場のレース一覧ページに「🎯 AI予想 / 🏁 結果一覧」トグルを追加。結果一覧は
+マクール (sp.macour.jp) の結果ページ風に、1R〜12R を縦に並べて各行に
+「着順 1-2-3（艇番カラーバッジ + 選手名短縮）/ 三連単配当 / 決まり手」を表示。
+未確定レースは締切前=発売中 / 締切後 と「未確定」を表示。
+
+### 実装
+- index.html: `#racesViewToggle`（`.races-view-btn` × 2、data-action=setRacesView）と
+  `.result-list` / `.result-row`（CSS grid 4 列）系のスタイルを追加。
+- src/reporting/stadium_results.js（新規・rest bundle）: `_renderStadiumResultsHtml`
+  （programData ∪ resultData を R 順に突合）、`_getRacesView` / `_setRacesView` /
+  `_syncRacesViewToggle` / `_applyRacesView`（openStadium からの委譲エントリ）。
+- src/reporting/stadium_pages.js（critical・openStadium）: 描画直前に
+  `_applyRacesView(sid, html)` を typeof guard 付きで委譲。rest 未 load 時は
+  従来の AI予想テーブルにフォールバック。
+- app.js: ACTION_HANDLERS.setRacesView を追加。
+- build/build.mjs: REPORTING_STADIUM_RESULTS モジュールを登録。
+- scripts/split_app.py: REPORTING_STADIUM_RESULTS を REST_ONLY_BUILD_MARKERS に追加
+  （critical 予算保護のため結果ビューは rest bundle に分離）。
+
+### 副次修正: split の非決定性を解消
+`REST_ONLY_BUILD_MARKERS`（set）の反復順が PYTHONHASHSEED でプロセス毎に変わり、
+rest bundle の連結順＝出力が非決定的になって build:check 再現性を壊していた既存問題を、
+`sorted()` で反復順を固定して解消（app-rest / -stats / -detail が毎ビルド書換だったのを撲滅）。
+
+### 検証
+- 45/45 テスト PASS、build:check EXIT=0（PYTHONHASHSEED ランダム 3 回でも全 files matches）、
+  tsc 0 errors、eslint 0 errors、追加ファイルは prettier 準拠。
+- critical budget OK（99714B / 99800B、結果ビューは rest 分離で critical 微増のみ）。
+- 本日実データ（data/results/today.json）で 12R 分の着順 / 配当 / 決まり手描画を確認。

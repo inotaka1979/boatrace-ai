@@ -145,6 +145,7 @@ export default [
       'src/reporting/race_detail_boats.js',
       'src/reporting/race_detail_prediction.js',
       'src/reporting/race_detail_bets.js',
+      'src/reporting/stadium_results.js',
     ],
     languageOptions: {
       ecmaVersion: 2022,
