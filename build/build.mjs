@@ -335,7 +335,10 @@ async function main() {
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
     // 2026-07-19: 20000 → 27000。日別成績ページ (calcDailyStats + renderDailyStats +
     //   複合チャート ~6KB) を stats sub-chunk に追加 (lazy load、起動 TBT に影響なし)。
-    { path: 'assets/app-rest-stats.min.js',  max: 27000, level: 'warn' },  // 成績 + バックテスト + 日別 sub-chunk
+    // 2026-07-22: 27000 → 29000。日別成績の「飛び飛び」欠落を解消する archive backfill
+    //   (_backfillDailyActualsFromArchive + _applyHitAndPayout、実測 +1.7KB) を追加。
+    //   本 chunk は成績/日別タブ open 時のみ lazy load で起動 LCP/TBT に影響なし。
+    { path: 'assets/app-rest-stats.min.js',  max: 29000, level: 'warn' },  // 成績 + バックテスト + 日別 sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
     { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
