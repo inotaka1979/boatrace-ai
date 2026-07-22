@@ -333,7 +333,82 @@
     var s = String(yyyymmdd);
     return s.length === 8 ? s.slice(4, 6) + "/" + s.slice(6) : s;
   }
+  var _dailyArchiveBackfillRan = false;
+  function _applyHitAndPayout(h, res) {
+    if (h.actual && h.actual.length >= 3) {
+      var a3 = h.actual[0] + "-" + h.actual[1] + "-" + h.actual[2];
+      var a2 = h.actual[0] + "-" + h.actual[1];
+      h.trifecta_hit = !!(h.trifecta_bets && h.trifecta_bets.indexOf(a3) >= 0);
+      h.exacta_hit = !!(h.exacta_bets && h.exacta_bets.indexOf(a2) >= 0);
+      h.ana_hit = !!(h.ana_bets && h.ana_bets.indexOf(a3) >= 0);
+    }
+    var rf = res.refund;
+    if (!rf) return;
+    var tri = rf.trifecta && rf.trifecta[0];
+    var exa = rf.exacta && rf.exacta[0];
+    if (h.trifecta_hit && tri && !h.payout3) h.payout3 = tri.payout || tri.amount || 0;
+    if (h.exacta_hit && exa && !h.payout2) h.payout2 = exa.payout || exa.amount || 0;
+    if (h.ana_hit && tri && !h.ana_payout) h.ana_payout = tri.payout || tri.amount || 0;
+  }
+  async function _backfillDailyActualsFromArchive() {
+    var history = _g.safeParse("boatrace_history", []);
+    if (!Array.isArray(history) || !history.length) return false;
+    var today = typeof _g.todayStr === "function" ? _g.todayStr() : "";
+    var need = {};
+    history.forEach(function(h) {
+      if (!h || !h.date || h.date === today) return;
+      if (h.actual && h.actual.length) return;
+      need[h.date] = true;
+    });
+    var dates = Object.keys(need).sort().slice(-14);
+    if (!dates.length || typeof _g.fetchWithFallback !== "function" || typeof _g.indexResults !== "function") {
+      return false;
+    }
+    var apiBase = _g.API_BASE || "https://boatraceopenapi.github.io";
+    var changed = false;
+    for (var di = 0; di < dates.length; di++) {
+      var ymd = String(dates[di]);
+      if (ymd.length !== 8) continue;
+      try {
+        var raw = await _g.fetchWithFallback(apiBase + "/results/v2/" + ymd.slice(0, 4) + "/" + ymd + ".json");
+        var idx = raw ? _g.indexResults(raw) : null;
+        if (idx) {
+          history.forEach(function(h) {
+            if (!h || h.date !== ymd || h.actual && h.actual.length) return;
+            var sres = idx[String(h.stadium)];
+            var res = sres && sres[String(h.race)];
+            if (!res || !res.isFinished || !res.results || !res.results.length) return;
+            var rdate = (res.race_date || "").replace(/-/g, "");
+            if (rdate && rdate !== h.date) return;
+            h.actual = res.results.slice().sort(function(a, b) {
+              return a.place - b.place;
+            }).map(function(r) {
+              return r.racer_boat_number;
+            });
+            _applyHitAndPayout(h, res);
+            changed = true;
+          });
+        }
+      } catch (_) {
+      }
+      await new Promise(function(r) {
+        setTimeout(r, 500);
+      });
+    }
+    if (changed) _g.safeSet("boatrace_history", history);
+    return changed;
+  }
   function renderDailyStats() {
+    if (!_dailyArchiveBackfillRan) {
+      _dailyArchiveBackfillRan = true;
+      _backfillDailyActualsFromArchive().then(
+        function(changed) {
+          if (changed) renderDailyStats();
+        },
+        function() {
+        }
+      );
+    }
     var history = _g.safeParse("boatrace_history", []);
     var st = _g.settings || {};
     var b3 = parseInt(st.betCount3) || 10;
@@ -386,12 +461,15 @@
     if (box) box.style.display = "";
     _g.capabilities.refresh("chart");
     if (!_g.capabilities.has("chart")) {
-      _g._loadChartLib().then(function() {
-        _renderDailyChart(daily);
-      }, function() {
-        if (box)
-          box.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
-      });
+      _g._loadChartLib().then(
+        function() {
+          _renderDailyChart(daily);
+        },
+        function() {
+          if (box)
+            box.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
+        }
+      );
       return;
     }
     if (_g._dailyChart) {
