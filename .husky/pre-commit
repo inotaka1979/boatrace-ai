@@ -15,6 +15,14 @@ npm run lint
 # 2) Type check (~5 秒、jsconfig.json で 5 ファイル限定)
 npm run type
 
-# 3) Build reproducibility (~5-15 秒、esbuild + split_app.py)
-#    PJ Phase の致命バグ (critical → rest cross-layer call) の再発を検出する Epic 27 lint も含む
-cd build && node build.mjs --check
+# 3) Build reproducibility (~5-15 秒、split_app.py + esbuild)
+#    PJ Phase の致命バグ (critical → rest cross-layer call) の再発を検出する Epic 27 lint も含む。
+#
+#    重要: `node build.mjs --check` 単体ではなく `npm run build:check` を使う。
+#    build.mjs は marker 注入を app.js に対して行うが、split は prebuild で走るため、
+#    src/ モジュール編集後の初回ビルドでは「app.js に注入済みだが split チャンク
+#    (app-rest*.js) は旧内容」という不整合が起こりうる。`node build.mjs --check` 単体は
+#    split を回さないためこの不整合を見逃し、旧チャンクを配信物として commit してしまう
+#    (実際に日別成績 backfill 修正で発生)。`npm run build:check` は prebuild:check で
+#    split を再実行してから照合するため、この stale チャンクを確実に検出する。
+npm run build:check
