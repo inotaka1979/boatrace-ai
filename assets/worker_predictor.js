@@ -1374,7 +1374,9 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var evOpt = {
       evMin: modeEvMin != null ? modeEvMin : defEvMin,
       maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+      // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
+      //   誤差がある前提では full/half より現実的。
+      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -2131,10 +2133,13 @@ function fetchWithFallback(url){
 
 
 function selectBetsByEV(probs, odds, opt){
+  // S-04 FIX (2026-07-26): app.js の selectBetsByEV と同期（Kelly 安全化）。
   opt = opt || {};
+  var K = (typeof TUNING !== 'undefined' && TUNING.KELLY) ? TUNING.KELLY : {};
   var evMin = opt.evMin != null ? opt.evMin : 1.15;
   var maxBets = opt.maxBets != null ? opt.maxBets : 8;
-  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : 0.5;
+  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac
+                : (K.DEFAULT_FRAC != null ? K.DEFAULT_FRAC : 0.25);
   var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
   if(!probs || !odds) return [];
   var ranked = Object.keys(probs)
@@ -2148,21 +2153,24 @@ function selectBetsByEV(probs, odds, opt){
   // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
   ranked.forEach(function(b){
     var bn = b.odds - 1;
-    if(bn <= 0){ b.stakeRatio = 0; b.stakeYen = 0; return; }
+    if(bn <= 0){ b.stakeRatio = 0; return; }
     var f = (bn * b.prob - (1 - b.prob)) / bn;
     b.stakeRatio = Math.max(0, f * kellyFrac);
   });
-  // PB-9: 排他事象 Kelly — 同一レース内 3連単 N 点は最大 1 点しか当たらない
-  //       単純合計 ∑f_i は資金全投入を超える可能性があるため、
-  //       上限 KELLY.MAX_STAKE_RATIO（=1.0）を超えたら比例縮小
+  // PB-9: 排他事象 Kelly — 上限 MAX_STAKE_RATIO（=0.05）を超えたら比例縮小。
   var sumRatio = ranked.reduce(function(s,b){return s + (b.stakeRatio||0);}, 0);
-  var maxRatio = (TUNING && TUNING.KELLY) ? TUNING.KELLY.MAX_STAKE_RATIO : 1.0;
+  var maxRatio = K.MAX_STAKE_RATIO != null ? K.MAX_STAKE_RATIO : 0.05;
   if(sumRatio > maxRatio && sumRatio > 0){
     var scale = maxRatio / sumRatio;
     ranked.forEach(function(b){ b.stakeRatio *= scale; });
   }
+  // S-04: MIN_STAKE_RATIO 未満は「賭けない」= 除外、¥100 床を撤去。
+  var minRatio = K.MIN_STAKE_RATIO != null ? K.MIN_STAKE_RATIO : 0.005;
+  ranked = ranked.filter(function(b){ return (b.stakeRatio||0) >= minRatio; });
+  var suppressed = K.ENABLE_STAKE_SUGGESTION !== true;
   ranked.forEach(function(b){
-    b.stakeYen = Math.max(100, Math.round(bankroll * b.stakeRatio / 100) * 100);
+    b.stakeYen = Math.round(bankroll * b.stakeRatio / 100) * 100;   // 床なし
+    b.stakeSuppressed = suppressed;
   });
   return ranked;
 }

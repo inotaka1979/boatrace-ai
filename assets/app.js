@@ -1278,11 +1278,15 @@ var TUNING = Object.freeze({
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
-  // EV / Kelly（X1 設計）
+  // EV / Kelly（X1 設計 / S-04 2026-07-26 安全化）
   KELLY: Object.freeze({
-    DEFAULT_FRAC: 0.5,            // half-Kelly を既定（過大ベット抑止）
-    MIN_FRAC: 0.0,                // 最低 fraction（負ベット禁止）
-    MAX_STAKE_RATIO: 1.0,         // bankroll 比 stake 上限
+    DEFAULT_FRAC: 0.25,          // quarter-Kelly（確率推定に誤差がある前提の現実解）
+    MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
+    MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限（旧 1.0 は破産リスク）
+    MIN_STAKE_RATIO: 0.005,      // これ未満の f* は「賭けない」= リストから落とす
+    // 賭け金推奨そのものの feature flag。オフライン履歴バックテスト (PR-11) で
+    //   edge が確認できるまで既定 OFF。OFF の間は EV / 乖離を「情報」表示に留める。
+    ENABLE_STAKE_SUGGESTION: false,
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -6404,7 +6408,9 @@ var _workerHeavyLoaded = false;
     var evOpt = {
       evMin: modeEvMin != null ? modeEvMin : defEvMin,
       maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+      // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
+      //   誤差がある前提では full/half より現実的。
+      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -6659,9 +6665,11 @@ function comparePredictions(progPred,livePred){
  */
 function selectBetsByEV(probs, odds, opt){
   opt = opt || {};
+  var K = (typeof TUNING !== 'undefined' && TUNING.KELLY) ? TUNING.KELLY : {};
   var evMin = opt.evMin != null ? opt.evMin : 1.15;
   var maxBets = opt.maxBets != null ? opt.maxBets : 8;
-  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : 0.5;
+  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac
+                : (K.DEFAULT_FRAC != null ? K.DEFAULT_FRAC : 0.25);
   var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
   if(!probs || !odds) return [];
   var rankedAll = Object.keys(probs)
@@ -6682,21 +6690,29 @@ function selectBetsByEV(probs, odds, opt){
   // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
   ranked.forEach(function(b){
     var bn = b.odds - 1;
-    if(bn <= 0){ b.stakeRatio = 0; b.stakeYen = 0; return; }
+    if(bn <= 0){ b.stakeRatio = 0; return; }
     var f = (bn * b.prob - (1 - b.prob)) / bn;
     b.stakeRatio = Math.max(0, f * kellyFrac);
   });
-  // PB-9: 排他事象 Kelly — 同一レース内 3連単 N 点は最大 1 点しか当たらない
-  //       単純合計 ∑f_i は資金全投入を超える可能性があるため、
-  //       上限 KELLY.MAX_STAKE_RATIO（=1.0）を超えたら比例縮小
+  // PB-9: 排他事象 Kelly — 同一レース内 3連単 N 点は最大 1 点しか当たらない。
+  //       単純合計 ∑f_i は資金全投入を超えうるため、上限 MAX_STAKE_RATIO（=0.05）
+  //       を超えたら比例縮小。
   var sumRatio = ranked.reduce(function(s,b){return s + (b.stakeRatio||0);}, 0);
-  var maxRatio = (TUNING && TUNING.KELLY) ? TUNING.KELLY.MAX_STAKE_RATIO : 1.0;
+  var maxRatio = K.MAX_STAKE_RATIO != null ? K.MAX_STAKE_RATIO : 0.05;
   if(sumRatio > maxRatio && sumRatio > 0){
     var scale = maxRatio / sumRatio;
     ranked.forEach(function(b){ b.stakeRatio *= scale; });
   }
+  // S-04 FIX (2026-07-26): 「賭けない」を出力できるようにする。旧 Math.max(100,...)
+  //   は f*≈0 の買い目にも ¥100 を強制していた。Kelly の「賭けない」結論を尊重し、
+  //   MIN_STAKE_RATIO 未満は候補から除外（¥100 床を撤去）。stakeSuppressed は
+  //   ENABLE_STAKE_SUGGESTION が false の間 UI に賭け金を出さないためのフラグ。
+  var minRatio = K.MIN_STAKE_RATIO != null ? K.MIN_STAKE_RATIO : 0.005;
+  ranked = ranked.filter(function(b){ return (b.stakeRatio||0) >= minRatio; });
+  var suppressed = K.ENABLE_STAKE_SUGGESTION !== true;
   ranked.forEach(function(b){
-    b.stakeYen = Math.max(100, Math.round(bankroll * b.stakeRatio / 100) * 100);
+    b.stakeYen = Math.round(bankroll * b.stakeRatio / 100) * 100;   // 床なし
+    b.stakeSuppressed = suppressed;
   });
   return ranked;
 }
@@ -9376,13 +9392,16 @@ async function _loadNextOpen(){
           var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
           var evHtml = evBadge(ev3);
           var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
-          var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
+          var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
         predHtml += "</div>";
-        if (activePred.evApplied) {
+        var _stakeShown = activePred.trifecta.some(function(t) {
+          return t.stakeYen && !t.stakeSuppressed;
+        });
+        if (activePred.evApplied && _stakeShown) {
           var totalStake = activePred.trifecta.reduce(function(a, t) {
-            return a + (t.stakeYen || 0);
+            return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
           }, 0);
           predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
         }

@@ -306,13 +306,16 @@
           var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
           var evHtml = evBadge(ev3);
           var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
-          var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
+          var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
         predHtml += "</div>";
-        if (activePred.evApplied) {
+        var _stakeShown = activePred.trifecta.some(function(t) {
+          return t.stakeYen && !t.stakeSuppressed;
+        });
+        if (activePred.evApplied && _stakeShown) {
           var totalStake = activePred.trifecta.reduce(function(a, t) {
-            return a + (t.stakeYen || 0);
+            return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
           }, 0);
           predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
         }

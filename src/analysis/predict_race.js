@@ -272,7 +272,13 @@ function predictRace(sid, raceNum) {
   var evOpt = {
     evMin: modeEvMin != null ? modeEvMin : defEvMin,
     maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-    kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+    // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
+    //   誤差がある前提では full/half より現実的。
+    kellyFrac:
+      parseFloat(settings.kellyFrac) ||
+      (typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
+        ? TUNING.KELLY.DEFAULT_FRAC
+        : 0.25),
     bankroll: parseInt(settings.bankroll) || 10000,
   };
   // 当該レースのオッズを取得
