@@ -1537,7 +1537,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
             return e / sumE;
           });
         }
-      } catch (e) {
+      } catch (_e) {
       }
     }
     var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
@@ -1546,7 +1546,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
     if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
+    var finalProbs = boats.map(function(b) {
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });

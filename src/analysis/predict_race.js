@@ -140,7 +140,7 @@ function predictRace(sid, raceNum) {
         var expL = blended.map(function (l) { var e = Math.exp(l - maxL); sumE += e; return e; });
         if (sumE > 0) l2probs = expL.map(function (e) { return e / sumE; });
       }
-    } catch (e) {
+    } catch (_e) {
       // GBDT 失敗は致命にしない (L1+L2 のみで続行)
     }
   }
@@ -166,7 +166,7 @@ function predictRace(sid, raceNum) {
   if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
   var beta = 1 - alpha;
 
-  var finalProbs = boats.map(function (b, i) {
+  var finalProbs = boats.map(function (b) {
     var l1s = l1scores.find(function (s) {
       return s.boat === b.racer_boat_number;
     });

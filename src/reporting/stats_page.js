@@ -48,7 +48,6 @@ function renderStats() {
 
   // ヘッダ: 本日サマリ
   var triRate3 = s.tri.invest > 0 ? Math.round((s.tri.payout / s.tri.invest) * 100) : 0;
-  var trifectaRate = s.total > 0 ? ((s.tri.hits / s.total) * 100).toFixed(1) : '0.0';
   // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は集計数値のみ
   document.getElementById('statSummary').innerHTML =
     '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' +
@@ -260,7 +259,7 @@ function renderStatsChart() {
   // PD-13b: Chart.js が未ロードならまず読み込んで再帰呼出
   capabilities.refresh('chart');
   if (!capabilities.has('chart')) {
-    _loadChartLib().then(renderStatsChart, function (err) {
+    _loadChartLib().then(renderStatsChart, function (_err) {
       var parent = ctx.parentNode;
       if (parent)
         parent.innerHTML =

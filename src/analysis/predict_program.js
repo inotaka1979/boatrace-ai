@@ -73,7 +73,7 @@ function predictRaceProgram(sid, raceNum) {
   if (alpha > _amax) alpha = _amax;
   var beta = 1 - alpha;
 
-  var finalProbs = boats.map(function (b, i) {
+  var finalProbs = boats.map(function (b) {
     var l1s = l1scores.find(function (s) {
       return s.boat === b.racer_boat_number;
     });

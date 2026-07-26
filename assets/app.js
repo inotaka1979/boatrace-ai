@@ -6356,7 +6356,7 @@ var _workerHeavyLoaded = false;
             return e / sumE;
           });
         }
-      } catch (e) {
+      } catch (_e) {
       }
     }
     var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
@@ -6365,7 +6365,7 @@ var _workerHeavyLoaded = false;
     if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
     if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
+    var finalProbs = boats.map(function(b) {
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });
@@ -6594,7 +6594,7 @@ var _workerHeavyLoaded = false;
     if (alpha < _amin) alpha = _amin;
     if (alpha > _amax) alpha = _amax;
     var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
+    var finalProbs = boats.map(function(b) {
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });
@@ -8876,7 +8876,6 @@ async function _loadNextOpen(){
       rdForRace
     };
     _renderRaceDetailBoats(_ctxBoats);
-    var boatMap = _ctxBoats.boatMap;
     var pvMap = _ctxBoats.pvMap;
     var etRankMap = _ctxBoats.etRankMap;
     var stRankMap = _ctxBoats.stRankMap;
@@ -9421,7 +9420,6 @@ async function _loadNextOpen(){
 (() => {
   // ../src/reporting/race_detail_bets.js
   function _renderRaceDetailBets(ctx) {
-    var sid = ctx.sid, rn = ctx.rn, race = ctx.race;
     var pred = ctx.pred, progPred = ctx.progPred;
     var hasRealPreview = ctx.hasRealPreview, raceOdds = ctx.raceOdds;
     var predHtml = "";
@@ -9829,7 +9827,6 @@ function _rateColor(rate){
     }
     var s = calcTodayStats();
     var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
-    var trifectaRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(1) : "0.0";
     document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
     var recHtml = "";
     recHtml += '<div class="card" class="p-overflow-hidden">';
@@ -9916,7 +9913,7 @@ function _rateColor(rate){
     if (!ctx) return;
     capabilities.refresh("chart");
     if (!capabilities.has("chart")) {
-      _loadChartLib().then(renderStatsChart, function(err) {
+      _loadChartLib().then(renderStatsChart, function(_err) {
         var parent = ctx.parentNode;
         if (parent)
           parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';

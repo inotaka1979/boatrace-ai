@@ -281,7 +281,6 @@ function openRace(sid, rn) {
     rdForRace: rdForRace,
   };
   _renderRaceDetailBoats(_ctxBoats);
-  var boatMap = _ctxBoats.boatMap;
   var pvMap = _ctxBoats.pvMap;
   var etRankMap = _ctxBoats.etRankMap;
   var stRankMap = _ctxBoats.stRankMap;

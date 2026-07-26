@@ -154,7 +154,6 @@
       rdForRace
     };
     _renderRaceDetailBoats(_ctxBoats);
-    var boatMap = _ctxBoats.boatMap;
     var pvMap = _ctxBoats.pvMap;
     var etRankMap = _ctxBoats.etRankMap;
     var stRankMap = _ctxBoats.stRankMap;
@@ -289,7 +288,6 @@
 (() => {
   // ../src/reporting/race_detail_bets.js
   function _renderRaceDetailBets(ctx) {
-    var sid = ctx.sid, rn = ctx.rn, race = ctx.race;
     var pred = ctx.pred, progPred = ctx.progPred;
     var hasRealPreview = ctx.hasRealPreview, raceOdds = ctx.raceOdds;
     var predHtml = "";

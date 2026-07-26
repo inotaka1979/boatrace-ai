@@ -8,9 +8,6 @@
 'use strict';
 
 function _renderRaceDetailBets(ctx) {
-  var sid = ctx.sid,
-    rn = ctx.rn,
-    race = ctx.race;
   var pred = ctx.pred,
     progPred = ctx.progPred;
   var hasRealPreview = ctx.hasRealPreview,
