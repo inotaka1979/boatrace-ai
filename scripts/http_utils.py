@@ -31,11 +31,10 @@ from urllib.request import Request, urlopen
 
 log = logging.getLogger("http_utils")
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0"
-)
+# B-07 (2026-07-26): ブラウザ偽装をやめ、正直な bot UA に統一。
+#   Googlebot 等と同じ "Mozilla/5.0 (compatible; <bot>; +<url>)" 形式で、
+#   誰がアクセスしているか + 連絡先を明示する（ブロック時に交渉できる状態を保つ）。
+USER_AGENT = "Mozilla/5.0 (compatible; BoatRaceOracle/1.0; +https://github.com/inotaka1979/boatrace-ai)"
 DEFAULT_HEADERS: dict[str, str] = {"User-Agent": USER_AGENT}
 DEFAULT_TIMEOUT = 15
 DEFAULT_RETRIES = 2

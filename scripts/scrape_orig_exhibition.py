@@ -68,8 +68,8 @@ SU = "suminoe_yoso"
 #   に 枠/ST/展示タイム/一周/まわり足/直線/チルト の位置ベース表(枠=waku{N})が
 #   インライン。ST も同表にあり st_time も取得。
 OM = "omura"
-_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 BoatRaceOracle/1.0")
+# B-07 (2026-07-26): 正直な bot UA (ブラウザ偽装を撤去)
+_UA = "Mozilla/5.0 (compatible; BoatRaceOracle/1.0; +https://github.com/inotaka1979/boatrace-ai)"
 VENUES = {
     1: {"platform": C, "base": "https://www.kiryu-kyotei.com"},        # 桐生(半周計測)
     # 江戸川(3)は独自CMSで「オリジナル展示」タブ自体が無い=非公開のため登録から除外

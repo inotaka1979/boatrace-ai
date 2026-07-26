@@ -49,7 +49,8 @@ ALL_STADIUMS = list(range(1, 25))
 OUTPUT = "data/tide/today.json"
 JMA_BASE = "https://www.data.jma.go.jp/kaiyou/data/db/tide/suisan/txt"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (BoatRace Oracle)",
+    # B-07 (2026-07-26): 連絡先付きの正直な bot UA
+    "User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0; +https://github.com/inotaka1979/boatrace-ai)",
     # brotli 未対応環境でのデコード失敗を防ぐため br を除外
     "Accept-Encoding": "gzip, deflate",
 }

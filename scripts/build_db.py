@@ -36,7 +36,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / P1-C4
 from io_utils import atomic_write_json  # FIX: 5MB+ DB の途中切れ破損防止
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+# B-07 (2026-07-26): 連絡先付きの正直な bot UA
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0; +https://github.com/inotaka1979/boatrace-ai)"}
 OUTPUT_RACER = "data/db/racerDB.json"
 OUTPUT_STADIUM = "data/db/stadiumDB.json"
 INTERVAL = 3
