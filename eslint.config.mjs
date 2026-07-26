@@ -106,6 +106,13 @@ export default [
         // localStorage-backed DB (app.js 定義) — PR-6 degraded_banner.js が参照
         racerDB: 'readonly',
         stadiumDB: 'readonly',
+        // scoreBoatV2 補正ヘルパ (A-05 score_helpers.js) が参照する app.js globals
+        ST_CLASS_BASELINE: 'readonly',
+        TIDE_COURSE_BIAS: 'readonly',
+        classifyTidePhase: 'readonly',
+        getRacerCourseStyle: 'readonly',
+        linearSlope: 'readonly',
+        tideData: 'readonly',
         // 動的 import される lib
         Chart: 'readonly',
         // PWA / worker

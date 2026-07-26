@@ -124,6 +124,7 @@ async function main() {
     { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
     { marker: 'REPORTING_DEGRADED_BANNER', src: 'reporting/degraded_banner.js' }, // PR-6 (2026-07-26): データ縮退バナー
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
+    { marker: 'ANALYSIS_SCORE_HELPERS', src: 'analysis/score_helpers.js' },   // A-05 (2026-07-26): scoreBoatV2 補正ヘルパを src 化
     { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
     { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
     { marker: 'ANALYSIS_GBDT_RUNTIME', src: 'analysis/gbdt_runtime.js' },     // Tier 3 (2026-05-24) GBDT 評価ランタイム
@@ -169,6 +170,7 @@ async function main() {
       'analysis/calibration.js',
       'analysis/gbdt_runtime.js', // Tier 3 (2026-05-24): GBDT runtime
       'analysis/l2_features.js',
+      'analysis/score_helpers.js', // A-05: scoreBoatV2 補正ヘルパ (手動コピー撲滅)
       'analysis/score_boat.js',
       'analysis/predict_scenarios.js',
       'analysis/bet_generation.js', // PR-2: 買い目生成 twin（手動コピー撲滅）

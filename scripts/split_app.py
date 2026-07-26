@@ -223,6 +223,8 @@ REST_ONLY_BUILD_MARKERS = {
     # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
     # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
     'ANALYSIS_SCORE_BOAT',
+    # scoreBoatV2 補正ヘルパ (A-05) — レース詳細でのみ呼ばれる。critical 非搭載。
+    'ANALYSIS_SCORE_HELPERS',
     # Platt scaling / featureStats は学習 (results 受信時) と設定画面のみで呼ばれる。
     'ANALYSIS_CALIBRATION',
     # Tier 3 (2026-05-24): GBDT runtime はレース予測時のみ呼ばれる
