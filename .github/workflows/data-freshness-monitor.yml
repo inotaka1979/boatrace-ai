@@ -253,3 +253,31 @@ jobs:
             gh issue comment "$N" --body "$COMMENT" --repo "${GITHUB_REPOSITORY}" || true
             gh issue close "$N" --reason completed --repo "${GITHUB_REPOSITORY}" || true
           done
+
+  # S-05 (2026-07-26): 中身の充足度検証。
+  #   updated_at が新しくても stadiumDB.stadiums が空 / racerDB.recentResults が
+  #   全欠損だと予想の根拠 (場別コース傾向 / 直近フォーム) が全国平均に静かに
+  #   縮退する。check_freshness の --min-keys / --min-ratio で検出する。
+  #   PR-7 (データ復旧) 完了までは --strict を付けず WARN 留め: 既知の縮退で CI を
+  #   赤くしても誰も見なくなるため、可視化のみに徹する。復旧後に --strict へ昇格。
+  db-content-sufficiency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Check stadiumDB / racerDB content sufficiency (WARN only)
+        run: |
+          set -uo pipefail
+          echo "::group::stadiumDB 場別統計"
+          python3 scripts/check_freshness.py data/db/stadiumDB.json \
+            --max-age-min 2880 --min-keys stadiums=20 || true
+          echo "::endgroup::"
+          echo "::group::racerDB 直近フォーム"
+          python3 scripts/check_freshness.py data/db/racerDB.json \
+            --max-age-min 2880 --min-ratio racers.recentResults=0.5 || true
+          echo "::endgroup::"
