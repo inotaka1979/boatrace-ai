@@ -91,6 +91,9 @@ export default [
         // math 層 (src/utils/math.js) — PR-2 で bet_generation.js が参照
         _plackettLuceTrifectaProb: 'readonly',
         _plackettLuceExactaProb: 'readonly',
+        // localStorage-backed DB (app.js 定義) — PR-6 degraded_banner.js が参照
+        racerDB: 'readonly',
+        stadiumDB: 'readonly',
         // 動的 import される lib
         Chart: 'readonly',
         // PWA / worker

@@ -1284,14 +1284,13 @@ var TUNING = Object.freeze({
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
   // EV / Kelly（X1 設計 / S-04 2026-07-26 安全化）
+  //   MIN_STAKE_RATIO(=0.005) と ENABLE_STAKE_SUGGESTION(=false) は
+  //   src/analysis/bet_generation.js / predict_race.js 側の既定にフォールバックする
+  //   （critical bundle 予算を守るため TUNING には持たない。有効化時はそちらを編集）。
   KELLY: Object.freeze({
     DEFAULT_FRAC: 0.25,          // quarter-Kelly（確率推定に誤差がある前提の現実解）
     MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
     MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限（旧 1.0 は破産リスク）
-    MIN_STAKE_RATIO: 0.005,      // これ未満の f* は「賭けない」= リストから落とす
-    // 賭け金推奨そのものの feature flag。オフライン履歴バックテスト (PR-11) で
-    //   edge が確認できるまで既定 OFF。OFF の間は EV / 乖離を「情報」表示に留める。
-    ENABLE_STAKE_SUGGESTION: false,
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -2994,6 +2993,7 @@ window.addEventListener('unhandledrejection', function(e){
 })();
 
 /* BUILD:REPORTING_STATUS_BANNER:END */
+
 
 // ===============================================
 // DB MANAGEMENT (PRESERVED)

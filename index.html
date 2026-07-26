@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=a82a5764" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=a82a5764" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=a0014491" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=a0014491" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -459,6 +459,9 @@ button.action-btn:active{background:#F0F0F0}
   </span>
 </div>
 
+<!-- S-05 / PR-6: データ縮退（場別統計 / 直近フォーム未取得）の可視化。DB fetch 完了後に _renderDegradedBanner() が制御 -->
+<div id="degradedBanner" role="status" aria-live="polite" style="display:none;background:#FFF3CD;color:#856404;border-bottom:1px solid #FFE69C;padding:8px 12px;font-size:12px;text-align:left"></div>
+
 <!-- Screen 1: Top -->
 <div class="page active" id="pageTop">
   <!-- PE-11: pre-render 採用後は loading を default-hidden（LCP 即時化） -->
@@ -710,6 +713,9 @@ button.action-btn:active{background:#F0F0F0}
     <div class="db-info" id="dbInfo">DB情報を読込中...</div>
   </div>
   <div class="footer-note">BoatRace AI v2.0<br>Boatrace Open API使用 (非公式)<br>予想は参考情報であり、的中を保証するものではありません。<br>
+    <!-- A-07 (2026-07-26): 公営競技の年齢制限とギャンブル依存症相談窓口の明示 -->
+    <span style="display:block;margin-top:6px">20歳未満の方は舟券を購入できません。</span>
+    <span style="display:block">ギャンブル等依存症でお困りの方は <a href="https://www.mhlw.go.jp/kesshou/" rel="noopener noreferrer" target="_blank" style="color:var(--text-sub)">相談窓口</a> へ。</span>
     <!-- Path B (2026-05-16): kill switch リンク。JS が halt しても href 動作だけは生きる。
          クエリ ?reset=1 を受けると app-critical.js boot で SW unregister + caches.delete を実行。 -->
     <a href="?reset=1" style="display:inline-block;margin-top:8px;padding:6px 12px;background:#FAFAFA;border:1px solid #DDD;border-radius:6px;color:#666;text-decoration:none;font-size:12px" aria-label="アプリのキャッシュをクリアして再読込">🔄 アプリをリセット</a>
@@ -735,7 +741,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=a82a5764" defer></script>
-<script src="assets/app-rest.min.js?v=a82a5764" defer></script>
+<script src="assets/app-critical.min.js?v=a0014491" defer></script>
+<script src="assets/app-rest.min.js?v=a0014491" defer></script>
 </body>
 </html>

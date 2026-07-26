@@ -157,6 +157,10 @@ step "S-02 bet generation (PL normalization) tests" \
 step "Golden race regression snapshots" \
      "node scripts/tests/test_golden_races.js"
 
+# 9f) PR-6 データ縮退バナー検出テスト
+step "S-05 degraded feature banner tests" \
+     "node scripts/tests/test_degraded_banner.js"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"

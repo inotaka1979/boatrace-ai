@@ -1279,14 +1279,13 @@ var TUNING = Object.freeze({
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
   // EV / Kelly（X1 設計 / S-04 2026-07-26 安全化）
+  //   MIN_STAKE_RATIO(=0.005) と ENABLE_STAKE_SUGGESTION(=false) は
+  //   src/analysis/bet_generation.js / predict_race.js 側の既定にフォールバックする
+  //   （critical bundle 予算を守るため TUNING には持たない。有効化時はそちらを編集）。
   KELLY: Object.freeze({
     DEFAULT_FRAC: 0.25,          // quarter-Kelly（確率推定に誤差がある前提の現実解）
     MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
     MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限（旧 1.0 は破産リスク）
-    MIN_STAKE_RATIO: 0.005,      // これ未満の f* は「賭けない」= リストから落とす
-    // 賭け金推奨そのものの feature flag。オフライン履歴バックテスト (PR-11) で
-    //   edge が確認できるまで既定 OFF。OFF の間は EV / 乖離を「情報」表示に留める。
-    ENABLE_STAKE_SUGGESTION: false,
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -3785,6 +3784,54 @@ function pf(v){return parseFloat(v)||0}
 })();
 
 /* BUILD:REPORTING_STATUS_BANNER:END */
+
+/* BUILD:REPORTING_DEGRADED_BANNER:START */
+"use strict";
+(() => {
+  // ../src/reporting/degraded_banner.js
+  function _detectDegradedFeatures() {
+    var out = [];
+    var sdb = typeof stadiumDB !== "undefined" && stadiumDB ? stadiumDB : {};
+    var sids = Object.keys(sdb);
+    var withCwr = 0;
+    for (var i = 0; i < sids.length; i++) {
+      var cwr = sdb[sids[i]] && sdb[sids[i]].courseWinRate;
+      if (cwr && Object.keys(cwr).length > 0) withCwr++;
+    }
+    if (withCwr < 20) out.push("\u5834\u5225\u30B3\u30FC\u30B9\u50BE\u5411");
+    var rdb = typeof racerDB !== "undefined" && racerDB ? racerDB : {};
+    var rids = Object.keys(rdb).slice(0, 200);
+    if (rids.length >= 50) {
+      var withForm = 0;
+      for (var j = 0; j < rids.length; j++) {
+        var rr = rdb[rids[j]] && rdb[rids[j]].recentResults;
+        if (Array.isArray(rr) && rr.length >= 5) withForm++;
+      }
+      if (withForm / rids.length < 0.3) out.push("\u76F4\u8FD1\u30D5\u30A9\u30FC\u30E0");
+    }
+    return out;
+  }
+  function _renderDegradedBanner() {
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("degradedBanner");
+    if (!el) return;
+    var missing = _detectDegradedFeatures();
+    if (missing.length === 0) {
+      el.style.display = "none";
+      return;
+    }
+    el.textContent = "\u26A0 " + missing.join(" / ") + " \u306E\u30C7\u30FC\u30BF\u304C\u672A\u53D6\u5F97\u3067\u3059\u3002\u3053\u308C\u3089\u3092\u9664\u3044\u305F\u30B9\u30B3\u30A2\u3067\u4E88\u60F3\u3057\u3066\u3044\u307E\u3059\u3002";
+    el.style.display = "block";
+    try {
+      console.error("[degraded] unavailable features: " + missing.join(","));
+    } catch (_) {
+    }
+  }
+  globalThis._detectDegradedFeatures = _detectDegradedFeatures;
+  globalThis._renderDegradedBanner = _renderDegradedBanner;
+})();
+
+/* BUILD:REPORTING_DEGRADED_BANNER:END */
 
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
@@ -7765,6 +7812,9 @@ async function loadDeferredData(rawPrograms, rawPreviews){
 
   await Promise.allSettled(tasks);
   console.log('[PE-8] deferred fetch complete');
+
+  // S-05 / PR-6: DB fetch 完了時点で場別統計 / 直近フォームの縮退を可視化
+  if(typeof _renderDegradedBanner === 'function') _renderDegradedBanner();
 
   // PE-8 + PE-9: 軽量な学習を deferred で実行
   //   PF-3: _backfillTodayPredictions は重いので「成績タブ open 時 / 60秒 idle」まで遅延
