@@ -19,6 +19,7 @@ function renderStadiums() {
   //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない
 
   var acc = getAccuracy();
+  // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は集計数値のみ
   sumDiv.innerHTML =
     '<div class="summary-bar">' +
     '<div class="summary-item"><div class="s-num" style="color:var(--accent)">' +
@@ -209,6 +210,7 @@ function openStadium(sid) {
   var firstRace = stadium[Object.keys(stadium)[0]];
   var gradeNum = firstRace ? firstRace.race_grade_number || 5 : 5;
   var grade = GRADE_CLASS[gradeNum] || GRADE_CLASS[5];
+  // eslint-disable-next-line no-restricted-syntax -- B-05: name は STADIUMS 定数、grade は GRADE_CLASS 定数
   document.getElementById('racesTitle').innerHTML =
     name + ' <span class="stadium-grade ' + grade.cls + '" style="vertical-align:middle">' + grade.name + '</span>';
 

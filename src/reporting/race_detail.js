@@ -94,6 +94,7 @@ function openRace(sid, rn) {
     '">' +
     (_watched ? '⭐' : '☆') +
     '</button>';
+  // eslint-disable-next-line no-restricted-syntax -- B-05: name は STADIUMS 定数、rn は数値
   document.getElementById('detailTitle').innerHTML =
     name +
     ' ' +

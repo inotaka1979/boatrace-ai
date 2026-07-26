@@ -114,6 +114,7 @@ function _renderFreshness() {
     conn = '<span style="color:#FFCC80;font-size:0.85em"> ・📡未接続</span>';
   }
 
+  // eslint-disable-next-line no-restricted-syntax -- B-05: color/label/conn は内部生成の鮮度表示、外部由来なし
   el.innerHTML = '<span style="color:' + color + '">' + label + '</span>' + conn;
 }
 

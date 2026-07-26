@@ -89,6 +89,7 @@ function renderDailyStats() {
   var sumRec = t.invest > 0 ? Math.round((t.payout / t.invest) * 100) : 0;
   var sumEl = document.getElementById('dailySummary');
   if (sumEl) {
+    // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は数値(判定R/的中率/回収率)のみ、外部文字列なし
     sumEl.innerHTML =
       '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + t.races +
       '</div><div class="stat-label">直近7日 判定R</div></div>' +
@@ -103,6 +104,7 @@ function renderDailyStats() {
   var el = document.getElementById('dailyTable');
   if (el) {
     if (!daily.length) {
+      // eslint-disable-next-line no-restricted-syntax -- B-05: 静的文字列のみ
       el.innerHTML =
         '<div class="card" style="padding:16px;text-align:center;color:var(--text-dim);font-size:12px">' +
         'まだ判定済みのレースがありません。<br>予想を開いた日のレースが確定すると自動で集計されます。</div>';

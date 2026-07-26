@@ -32,12 +32,14 @@ function renderStats() {
     var recEl = document.getElementById('statRecovery');
     var skel =
       '<div class="stat-card" style="background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite"><div class="stat-num">…</div><div class="stat-label">読込中</div></div>';
+    // eslint-disable-next-line no-restricted-syntax -- B-05: 静的 skeleton 文字列
     if (sumEl && !sumEl.innerHTML.trim()) sumEl.innerHTML = skel + skel + skel;
     if (recEl && !recEl.innerHTML.trim()) {
       var rows = '';
       for (var i = 0; i < 3; i++)
         rows +=
           '<tr><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td><td class="bg-light">&nbsp;</td></tr>';
+      // eslint-disable-next-line no-restricted-syntax -- B-05: rows は下の escText(ss.name) 済み
       recEl.innerHTML = '<table style="width:100%"><tbody>' + rows + '</tbody></table>';
     }
     // 既存のフロー（calcTodayStats → 描画）にそのまま委ねる。result 0件でも 0件として描画される。
@@ -47,6 +49,7 @@ function renderStats() {
   // ヘッダ: 本日サマリ
   var triRate3 = s.tri.invest > 0 ? Math.round((s.tri.payout / s.tri.invest) * 100) : 0;
   var trifectaRate = s.total > 0 ? ((s.tri.hits / s.total) * 100).toFixed(1) : '0.0';
+  // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は集計数値のみ
   document.getElementById('statSummary').innerHTML =
     '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' +
     s.total +
