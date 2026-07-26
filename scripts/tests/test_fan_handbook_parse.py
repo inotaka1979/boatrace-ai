@@ -10,12 +10,13 @@ parse_fan_handbook の正常系・異常系を網羅する。
 
 from __future__ import annotations
 
+import datetime
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from build_db import parse_fan_handbook  # noqa: E402
+from build_db import fan_handbook_urls, parse_fan_handbook  # noqa: E402
 
 
 def _build_fan_record(
@@ -116,6 +117,47 @@ class TestFanHandbookParse(unittest.TestCase):
         line = _build_fan_record(name='山田太郎', age=30)
         r = parse_fan_handbook(line + b'\n')['4444']
         self.assertEqual(r.get('age'), 30)   # ずれていれば異なる値が読まれる
+
+
+class TestFanHandbookUrls(unittest.TestCase):
+    """B-02: ファン手帳 URL の期を現在日付から算出する。"""
+
+    @staticmethod
+    def _dt(y: int, m: int, d: int) -> datetime.datetime:
+        return datetime.datetime(y, m, d)
+
+    def test_summer_uses_current_april(self):
+        # 5〜10 月は当年 4 月公表版
+        urls = fan_handbook_urls(self._dt(2026, 7, 26))
+        self.assertTrue(urls[0].endswith('/fan2604.lzh'), urls[0])
+
+    def test_early_year_uses_prev_october(self):
+        # 1〜4 月は前年 10 月公表版
+        urls = fan_handbook_urls(self._dt(2026, 3, 15))
+        self.assertTrue(urls[0].endswith('/fan2510.lzh'), urls[0])
+
+    def test_november_uses_current_october(self):
+        # 11〜12 月は当年 10 月公表版
+        urls = fan_handbook_urls(self._dt(2026, 11, 2))
+        self.assertTrue(urls[0].endswith('/fan2610.lzh'), urls[0])
+
+    def test_january_crosses_year(self):
+        urls = fan_handbook_urls(self._dt(2026, 1, 5))
+        self.assertTrue(urls[0].endswith('/fan2510.lzh'), urls[0])
+
+    def test_always_three_candidates_newest_first(self):
+        for dt in (self._dt(2026, 7, 26), self._dt(2026, 3, 15),
+                   self._dt(2026, 11, 2), self._dt(2026, 1, 5)):
+            urls = fan_handbook_urls(dt)
+            self.assertEqual(len(urls), 3)
+            # 新しい順（fanYYMM が降順）
+            tags = [u.rsplit('/fan', 1)[1].split('.')[0] for u in urls]
+            self.assertEqual(tags, sorted(tags, reverse=True), tags)
+
+    def test_all_https_kibetsu(self):
+        for u in fan_handbook_urls(self._dt(2026, 7, 26)):
+            self.assertTrue(u.startswith('https://'), u)
+            self.assertIn('/kibetsu/', u, u)
 
 
 if __name__ == '__main__':
