@@ -149,6 +149,10 @@ step "S-01 blend ratio (l2trainStep) tests" \
 step "A-03 confStars (baseline lift) tests" \
      "node scripts/tests/test_conf_stars.js"
 
+# 9d) S-02 買い目生成 (Plackett-Luce Σ=1) テスト
+step "S-02 bet generation (PL normalization) tests" \
+     "node scripts/tests/test_bet_generation.js"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"

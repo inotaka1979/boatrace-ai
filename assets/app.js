@@ -6819,16 +6819,24 @@ function _pickAnaCandidates(marks, oddsMap, opts){
 // BET GENERATION V2 (PRESERVED)
 // ===============================================
 function generateBetsV2(marks,method,count3,count2){
-  var trifecta=[],exacta=[],quinella=[];
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      exacta.push({combo:marks[i].boat+'-'+marks[j].boat,prob:marks[i].prob*marks[j].prob*2});
-      if(i<j) quinella.push({combo:marks[i].boat+'='+marks[j].boat,prob:(marks[i].prob*marks[j].prob+marks[j].prob*marks[i].prob)*2});
-      for(var k=0;k<marks.length;k++){
-        if(k===i||k===j) continue;
-        trifecta.push({combo:marks[i].boat+'-'+marks[j].boat+'-'+marks[k].boat,prob:marks[i].prob*marks[j].prob*marks[k].prob*6});
-      }
+  // S-02 FIX (2026-07-26): 1着/2着/3着を独立事象として積を取り任意定数 (×6/×2) を
+  //   掛ける旧実装は Σp が race shape 依存で 0.82〜3.33 に振れていた（混戦で約 3 倍
+  //   過大、超本命で約 0.8 倍過小）。さらに EV mode だけが Plackett–Luce を使い、
+  //   同一 combo が mode 次第で違う確率を表示していた。両者を PL に一本化する（Σ=1）。
+  var triDist = buildTrifectaProbDist(marks);   // Σ=1 (排反かつ網羅)
+  var exaDist = buildExactaProbDist(marks);     // Σ=1
+  var trifecta = Object.keys(triDist).map(function(c){ return {combo:c, prob:triDist[c]}; });
+  var exacta = Object.keys(exaDist).map(function(c){ return {combo:c, prob:exaDist[c]}; });
+  // 2連複: P(i=j) = P(i→j) + P(j→i)。旧 (p_i*p_j + p_j*p_i)*2 は同項を 2 回足した
+  //   実質 4*p_i*p_j で、順序無関係という定義を満たしていなかった。
+  var quinella = [];
+  for(var qi=0; qi<marks.length; qi++){
+    for(var qj=qi+1; qj<marks.length; qj++){
+      var qa=marks[qi].boat, qb=marks[qj].boat;
+      quinella.push({
+        combo: Math.min(qa,qb)+'='+Math.max(qa,qb),
+        prob: (exaDist[qa+'-'+qb]||0) + (exaDist[qb+'-'+qa]||0),
+      });
     }
   }
   trifecta.sort(function(a,b){return b.prob-a.prob});
@@ -6837,20 +6845,18 @@ function generateBetsV2(marks,method,count3,count2){
 
   var selTri,methodLabel;
 
-  // X1: EV モード
+  // X1: EV モード（triDist/exaDist は上で構築済 → 再計算しない）
   if(method==='ev' && arguments.length>=5){
     var raceOdds = arguments[4];   // { trifecta: {...}, exacta: {...}, win: {...} }
     var evOpt = arguments[5] || {};
     if(raceOdds && raceOdds.trifecta){
-      var triProbDist = buildTrifectaProbDist(marks);
-      selTri = selectBetsByEV(triProbDist, raceOdds.trifecta, evOpt);
+      selTri = selectBetsByEV(triDist, raceOdds.trifecta, evOpt);
     } else {
       selTri = trifecta.slice(0, count3);   // オッズ未取得時は確率順フォールバック
     }
     var selExa = [];
     if(raceOdds && raceOdds.exacta){
-      var exaProbDist = buildExactaProbDist(marks);
-      selExa = selectBetsByEV(exaProbDist, raceOdds.exacta, evOpt);
+      selExa = selectBetsByEV(exaDist, raceOdds.exacta, evOpt);
     } else {
       selExa = exacta.slice(0, count2);
     }
