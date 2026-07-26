@@ -165,6 +165,10 @@ step "Golden race regression snapshots" \
 step "S-05 degraded feature banner tests" \
      "node scripts/tests/test_degraded_banner.js"
 
+# 9g) PR-11 オフライン履歴バックテスト CLI テスト
+step "A-02 offline backtest CLI tests" \
+     "node scripts/tests/test_backtest_offline.mjs"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"
