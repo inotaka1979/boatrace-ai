@@ -79,6 +79,9 @@ function _syncState(state) {
   if (state.stadiumExhibitionStats) stadiumExhibitionStats = state.stadiumExhibitionStats;
   if (Array.isArray(state.l2weights)) l2weights = state.l2weights;
   if (state.featureStats) _featureStats = state.featureStats;
+  // S-01 (2026-07-26): 融合比 α = N0/(N0+l2trainStep)。main と同じ n を持たないと
+  //   Worker 経路と main fallback で予測が食い違う。
+  if (typeof state.trainStep === 'number') l2trainStep = state.trainStep;
   if (state.plattCoeffs) _plattCoeffs = state.plattCoeffs;
   if (typeof state.stackingGamma === 'number') _stackingGamma = state.stackingGamma;
   if (state.tideData !== undefined) tideData = state.tideData;

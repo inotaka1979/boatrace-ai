@@ -141,6 +141,10 @@ step "Build pipeline + reproducibility check" \
 step "X1 EV/Kelly/divergence tests" \
      "node scripts/tests/test_ev_kelly.js"
 
+# 9b) S-01 L1/L2 融合比テスト
+step "S-01 blend ratio (l2trainStep) tests" \
+     "node scripts/tests/test_blend_ratio.js"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"

@@ -145,11 +145,25 @@ function predictRace(sid, raceNum) {
     }
   }
 
-  // PB-8: Bayesian shrinkage で L1/L2 融合比を連続化
-  //       α = N0 / (N0 + n)  ─ n が 0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）
-  //       N0=300 は「L1 を 300 サンプル相当として信用する」事前
-  var dbSize = Object.keys(racerDB).length;
-  var alpha = 300 / (300 + dbSize);
+  // PB-8 / S-01 FIX (2026-07-26): Bayesian shrinkage で L1/L2 融合比を連続化。
+  //   α = N0 / (N0 + n)  ─ n=0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）。
+  //   旧実装は分母に racerDB のキー数（登録選手数 ≈1,625）を使っており、L2 の
+  //   学習量と無関係な定数（α≈0.156）に貼り付いていた → L1 (435 行) の寄与が
+  //   16% に固定。Bayesian shrinkage の n は「L2 が何サンプル学習したか」=
+  //   l2trainStep が正しい。新規ユーザーは n=0 → α=1 (L1 のみ) から始まり、
+  //   学習が進むほど L2 に寄る（PB-8 の当初設計意図）。
+  //   定数は critical bundle 予算（TUNING は critical 側で満杯）を守るため rest
+  //   側の本モジュールに置く。将来 TUNING.BLEND が定義されればそれを優先する。
+  var _BLEND = (typeof TUNING !== 'undefined' && TUNING.BLEND)
+    ? TUNING.BLEND
+    : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
+  var _n =
+    typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0
+      ? l2trainStep
+      : 0;
+  var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
+  if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
+  if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
   var beta = 1 - alpha;
 
   var finalProbs = boats.map(function (b, i) {

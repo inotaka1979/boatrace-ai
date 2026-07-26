@@ -6177,6 +6177,7 @@ function _syncWorkerState(){
       stadiumExhibitionStats: stadiumExhibitionStats,
       l2weights: l2weights,
       featureStats: _featureStats,
+      trainStep: l2trainStep,   // S-01 (2026-07-26): 融合比 α の分母。未送だと worker が main と α 不一致
       plattCoeffs: _plattCoeffs,
       stackingGamma: _stackingGamma,
       tideData: tideData,
@@ -6307,8 +6308,11 @@ var _workerHeavyLoaded = false;
       } catch (e) {
       }
     }
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 300 / (300 + dbSize);
+    var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
+    var _n = typeof l2trainStep === "number" && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
+    var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
+    if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
+    if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
     var finalProbs = boats.map(function(b, i) {
       var l1s = l1scores.find(function(s) {
@@ -6525,8 +6529,14 @@ var _workerHeavyLoaded = false;
       return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
     });
     var l2probs = l2Predict(features6);
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 600 / (600 + dbSize);
+    var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PROGRAM: 600, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
+    var _n0 = _BLEND.N0_PROGRAM != null ? _BLEND.N0_PROGRAM : 600;
+    var _n = typeof l2trainStep === "number" && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
+    var alpha = _n0 / (_n0 + _n);
+    var _amin = _BLEND.ALPHA_MIN != null ? _BLEND.ALPHA_MIN : 0.05;
+    var _amax = _BLEND.ALPHA_MAX != null ? _BLEND.ALPHA_MAX : 1;
+    if (alpha < _amin) alpha = _amin;
+    if (alpha > _amax) alpha = _amax;
     var beta = 1 - alpha;
     var finalProbs = boats.map(function(b, i) {
       var l1s = l1scores.find(function(s) {

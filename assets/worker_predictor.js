@@ -1278,8 +1278,11 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       } catch (e) {
       }
     }
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 300 / (300 + dbSize);
+    var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
+    var _n = typeof l2trainStep === "number" && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
+    var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
+    if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
+    if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
     var finalProbs = boats.map(function(b, i) {
       var l1s = l1scores.find(function(s) {
