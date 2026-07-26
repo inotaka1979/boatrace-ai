@@ -39,6 +39,10 @@ step "Python unit tests (http_utils)" \
 step "Python unit tests (check_freshness)" \
      "python3 -m unittest scripts.tests.test_check_freshness -v"
 
+# 1c2) PR-7: aggregate_form ユニットテスト
+step "Python unit tests (aggregate_form)" \
+     "python3 -m unittest scripts.tests.test_aggregate_form -v"
+
 # 1d) 2026-05-17: scrape_all._decide_tasks / _is_fresh_today ユニットテスト
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"

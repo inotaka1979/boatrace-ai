@@ -312,6 +312,13 @@ def main() -> None:
     }
     atomic_write_json(OUTPUT, output)
 
+    # PR-7 (2026-07-26): aggregate_form.py が直近フォーム / 場別統計を組み立てる
+    #   ための日次アーカイブ。確定レースがある時だけ書く（空ファイルで蓄積を汚さない）。
+    if finished_n > 0 and date_str:
+        archive = os.path.join(os.path.dirname(OUTPUT), f"{date_str}.json")
+        atomic_write_json(archive, output)
+        log.info("Archived %d finished races to %s", finished_n, archive)
+
     log.info(
         "Done! %d finished races",
         len([r for r in all_results if r['race_technique_number']]),

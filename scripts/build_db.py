@@ -379,23 +379,34 @@ def main() -> None:
     if not racers:
         print("::error::ファン手帳を 1 件も取得できませんでした", file=sys.stderr)
 
-    print("=== Step 2: 過去30日分の競走成績 ===")
+    # PR-7 (2026-07-26): 競走成績 K ファイル (www1.mbrace.or.jp) は GitHub Actions の
+    #   egress から到達できず 30 日分すべて失敗し、stadiumDB / recentResults を空の
+    #   まま更新していた (S-05)。既定ではこの経路を叩かず、recentResults / 場別統計は
+    #   scripts/aggregate_form.py が data/results から組み立てる。--legacy-kfile を
+    #   付けたときだけ旧経路を試す (到達性が回復した環境での retrofit 用)。
     stadium_stats = {}
-    for d in range(1, 31):
-        date = jst_now() - datetime.timedelta(days=d)  # P1-C4: time_utils 統一
-        yyyymm = date.strftime("%Y%m")
-        yymmdd = date.strftime("%y%m%d")
-        url = f"{RESULTS_BASE}{yyyymm}/k{yymmdd}.lzh"
-        try:
-            data = download(url)
-            text = extract_lzh(data)
-            if text:
-                parse_results_text(text, racers, stadium_stats)
-                print(f"  {date.strftime('%Y-%m-%d')}: OK")
-            time.sleep(INTERVAL)
-        except Exception as e:
-            print(f"  {date.strftime('%Y-%m-%d')}: {e}")
-            time.sleep(INTERVAL)
+    use_legacy_kfile = "--legacy-kfile" in sys.argv
+    if not use_legacy_kfile:
+        print("=== Step 2: K ファイル取得は既定でスキップ "
+              "(recentResults / stadiumDB は aggregate_form.py が担当。"
+              "旧経路は --legacy-kfile) ===")
+    else:
+        print("=== Step 2: 過去30日分の競走成績 (--legacy-kfile) ===")
+        for d in range(1, 31):
+            date = jst_now() - datetime.timedelta(days=d)  # P1-C4: time_utils 統一
+            yyyymm = date.strftime("%Y%m")
+            yymmdd = date.strftime("%y%m%d")
+            url = f"{RESULTS_BASE}{yyyymm}/k{yymmdd}.lzh"
+            try:
+                data = download(url)
+                text = extract_lzh(data)
+                if text:
+                    parse_results_text(text, racers, stadium_stats)
+                    print(f"  {date.strftime('%Y-%m-%d')}: OK")
+                time.sleep(INTERVAL)
+            except Exception as e:
+                print(f"  {date.strftime('%Y-%m-%d')}: {e}")
+                time.sleep(INTERVAL)
 
     # stadiumDB構築
     stadiums = {}
