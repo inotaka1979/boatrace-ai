@@ -703,6 +703,114 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   globalThis.getL2Features = getL2Features;
   globalThis.l2Predict = l2Predict;
   globalThis.l2Update = l2Update;
+  function seriesAdjustmentScore(rid, sid) {
+    var rdb = racerDB[rid];
+    if (!rdb || !rdb.seriesProgress) return { score: 0, slope: 0, samples: 0 };
+    var key = String(sid);
+    var progress = rdb.seriesProgress[key];
+    if (!progress || progress.length < 2) return { score: 0, slope: 0, samples: progress ? progress.length : 0 };
+    var motorRates = progress.map(function(d) {
+      return d.motorRate || 0;
+    }).filter(function(v) {
+      return v > 0;
+    });
+    if (motorRates.length < 2) return { score: 0, slope: 0, samples: motorRates.length };
+    var slope = linearSlope(motorRates);
+    var score = 0;
+    if (slope >= 3) score = 3;
+    else if (slope <= -3) score = -3;
+    else if (slope >= 1.5) score = 1;
+    else if (slope <= -1.5) score = -1;
+    return { score, slope, samples: motorRates.length };
+  }
+  function tideScore(sid, course, raceHour) {
+    if (!tideData || !tideData.stadiums) return 0;
+    var entry = tideData.stadiums[String(sid)];
+    if (!entry || entry.type !== "saltwater") return 0;
+    var phase = classifyTidePhase(entry, raceHour);
+    if (!phase) return 0;
+    return (TIDE_COURSE_BIAS[phase] || {})[course] || 0;
+  }
+  function stormBonus(ws, wh, course) {
+    var base = 0;
+    if (ws >= 5 && wh >= 5) base = -8;
+    else if (ws >= 4 && wh >= 4) base = -4;
+    else if (ws >= 3 && wh >= 3) base = -2;
+    if (course <= 2) return base;
+    if (course >= 4) return -base / 2;
+    return 0;
+  }
+  function stDivergenceScore(thisSt, rid, course) {
+    if (thisSt < 0) return -6;
+    var rdb = racerDB[rid];
+    var key = String(course);
+    if (rdb && rdb.stStats && rdb.stStats[key] && rdb.stStats[key].count >= 5) {
+      var personalAvg = rdb.stStats[key].mean;
+      var z = (thisSt - personalAvg) / 0.04;
+      if (z <= -1) return 5;
+      if (z <= -0.5) return 3;
+      if (z <= 0.5) return 0;
+      if (z <= 1) return -2;
+      return -4;
+    }
+    var classNum = rdb && rdb.classNum || 3;
+    var classAvg = ST_CLASS_BASELINE[classNum] || 0.16;
+    var zc = (thisSt - classAvg) / 0.03;
+    if (zc <= -1) return 4;
+    if (zc <= -0.5) return 2;
+    if (zc <= 0.5) return 0;
+    if (zc <= 1) return -2;
+    return -3;
+  }
+  function selfStyleScore(rid, course, _courseStats) {
+    var style = getRacerCourseStyle(rid, course);
+    if (!style) return { score: 0 };
+    var total = (style.nige || 0) + (style.sashi || 0) + (style.makuri || 0) + (style.makuriSashi || 0) + (style.nuki || 0) + (style.megumare || 0);
+    if (total < 8) return { score: 0 };
+    var nige = (style.nige || 0) / total;
+    var sashi = (style.sashi || 0) / total;
+    var makuri = (style.makuri || 0) / total;
+    var makuriSashi = (style.makuriSashi || 0) / total;
+    var aggressive = makuri + makuriSashi;
+    var conf = Math.min(1, total / 30);
+    if (course === 1) {
+      if (nige >= 0.85) return { score: 5 * conf, reason: "\u81EA\u5DF1\u9003\u3052\u7387 " + (nige * 100).toFixed(0) + "%(\u8D85\u9244\u677F)" };
+      if (nige >= 0.7) return { score: 3 * conf, reason: "\u81EA\u5DF1\u9003\u3052\u7387 " + (nige * 100).toFixed(0) + "%(\u5F37)" };
+      if (nige <= 0.4) return { score: -5 * conf, risk: "\u81EA\u5DF1\u9003\u3052\u7387 " + (nige * 100).toFixed(0) + "%(\u30A4\u30F3\u5F31\u3044)" };
+      if (nige <= 0.55) return { score: -2 * conf, risk: "\u81EA\u5DF1\u9003\u3052\u7387 " + (nige * 100).toFixed(0) + "%(\u3084\u3084\u5F31)" };
+      return { score: 0 };
+    }
+    if (course === 2) {
+      if (sashi >= 0.5) return { score: 3 * conf, reason: "\u81EA\u5DF1\u5DEE\u3057\u7387 " + (sashi * 100).toFixed(0) + "%(\u5DEE\u3057\u5DE7\u8005)" };
+      if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(2\u30B3\u30FC\u30B9\u6372\u308A)" };
+      if (sashi + makuri <= 0.25) return { score: -2 * conf, risk: "2\u30B3\u30FC\u30B9\u3067\u306E\u6C7A\u3081\u624B\u4E4F\u3057\u3044" };
+      return { score: 0 };
+    }
+    if (course === 3) {
+      if (aggressive >= 0.45) return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30BB\u30F3\u30BF\u30FC\u5F37)" };
+      if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(3\u30B3\u30FC\u30B9\u6372\u308A)" };
+      if (sashi >= 0.3) return { score: 1 * conf, reason: "\u81EA\u5DF1\u5DEE\u3057\u7387 " + (sashi * 100).toFixed(0) + "%(3\u30B3\u30FC\u30B9\u5DEE\u3057)" };
+      if (aggressive <= 0.15) return { score: -2 * conf, risk: "3\u30B3\u30FC\u30B9\u3067\u653B\u3081\u306E\u6C7A\u3081\u624B\u4E4F\u3057\u3044" };
+      return { score: 0 };
+    }
+    if (course === 4) {
+      if (aggressive >= 0.4) return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30AB\u30C9\u5F37)" };
+      if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(\u30AB\u30C9\u6372\u308A)" };
+      if (aggressive <= 0.15) return { score: -3 * conf, risk: "\u30AB\u30C9\u3067\u653B\u3081\u308C\u306A\u3044" };
+      return { score: 0 };
+    }
+    if (course === 5 || course === 6) {
+      if (aggressive >= 0.3) return { score: 3 * conf, reason: "\u30A2\u30A6\u30C8\u3067\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u7A74\u958B\u3051)" };
+      if (aggressive <= 0.1) return { score: -1 * conf };
+      return { score: 0 };
+    }
+    return { score: 0 };
+  }
+  globalThis.seriesAdjustmentScore = seriesAdjustmentScore;
+  globalThis.tideScore = tideScore;
+  globalThis.stormBonus = stormBonus;
+  globalThis.stDivergenceScore = stDivergenceScore;
+  globalThis.selfStyleScore = selfStyleScore;
   function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predictedEntries, rno) {
     var score = 0;
     var reasons = [];
@@ -1537,7 +1645,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
             return e / sumE;
           });
         }
-      } catch (e) {
+      } catch (_e) {
       }
     }
     var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
@@ -1546,7 +1654,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
     if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
-    var finalProbs = boats.map(function(b, i) {
+    var finalProbs = boats.map(function(b) {
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });
@@ -1941,136 +2049,6 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
 /* BUILD:WORKER_TWIN_SYNCED:END */
 
 
-function selfStyleScore(rid, course, courseStats){
-  var style = getRacerCourseStyle(rid, course);
-  if(!style) return { score: 0 };
-  var total = (style.nige||0) + (style.sashi||0) + (style.makuri||0)
-            + (style.makuriSashi||0) + (style.nuki||0) + (style.megumare||0);
-  if(total < 8) return { score: 0 };
-
-  // 1着の母数（コース別出走数）が多いほど信頼度高い → 重み線形補間
-  // total / cs.races が「1着率」と一致するため、ここでは比率だけ見る
-  var nige = (style.nige||0) / total;
-  var sashi = (style.sashi||0) / total;
-  var makuri = (style.makuri||0) / total;
-  var makuriSashi = (style.makuriSashi||0) / total;
-  var aggressive = makuri + makuriSashi;   // 攻撃的決まり手の合計
-
-  // サンプル数の信頼度（8〜30 で線形補間、30 以上で 100%）
-  var conf = Math.min(1.0, total / 30);
-
-  if(course === 1){
-    // 1コース: 逃げ率がすべて
-    if(nige >= 0.85) return { score: +5*conf, reason: '自己逃げ率 '+(nige*100).toFixed(0)+'%(超鉄板)' };
-    if(nige >= 0.70) return { score: +3*conf, reason: '自己逃げ率 '+(nige*100).toFixed(0)+'%(強)' };
-    if(nige <= 0.40) return { score: -5*conf, risk:  '自己逃げ率 '+(nige*100).toFixed(0)+'%(イン弱い)' };
-    if(nige <= 0.55) return { score: -2*conf, risk:  '自己逃げ率 '+(nige*100).toFixed(0)+'%(やや弱)' };
-    return { score: 0 };
-  }
-  if(course === 2){
-    // 2コース: 差し主体は 2-3着、まくりは 1着
-    if(sashi >= 0.50) return { score: +3*conf, reason: '自己差し率 '+(sashi*100).toFixed(0)+'%(差し巧者)' };
-    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(2コース捲り)' };
-    if(sashi + makuri <= 0.25) return { score: -2*conf, risk: '2コースでの決め手乏しい' };
-    return { score: 0 };
-  }
-  if(course === 3){
-    // 3コース: 攻撃多彩
-    if(aggressive >= 0.45) return { score: +4*conf, reason: '自己攻撃率 '+(aggressive*100).toFixed(0)+'%(センター強)' };
-    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(3コース捲り)' };
-    if(sashi >= 0.30) return { score: +1*conf, reason: '自己差し率 '+(sashi*100).toFixed(0)+'%(3コース差し)' };
-    if(aggressive <= 0.15) return { score: -2*conf, risk: '3コースで攻めの決め手乏しい' };
-    return { score: 0 };
-  }
-  if(course === 4){
-    // 4コース: カド受けの典型、まくり/まくり差しが命
-    if(aggressive >= 0.40) return { score: +4*conf, reason: '自己攻撃率 '+(aggressive*100).toFixed(0)+'%(カド強)' };
-    if(makuri >= 0.30) return { score: +3*conf, reason: '自己まくり率 '+(makuri*100).toFixed(0)+'%(カド捲り)' };
-    if(aggressive <= 0.15) return { score: -3*conf, risk: 'カドで攻めれない' };
-    return { score: 0 };
-  }
-  if(course === 5 || course === 6){
-    // 5-6コース: 穴を空けるのは攻撃的決まり手のみ
-    if(aggressive >= 0.30) return { score: +3*conf, reason: 'アウトで攻撃率 '+(aggressive*100).toFixed(0)+'%(穴開け)' };
-    if(aggressive <= 0.10) return { score: -1*conf };   // 期待度低めで risks には載せない
-    return { score: 0 };
-  }
-  return { score: 0 };
-}
-
-function seriesAdjustmentScore(rid, sid){
-  var rdb = racerDB[rid];
-  if(!rdb || !rdb.seriesProgress) return { score: 0, slope: 0, samples: 0 };
-  // 当該場の seriesProgress のみ
-  var key = String(sid);
-  var progress = rdb.seriesProgress[key];
-  if(!progress || progress.length < 2) return { score: 0, slope: 0, samples: progress ? progress.length : 0 };
-  var motorRates = progress.map(function(d){return d.motorRate || 0;}).filter(function(v){return v>0;});
-  if(motorRates.length < 2) return { score: 0, slope: 0, samples: motorRates.length };
-  var slope = linearSlope(motorRates);
-  var score = 0;
-  if(slope >= +3) score = +3;
-  else if(slope <= -3) score = -3;
-  else if(slope >= +1.5) score = +1;
-  else if(slope <= -1.5) score = -1;
-  return { score: score, slope: slope, samples: motorRates.length };
-}
-
-function stDivergenceScore(thisSt, rid, course){
-  if(thisSt < 0) return -6;   // フライング
-  var rdb = racerDB[rid];
-  var key = String(course);
-  if(!rdb || !rdb.stStats || !rdb.stStats[key] || rdb.stStats[key].count < 5){
-    // フォールバック: 旧絶対値判定
-    if(thisSt <= 0.05) return +4;
-    if(thisSt <= 0.10) return +2;
-    if(thisSt >= 0.20) return -2;
-    return 0;
-  }
-  var personalAvg = rdb.stStats[key].mean;
-  var z = (thisSt - personalAvg) / 0.04;
-  if(z <= -1.0) return +5;   // 自己平均より +1σ 以上鋭い → 神スタ
-  if(z <= -0.5) return +3;
-  if(z <= +0.5) return 0;
-  if(z <= +1.0) return -2;
-  return -4;
-}
-
-function stormBonus(ws, wh, course){
-  var base = 0;
-  if(ws >= 5 && wh >= 5) base = -8;
-  else if(ws >= 4 && wh >= 4) base = -4;
-  else if(ws >= 3 && wh >= 3) base = -2;
-  if(course <= 2) return base;          // インほど荒れに弱い
-  if(course >= 4) return -base / 2;     // アウトはむしろ有利になる
-  return 0;
-}
-
-function tideScore(sid, course, raceHour){
-  if(!tideData || !tideData.stadiums) return 0;
-  var entry = tideData.stadiums[String(sid)];
-  if(!entry || entry.type !== 'saltwater') return 0;
-  var phase = classifyTidePhase(entry, raceHour);
-  if(!phase) return 0;
-  return (TIDE_COURSE_BIAS[phase] || {})[course] || 0;
-}
-// =============================================================================
-// PG-9: 学習関数 (Worker 内で完結、main は state を post で受け取る)
-// =============================================================================
-
-// 学習用ハイパパラメータ (app.js と同期、変更時は両方更新)
-var L2_LR0 = 0.05;
-var L2_LR_TAU = 5000;
-var L2_LAMBDA = 1e-4;
-var L2_KEY_LIMIT = 10000;
-
-var l2trainStep = 0;
-var l2learnedKeys = {};
-
-
-
-// PG-9: バッチ学習 — main から resultData / programData / previewData / 既存 state を受信
-//   返却: 更新後の l2weights / featureStats / trainStep / learnedKeys
 function batchLearnFromResults(input){
   // input.state で state を上書き
   if(input.state){

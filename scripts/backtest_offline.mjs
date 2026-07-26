@@ -81,16 +81,29 @@ function loadJson(p) {
 }
 
 function loadDay(archive, date) {
-  const dir = path.join(archive, date);
-  if (!fs.existsSync(dir)) return null;
-  const programs = loadJson(path.join(dir, 'programs.json'));
-  const results = loadJson(path.join(dir, 'results.json'));
+  // 2 レイアウトを許容:
+  //   subdir : <archive>/<date>/{programs,previews,odds,results}.json
+  //   flat   : <archive>/<domain>/<date>.json  (archive_daily.py 出力 = data/)
+  const sub = path.join(archive, date);
+  let programs, previews, odds, results;
+  if (fs.existsSync(sub)) {
+    programs = loadJson(path.join(sub, 'programs.json'));
+    results = loadJson(path.join(sub, 'results.json'));
+    previews = loadJson(path.join(sub, 'previews.json'));
+    odds = loadJson(path.join(sub, 'odds.json'));
+  } else {
+    programs = loadJson(path.join(archive, 'programs', date + '.json'));
+    results = loadJson(path.join(archive, 'results', date + '.json'));
+    previews = loadJson(path.join(archive, 'previews', date + '.json'));
+    odds = loadJson(path.join(archive, 'odds', date + '.json'));
+  }
   if (!programs || !results) return null;
   return {
     date,
     programs: programs.programs || [],
-    previews: (loadJson(path.join(dir, 'previews.json')) || {}).previews || [],
-    odds: (loadJson(path.join(dir, 'odds.json')) || {}).odds || [],
+    // previews は today.json スキーマだと "races" キー (省略可・番組予想に fallback)
+    previews: (previews && (previews.previews || previews.races)) || [],
+    odds: (odds && odds.odds) || [],
     results: results.results || [],
   };
 }

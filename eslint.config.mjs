@@ -34,6 +34,18 @@ const CAPABILITIES_GUARDED_PATTERNS = [
       'Use capabilities.makeTimeoutSignal(ms) for fetch timeout, or add an ESLint disable ' +
       'comment if you have a genuine reason (e.g., a manual cancel pattern not covered by capabilities).',
   },
+  {
+    // B-05 (2026-07-26): innerHTML/outerHTML への文字列連結を退行防止。
+    //   外部由来 (選手名 / 整備内容 / 場名等) を未エスケープで差し込むと XSS 経路になる。
+    //   静的文字列 or escText 済みの連結は安全なので、その場合は理由付きの
+    //   // eslint-disable-next-line no-restricted-syntax で明示的に棚卸しする。
+    selector:
+      "AssignmentExpression[left.property.name=/^(inner|outer)HTML$/][right.type='BinaryExpression']",
+    message:
+      'Assigning a string-concatenation to innerHTML/outerHTML is guarded (B-05 XSS retrogression). ' +
+      'Ensure every interpolated external field goes through escText(), then add ' +
+      '// eslint-disable-next-line no-restricted-syntax with a rationale.',
+  },
 ];
 
 export default [
@@ -94,6 +106,13 @@ export default [
         // localStorage-backed DB (app.js 定義) — PR-6 degraded_banner.js が参照
         racerDB: 'readonly',
         stadiumDB: 'readonly',
+        // scoreBoatV2 補正ヘルパ (A-05 score_helpers.js) が参照する app.js globals
+        ST_CLASS_BASELINE: 'readonly',
+        TIDE_COURSE_BIAS: 'readonly',
+        classifyTidePhase: 'readonly',
+        getRacerCourseStyle: 'readonly',
+        linearSlope: 'readonly',
+        tideData: 'readonly',
         // 動的 import される lib
         Chart: 'readonly',
         // PWA / worker

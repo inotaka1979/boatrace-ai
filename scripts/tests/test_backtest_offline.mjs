@@ -137,6 +137,29 @@ t('stadiumDB favoring course 1 raises the 1-boat probability (why leak matters)'
   assert.ok(probLeak > probEmpty, `leak ${probLeak} should exceed clean ${probEmpty}`);
 });
 
+console.log('[unit — flat layout loadDay (archive_daily 出力)]');
+t('loadDay reads flat data/<domain>/<date>.json', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bt-flat-'));
+  fs.mkdirSync(path.join(base, 'programs'), { recursive: true });
+  fs.mkdirSync(path.join(base, 'results'), { recursive: true });
+  fs.mkdirSync(path.join(base, 'odds'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'programs', '20260401.json'),
+    JSON.stringify({ programs: [{ race_stadium_number: 1, race_number: 1, boats: [] }] }));
+  fs.writeFileSync(path.join(base, 'results', '20260401.json'),
+    JSON.stringify({ results: [{ race_stadium_number: 1, race_number: 1, boats: [] }] }));
+  fs.writeFileSync(path.join(base, 'odds', '20260401.json'),
+    JSON.stringify({ odds: [{ stadium: 1, race: 1, win: { 1: 1.5 } }] }));
+  const day = bt.loadDay(base, '20260401');
+  assert.ok(day, 'flat layout should load');
+  assert.strictEqual(day.programs.length, 1);
+  assert.strictEqual(day.results.length, 1);
+  assert.strictEqual(day.odds.length, 1);
+});
+t('loadDay returns null when programs/results missing', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bt-none-'));
+  assert.strictEqual(bt.loadDay(base, '20260401'), null);
+});
+
 console.log('[unit — scoring helpers]');
 t('favoriteBoat picks the lowest win odds', () => {
   assert.strictEqual(bt.favoriteBoat({ 1: 3.0, 2: 1.8, 3: 5.0 }), 2);

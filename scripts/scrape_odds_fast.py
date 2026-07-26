@@ -18,16 +18,17 @@ from time_utils import utc_iso_seconds  # P2 D-02 / D-10
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
-# 2026-05-10: User-Agent rotation で boatrace.jp 側の単純な UA ブロックを回避
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-]
+# B-07 (2026-07-26): ブラウザ偽装のローテーションを撤去し、正直な bot UA に統一。
+#   ⚠ 旧 rotation (2026-05-10) は boatrace.jp の単純な UA ブロック回避策だった。
+#   本変更でブロックが再発する可能性があるため、odds workflow の失敗を要監視。
+#   再発時は http_utils.USER_AGENT の見直し or rotation 復活で対応 (git revert 容易)。
+from http_utils import USER_AGENT  # noqa: E402
+USER_AGENTS = [USER_AGENT]
 OUTPUT = "data/odds/today.json"
 PREVIEWS = "data/previews/today.json"
 CONCURRENCY = 5
-INTERVAL = 0.3
+# B-07: 3.3 req/s は公営競技サイトへのアクセスとしてやや強い → 2 req/s に緩和
+INTERVAL = 0.5
 # 2026-05-10: 指数バックオフ retry でレート制限への耐性を向上
 MAX_RETRIES = 4   # 旧 2 → 4 (合計 5 attempts)
 RETRY_STATUSES = {429, 500, 502, 503, 504}

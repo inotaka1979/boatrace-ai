@@ -3022,7 +3022,6 @@ window.addEventListener('unhandledrejection', function(e){
 /* MOVED: function linearSlope */
 
 // 節間調整スコア (R-07): 同一節中のモーター 2連率 / 着順の推移
-/* MOVED: function seriesAdjustmentScore */
 
 // R-13: モーター急変警告 — 現在 UI 未使用だがテスト (test_series_pairwise.js) でカバー済
 /* MOVED: function motorTrendWarning */
@@ -3130,10 +3129,8 @@ var TIDE_COURSE_BIAS = {
 
 /* MOVED: function classifyTidePhase */
 
-/* MOVED: function tideScore */
 
 // 風×波交差項（嵐スコア）
-/* MOVED: function stormBonus */
 
 // ===============================================
 // X3: 進入予想エンジン (R-01)
@@ -3192,7 +3189,6 @@ var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:
 //   新人/転勤直後で stStats 5件未満でも、級別での想定 ST に対する乖離で評価可能に
 //   キー: classNum (1=A1, 2=A2, 3=B1=base, 4=B2)
 var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
-/* MOVED: function stDivergenceScore */
 
 /* MOVED: function updateDBFromResults */
 
@@ -3209,7 +3205,6 @@ var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
 //   1着確率に直接効く（決まり手 = 1着取った時の手のため、count はそのコースでの 1着回数）
 //   サンプル数 < 8 はスコアゼロ（信頼度不足）
 //   返り値: {score, reason?, risk?}
-/* MOVED: function selfStyleScore */
 
 /* MOVED: function getRacerForm */
 

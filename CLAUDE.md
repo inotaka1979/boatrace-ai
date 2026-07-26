@@ -925,3 +925,49 @@ rest bundle の連結順＝出力が非決定的になって build:check 再現�
   tsc 0 errors、eslint 0 errors、追加ファイルは prettier 準拠。
 - critical budget OK（99714B / 99800B、結果ビューは rest 分離で critical 微増のみ）。
 - 本日実データ（data/results/today.json）で 12R 分の着順 / 配当 / 決まり手描画を確認。
+
+## 修正履歴 (2026-07-26: 多視点レビュー修正 11 PR + フォローアップ)
+
+設計書 `docs/reviews/2026-07-26_修正設計書.md` の全 11 PR を実装（PR #262 でマージ済）。
+レビュー `docs/reviews/2026-07-26_multi_expert_review.md` の S/A/B 指摘を解消。
+
+### 予測の正しさ (S-01/S-02/A-03/S-04)
+- S-02: `generateBetsV2` の独立積 `p_i*p_j*p_k*6` を撤去し Plackett–Luce (Σ=1) に一本化。
+  混戦で約 3 倍過大 / 超本命で約 0.8 倍過小だった表示確率を正規化。二連複も
+  `P(i→j)+P(j→i)` に修正。`test_bet_generation.js` で全 bet 型 Σ=1 を不変条件化。
+- S-01: L1/L2 融合比 α の分母を `racerDB` サイズ→`l2trainStep`（実学習量）に。
+  L1 が 16% 固定だったのを解消。`trainStep` を Worker にも同期。
+- A-03: `confStars` を絶対確率→コース基準比 (lift) 判定に。1 号艇が普通に強いだけの
+  レースが自動★5 になる問題を解消。「基準比 N.NNx」併記。
+- S-04: Kelly 上限 1.0→0.05、quarter-Kelly 既定、¥100 床撤去（「賭けない」を表現可能）、
+  賭け金推奨は既定 OFF（`stakeSuppressed`、実データ検証まで情報表示のみ）。
+
+### 観測性・データ経路 (S-05/B-02)
+- S-05: `check_freshness.py` に `--min-keys`/`--min-ratio`（exit 5）追加。
+  `degraded_banner.js`（rest）で場別統計/直近フォームの縮退を UI 開示。
+- S-05 根本: `aggregate_form.py` を新設し `data/results`＋`data/programs` の join で
+  recentResults/stadiumDB を再構築（到達不能な K ファイル依存を撤去、build_db Step 2 は
+  `--legacy-kfile` gate）。`archive_daily.py`（scrape_all 末尾, 45 日 retention）で
+  programs/previews/odds/results を日次アーカイブ化 → 集計/backtest の入力を蓄積。
+- B-02: ファン手帳 URL の期を現在日付から自動算出（`fan_handbook_urls`）。
+
+### 検証基盤・構造 (A-06/A-02/A-04/A-05)
+- A-06: `test_golden_races.js` + 3 fixture（本命/混戦/荒天）で predictRace 出力を
+  snapshot 固定。共通 vm ハーネス `_vm_harness.js`。以後の全変更を diff で検出。
+- A-02: `backtest_offline.mjs`（`make backtest`）— forward-chain・リーク防止で ROI/
+  logLoss/Brier/ECE をベースライン 3 種 + bootstrap CI で比較。
+- A-04/A-05: `bet_generation.js` / `score_helpers.js` を src 化し worker_predictor.js の
+  手動コピーを撲滅（auto-gen 化）。twin drift を構造的に排除。golden snapshot 不変で証明。
+
+### セキュリティ・運用フォローアップ (B-05/B-07/A-07)
+- B-05: `no-restricted-syntax` で innerHTML 文字列連結を退行防止（既存 9 箇所は監査 +
+  理由付き disable）。B-07: 全スクレイパを正直な bot UA に統一（ブラウザ偽装撤去、
+  ⚠ odds のブロック再発は要監視）。A-07: 20 歳未満/依存症相談窓口をフッタに明記。
+- ESLint 警告 9 件を一掃（0 problems）。
+
+### 未着手（データ蓄積/デプロイ待ち）
+- PR-5 `--strict` 昇格・PR-11 実データ backtest: 場別 ≥10 レース/場・フォーム ≥5 件が
+  必要で、archive_daily の数日蓄積後（自動）。
+- A-01（市場シュリンク）/ B-01（scenarioDist 買い目）: backtest で効果測定後。
+- B-03（監視の Worker 移管）: 要 wrangler デプロイ、設計はデータ安定後を指示。
+- B-06（選手写真の git 撤去）: 履歴書換 + probe workflow と絡むため独立対応。

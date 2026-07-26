@@ -52,6 +52,9 @@ class TestFetchSuccess(unittest.TestCase):
         called_req = mock_open.call_args[0][0]
         ua = called_req.get_header("User-agent")
         self.assertIn("BoatRaceOracle", ua)
+        # B-07: 正直な bot UA — 連絡先 URL を含み、特定ブラウザを偽装しない
+        self.assertIn("+https://github.com/inotaka1979/boatrace-ai", ua)
+        self.assertNotIn("Chrome/", ua)
 
     @mock.patch("http_utils.urlopen")
     def test_extra_headers_merged(self, mock_open):

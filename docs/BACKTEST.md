@@ -31,11 +31,23 @@ node scripts/backtest_offline.mjs --from 20260401 --to 20260630 \
 | `odds.json` | `{odds:[{stadium, race, trifecta:{combo:odds}, win:{boat:odds}}]}` |
 | `results.json` | `{results:[{race_stadium_number, race_number, boats:[{racer_boat_number, racer_place_number, racer_course_number}], payouts:{trifecta:[{combination,amount}], win:[…]}}]}` |
 
-`scrape_results.py` は PR-7 で `data/results/{YYYYMMDD}.json` の日次アーカイブを
-書くようになった。**programs / previews / odds の日次アーカイブ化は未実装**（今は
-`today.json` のみ）なので、フル入力を得るにはそれらのアーカイブ経路を足す必要が
-ある（TODO）。それまでは合成 fixture（`scripts/tests/test_backtest_offline.mjs`）
-で機構を検証する。
+`scripts/archive_daily.py`（`scrape_all.py` 末尾で自動実行）が programs / previews /
+odds / results の `today.json` を **`data/<domain>/<YYYYMMDD>.json`** に日次コピーし、
+45 日で prune する。したがって本 CLI は `--archive data`（フラットレイアウト）で
+実データを直接読める:
+
+```bash
+node scripts/backtest_offline.mjs --from 20260701 --to 20260726 --archive data
+```
+
+`loadDay` は 2 レイアウトを許容する: `<archive>/<date>/<domain>.json`（subdir）と
+`<archive>/<domain>/<date>.json`（flat = `data/`）。previews の today.json は `races`
+キーでスキーマも live 形（boats がオブジェクト）なので、現状は番組予想に fallback
+しやすい（展示を完全に効かせるには preview スキーマ整合が次段階）。
+
+**repo 肥大について**: 日次アーカイブは main に commit されるため git 履歴が増える。
+working tree は 45 日 retention で bound しているが、恒久解はデータ専用 orphan
+ブランチ（設計書 P2-9）。
 
 ## 出力と読み方
 

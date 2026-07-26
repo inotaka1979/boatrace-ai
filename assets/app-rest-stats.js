@@ -490,7 +490,6 @@
     }
     var s = calcTodayStats();
     var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
-    var trifectaRate = s.total > 0 ? (s.tri.hits / s.total * 100).toFixed(1) : "0.0";
     document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
     var recHtml = "";
     recHtml += '<div class="card" class="p-overflow-hidden">';
@@ -577,7 +576,7 @@
     if (!ctx) return;
     capabilities.refresh("chart");
     if (!capabilities.has("chart")) {
-      _loadChartLib().then(renderStatsChart, function(err) {
+      _loadChartLib().then(renderStatsChart, function(_err) {
         var parent = ctx.parentNode;
         if (parent)
           parent.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
