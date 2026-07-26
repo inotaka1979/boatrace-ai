@@ -337,6 +337,16 @@ def main() -> int:
             log.exception("  unexpected error in %s: %s", name, e)
             failures.append(f"{name}(error)")
 
+    # PR-7/PR-11 拡張 (2026-07-26): today.json を日次アーカイブ化
+    #   (aggregate_form の過去日 join / backtest のフル入力を蓄積、retention 付き)。
+    #   補助タスクなので失敗しても scrape 本体の成否には数えない (watchdog を誤検知させない)。
+    try:
+        arc = _run_subprocess("archive_daily.py", timeout_sec=120)
+        if arc != 0:
+            log.warning("  archive_daily exit=%d (non-fatal)", arc)
+    except Exception as e:  # noqa: BLE001
+        log.warning("  archive_daily error: %s (non-fatal)", e)
+
     elapsed = time.monotonic() - overall_started
     log.info("=== scrape_all done in %.1fs, failures=%d ===", elapsed, len(failures))
     if failures:

@@ -43,6 +43,10 @@ step "Python unit tests (check_freshness)" \
 step "Python unit tests (aggregate_form)" \
      "python3 -m unittest scripts.tests.test_aggregate_form -v"
 
+# 1c3) FU-1: archive_daily ユニットテスト
+step "Python unit tests (archive_daily)" \
+     "python3 -m unittest scripts.tests.test_archive_daily -v"
+
 # 1d) 2026-05-17: scrape_all._decide_tasks / _is_fresh_today ユニットテスト
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"
