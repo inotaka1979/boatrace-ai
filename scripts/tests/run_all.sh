@@ -39,6 +39,10 @@ step "Python unit tests (http_utils)" \
 step "Python unit tests (check_freshness)" \
      "python3 -m unittest scripts.tests.test_check_freshness -v"
 
+# 1c2) PR-7: aggregate_form ユニットテスト
+step "Python unit tests (aggregate_form)" \
+     "python3 -m unittest scripts.tests.test_aggregate_form -v"
+
 # 1d) 2026-05-17: scrape_all._decide_tasks / _is_fresh_today ユニットテスト
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"
@@ -140,6 +144,30 @@ step "Build pipeline + reproducibility check" \
 # 9) X1 EV/Kelly/乖離テスト
 step "X1 EV/Kelly/divergence tests" \
      "node scripts/tests/test_ev_kelly.js"
+
+# 9b) S-01 L1/L2 融合比テスト
+step "S-01 blend ratio (l2trainStep) tests" \
+     "node scripts/tests/test_blend_ratio.js"
+
+# 9c) A-03 confStars ベースライン超過テスト
+step "A-03 confStars (baseline lift) tests" \
+     "node scripts/tests/test_conf_stars.js"
+
+# 9d) S-02 買い目生成 (Plackett-Luce Σ=1) テスト
+step "S-02 bet generation (PL normalization) tests" \
+     "node scripts/tests/test_bet_generation.js"
+
+# 9e) PR-1 黄金レース回帰 snapshot テスト
+step "Golden race regression snapshots" \
+     "node scripts/tests/test_golden_races.js"
+
+# 9f) PR-6 データ縮退バナー検出テスト
+step "S-05 degraded feature banner tests" \
+     "node scripts/tests/test_degraded_banner.js"
+
+# 9g) PR-11 オフライン履歴バックテスト CLI テスト
+step "A-02 offline backtest CLI tests" \
+     "node scripts/tests/test_backtest_offline.mjs"
 
 # 10) X2 正規化テスト
 step "X2 normalization tests" \

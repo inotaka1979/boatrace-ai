@@ -18,7 +18,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install lint format type test test-e2e snapshots-update build build-check split gate clean
+.PHONY: help install lint format type test test-e2e snapshots-update build build-check split gate clean backtest
 
 help:
 	@echo "Clearwing local CI gate (BoatRace Oracle)"
@@ -78,3 +78,12 @@ gate: lint type test build-check
 
 clean:
 	rm -rf node_modules build/node_modules dist .cache build/playwright-report build/test-results
+
+# PR-11: オフライン履歴バックテスト。ROI をベースライン 3 種と信頼区間つきで比較。
+#   使い方: make backtest FROM=20260401 TO=20260630 [ARCHIVE=data/archive]
+FROM ?=
+TO ?=
+ARCHIVE ?= data/archive
+backtest:
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "usage: make backtest FROM=YYYYMMDD TO=YYYYMMDD"; exit 2; }
+	node scripts/backtest_offline.mjs --from $(FROM) --to $(TO) --archive $(ARCHIVE) --out build/backtest_$(FROM)-$(TO).json

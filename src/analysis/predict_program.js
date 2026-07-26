@@ -54,9 +54,23 @@ function predictRaceProgram(sid, raceNum) {
   });
   var l2probs = l2Predict(features6);
 
-  // PB-8: Bayesian shrinkage（番組予想は展示情報なしのため L1 比率高め: N0=600）
-  var dbSize = Object.keys(racerDB).length;
-  var alpha = 600 / (600 + dbSize);
+  // PB-8 / S-01 FIX (2026-07-26): Bayesian shrinkage。番組予想は展示情報なしの
+  //   ため L1 比率高め (N0=600)。旧実装は分母に racerDB のキー数を使っており
+  //   L2 学習量と無関係な定数に固定されていた。n = l2trainStep（L2 の実学習量）
+  //   を分母にするのが正しい。詳細は predict_race.js の同修正コメント参照。
+  var _BLEND = (typeof TUNING !== 'undefined' && TUNING.BLEND)
+    ? TUNING.BLEND
+    : { N0_PROGRAM: 600, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
+  var _n0 = _BLEND.N0_PROGRAM != null ? _BLEND.N0_PROGRAM : 600;
+  var _n =
+    typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0
+      ? l2trainStep
+      : 0;
+  var alpha = _n0 / (_n0 + _n);
+  var _amin = _BLEND.ALPHA_MIN != null ? _BLEND.ALPHA_MIN : 0.05;
+  var _amax = _BLEND.ALPHA_MAX != null ? _BLEND.ALPHA_MAX : 1.0;
+  if (alpha < _amin) alpha = _amin;
+  if (alpha > _amax) alpha = _amax;
   var beta = 1 - alpha;
 
   var finalProbs = boats.map(function (b, i) {

@@ -43,8 +43,10 @@ function _renderRaceDetailBets(ctx) {
         var evHtml = evBadge(ev3);
         // FIX: 表示書式を .toFixed(1) に統一（穴予想 / オッズテーブルと整合）
         var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + '倍</span>' : '';
-        // X1: EV モードの場合、Kelly 配分（円）を表示
-        var stakeStr = t.stakeYen
+        // X1: EV モードの場合、Kelly 配分（円）を表示。
+        // S-04: ENABLE_STAKE_SUGGESTION が false（既定）の間は賭け金を出さず、
+        //   EV / オッズ乖離の「情報」表示に留める（未検証の確率で賭け金を推奨しない）。
+        var stakeStr = t.stakeYen && !t.stakeSuppressed
           ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
             t.stakeYen.toLocaleString() +
             '</span>'
@@ -61,10 +63,13 @@ function _renderRaceDetailBets(ctx) {
           '</span>';
       });
       predHtml += '</div>';
-      // X1: EV モード時の合計投資額表示
-      if (activePred.evApplied) {
+      // X1: EV モード時の合計投資額表示（S-04: 賭け金推奨が有効なときだけ）
+      var _stakeShown = activePred.trifecta.some(function (t) {
+        return t.stakeYen && !t.stakeSuppressed;
+      });
+      if (activePred.evApplied && _stakeShown) {
         var totalStake = activePred.trifecta.reduce(function (a, t) {
-          return a + (t.stakeYen || 0);
+          return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
         }, 0);
         predHtml +=
           '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥' +

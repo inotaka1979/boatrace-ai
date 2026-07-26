@@ -115,7 +115,10 @@ function _renderRaceDetailPrediction(ctx) {
       starsHtml(pred.confStars) +
       ' ' +
       pred.confidence +
-      '%</div>';
+      '%' +
+      // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
+      (pred.confLift != null ? ' (基準比 ' + pred.confLift + 'x)' : '') +
+      '</div>';
     // X5: シナリオ確率表示
     if (pred.scenarios) {
       var scen = pred.scenarios;

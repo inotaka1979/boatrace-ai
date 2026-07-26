@@ -41,10 +41,43 @@ OUTPUT_RACER = "data/db/racerDB.json"
 OUTPUT_STADIUM = "data/db/stadiumDB.json"
 INTERVAL = 3
 
-# ファン手帳URL（最新版）
-FAN_URL = "https://www.boatrace.jp/static_extra/pc_static/download/data/kibetsu/fan2510.lzh"
+# ファン手帳URL（B-02 2026-07-26: 期をハードコードせず現在日付から算出）
+FAN_BASE = "https://www.boatrace.jp/static_extra/pc_static/download/data/kibetsu"
 # 競走成績URL
 RESULTS_BASE = "http://www1.mbrace.or.jp/od2/K/"
+
+
+def fan_handbook_urls(now: datetime.datetime | None = None) -> list[str]:
+    """適用中のファン手帳 URL を「新しい順」で返す。
+
+    期別成績は年 2 回公表され、ファイル名は fanYYMM。
+      - 4 月公表 (fanYY04) → 適用 5〜10 月
+      - 10 月公表 (fanYY10) → 適用 11〜翌 4 月
+
+    B-02 (2026-07-26): 旧実装は ``fan2510.lzh`` 固定で、2025 年後期版に
+    貼り付いていた。級別 (classNum) は classBonus で ±6 点、_classCourseMult
+    で乗算係数として効くため、1 期古いだけで昇級選手を過小評価し続ける。
+    現在日付から採用期を算出し、公表直後の差し替え遅延に備えて 3 世代まで
+    新しい順の候補を返す。呼出側が 404 で順に fallback する。
+
+    Args:
+        now: 基準日時（省略時は JST 現在）。テスト用に注入可能。
+
+    Returns:
+        新しい順に並んだ 3 件の URL。
+    """
+    now = now or jst_now()
+    y, m = now.year % 100, now.month
+    if 5 <= m <= 10:
+        # 5〜10 月は当年 4 月公表版が適用中
+        cands = [(y, 4), (y - 1, 10), (y - 1, 4)]
+    elif m >= 11:
+        # 11〜12 月は当年 10 月公表版が適用中
+        cands = [(y, 10), (y, 4), (y - 1, 10)]
+    else:
+        # 1〜4 月は前年 10 月公表版が適用中
+        cands = [(y - 1, 10), (y - 1, 4), (y - 2, 10)]
+    return [f"{FAN_BASE}/fan{yy:02d}{mm:02d}.lzh" for yy, mm in cands]
 
 
 def download(url: str) -> bytes:
@@ -329,33 +362,51 @@ def main() -> None:
     os.makedirs(os.path.dirname(OUTPUT_STADIUM), exist_ok=True)
 
     print("=== Step 1: ファン手帳ダウンロード ===")
-    try:
-        fan_data = download(FAN_URL)
-        # bytes ベースで処理（Shift-JIS バイト幅固定長のため）
-        fan_bytes = extract_lzh_bytes(fan_data)
-        racers = parse_fan_handbook(fan_bytes)
-        print(f"  選手数: {len(racers)}")
-    except Exception as e:
-        print(f"  ファン手帳取得失敗: {type(e).__name__}: {e}")
-        racers = {}
-
-    print("=== Step 2: 過去30日分の競走成績 ===")
-    stadium_stats = {}
-    for d in range(1, 31):
-        date = jst_now() - datetime.timedelta(days=d)  # P1-C4: time_utils 統一
-        yyyymm = date.strftime("%Y%m")
-        yymmdd = date.strftime("%y%m%d")
-        url = f"{RESULTS_BASE}{yyyymm}/k{yymmdd}.lzh"
+    # B-02 (2026-07-26): 現在日付から採用期を算出し、新しい順に fallback。
+    #   どの URL を採用したかは silent success 撲滅のため必ず stdout に出す。
+    racers = {}
+    for url in fan_handbook_urls():
         try:
-            data = download(url)
-            text = extract_lzh(data)
-            if text:
-                parse_results_text(text, racers, stadium_stats)
-                print(f"  {date.strftime('%Y-%m-%d')}: OK")
-            time.sleep(INTERVAL)
+            fan_data = download(url)
+            # bytes ベースで処理（Shift-JIS バイト幅固定長のため）
+            fan_bytes = extract_lzh_bytes(fan_data)
+            racers = parse_fan_handbook(fan_bytes)
+            print(f"  ファン手帳: {url} → {len(racers)}選手")
+            if racers:
+                break
         except Exception as e:
-            print(f"  {date.strftime('%Y-%m-%d')}: {e}")
-            time.sleep(INTERVAL)
+            print(f"  ファン手帳 skip {url}: {type(e).__name__}: {e}")
+    if not racers:
+        print("::error::ファン手帳を 1 件も取得できませんでした", file=sys.stderr)
+
+    # PR-7 (2026-07-26): 競走成績 K ファイル (www1.mbrace.or.jp) は GitHub Actions の
+    #   egress から到達できず 30 日分すべて失敗し、stadiumDB / recentResults を空の
+    #   まま更新していた (S-05)。既定ではこの経路を叩かず、recentResults / 場別統計は
+    #   scripts/aggregate_form.py が data/results から組み立てる。--legacy-kfile を
+    #   付けたときだけ旧経路を試す (到達性が回復した環境での retrofit 用)。
+    stadium_stats = {}
+    use_legacy_kfile = "--legacy-kfile" in sys.argv
+    if not use_legacy_kfile:
+        print("=== Step 2: K ファイル取得は既定でスキップ "
+              "(recentResults / stadiumDB は aggregate_form.py が担当。"
+              "旧経路は --legacy-kfile) ===")
+    else:
+        print("=== Step 2: 過去30日分の競走成績 (--legacy-kfile) ===")
+        for d in range(1, 31):
+            date = jst_now() - datetime.timedelta(days=d)  # P1-C4: time_utils 統一
+            yyyymm = date.strftime("%Y%m")
+            yymmdd = date.strftime("%y%m%d")
+            url = f"{RESULTS_BASE}{yyyymm}/k{yymmdd}.lzh"
+            try:
+                data = download(url)
+                text = extract_lzh(data)
+                if text:
+                    parse_results_text(text, racers, stadium_stats)
+                    print(f"  {date.strftime('%Y-%m-%d')}: OK")
+                time.sleep(INTERVAL)
+            except Exception as e:
+                print(f"  {date.strftime('%Y-%m-%d')}: {e}")
+                time.sleep(INTERVAL)
 
     # stadiumDB構築
     stadiums = {}

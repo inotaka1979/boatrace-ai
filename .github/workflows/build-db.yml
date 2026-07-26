@@ -29,6 +29,10 @@ jobs:
           python-version: '3.12'
       - run: pip install -r scripts/requirements.txt
       - run: python scripts/build_db.py
+      # PR-7 (2026-07-26): recentResults / stadiumDB を data/results から再構築。
+      #   build_db.py の Step 2 (K ファイル) は Actions egress から到達不能なため
+      #   既定でスキップされる。aggregate_form が本来の担当。
+      - run: python scripts/aggregate_form.py
       - name: Commit & Push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

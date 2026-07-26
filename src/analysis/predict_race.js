@@ -145,11 +145,25 @@ function predictRace(sid, raceNum) {
     }
   }
 
-  // PB-8: Bayesian shrinkage で L1/L2 融合比を連続化
-  //       α = N0 / (N0 + n)  ─ n が 0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）
-  //       N0=300 は「L1 を 300 サンプル相当として信用する」事前
-  var dbSize = Object.keys(racerDB).length;
-  var alpha = 300 / (300 + dbSize);
+  // PB-8 / S-01 FIX (2026-07-26): Bayesian shrinkage で L1/L2 融合比を連続化。
+  //   α = N0 / (N0 + n)  ─ n=0 なら α=1（L1 のみ）、n→∞ で α→0（L2 のみ）。
+  //   旧実装は分母に racerDB のキー数（登録選手数 ≈1,625）を使っており、L2 の
+  //   学習量と無関係な定数（α≈0.156）に貼り付いていた → L1 (435 行) の寄与が
+  //   16% に固定。Bayesian shrinkage の n は「L2 が何サンプル学習したか」=
+  //   l2trainStep が正しい。新規ユーザーは n=0 → α=1 (L1 のみ) から始まり、
+  //   学習が進むほど L2 に寄る（PB-8 の当初設計意図）。
+  //   定数は critical bundle 予算（TUNING は critical 側で満杯）を守るため rest
+  //   側の本モジュールに置く。将来 TUNING.BLEND が定義されればそれを優先する。
+  var _BLEND = (typeof TUNING !== 'undefined' && TUNING.BLEND)
+    ? TUNING.BLEND
+    : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
+  var _n =
+    typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0
+      ? l2trainStep
+      : 0;
+  var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
+  if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
+  if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
   var beta = 1 - alpha;
 
   var finalProbs = boats.map(function (b, i) {
@@ -258,7 +272,13 @@ function predictRace(sid, raceNum) {
   var evOpt = {
     evMin: modeEvMin != null ? modeEvMin : defEvMin,
     maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-    kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+    // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
+    //   誤差がある前提では full/half より現実的。
+    kellyFrac:
+      parseFloat(settings.kellyFrac) ||
+      (typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
+        ? TUNING.KELLY.DEFAULT_FRAC
+        : 0.25),
     bankroll: parseInt(settings.bankroll) || 10000,
   };
   // 当該レースのオッズを取得
@@ -304,9 +324,21 @@ function predictRace(sid, raceNum) {
   bets.method = method;
   bets.features6 = features6;
 
+  // A-03 FIX (2026-07-26): 信頼度★は「絶対確率」ではなく「ベースライン超過分
+  //   (lift)」で判定する。旧: topProb >= 0.40 で★5。しかし 1 コース勝率の
+  //   ベースレートは 0.55 なので「1 号艇が普通に強いだけ」の情報量ゼロの
+  //   レースが最高評価になり、逆に混戦で AI が有意な判断をしたレース (混戦の
+  //   穴頭など) が低評価になっていた。lift = topProb / baseline(top 艇の進入
+  //   コース) を指標にする。confidence (絶対%) は表示用に従来通り残す。
+  //   しきい値は critical bundle 予算を守るため rest 側にローカル定義。
   var conf = Math.round(topProb * 100);
   bets.confidence = conf;
-  bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+  var _baseline = (typeof COURSE_WIN_RATE !== 'undefined' && COURSE_WIN_RATE[marks[0].course])
+    ? COURSE_WIN_RATE[marks[0].course]
+    : 0.16;
+  var _lift = _baseline > 0 ? topProb / _baseline : 1.0;
+  bets.confLift = Math.round(_lift * 100) / 100;
+  bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
 
   // B14 (2026-05-17): 詳細画面で表示される 🔥穴予想 (高EV chip) を bets.ana に
   //   組込んで savePrediction で履歴追跡できるようにする。EV>=1.0 が無ければ

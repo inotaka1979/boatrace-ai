@@ -1278,11 +1278,14 @@ var TUNING = Object.freeze({
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
-  // EV / Kelly（X1 設計）
+  // EV / Kelly（X1 設計 / S-04 2026-07-26 安全化）
+  //   MIN_STAKE_RATIO(=0.005) と ENABLE_STAKE_SUGGESTION(=false) は
+  //   src/analysis/bet_generation.js / predict_race.js 側の既定にフォールバックする
+  //   （critical bundle 予算を守るため TUNING には持たない。有効化時はそちらを編集）。
   KELLY: Object.freeze({
-    DEFAULT_FRAC: 0.5,            // half-Kelly を既定（過大ベット抑止）
-    MIN_FRAC: 0.0,                // 最低 fraction（負ベット禁止）
-    MAX_STAKE_RATIO: 1.0,         // bankroll 比 stake 上限
+    DEFAULT_FRAC: 0.25,          // quarter-Kelly（確率推定に誤差がある前提の現実解）
+    MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
+    MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限（旧 1.0 は破産リスク）
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -3782,6 +3785,54 @@ function pf(v){return parseFloat(v)||0}
 
 /* BUILD:REPORTING_STATUS_BANNER:END */
 
+/* BUILD:REPORTING_DEGRADED_BANNER:START */
+"use strict";
+(() => {
+  // ../src/reporting/degraded_banner.js
+  function _detectDegradedFeatures() {
+    var out = [];
+    var sdb = typeof stadiumDB !== "undefined" && stadiumDB ? stadiumDB : {};
+    var sids = Object.keys(sdb);
+    var withCwr = 0;
+    for (var i = 0; i < sids.length; i++) {
+      var cwr = sdb[sids[i]] && sdb[sids[i]].courseWinRate;
+      if (cwr && Object.keys(cwr).length > 0) withCwr++;
+    }
+    if (withCwr < 20) out.push("\u5834\u5225\u30B3\u30FC\u30B9\u50BE\u5411");
+    var rdb = typeof racerDB !== "undefined" && racerDB ? racerDB : {};
+    var rids = Object.keys(rdb).slice(0, 200);
+    if (rids.length >= 50) {
+      var withForm = 0;
+      for (var j = 0; j < rids.length; j++) {
+        var rr = rdb[rids[j]] && rdb[rids[j]].recentResults;
+        if (Array.isArray(rr) && rr.length >= 5) withForm++;
+      }
+      if (withForm / rids.length < 0.3) out.push("\u76F4\u8FD1\u30D5\u30A9\u30FC\u30E0");
+    }
+    return out;
+  }
+  function _renderDegradedBanner() {
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("degradedBanner");
+    if (!el) return;
+    var missing = _detectDegradedFeatures();
+    if (missing.length === 0) {
+      el.style.display = "none";
+      return;
+    }
+    el.textContent = "\u26A0 " + missing.join(" / ") + " \u306E\u30C7\u30FC\u30BF\u304C\u672A\u53D6\u5F97\u3067\u3059\u3002\u3053\u308C\u3089\u3092\u9664\u3044\u305F\u30B9\u30B3\u30A2\u3067\u4E88\u60F3\u3057\u3066\u3044\u307E\u3059\u3002";
+    el.style.display = "block";
+    try {
+      console.error("[degraded] unavailable features: " + missing.join(","));
+    } catch (_) {
+    }
+  }
+  globalThis._detectDegradedFeatures = _detectDegradedFeatures;
+  globalThis._renderDegradedBanner = _renderDegradedBanner;
+})();
+
+/* BUILD:REPORTING_DEGRADED_BANNER:END */
+
 // ===============================================
 // DB MANAGEMENT (PRESERVED)
 // ===============================================
@@ -6177,6 +6228,7 @@ function _syncWorkerState(){
       stadiumExhibitionStats: stadiumExhibitionStats,
       l2weights: l2weights,
       featureStats: _featureStats,
+      trainStep: l2trainStep,   // S-01 (2026-07-26): 融合比 α の分母。未送だと worker が main と α 不一致
       plattCoeffs: _plattCoeffs,
       stackingGamma: _stackingGamma,
       tideData: tideData,
@@ -6307,8 +6359,11 @@ var _workerHeavyLoaded = false;
       } catch (e) {
       }
     }
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 300 / (300 + dbSize);
+    var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
+    var _n = typeof l2trainStep === "number" && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
+    var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
+    if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
+    if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
     var beta = 1 - alpha;
     var finalProbs = boats.map(function(b, i) {
       var l1s = l1scores.find(function(s) {
@@ -6400,7 +6455,9 @@ var _workerHeavyLoaded = false;
     var evOpt = {
       evMin: modeEvMin != null ? modeEvMin : defEvMin,
       maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
-      kellyFrac: parseFloat(settings.kellyFrac) || 0.5,
+      // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
+      //   誤差がある前提では full/half より現実的。
+      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -6442,7 +6499,10 @@ var _workerHeavyLoaded = false;
     bets.features6 = features6;
     var conf = Math.round(topProb * 100);
     bets.confidence = conf;
-    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+    var _baseline = typeof COURSE_WIN_RATE !== "undefined" && COURSE_WIN_RATE[marks[0].course] ? COURSE_WIN_RATE[marks[0].course] : 0.16;
+    var _lift = _baseline > 0 ? topProb / _baseline : 1;
+    bets.confLift = Math.round(_lift * 100) / 100;
+    bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
     bets.ana = function() {
       var anaTopN = parseInt(settings.betCountAna) || 3;
       if (anaTopN < 1) anaTopN = 1;
@@ -6525,8 +6585,14 @@ var _workerHeavyLoaded = false;
       return getL2Features(b, null, null, l1s ? l1s.etRank : 5, 5, sid);
     });
     var l2probs = l2Predict(features6);
-    var dbSize = Object.keys(racerDB).length;
-    var alpha = 600 / (600 + dbSize);
+    var _BLEND = typeof TUNING !== "undefined" && TUNING.BLEND ? TUNING.BLEND : { N0_PROGRAM: 600, ALPHA_MIN: 0.05, ALPHA_MAX: 1 };
+    var _n0 = _BLEND.N0_PROGRAM != null ? _BLEND.N0_PROGRAM : 600;
+    var _n = typeof l2trainStep === "number" && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
+    var alpha = _n0 / (_n0 + _n);
+    var _amin = _BLEND.ALPHA_MIN != null ? _BLEND.ALPHA_MIN : 0.05;
+    var _amax = _BLEND.ALPHA_MAX != null ? _BLEND.ALPHA_MAX : 1;
+    if (alpha < _amin) alpha = _amin;
+    if (alpha > _amax) alpha = _amax;
     var beta = 1 - alpha;
     var finalProbs = boats.map(function(b, i) {
       var l1s = l1scores.find(function(s) {
@@ -6637,263 +6703,275 @@ function comparePredictions(progPred,livePred){
 // ===============================================
 // X1: EV / Kelly / オッズ乖離 ヘルパ
 // ===============================================
-/**
- * EV ベースで買い目を選定。
- * @param probs   {Object<combo, prob>}
- * @param odds    {Object<combo, odds>}
- * @param opt     {evMin, maxBets, kellyFrac, bankroll}
- * @returns       Array<{combo, ev, prob, odds, stakeRatio, stakeYen}>
- */
-function selectBetsByEV(probs, odds, opt){
-  opt = opt || {};
-  var evMin = opt.evMin != null ? opt.evMin : 1.15;
-  var maxBets = opt.maxBets != null ? opt.maxBets : 8;
-  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : 0.5;
-  var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
-  if(!probs || !odds) return [];
-  var rankedAll = Object.keys(probs)
-    .filter(function(k){ return odds[k] && probs[k] > 0; })
-    .map(function(k){
+/* BUILD:ANALYSIS_BET_GENERATION:START */
+"use strict";
+(() => {
+  // ../src/analysis/bet_generation.js
+  function selectBetsByEV(probs, odds, opt) {
+    opt = opt || {};
+    var K = typeof TUNING !== "undefined" && TUNING.KELLY ? TUNING.KELLY : {};
+    var evMin = opt.evMin != null ? opt.evMin : 1.15;
+    var maxBets = opt.maxBets != null ? opt.maxBets : 8;
+    var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : K.DEFAULT_FRAC != null ? K.DEFAULT_FRAC : 0.25;
+    var bankroll = opt.bankroll != null ? opt.bankroll : 1e4;
+    if (!probs || !odds) return [];
+    var rankedAll = Object.keys(probs).filter(function(k) {
+      return odds[k] && probs[k] > 0;
+    }).map(function(k) {
       return { combo: k, prob: probs[k], odds: odds[k], ev: probs[k] * odds[k] };
-    })
-    .filter(function(b){ return b.ev >= evMin; })
-    .sort(function(a, b){ return b.ev - a.ev; });
-  // P1-A6: 高EV案件は厳選するほど ROI が安定する（プロの定石）。
-  //   平均 EV が高いほど maxBets を圧縮（既存 maxBets を上限としつつ更に絞る）
-  var avgEv = rankedAll.length ? rankedAll.reduce(function(s,b){return s+b.ev;},0)/rankedAll.length : 0;
-  var dynMaxBets = (avgEv >= 1.35) ? 3
-                 : (avgEv >= 1.25) ? 5
-                 : (avgEv >= 1.20) ? 7
-                 : maxBets;
-  var ranked = rankedAll.slice(0, Math.min(maxBets, dynMaxBets));
-  // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
-  ranked.forEach(function(b){
-    var bn = b.odds - 1;
-    if(bn <= 0){ b.stakeRatio = 0; b.stakeYen = 0; return; }
-    var f = (bn * b.prob - (1 - b.prob)) / bn;
-    b.stakeRatio = Math.max(0, f * kellyFrac);
-  });
-  // PB-9: 排他事象 Kelly — 同一レース内 3連単 N 点は最大 1 点しか当たらない
-  //       単純合計 ∑f_i は資金全投入を超える可能性があるため、
-  //       上限 KELLY.MAX_STAKE_RATIO（=1.0）を超えたら比例縮小
-  var sumRatio = ranked.reduce(function(s,b){return s + (b.stakeRatio||0);}, 0);
-  var maxRatio = (TUNING && TUNING.KELLY) ? TUNING.KELLY.MAX_STAKE_RATIO : 1.0;
-  if(sumRatio > maxRatio && sumRatio > 0){
-    var scale = maxRatio / sumRatio;
-    ranked.forEach(function(b){ b.stakeRatio *= scale; });
-  }
-  ranked.forEach(function(b){
-    b.stakeYen = Math.max(100, Math.round(bankroll * b.stakeRatio / 100) * 100);
-  });
-  return ranked;
-}
-
-/**
- * 各艇の AI 確率 vs 市場確率（人気）の乖離を計算。
- * delta > 0 → AI が高評価（過小評価＝妙味）
- * delta < 0 → AI が低評価（過大評価＝危険）
- */
-function calcOddsDivergence(aiProbsByBoat, oddsWin){
-  if(!oddsWin) return null;
-  var sumInv = 0;
-  for(var b=1; b<=6; b++){ if(oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)]; }
-  if(sumInv === 0) return null;
-  var result = {};
-  for(var b2=1; b2<=6; b2++){
-    var ai = aiProbsByBoat[b2-1] || 0;
-    var market = oddsWin[String(b2)] ? (1/oddsWin[String(b2)]) / sumInv : 0;
-    result[b2] = {
-      ai_prob: ai,
-      market_prob: market,
-      delta: ai - market,
-      ev: oddsWin[String(b2)] ? ai * oddsWin[String(b2)] : null,
-    };
-  }
-  return result;
-}
-
-/**
- * PB-4: Plackett–Luce モデルで 3連単 / 2連単確率を計算
- *   旧: p_i * p_j * p_k * 6 （簡易補正） → 順序付き選択時の系統バイアス
- *   新: p_i * p_j/(1-p_i) * p_k/(1-p_i-p_j)
- *       1 着が決まった後の残り 5 艇に確率を再分配する正攻法
- *   これにより EV/Kelly が「美味しく見える組合せ」を選ぶバイアスを除去
- */
-// _plackettLuceTrifectaProb / _plackettLuceExactaProb は src/analysis/backtest.js に移動 (Phase 2c)
-// → BUILD:ANALYSIS_BACKTEST bundle 経由で globalThis に export 済
-
-/**
- * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成（PL モデル）
- */
-function buildTrifectaProbDist(marks){
-  var p = marks.map(function(m){return m.prob||0;});
-  var dist = {};
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      for(var k=0;k<marks.length;k++){
-        if(k===i || k===j) continue;
-        var key = marks[i].boat + '-' + marks[j].boat + '-' + marks[k].boat;
-        dist[key] = _plackettLuceTrifectaProb(p, i, j, k);
-      }
-    }
-  }
-  return dist;
-}
-function buildExactaProbDist(marks){
-  var p = marks.map(function(m){return m.prob||0;});
-  var dist = {};
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      var key = marks[i].boat + '-' + marks[j].boat;
-      dist[key] = _plackettLuceExactaProb(p, i, j);
-    }
-  }
-  return dist;
-}
-
-/**
- * 高 EV 穴買い目を抽出（レースタイプ非依存、全レースで詳細画面に表示）
- * 主候補: オッズ ≥ minOdds かつ EV ≥ minEV
- * フォールバック: 主候補が無いときは オッズ ≥ minOddsLoose の中から EV 降順で topN
- *                （EV<1 でも候補を出して「穴予想0件」を回避）
- * @param {Array} marks - sorted marks (each {boat, prob})
- * @param {Object} oddsMap - { "1-2-3": odds, ... }
- * @param {Object} opts - { minOdds:30, minEV:1.0, minOddsLoose:15, topN:3 }
- * @returns {{primary:Array, fallback:Array}} EV 降順
- */
-function _pickAnaCandidates(marks, oddsMap, opts){
-  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') {
-    return { primary: [], fallback: [] };
-  }
-  var o = opts || {};
-  var minOdds = o.minOdds != null ? o.minOdds : 30;
-  var minEV = o.minEV != null ? o.minEV : 1.0;
-  var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
-  var topN = o.topN != null ? o.topN : 3;
-  // B13 (2026-05-16): 推奨買い目との重複を排除するための除外 set。
-  //   ユーザ報告「推奨と穴予想が同じになる」現象は、prob×odds が両方とも高い
-  //   combo (例 1-2-3 odds=35) が両方のリストに出ることが原因。
-  //   exclude に含まれる combo は primary/fallback どちらにも入れない。
-  var excludeSet = {};
-  if(Array.isArray(o.excludeCombos)){
-    o.excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
-  }
-  var dist = buildTrifectaProbDist(marks);
-  var primary = [], loose = [];
-  for(var combo in dist){
-    if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
-    if(excludeSet[combo]) continue;   // B13: 推奨と重複したら穴からは除外
-    var odds = oddsMap[combo];
-    if(odds == null) continue;
-    var prob = dist[combo];
-    if(prob <= 0) continue;
-    var ev = prob * odds;
-    var pick = {combo: combo, prob: prob, odds: odds, ev: ev};
-    if(odds >= minOdds && ev >= minEV) primary.push(pick);
-    if(odds >= minOddsLoose) loose.push(pick);
-  }
-  primary.sort(function(a,b){ return b.ev - a.ev; });
-  loose.sort(function(a,b){ return b.ev - a.ev; });
-  return {
-    primary: primary.slice(0, topN),
-    fallback: loose.slice(0, topN),
-  };
-}
-
-// ===============================================
-// BET GENERATION V2 (PRESERVED)
-// ===============================================
-function generateBetsV2(marks,method,count3,count2){
-  var trifecta=[],exacta=[],quinella=[];
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      exacta.push({combo:marks[i].boat+'-'+marks[j].boat,prob:marks[i].prob*marks[j].prob*2});
-      if(i<j) quinella.push({combo:marks[i].boat+'='+marks[j].boat,prob:(marks[i].prob*marks[j].prob+marks[j].prob*marks[i].prob)*2});
-      for(var k=0;k<marks.length;k++){
-        if(k===i||k===j) continue;
-        trifecta.push({combo:marks[i].boat+'-'+marks[j].boat+'-'+marks[k].boat,prob:marks[i].prob*marks[j].prob*marks[k].prob*6});
-      }
-    }
-  }
-  trifecta.sort(function(a,b){return b.prob-a.prob});
-  exacta.sort(function(a,b){return b.prob-a.prob});
-  quinella.sort(function(a,b){return b.prob-a.prob});
-
-  var selTri,methodLabel;
-
-  // X1: EV モード
-  if(method==='ev' && arguments.length>=5){
-    var raceOdds = arguments[4];   // { trifecta: {...}, exacta: {...}, win: {...} }
-    var evOpt = arguments[5] || {};
-    if(raceOdds && raceOdds.trifecta){
-      var triProbDist = buildTrifectaProbDist(marks);
-      selTri = selectBetsByEV(triProbDist, raceOdds.trifecta, evOpt);
-    } else {
-      selTri = trifecta.slice(0, count3);   // オッズ未取得時は確率順フォールバック
-    }
-    var selExa = [];
-    if(raceOdds && raceOdds.exacta){
-      var exaProbDist = buildExactaProbDist(marks);
-      selExa = selectBetsByEV(exaProbDist, raceOdds.exacta, evOpt);
-    } else {
-      selExa = exacta.slice(0, count2);
-    }
-    return {
-      trifecta: selTri,
-      exacta: selExa.slice(0, count2),
-      quinella: quinella.slice(0, count2),
-      methodLabel: 'EV(≥' + (evOpt.evMin||1.15) + ')',
-    };
-  } else if(method==='formation'){
-    var top2=marks.slice(0,2).map(function(m){return m.boat});
-    var top4=marks.slice(0,4).map(function(m){return m.boat});
-    var top5=marks.slice(0,5).map(function(m){return m.boat});
-    var formBets={};
-    top2.forEach(function(a){
-      top4.forEach(function(b){
-        if(b===a) return;
-        top5.forEach(function(c){
-          if(c===a||c===b) return;
-          var key=a+'-'+b+'-'+c;
-          var tp=trifecta.find(function(t){return t.combo===key});
-          formBets[key]=tp?tp.prob:0;
-        });
-      });
+    }).filter(function(b) {
+      return b.ev >= evMin;
+    }).sort(function(a, b) {
+      return b.ev - a.ev;
     });
-    selTri=Object.keys(formBets).map(function(k){return{combo:k,prob:formBets[k]}}).sort(function(a,b){return b.prob-a.prob}).slice(0,count3);
-    methodLabel='フォーメーション';
-  } else if(method==='box'){
-    var topN=count3<=6?3:4;
-    var boxBoats=marks.slice(0,topN).map(function(m){return m.boat});
-    var boxBets=[];
-    for(var bi=0;bi<boxBoats.length;bi++){
-      for(var bj=0;bj<boxBoats.length;bj++){
-        if(bj===bi) continue;
-        for(var bk=0;bk<boxBoats.length;bk++){
-          if(bk===bi||bk===bj) continue;
-          var key=boxBoats[bi]+'-'+boxBoats[bj]+'-'+boxBoats[bk];
-          var tp=trifecta.find(function(t){return t.combo===key});
-          boxBets.push({combo:key,prob:tp?tp.prob:0});
+    var avgEv = rankedAll.length ? rankedAll.reduce(function(s, b) {
+      return s + b.ev;
+    }, 0) / rankedAll.length : 0;
+    var dynMaxBets = avgEv >= 1.35 ? 3 : avgEv >= 1.25 ? 5 : avgEv >= 1.2 ? 7 : maxBets;
+    var ranked = rankedAll.slice(0, Math.min(maxBets, dynMaxBets));
+    ranked.forEach(function(b) {
+      var bn = b.odds - 1;
+      if (bn <= 0) {
+        b.stakeRatio = 0;
+        return;
+      }
+      var f = (bn * b.prob - (1 - b.prob)) / bn;
+      b.stakeRatio = Math.max(0, f * kellyFrac);
+    });
+    var sumRatio = ranked.reduce(function(s, b) {
+      return s + (b.stakeRatio || 0);
+    }, 0);
+    var maxRatio = K.MAX_STAKE_RATIO != null ? K.MAX_STAKE_RATIO : 0.05;
+    if (sumRatio > maxRatio && sumRatio > 0) {
+      var scale = maxRatio / sumRatio;
+      ranked.forEach(function(b) {
+        b.stakeRatio *= scale;
+      });
+    }
+    var minRatio = K.MIN_STAKE_RATIO != null ? K.MIN_STAKE_RATIO : 5e-3;
+    ranked = ranked.filter(function(b) {
+      return (b.stakeRatio || 0) >= minRatio;
+    });
+    var suppressed = K.ENABLE_STAKE_SUGGESTION !== true;
+    ranked.forEach(function(b) {
+      b.stakeYen = Math.round(bankroll * b.stakeRatio / 100) * 100;
+      b.stakeSuppressed = suppressed;
+    });
+    return ranked;
+  }
+  function calcOddsDivergence(aiProbsByBoat, oddsWin) {
+    if (!oddsWin) return null;
+    var sumInv = 0;
+    for (var b = 1; b <= 6; b++) {
+      if (oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)];
+    }
+    if (sumInv === 0) return null;
+    var result = {};
+    for (var b2 = 1; b2 <= 6; b2++) {
+      var ai = aiProbsByBoat[b2 - 1] || 0;
+      var market = oddsWin[String(b2)] ? 1 / oddsWin[String(b2)] / sumInv : 0;
+      result[b2] = {
+        ai_prob: ai,
+        market_prob: market,
+        delta: ai - market,
+        ev: oddsWin[String(b2)] ? ai * oddsWin[String(b2)] : null
+      };
+    }
+    return result;
+  }
+  function buildTrifectaProbDist(marks) {
+    var p = marks.map(function(m) {
+      return m.prob || 0;
+    });
+    var dist = {};
+    for (var i = 0; i < marks.length; i++) {
+      for (var j = 0; j < marks.length; j++) {
+        if (j === i) continue;
+        for (var k = 0; k < marks.length; k++) {
+          if (k === i || k === j) continue;
+          var key = marks[i].boat + "-" + marks[j].boat + "-" + marks[k].boat;
+          dist[key] = _plackettLuceTrifectaProb(p, i, j, k);
         }
       }
     }
-    selTri=boxBets.sort(function(a,b){return b.prob-a.prob}).slice(0,count3);
-    methodLabel='BOX('+topN+'艇)';
-  } else {
-    selTri=trifecta.slice(0,count3);
-    methodLabel='確率順';
+    return dist;
   }
+  function buildExactaProbDist(marks) {
+    var p = marks.map(function(m) {
+      return m.prob || 0;
+    });
+    var dist = {};
+    for (var i = 0; i < marks.length; i++) {
+      for (var j = 0; j < marks.length; j++) {
+        if (j === i) continue;
+        var key = marks[i].boat + "-" + marks[j].boat;
+        dist[key] = _plackettLuceExactaProb(p, i, j);
+      }
+    }
+    return dist;
+  }
+  function _pickAnaCandidates(marks, oddsMap, opts) {
+    if (!Array.isArray(marks) || marks.length < 3 || !oddsMap || typeof oddsMap !== "object") {
+      return { primary: [], fallback: [] };
+    }
+    var o = opts || {};
+    var minOdds = o.minOdds != null ? o.minOdds : 30;
+    var minEV = o.minEV != null ? o.minEV : 1;
+    var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
+    var topN = o.topN != null ? o.topN : 3;
+    var excludeSet = {};
+    if (Array.isArray(o.excludeCombos)) {
+      o.excludeCombos.forEach(function(c) {
+        if (c) excludeSet[String(c)] = true;
+      });
+    }
+    var dist = buildTrifectaProbDist(marks);
+    var primary = [], loose = [];
+    for (var combo in dist) {
+      if (!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
+      if (excludeSet[combo]) continue;
+      var odds = oddsMap[combo];
+      if (odds == null) continue;
+      var prob = dist[combo];
+      if (prob <= 0) continue;
+      var ev = prob * odds;
+      var pick = { combo, prob, odds, ev };
+      if (odds >= minOdds && ev >= minEV) primary.push(pick);
+      if (odds >= minOddsLoose) loose.push(pick);
+    }
+    primary.sort(function(a, b) {
+      return b.ev - a.ev;
+    });
+    loose.sort(function(a, b) {
+      return b.ev - a.ev;
+    });
+    return {
+      primary: primary.slice(0, topN),
+      fallback: loose.slice(0, topN)
+    };
+  }
+  function generateBetsV2(marks, method, count3, count2) {
+    var triDist = buildTrifectaProbDist(marks);
+    var exaDist = buildExactaProbDist(marks);
+    var trifecta = Object.keys(triDist).map(function(c) {
+      return { combo: c, prob: triDist[c] };
+    });
+    var exacta = Object.keys(exaDist).map(function(c) {
+      return { combo: c, prob: exaDist[c] };
+    });
+    var quinella = [];
+    for (var qi = 0; qi < marks.length; qi++) {
+      for (var qj = qi + 1; qj < marks.length; qj++) {
+        var qa = marks[qi].boat, qb = marks[qj].boat;
+        quinella.push({
+          combo: Math.min(qa, qb) + "=" + Math.max(qa, qb),
+          prob: (exaDist[qa + "-" + qb] || 0) + (exaDist[qb + "-" + qa] || 0)
+        });
+      }
+    }
+    trifecta.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    exacta.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    quinella.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    var selTri, methodLabel;
+    if (method === "ev" && arguments.length >= 5) {
+      var raceOdds = arguments[4];
+      var evOpt = arguments[5] || {};
+      if (raceOdds && raceOdds.trifecta) {
+        selTri = selectBetsByEV(triDist, raceOdds.trifecta, evOpt);
+      } else {
+        selTri = trifecta.slice(0, count3);
+      }
+      var selExa = [];
+      if (raceOdds && raceOdds.exacta) {
+        selExa = selectBetsByEV(exaDist, raceOdds.exacta, evOpt);
+      } else {
+        selExa = exacta.slice(0, count2);
+      }
+      return {
+        trifecta: selTri,
+        exacta: selExa.slice(0, count2),
+        quinella: quinella.slice(0, count2),
+        methodLabel: "EV(\u2265" + (evOpt.evMin || 1.15) + ")"
+      };
+    } else if (method === "formation") {
+      var top2 = marks.slice(0, 2).map(function(m) {
+        return m.boat;
+      });
+      var top4 = marks.slice(0, 4).map(function(m) {
+        return m.boat;
+      });
+      var top5 = marks.slice(0, 5).map(function(m) {
+        return m.boat;
+      });
+      var formBets = {};
+      top2.forEach(function(a) {
+        top4.forEach(function(b) {
+          if (b === a) return;
+          top5.forEach(function(c) {
+            if (c === a || c === b) return;
+            var key2 = a + "-" + b + "-" + c;
+            var tp2 = trifecta.find(function(t) {
+              return t.combo === key2;
+            });
+            formBets[key2] = tp2 ? tp2.prob : 0;
+          });
+        });
+      });
+      selTri = Object.keys(formBets).map(function(k) {
+        return { combo: k, prob: formBets[k] };
+      }).sort(function(a, b) {
+        return b.prob - a.prob;
+      }).slice(0, count3);
+      methodLabel = "\u30D5\u30A9\u30FC\u30E1\u30FC\u30B7\u30E7\u30F3";
+    } else if (method === "box") {
+      var topN = count3 <= 6 ? 3 : 4;
+      var boxBoats = marks.slice(0, topN).map(function(m) {
+        return m.boat;
+      });
+      var boxBets = [];
+      for (var bi = 0; bi < boxBoats.length; bi++) {
+        for (var bj = 0; bj < boxBoats.length; bj++) {
+          if (bj === bi) continue;
+          for (var bk = 0; bk < boxBoats.length; bk++) {
+            if (bk === bi || bk === bj) continue;
+            var key = boxBoats[bi] + "-" + boxBoats[bj] + "-" + boxBoats[bk];
+            var tp = trifecta.find(function(t) {
+              return t.combo === key;
+            });
+            boxBets.push({ combo: key, prob: tp ? tp.prob : 0 });
+          }
+        }
+      }
+      selTri = boxBets.sort(function(a, b) {
+        return b.prob - a.prob;
+      }).slice(0, count3);
+      methodLabel = "BOX(" + topN + "\u8247)";
+    } else {
+      selTri = trifecta.slice(0, count3);
+      methodLabel = "\u78BA\u7387\u9806";
+    }
+    return {
+      trifecta: selTri,
+      exacta: exacta.slice(0, count2),
+      quinella: quinella.slice(0, count2),
+      methodLabel
+    };
+  }
+  globalThis.selectBetsByEV = selectBetsByEV;
+  globalThis.calcOddsDivergence = calcOddsDivergence;
+  globalThis.buildTrifectaProbDist = buildTrifectaProbDist;
+  globalThis.buildExactaProbDist = buildExactaProbDist;
+  globalThis._pickAnaCandidates = _pickAnaCandidates;
+  globalThis.generateBetsV2 = generateBetsV2;
+})();
 
-  return{
-    trifecta:selTri,
-    exacta:exacta.slice(0,count2),
-    quinella:quinella.slice(0,count2),
-    methodLabel:methodLabel
-  };
-}
+/* BUILD:ANALYSIS_BET_GENERATION:END */
 
 // ===============================================
 // HISTORY MANAGEMENT (PRESERVED)
@@ -7734,6 +7812,9 @@ async function loadDeferredData(rawPrograms, rawPreviews){
 
   await Promise.allSettled(tasks);
   console.log('[PE-8] deferred fetch complete');
+
+  // S-05 / PR-6: DB fetch 完了時点で場別統計 / 直近フォームの縮退を可視化
+  if(typeof _renderDegradedBanner === 'function') _renderDegradedBanner();
 
   // PE-8 + PE-9: 軽量な学習を deferred で実行
   //   PF-3: _backfillTodayPredictions は重いので「成績タブ open 時 / 60秒 idle」まで遅延
@@ -9257,7 +9338,8 @@ async function _loadNextOpen(){
         predHtml += "</div>";
       });
       var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%</div>";
+      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%" + // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
+      (pred.confLift != null ? " (\u57FA\u6E96\u6BD4 " + pred.confLift + "x)" : "") + "</div>";
       if (pred.scenarios) {
         var scen = pred.scenarios;
         var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };
@@ -9356,13 +9438,16 @@ async function _loadNextOpen(){
           var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
           var evHtml = evBadge(ev3);
           var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
-          var stakeStr = t.stakeYen ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
+          var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
         predHtml += "</div>";
-        if (activePred.evApplied) {
+        var _stakeShown = activePred.trifecta.some(function(t) {
+          return t.stakeYen && !t.stakeSuppressed;
+        });
+        if (activePred.evApplied && _stakeShown) {
           var totalStake = activePred.trifecta.reduce(function(a, t) {
-            return a + (t.stakeYen || 0);
+            return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
           }, 0);
           predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
         }

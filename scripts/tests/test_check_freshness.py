@@ -179,5 +179,95 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(rc, cf.EXIT_MALFORMED)
 
 
+class CheckContentTests(unittest.TestCase):
+    """S-05: 中身の充足度検証。updated_at が新しくても空なら不足を主張する。"""
+
+    def test_min_keys_empty_is_insufficient(self) -> None:
+        code, msg = cf.check_content({"stadiums": {}}, min_keys={"stadiums": 20})
+        self.assertEqual(code, cf.EXIT_INSUFFICIENT, msg)
+        self.assertIn("INSUFFICIENT", msg)
+
+    def test_min_keys_enough_is_ok(self) -> None:
+        stadiums = {str(i): {"courseWinRate": {}} for i in range(1, 25)}
+        code, _ = cf.check_content({"stadiums": stadiums}, min_keys={"stadiums": 20})
+        self.assertEqual(code, cf.EXIT_OK)
+
+    def test_min_keys_absent_path_is_malformed(self) -> None:
+        # silent OK にしない: 検証対象パスが無いのは設定 or データの異常
+        code, msg = cf.check_content({"foo": {}}, min_keys={"nosuch": 1})
+        self.assertEqual(code, cf.EXIT_MALFORMED, msg)
+
+    def test_min_ratio_all_empty_is_insufficient(self) -> None:
+        racers = {str(t): {"recentResults": []} for t in range(4000, 4020)}
+        code, msg = cf.check_content(
+            {"racers": racers}, min_ratio={"racers.recentResults": 0.5}
+        )
+        self.assertEqual(code, cf.EXIT_INSUFFICIENT, msg)
+
+    def test_min_ratio_sixty_percent_meets_threshold(self) -> None:
+        racers = {}
+        for t in range(4000, 4010):
+            filled = (t - 4000) < 6   # 6/10 = 0.6 非空
+            racers[str(t)] = {"recentResults": [1, 2, 3] if filled else []}
+        code, _ = cf.check_content(
+            {"racers": racers}, min_ratio={"racers.recentResults": 0.5}
+        )
+        self.assertEqual(code, cf.EXIT_OK)
+
+    def test_min_ratio_absent_container_is_malformed(self) -> None:
+        code, msg = cf.check_content({}, min_ratio={"racers.recentResults": 0.5})
+        self.assertEqual(code, cf.EXIT_MALFORMED, msg)
+
+    def test_min_ratio_empty_container_is_insufficient(self) -> None:
+        code, _ = cf.check_content({"racers": {}}, min_ratio={"racers.recentResults": 0.5})
+        self.assertEqual(code, cf.EXIT_INSUFFICIENT)
+
+
+class ContentCliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, "db.json")
+
+    def _write(self, payload: dict) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+
+    def test_fresh_but_empty_strict_returns_5(self) -> None:
+        self._write({"updated_at": _iso(datetime.now(timezone.utc)), "stadiums": {}})
+        rc = cf.main([self.path, "--max-age-min", "2880", "--min-keys", "stadiums=20", "--strict"])
+        self.assertEqual(rc, cf.EXIT_INSUFFICIENT)
+
+    def test_fresh_but_empty_warning_returns_0(self) -> None:
+        self._write({"updated_at": _iso(datetime.now(timezone.utc)), "stadiums": {}})
+        rc = cf.main([self.path, "--max-age-min", "2880", "--min-keys", "stadiums=20"])
+        self.assertEqual(rc, 0)
+
+    def test_stale_reported_before_content(self) -> None:
+        old = datetime.now(timezone.utc) - timedelta(days=5)
+        self._write({"updated_at": _iso(old), "stadiums": {}})
+        rc = cf.main(
+            [self.path, "--max-age-min", "2880", "--min-keys", "stadiums=20", "--strict"]
+        )
+        # stale を先に報告 (5 ではなく 2)
+        self.assertEqual(rc, cf.EXIT_STALE)
+
+    def test_absent_path_returns_malformed(self) -> None:
+        self._write({"updated_at": _iso(datetime.now(timezone.utc))})
+        rc = cf.main([self.path, "--max-age-min", "2880", "--min-keys", "nosuch=1", "--strict"])
+        self.assertEqual(rc, cf.EXIT_MALFORMED)
+
+    def test_bad_spec_returns_malformed(self) -> None:
+        self._write({"updated_at": _iso(datetime.now(timezone.utc)), "stadiums": {}})
+        rc = cf.main([self.path, "--max-age-min", "2880", "--min-keys", "stadiums20"])
+        self.assertEqual(rc, cf.EXIT_MALFORMED)
+
+    def test_fresh_and_full_returns_0(self) -> None:
+        stadiums = {str(i): {} for i in range(1, 25)}
+        self._write({"updated_at": _iso(datetime.now(timezone.utc)), "stadiums": stadiums})
+        rc = cf.main([self.path, "--max-age-min", "2880", "--min-keys", "stadiums=20", "--strict"])
+        self.assertEqual(rc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -231,6 +231,8 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_STATS_PAGE',
     # 日別成績ページ (2026-07-19) — 日別タブ open 時のみ
     'REPORTING_DAILY_STATS',
+    # 買い目生成 (PR-2) — レース詳細を開いた時のみ。critical 起動には不要。
+    'ANALYSIS_BET_GENERATION',
     # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
     'ANALYSIS_PREDICT_SCENARIOS',
     'ANALYSIS_PREDICT_RACE',
@@ -246,6 +248,8 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_RACE_DETAIL_BOATS',
     'REPORTING_RACE_DETAIL_PREDICTION',
     'REPORTING_RACE_DETAIL_BETS',
+    # データ縮退バナー (PR-6) — DB fetch 完了後に描画。critical 起動には不要。
+    'REPORTING_DEGRADED_BANNER',
 }
 
 # Phase 2 完遂続編: rest からさらに lazy sub-chunk へ振り分け。

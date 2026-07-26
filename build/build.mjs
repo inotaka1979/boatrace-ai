@@ -122,12 +122,14 @@ async function main() {
     { marker: 'DISCOVERY_OPENAPI', src: 'discovery/openapi_client.js' }, // Clearwing Phase 2b
     { marker: 'ANALYSIS_BACKTEST', src: 'analysis/backtest.js' },        // Clearwing Phase 2c
     { marker: 'REPORTING_STATUS_BANNER', src: 'reporting/status_banner.js' }, // Clearwing Phase 2d
+    { marker: 'REPORTING_DEGRADED_BANNER', src: 'reporting/degraded_banner.js' }, // PR-6 (2026-07-26): データ縮退バナー
     { marker: 'CONTEXT_DOMAIN', src: 'context/domain_constants.js' },         // Clearwing Phase 2e
     { marker: 'ANALYSIS_SCORE_BOAT', src: 'analysis/score_boat.js' },         // Phase 2 完遂 (scoreBoatV2)
     { marker: 'ANALYSIS_CALIBRATION', src: 'analysis/calibration.js' },       // Phase 2 完遂続き (Platt + featureStats)
     { marker: 'ANALYSIS_GBDT_RUNTIME', src: 'analysis/gbdt_runtime.js' },     // Tier 3 (2026-05-24) GBDT 評価ランタイム
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
     { marker: 'REPORTING_DAILY_STATS', src: 'reporting/daily_stats_page.js' }, // 2026-07-19 日別成績ページ
+    { marker: 'ANALYSIS_BET_GENERATION', src: 'analysis/bet_generation.js' },      // PR-2 (2026-07-26): 買い目生成を src 化
     { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
     { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
@@ -169,6 +171,7 @@ async function main() {
       'analysis/l2_features.js',
       'analysis/score_boat.js',
       'analysis/predict_scenarios.js',
+      'analysis/bet_generation.js', // PR-2: 買い目生成 twin（手動コピー撲滅）
       'analysis/predict_race.js',
       'utils/features.js', // ← v2: pipeline override (must be last)
     ];
