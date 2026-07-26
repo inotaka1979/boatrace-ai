@@ -318,9 +318,21 @@ function predictRace(sid, raceNum) {
   bets.method = method;
   bets.features6 = features6;
 
+  // A-03 FIX (2026-07-26): 信頼度★は「絶対確率」ではなく「ベースライン超過分
+  //   (lift)」で判定する。旧: topProb >= 0.40 で★5。しかし 1 コース勝率の
+  //   ベースレートは 0.55 なので「1 号艇が普通に強いだけ」の情報量ゼロの
+  //   レースが最高評価になり、逆に混戦で AI が有意な判断をしたレース (混戦の
+  //   穴頭など) が低評価になっていた。lift = topProb / baseline(top 艇の進入
+  //   コース) を指標にする。confidence (絶対%) は表示用に従来通り残す。
+  //   しきい値は critical bundle 予算を守るため rest 側にローカル定義。
   var conf = Math.round(topProb * 100);
   bets.confidence = conf;
-  bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+  var _baseline = (typeof COURSE_WIN_RATE !== 'undefined' && COURSE_WIN_RATE[marks[0].course])
+    ? COURSE_WIN_RATE[marks[0].course]
+    : 0.16;
+  var _lift = _baseline > 0 ? topProb / _baseline : 1.0;
+  bets.confLift = Math.round(_lift * 100) / 100;
+  bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
 
   // B14 (2026-05-17): 詳細画面で表示される 🔥穴予想 (高EV chip) を bets.ana に
   //   組込んで savePrediction で履歴追跡できるようにする。EV>=1.0 が無ければ

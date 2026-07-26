@@ -6446,7 +6446,10 @@ var _workerHeavyLoaded = false;
     bets.features6 = features6;
     var conf = Math.round(topProb * 100);
     bets.confidence = conf;
-    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+    var _baseline = typeof COURSE_WIN_RATE !== "undefined" && COURSE_WIN_RATE[marks[0].course] ? COURSE_WIN_RATE[marks[0].course] : 0.16;
+    var _lift = _baseline > 0 ? topProb / _baseline : 1;
+    bets.confLift = Math.round(_lift * 100) / 100;
+    bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
     bets.ana = function() {
       var anaTopN = parseInt(settings.betCountAna) || 3;
       if (anaTopN < 1) anaTopN = 1;
@@ -9267,7 +9270,8 @@ async function _loadNextOpen(){
         predHtml += "</div>";
       });
       var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%</div>";
+      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%" + // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
+      (pred.confLift != null ? " (\u57FA\u6E96\u6BD4 " + pred.confLift + "x)" : "") + "</div>";
       if (pred.scenarios) {
         var scen = pred.scenarios;
         var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };

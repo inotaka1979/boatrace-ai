@@ -1052,7 +1052,10 @@
     bets.features6 = features6;
     var conf = Math.round(topProb * 100);
     bets.confidence = conf;
-    bets.confStars = conf >= 40 ? 5 : conf >= 30 ? 4 : conf >= 22 ? 3 : conf >= 15 ? 2 : 1;
+    var _baseline = typeof COURSE_WIN_RATE !== "undefined" && COURSE_WIN_RATE[marks[0].course] ? COURSE_WIN_RATE[marks[0].course] : 0.16;
+    var _lift = _baseline > 0 ? topProb / _baseline : 1;
+    bets.confLift = Math.round(_lift * 100) / 100;
+    bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
     bets.ana = function() {
       var anaTopN = parseInt(settings.betCountAna) || 3;
       if (anaTopN < 1) anaTopN = 1;

@@ -145,6 +145,10 @@ step "X1 EV/Kelly/divergence tests" \
 step "S-01 blend ratio (l2trainStep) tests" \
      "node scripts/tests/test_blend_ratio.js"
 
+# 9c) A-03 confStars ベースライン超過テスト
+step "A-03 confStars (baseline lift) tests" \
+     "node scripts/tests/test_conf_stars.js"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"

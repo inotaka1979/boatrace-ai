@@ -765,7 +765,8 @@
         predHtml += "</div>";
       });
       var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%</div>";
+      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%" + // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
+      (pred.confLift != null ? " (\u57FA\u6E96\u6BD4 " + pred.confLift + "x)" : "") + "</div>";
       if (pred.scenarios) {
         var scen = pred.scenarios;
         var scenLabels = { nige: "\u9003\u3052", sashi: "\u5DEE\u3057", makuri: "\u307E\u304F\u308A", makuriSashi: "\u307E\u304F\u308A\u5DEE\u3057", other: "\u7A74" };
