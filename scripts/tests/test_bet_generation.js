@@ -11,39 +11,9 @@
 'use strict';
 
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const { makeCtx } = require('./_vm_harness');
 
-const code = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
-
-const localStore = {};
-const stub = {
-  console, Date, Math, Number, Array, Object, JSON,
-  setTimeout, setInterval, clearInterval, clearTimeout, Promise,
-  MessageChannel: class { constructor() { this.port1 = {}; this.port2 = { postMessage: () => {} }; } },
-  fetch: () => Promise.reject(new Error('no network')),
-  localStorage: {
-    getItem: (k) => (k in localStore ? localStore[k] : null),
-    setItem: (k, v) => { localStore[k] = String(v); },
-    removeItem: (k) => { delete localStore[k]; },
-    key: (i) => Object.keys(localStore)[i] || null,
-    get length() { return Object.keys(localStore).length; },
-  },
-  window: { addEventListener: () => {} },
-  document: {
-    getElementById: () => ({ innerHTML: '', addEventListener: () => {}, value: '' }),
-    createElement: () => ({ textContent: '', innerHTML: '' }),
-    querySelector: () => null, querySelectorAll: () => [], addEventListener: () => {},
-  },
-  navigator: { serviceWorker: undefined },
-  location: { hostname: 'test', reload: () => {} },
-  AbortController: class { constructor() { this.signal = {}; } abort() {} },
-  alert: () => {}, confirm: () => true,
-};
-stub.globalThis = stub; stub.self = stub;
-const ctx = vm.createContext(stub);
-try { vm.runInContext(code, ctx, { timeout: 5000 }); } catch (_) { /* async timer noise */ }
+const ctx = makeCtx();
 
 function marksOf(probs) {
   return probs.map((p, i) => ({ boat: i + 1, prob: p }));

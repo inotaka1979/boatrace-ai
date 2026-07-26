@@ -3310,54 +3310,6 @@ var _workerHeavyLoaded = false;
 // ===============================================
 // X1: EV / Kelly / オッズ乖離 ヘルパ
 // ===============================================
-/**
- * EV ベースで買い目を選定。
- * @param probs   {Object<combo, prob>}
- * @param odds    {Object<combo, odds>}
- * @param opt     {evMin, maxBets, kellyFrac, bankroll}
- * @returns       Array<{combo, ev, prob, odds, stakeRatio, stakeYen}>
- */
-/* MOVED: function selectBetsByEV */
-
-/**
- * 各艇の AI 確率 vs 市場確率（人気）の乖離を計算。
- * delta > 0 → AI が高評価（過小評価＝妙味）
- * delta < 0 → AI が低評価（過大評価＝危険）
- */
-/* MOVED: function calcOddsDivergence */
-
-/**
- * PB-4: Plackett–Luce モデルで 3連単 / 2連単確率を計算
- *   旧: p_i * p_j * p_k * 6 （簡易補正） → 順序付き選択時の系統バイアス
- *   新: p_i * p_j/(1-p_i) * p_k/(1-p_i-p_j)
- *       1 着が決まった後の残り 5 艇に確率を再分配する正攻法
- *   これにより EV/Kelly が「美味しく見える組合せ」を選ぶバイアスを除去
- */
-// _plackettLuceTrifectaProb / _plackettLuceExactaProb は src/analysis/backtest.js に移動 (Phase 2c)
-// → BUILD:ANALYSIS_BACKTEST bundle 経由で globalThis に export 済
-
-/**
- * 確率順マーク列から { "1-2-3": prob, ... } 形式の3連単確率分布を生成（PL モデル）
- */
-/* MOVED: function buildTrifectaProbDist */
-/* MOVED: function buildExactaProbDist */
-
-/**
- * 高 EV 穴買い目を抽出（レースタイプ非依存、全レースで詳細画面に表示）
- * 主候補: オッズ ≥ minOdds かつ EV ≥ minEV
- * フォールバック: 主候補が無いときは オッズ ≥ minOddsLoose の中から EV 降順で topN
- *                （EV<1 でも候補を出して「穴予想0件」を回避）
- * @param {Array} marks - sorted marks (each {boat, prob})
- * @param {Object} oddsMap - { "1-2-3": odds, ... }
- * @param {Object} opts - { minOdds:30, minEV:1.0, minOddsLoose:15, topN:3 }
- * @returns {{primary:Array, fallback:Array}} EV 降順
- */
-/* MOVED: function _pickAnaCandidates */
-
-// ===============================================
-// BET GENERATION V2 (PRESERVED)
-// ===============================================
-/* MOVED: function generateBetsV2 */
 
 // ===============================================
 // HISTORY MANAGEMENT (PRESERVED)

@@ -1172,6 +1172,268 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   globalThis.predictScenarios = predictScenarios;
   globalThis.predictWithScenarios = predictWithScenarios;
   globalThis.predictEntryCourses = predictEntryCourses;
+  function selectBetsByEV(probs, odds, opt) {
+    opt = opt || {};
+    var K = typeof TUNING !== "undefined" && TUNING.KELLY ? TUNING.KELLY : {};
+    var evMin = opt.evMin != null ? opt.evMin : 1.15;
+    var maxBets = opt.maxBets != null ? opt.maxBets : 8;
+    var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac : K.DEFAULT_FRAC != null ? K.DEFAULT_FRAC : 0.25;
+    var bankroll = opt.bankroll != null ? opt.bankroll : 1e4;
+    if (!probs || !odds) return [];
+    var rankedAll = Object.keys(probs).filter(function(k) {
+      return odds[k] && probs[k] > 0;
+    }).map(function(k) {
+      return { combo: k, prob: probs[k], odds: odds[k], ev: probs[k] * odds[k] };
+    }).filter(function(b) {
+      return b.ev >= evMin;
+    }).sort(function(a, b) {
+      return b.ev - a.ev;
+    });
+    var avgEv = rankedAll.length ? rankedAll.reduce(function(s, b) {
+      return s + b.ev;
+    }, 0) / rankedAll.length : 0;
+    var dynMaxBets = avgEv >= 1.35 ? 3 : avgEv >= 1.25 ? 5 : avgEv >= 1.2 ? 7 : maxBets;
+    var ranked = rankedAll.slice(0, Math.min(maxBets, dynMaxBets));
+    ranked.forEach(function(b) {
+      var bn = b.odds - 1;
+      if (bn <= 0) {
+        b.stakeRatio = 0;
+        return;
+      }
+      var f = (bn * b.prob - (1 - b.prob)) / bn;
+      b.stakeRatio = Math.max(0, f * kellyFrac);
+    });
+    var sumRatio = ranked.reduce(function(s, b) {
+      return s + (b.stakeRatio || 0);
+    }, 0);
+    var maxRatio = K.MAX_STAKE_RATIO != null ? K.MAX_STAKE_RATIO : 0.05;
+    if (sumRatio > maxRatio && sumRatio > 0) {
+      var scale = maxRatio / sumRatio;
+      ranked.forEach(function(b) {
+        b.stakeRatio *= scale;
+      });
+    }
+    var minRatio = K.MIN_STAKE_RATIO != null ? K.MIN_STAKE_RATIO : 5e-3;
+    ranked = ranked.filter(function(b) {
+      return (b.stakeRatio || 0) >= minRatio;
+    });
+    var suppressed = K.ENABLE_STAKE_SUGGESTION !== true;
+    ranked.forEach(function(b) {
+      b.stakeYen = Math.round(bankroll * b.stakeRatio / 100) * 100;
+      b.stakeSuppressed = suppressed;
+    });
+    return ranked;
+  }
+  function calcOddsDivergence(aiProbsByBoat, oddsWin) {
+    if (!oddsWin) return null;
+    var sumInv = 0;
+    for (var b = 1; b <= 6; b++) {
+      if (oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)];
+    }
+    if (sumInv === 0) return null;
+    var result = {};
+    for (var b2 = 1; b2 <= 6; b2++) {
+      var ai = aiProbsByBoat[b2 - 1] || 0;
+      var market = oddsWin[String(b2)] ? 1 / oddsWin[String(b2)] / sumInv : 0;
+      result[b2] = {
+        ai_prob: ai,
+        market_prob: market,
+        delta: ai - market,
+        ev: oddsWin[String(b2)] ? ai * oddsWin[String(b2)] : null
+      };
+    }
+    return result;
+  }
+  function buildTrifectaProbDist(marks) {
+    var p = marks.map(function(m) {
+      return m.prob || 0;
+    });
+    var dist = {};
+    for (var i = 0; i < marks.length; i++) {
+      for (var j = 0; j < marks.length; j++) {
+        if (j === i) continue;
+        for (var k = 0; k < marks.length; k++) {
+          if (k === i || k === j) continue;
+          var key = marks[i].boat + "-" + marks[j].boat + "-" + marks[k].boat;
+          dist[key] = _plackettLuceTrifectaProb(p, i, j, k);
+        }
+      }
+    }
+    return dist;
+  }
+  function buildExactaProbDist(marks) {
+    var p = marks.map(function(m) {
+      return m.prob || 0;
+    });
+    var dist = {};
+    for (var i = 0; i < marks.length; i++) {
+      for (var j = 0; j < marks.length; j++) {
+        if (j === i) continue;
+        var key = marks[i].boat + "-" + marks[j].boat;
+        dist[key] = _plackettLuceExactaProb(p, i, j);
+      }
+    }
+    return dist;
+  }
+  function _pickAnaCandidates(marks, oddsMap, opts) {
+    if (!Array.isArray(marks) || marks.length < 3 || !oddsMap || typeof oddsMap !== "object") {
+      return { primary: [], fallback: [] };
+    }
+    var o = opts || {};
+    var minOdds = o.minOdds != null ? o.minOdds : 30;
+    var minEV = o.minEV != null ? o.minEV : 1;
+    var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
+    var topN = o.topN != null ? o.topN : 3;
+    var excludeSet = {};
+    if (Array.isArray(o.excludeCombos)) {
+      o.excludeCombos.forEach(function(c) {
+        if (c) excludeSet[String(c)] = true;
+      });
+    }
+    var dist = buildTrifectaProbDist(marks);
+    var primary = [], loose = [];
+    for (var combo in dist) {
+      if (!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
+      if (excludeSet[combo]) continue;
+      var odds = oddsMap[combo];
+      if (odds == null) continue;
+      var prob = dist[combo];
+      if (prob <= 0) continue;
+      var ev = prob * odds;
+      var pick = { combo, prob, odds, ev };
+      if (odds >= minOdds && ev >= minEV) primary.push(pick);
+      if (odds >= minOddsLoose) loose.push(pick);
+    }
+    primary.sort(function(a, b) {
+      return b.ev - a.ev;
+    });
+    loose.sort(function(a, b) {
+      return b.ev - a.ev;
+    });
+    return {
+      primary: primary.slice(0, topN),
+      fallback: loose.slice(0, topN)
+    };
+  }
+  function generateBetsV2(marks, method, count3, count2) {
+    var triDist = buildTrifectaProbDist(marks);
+    var exaDist = buildExactaProbDist(marks);
+    var trifecta = Object.keys(triDist).map(function(c) {
+      return { combo: c, prob: triDist[c] };
+    });
+    var exacta = Object.keys(exaDist).map(function(c) {
+      return { combo: c, prob: exaDist[c] };
+    });
+    var quinella = [];
+    for (var qi = 0; qi < marks.length; qi++) {
+      for (var qj = qi + 1; qj < marks.length; qj++) {
+        var qa = marks[qi].boat, qb = marks[qj].boat;
+        quinella.push({
+          combo: Math.min(qa, qb) + "=" + Math.max(qa, qb),
+          prob: (exaDist[qa + "-" + qb] || 0) + (exaDist[qb + "-" + qa] || 0)
+        });
+      }
+    }
+    trifecta.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    exacta.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    quinella.sort(function(a, b) {
+      return b.prob - a.prob;
+    });
+    var selTri, methodLabel;
+    if (method === "ev" && arguments.length >= 5) {
+      var raceOdds = arguments[4];
+      var evOpt = arguments[5] || {};
+      if (raceOdds && raceOdds.trifecta) {
+        selTri = selectBetsByEV(triDist, raceOdds.trifecta, evOpt);
+      } else {
+        selTri = trifecta.slice(0, count3);
+      }
+      var selExa = [];
+      if (raceOdds && raceOdds.exacta) {
+        selExa = selectBetsByEV(exaDist, raceOdds.exacta, evOpt);
+      } else {
+        selExa = exacta.slice(0, count2);
+      }
+      return {
+        trifecta: selTri,
+        exacta: selExa.slice(0, count2),
+        quinella: quinella.slice(0, count2),
+        methodLabel: "EV(\u2265" + (evOpt.evMin || 1.15) + ")"
+      };
+    } else if (method === "formation") {
+      var top2 = marks.slice(0, 2).map(function(m) {
+        return m.boat;
+      });
+      var top4 = marks.slice(0, 4).map(function(m) {
+        return m.boat;
+      });
+      var top5 = marks.slice(0, 5).map(function(m) {
+        return m.boat;
+      });
+      var formBets = {};
+      top2.forEach(function(a) {
+        top4.forEach(function(b) {
+          if (b === a) return;
+          top5.forEach(function(c) {
+            if (c === a || c === b) return;
+            var key2 = a + "-" + b + "-" + c;
+            var tp2 = trifecta.find(function(t) {
+              return t.combo === key2;
+            });
+            formBets[key2] = tp2 ? tp2.prob : 0;
+          });
+        });
+      });
+      selTri = Object.keys(formBets).map(function(k) {
+        return { combo: k, prob: formBets[k] };
+      }).sort(function(a, b) {
+        return b.prob - a.prob;
+      }).slice(0, count3);
+      methodLabel = "\u30D5\u30A9\u30FC\u30E1\u30FC\u30B7\u30E7\u30F3";
+    } else if (method === "box") {
+      var topN = count3 <= 6 ? 3 : 4;
+      var boxBoats = marks.slice(0, topN).map(function(m) {
+        return m.boat;
+      });
+      var boxBets = [];
+      for (var bi = 0; bi < boxBoats.length; bi++) {
+        for (var bj = 0; bj < boxBoats.length; bj++) {
+          if (bj === bi) continue;
+          for (var bk = 0; bk < boxBoats.length; bk++) {
+            if (bk === bi || bk === bj) continue;
+            var key = boxBoats[bi] + "-" + boxBoats[bj] + "-" + boxBoats[bk];
+            var tp = trifecta.find(function(t) {
+              return t.combo === key;
+            });
+            boxBets.push({ combo: key, prob: tp ? tp.prob : 0 });
+          }
+        }
+      }
+      selTri = boxBets.sort(function(a, b) {
+        return b.prob - a.prob;
+      }).slice(0, count3);
+      methodLabel = "BOX(" + topN + "\u8247)";
+    } else {
+      selTri = trifecta.slice(0, count3);
+      methodLabel = "\u78BA\u7387\u9806";
+    }
+    return {
+      trifecta: selTri,
+      exacta: exacta.slice(0, count2),
+      quinella: quinella.slice(0, count2),
+      methodLabel
+    };
+  }
+  globalThis.selectBetsByEV = selectBetsByEV;
+  globalThis.calcOddsDivergence = calcOddsDivergence;
+  globalThis.buildTrifectaProbDist = buildTrifectaProbDist;
+  globalThis.buildExactaProbDist = buildExactaProbDist;
+  globalThis._pickAnaCandidates = _pickAnaCandidates;
+  globalThis.generateBetsV2 = generateBetsV2;
   function predictRaceAsync(sid, raceNum) {
     var w = _getAppWorker();
     if (!w) {
@@ -1678,502 +1940,6 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
 
 /* BUILD:WORKER_TWIN_SYNCED:END */
 
-function buildExactaProbDist(marks){
-  var p = marks.map(function(m){return m.prob||0;});
-  var dist = {};
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      var key = marks[i].boat + '-' + marks[j].boat;
-      dist[key] = _plackettLuceExactaProb(p, i, j);
-    }
-  }
-  return dist;
-}
-
-// B14 (2026-05-17): main app.js の _pickAnaCandidates と同等。worker 経由 backfill
-//   でも bets.ana が attach されるよう同コードを持ち込む。
-function _pickAnaCandidates(marks, oddsMap, opts){
-  if(!Array.isArray(marks) || marks.length<3 || !oddsMap || typeof oddsMap !== 'object') {
-    return { primary: [], fallback: [] };
-  }
-  var o = opts || {};
-  var minOdds = o.minOdds != null ? o.minOdds : 30;
-  var minEV = o.minEV != null ? o.minEV : 1.0;
-  var minOddsLoose = o.minOddsLoose != null ? o.minOddsLoose : 15;
-  var topN = o.topN != null ? o.topN : 3;
-  var excludeSet = {};
-  if(Array.isArray(o.excludeCombos)){
-    o.excludeCombos.forEach(function(c){ if(c) excludeSet[String(c)] = true; });
-  }
-  var dist = buildTrifectaProbDist(marks);
-  var primary = [], loose = [];
-  for(var combo in dist){
-    if(!Object.prototype.hasOwnProperty.call(dist, combo)) continue;
-    if(excludeSet[combo]) continue;
-    var odds = oddsMap[combo];
-    if(odds == null) continue;
-    var prob = dist[combo];
-    if(prob <= 0) continue;
-    var ev = prob * odds;
-    var pick = {combo: combo, prob: prob, odds: odds, ev: ev};
-    if(odds >= minOdds && ev >= minEV) primary.push(pick);
-    if(odds >= minOddsLoose) loose.push(pick);
-  }
-  primary.sort(function(a,b){ return b.ev - a.ev; });
-  loose.sort(function(a,b){ return b.ev - a.ev; });
-  return {
-    primary: primary.slice(0, topN),
-    fallback: loose.slice(0, topN),
-  };
-}
-
-function buildTrifectaProbDist(marks){
-  var p = marks.map(function(m){return m.prob||0;});
-  var dist = {};
-  for(var i=0;i<marks.length;i++){
-    for(var j=0;j<marks.length;j++){
-      if(j===i) continue;
-      for(var k=0;k<marks.length;k++){
-        if(k===i || k===j) continue;
-        var key = marks[i].boat + '-' + marks[j].boat + '-' + marks[k].boat;
-        dist[key] = _plackettLuceTrifectaProb(p, i, j, k);
-      }
-    }
-  }
-  return dist;
-}
-
-function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
-// F10: ヘッダー右「更新」ボタン用フルリロード
-//   旧バグ: SW がページを制御し続けていたため、unregister 直後の location.replace でも
-//          古いキャッシュが intercept されていた。
-//   解決: 1) SW に PURGE_ALL を送信し全 cache 削除を SW 側で待機
-//        2) クライアント側でも cache + bc_* localStorage を削除
-//        3) すべての SW を unregister
-//        4) cache:'reload' を使って index.html を一度 fetch し HTTP キャッシュも無効化
-//        5) location.assign で再ナビゲート（履歴に残してデバッグ容易に）
-async function hardReload(){
-  var btn = event && event.target;
-  if(btn){ btn.disabled=true; btn.textContent='⏳ 削除中...'; }
-  try{
-    // 1) アクティブな SW に purge を依頼（cache を SW が握っている場合の救済）
-    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
-      try{
-        var purged = new Promise(function(resolve){
-          var to = setTimeout(resolve, 1500);  // タイムアウト 1.5s
-          navigator.serviceWorker.addEventListener('message', function _h(e){
-            if(e.data && e.data.type==='PURGED'){
-              clearTimeout(to);
-              navigator.serviceWorker.removeEventListener('message', _h);
-              resolve();
-            }
-          });
-          navigator.serviceWorker.controller.postMessage('PURGE_ALL');
-        });
-        await purged;
-      }catch(_){}
-    }
-    // 2) クライアント側でも全 cache を削除（念のため重複実行）
-    if('caches' in window){
-      var keys = await caches.keys();
-      await Promise.all(keys.map(function(k){ return caches.delete(k); }));
-    }
-    // 3) 全 SW を unregister
-    if('serviceWorker' in navigator){
-      var regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(function(r){ return r.unregister(); }));
-    }
-    // 4) bc_* localStorage を削除
-    var bcKeys=[];
-    for(var i=0;i<localStorage.length;i++){
-      var k = localStorage.key(i);
-      if(k && k.indexOf('bc_')===0) bcKeys.push(k);
-    }
-    bcKeys.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
-    // 5) HTTP キャッシュも no-store で叩いて無効化（SW 解除後の素の fetch）
-    try{
-      var burst = new URL(location.href);
-      burst.searchParams.set('_warm', Date.now());
-      await fetch(burst.toString(), {cache:'reload', mode:'same-origin'});
-    }catch(_){}
-  }catch(e){ console.warn('hardReload prep error:', e); }
-  // 6) cache-busting query で再ナビゲート
-  var url = new URL(location.href);
-  url.searchParams.set('_r', Date.now());
-  location.assign(url.toString());
-}
-
-function calcOddsDivergence(aiProbsByBoat, oddsWin){
-  if(!oddsWin) return null;
-  var sumInv = 0;
-  for(var b=1; b<=6; b++){ if(oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)]; }
-  if(sumInv === 0) return null;
-  var result = {};
-  for(var b2=1; b2<=6; b2++){
-    var ai = aiProbsByBoat[b2-1] || 0;
-    var market = oddsWin[String(b2)] ? (1/oddsWin[String(b2)]) / sumInv : 0;
-    result[b2] = {
-      ai_prob: ai,
-      market_prob: market,
-      delta: ai - market,
-      ev: oddsWin[String(b2)] ? ai * oddsWin[String(b2)] : null,
-    };
-  }
-  return result;
-}
-
-function classifyTidePhase(tideEntry, raceTimeJst){
-  if(!tideEntry || tideEntry.type !== 'saltwater' || !Array.isArray(tideEntry.today)) return null;
-  // raceTimeJst: 'HH:MM' or hour as int
-  var hour;
-  if(typeof raceTimeJst === 'string'){
-    hour = parseInt(raceTimeJst.split(':')[0], 10);
-  } else if(typeof raceTimeJst === 'number'){
-    hour = raceTimeJst;
-  } else {
-    return null;
-  }
-  if(!isFinite(hour)) return null;
-  // 当該時刻と前後 1h の潮位
-  var nowLv = (tideEntry.today.find(function(x){return x.hour===hour}) || {}).level_cm;
-  var prevLv = (tideEntry.today.find(function(x){return x.hour===hour-1}) || {}).level_cm;
-  var nextLv = (tideEntry.today.find(function(x){return x.hour===hour+1}) || {}).level_cm;
-  if(nowLv == null) return null;
-  // 単純分類: 潮位の変化方向 + 絶対位置
-  var rising = (nextLv != null && nextLv > nowLv) || (prevLv != null && nowLv > prevLv);
-  var falling = (nextLv != null && nextLv < nowLv) || (prevLv != null && nowLv < prevLv);
-  // 高潮位 / 低潮位の閾値（cm 単位、日中の最大値の上位 20% を high とみなす簡易判定）
-  var levels = tideEntry.today.map(function(x){return x.level_cm}).filter(function(v){return v!=null});
-  if(levels.length === 0) return null;
-  var sortedLv = levels.slice().sort(function(a,b){return a-b});
-  var p80 = sortedLv[Math.floor(levels.length * 0.8)];
-  var p20 = sortedLv[Math.floor(levels.length * 0.2)];
-  if(nowLv >= p80) return 'high';
-  if(nowLv <= p20) return 'low';
-  if(rising) return 'rising';
-  if(falling) return 'falling';
-  return null;
-}
-
-function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-
-// P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
-function getJSTDate(offsetDays){
-  var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
-  return new Date(t);
-}
-
-function exhibitionZScore(etTime, sid){
-  var s = stadiumExhibitionStats[String(sid)];
-  if(!s || s.count < 50 || !etTime || etTime > 8) return 0;
-  return (etTime - s.mean) / s.std;   // 速いほど負（良い）
-}
-
-function generateBetsV2(marks,method,count3,count2){
-  // S-02 FIX (2026-07-26): app.js の generateBetsV2 と同期。独立積×6/×2 を撤去し
-  //   Plackett–Luce 分布 (Σ=1) に一本化。詳細は assets/app.js の同関数コメント参照。
-  var triDist = buildTrifectaProbDist(marks);   // Σ=1 (排反かつ網羅)
-  var exaDist = buildExactaProbDist(marks);     // Σ=1
-  var trifecta = Object.keys(triDist).map(function(c){ return {combo:c, prob:triDist[c]}; });
-  var exacta = Object.keys(exaDist).map(function(c){ return {combo:c, prob:exaDist[c]}; });
-  var quinella = [];
-  for(var qi=0; qi<marks.length; qi++){
-    for(var qj=qi+1; qj<marks.length; qj++){
-      var qa=marks[qi].boat, qb=marks[qj].boat;
-      quinella.push({
-        combo: Math.min(qa,qb)+'='+Math.max(qa,qb),
-        prob: (exaDist[qa+'-'+qb]||0) + (exaDist[qb+'-'+qa]||0),
-      });
-    }
-  }
-  trifecta.sort(function(a,b){return b.prob-a.prob});
-  exacta.sort(function(a,b){return b.prob-a.prob});
-  quinella.sort(function(a,b){return b.prob-a.prob});
-
-  var selTri,methodLabel;
-
-  // X1: EV モード（triDist/exaDist は上で構築済 → 再計算しない）
-  if(method==='ev' && arguments.length>=5){
-    var raceOdds = arguments[4];   // { trifecta: {...}, exacta: {...}, win: {...} }
-    var evOpt = arguments[5] || {};
-    if(raceOdds && raceOdds.trifecta){
-      selTri = selectBetsByEV(triDist, raceOdds.trifecta, evOpt);
-    } else {
-      selTri = trifecta.slice(0, count3);   // オッズ未取得時は確率順フォールバック
-    }
-    var selExa = [];
-    if(raceOdds && raceOdds.exacta){
-      selExa = selectBetsByEV(exaDist, raceOdds.exacta, evOpt);
-    } else {
-      selExa = exacta.slice(0, count2);
-    }
-    return {
-      trifecta: selTri,
-      exacta: selExa.slice(0, count2),
-      quinella: quinella.slice(0, count2),
-      methodLabel: 'EV(≥' + (evOpt.evMin||1.15) + ')',
-    };
-  } else if(method==='formation'){
-    var top2=marks.slice(0,2).map(function(m){return m.boat});
-    var top4=marks.slice(0,4).map(function(m){return m.boat});
-    var top5=marks.slice(0,5).map(function(m){return m.boat});
-    var formBets={};
-    top2.forEach(function(a){
-      top4.forEach(function(b){
-        if(b===a) return;
-        top5.forEach(function(c){
-          if(c===a||c===b) return;
-          var key=a+'-'+b+'-'+c;
-          var tp=trifecta.find(function(t){return t.combo===key});
-          formBets[key]=tp?tp.prob:0;
-        });
-      });
-    });
-    selTri=Object.keys(formBets).map(function(k){return{combo:k,prob:formBets[k]}}).sort(function(a,b){return b.prob-a.prob}).slice(0,count3);
-    methodLabel='フォーメーション';
-  } else if(method==='box'){
-    var topN=count3<=6?3:4;
-    var boxBoats=marks.slice(0,topN).map(function(m){return m.boat});
-    var boxBets=[];
-    for(var bi=0;bi<boxBoats.length;bi++){
-      for(var bj=0;bj<boxBoats.length;bj++){
-        if(bj===bi) continue;
-        for(var bk=0;bk<boxBoats.length;bk++){
-          if(bk===bi||bk===bj) continue;
-          var key=boxBoats[bi]+'-'+boxBoats[bj]+'-'+boxBoats[bk];
-          var tp=trifecta.find(function(t){return t.combo===key});
-          boxBets.push({combo:key,prob:tp?tp.prob:0});
-        }
-      }
-    }
-    selTri=boxBets.sort(function(a,b){return b.prob-a.prob}).slice(0,count3);
-    methodLabel='BOX('+topN+'艇)';
-  } else {
-    selTri=trifecta.slice(0,count3);
-    methodLabel='確率順';
-  }
-
-  return{
-    trifecta:selTri,
-    exacta:exacta.slice(0,count2),
-    quinella:quinella.slice(0,count2),
-    methodLabel:methodLabel
-  };
-}
-
-function getEntryDist(rid, boat, sid){
-  // 1. 選手個人データ
-  if(rid && racerDB[rid] && racerDB[rid].entryPattern && racerDB[rid].entryPattern.byBoat){
-    var personal = racerDB[rid].entryPattern.byBoat[String(boat)];
-    if(personal && Object.keys(personal).length > 0){
-      var personalSamples = racerDB[rid].entryPattern.samples || 0;
-      // 個人サンプル >= 8 で個人データのみ使用、それ未満は混合
-      if(personalSamples >= 8) return personal;
-      // 混合: w_personal = samples/8
-      var defaultD = (DEFAULT_ENTRY_BY_STADIUM[String(sid).padStart(2,'0')] || GLOBAL_DEFAULT_ENTRY)[boat] || {};
-      var w = Math.min(1, personalSamples / 8);
-      var mixed = {};
-      var allKeys = new Set(Object.keys(personal).concat(Object.keys(defaultD)));
-      allKeys.forEach(function(k){
-        mixed[k] = w * (personal[k]||0) + (1-w) * (defaultD[k]||0);
-      });
-      return mixed;
-    }
-  }
-  // 2. 場別デフォルト
-  var sidPad = String(sid).padStart(2,'0');
-  if(DEFAULT_ENTRY_BY_STADIUM[sidPad] && DEFAULT_ENTRY_BY_STADIUM[sidPad][boat]){
-    return DEFAULT_ENTRY_BY_STADIUM[sidPad][boat];
-  }
-  // 3. グローバルデフォルト
-  return GLOBAL_DEFAULT_ENTRY[boat] || {};
-}
-
-function getJSTDate(offsetDays){
-  var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
-  return new Date(t);
-}
-
-
-function getRacerCourseStyle(rid,course){
-  var rdb=racerDB[rid];
-  if(!rdb||!rdb.courseStyle||!rdb.courseStyle[course]) return null;
-  return rdb.courseStyle[course];
-}
-
-function getRacerCourseWinRate(rid,course){
-  var rdb=racerDB[rid];
-  if(!rdb||!rdb.courseStats||!rdb.courseStats[course]) return null;
-  var cs=rdb.courseStats[course];
-  if(cs.races<5) return null;
-  return cs.win/cs.races;
-}
-
-function getRacerForm(rid){
-  var rdb=racerDB[rid];
-  if(!rdb||!rdb.recentResults||rdb.recentResults.length<5) return null;
-  var recent5=rdb.recentResults.slice(-5);
-  var avg=recent5.reduce(function(a,b){return a+b},0)/5;
-  var top2=recent5.filter(function(r){return r<=2}).length/5;
-  var result={avg:avg,top2Rate:top2,score:0,trend:0,label:''};
-  if(avg<=2.0){result.score=6;result.label='絶好調'}
-  else if(avg<=3.0){result.score=3;result.label='好調'}
-  else if(avg<=4.0){result.score=0;result.label='普通'}
-  else if(avg<=5.0){result.score=-3;result.label='不調'}
-  else{result.score=-6;result.label='絶不調'}
-  if(top2>=0.6) result.score+=2;
-  else if(top2>=0.4) result.score+=1;
-  else if(top2<=0.2) result.score-=2;
-  if(rdb.recentResults.length>=10){
-    var prev5=rdb.recentResults.slice(-10,-5);
-    var prevAvg=prev5.reduce(function(a,b){return a+b},0)/5;
-    result.trend=prevAvg-avg;
-    if(result.trend>0.5) result.score+=1;
-    else if(result.trend<-0.5) result.score-=1;
-  }
-  return result;
-}
-
-function getStadiumCourseWinRate(sid,course){
-  var sdb=stadiumDB[sid];
-  if(!sdb||!sdb.courseWinRate||!sdb.courseWinRate[course]) return COURSE_WIN_RATE[course]||0;
-  var cw=sdb.courseWinRate[course];
-  if(cw.races<10) return COURSE_WIN_RATE[course]||0;
-  return cw.win/cw.races;
-}
-
-function isHeadWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.headWindDirs : GLOBAL_HEAD_DIRS;
-  return arr.indexOf(wd) >= 0;
-}
-
-function isTailWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.tailWindDirs : GLOBAL_TAIL_DIRS;
-  return arr.indexOf(wd) >= 0;
-}
-
-
-function linearSlope(values){
-  if(!Array.isArray(values) || values.length < 2) return 0;
-  var n = values.length;
-  var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-  for(var i=0; i<n; i++){
-    sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
-    sumXX += i * i;
-  }
-  var den = n * sumXX - sumX * sumX;
-  if(den === 0) return 0;
-  return (n * sumXY - sumX * sumY) / den;
-}
-
-function motorScoreNormalized(motorRate, sid){
-  var s = stadiumMotorStats[String(sid)];
-  if(!s || s.count < 50){
-    // フォールバック: 旧 5 段階閾値
-    if(motorRate>=50) return {score:12, label:'超抜', emoji:'A'};
-    if(motorRate>=43) return {score: 8, label:'好機', emoji:'B'};
-    if(motorRate>=36) return {score: 4, label:'並機', emoji:'C'};
-    if(motorRate>=28) return {score: 0, label:'低調', emoji:'D'};
-    return {score:-3, label:'整備要', emoji:'E'};
-  }
-  var z = (motorRate - s.mean) / s.std;
-  if(z >= 1.5)  return {score:12, label:'超抜', emoji:'A', z:z};
-  if(z >= 0.7)  return {score: 8, label:'好機', emoji:'B', z:z};
-  if(z >= -0.7) return {score: 4, label:'並機', emoji:'C', z:z};
-  if(z >= -1.5) return {score: 0, label:'低調', emoji:'D', z:z};
-  return            {score:-3, label:'整備要', emoji:'E', z:z};
-}
-
-function pairwiseScore(rid, sid, opponentRids){
-  if(!rid || !opponentRids || opponentRids.length === 0) return { score: 0, hits: 0 };
-  if(!pairwiseDB) return { score: 0, hits: 0 };
-  var totalScore = 0, hits = 0;
-  opponentRids.forEach(function(oid){
-    if(!oid || oid === rid) return;
-    var key = (rid < oid) ? rid+'-'+oid : oid+'-'+rid;
-    var rec = pairwiseDB[key];
-    if(!rec || rec.races < 5) return;
-    var myWins = rec.head2head[String(rid)] || 0;
-    var oppWins = rec.head2head[String(oid)] || 0;
-    var diff = (myWins - oppWins) / rec.races;
-    // |diff| が大きい時のみ寄与（ノイズ回避）
-    if(Math.abs(diff) >= 0.2){
-      totalScore += diff * 1.0;   // ±1pt 程度
-      hits++;
-    }
-  });
-  return { score: Math.max(-2, Math.min(2, totalScore)), hits: hits };
-}
-
-function pf(v){return parseFloat(v)||0}
-
-function fetchWithFallback(url){
-  // キャッシュキーはクエリパラメータを除いたベースURL
-  var baseUrl=url.split('?')[0];
-  // Clearwing Phase 2: capabilities (worker) で AbortSignal.timeout 互換性を吸収
-  var signal=capabilities.makeTimeoutSignal(15000);
-  return fetch(url,{signal:signal,cache:'no-store'})
-    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
-    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
-    .catch(function(e){
-      console.warn('API error:',baseUrl,e.message);
-      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
-      return null;
-    });
-}
-
-
-
-
-
-
-function selectBetsByEV(probs, odds, opt){
-  // S-04 FIX (2026-07-26): app.js の selectBetsByEV と同期（Kelly 安全化）。
-  opt = opt || {};
-  var K = (typeof TUNING !== 'undefined' && TUNING.KELLY) ? TUNING.KELLY : {};
-  var evMin = opt.evMin != null ? opt.evMin : 1.15;
-  var maxBets = opt.maxBets != null ? opt.maxBets : 8;
-  var kellyFrac = opt.kellyFrac != null ? opt.kellyFrac
-                : (K.DEFAULT_FRAC != null ? K.DEFAULT_FRAC : 0.25);
-  var bankroll = opt.bankroll != null ? opt.bankroll : 10000;
-  if(!probs || !odds) return [];
-  var ranked = Object.keys(probs)
-    .filter(function(k){ return odds[k] && probs[k] > 0; })
-    .map(function(k){
-      return { combo: k, prob: probs[k], odds: odds[k], ev: probs[k] * odds[k] };
-    })
-    .filter(function(b){ return b.ev >= evMin; })
-    .sort(function(a, b){ return b.ev - a.ev; })
-    .slice(0, maxBets);
-  // Kelly: f* = (b·p - q) / b, ただし b = odds-1, q = 1-p
-  ranked.forEach(function(b){
-    var bn = b.odds - 1;
-    if(bn <= 0){ b.stakeRatio = 0; return; }
-    var f = (bn * b.prob - (1 - b.prob)) / bn;
-    b.stakeRatio = Math.max(0, f * kellyFrac);
-  });
-  // PB-9: 排他事象 Kelly — 上限 MAX_STAKE_RATIO（=0.05）を超えたら比例縮小。
-  var sumRatio = ranked.reduce(function(s,b){return s + (b.stakeRatio||0);}, 0);
-  var maxRatio = K.MAX_STAKE_RATIO != null ? K.MAX_STAKE_RATIO : 0.05;
-  if(sumRatio > maxRatio && sumRatio > 0){
-    var scale = maxRatio / sumRatio;
-    ranked.forEach(function(b){ b.stakeRatio *= scale; });
-  }
-  // S-04: MIN_STAKE_RATIO 未満は「賭けない」= 除外、¥100 床を撤去。
-  var minRatio = K.MIN_STAKE_RATIO != null ? K.MIN_STAKE_RATIO : 0.005;
-  ranked = ranked.filter(function(b){ return (b.stakeRatio||0) >= minRatio; });
-  var suppressed = K.ENABLE_STAKE_SUGGESTION !== true;
-  ranked.forEach(function(b){
-    b.stakeYen = Math.round(bankroll * b.stakeRatio / 100) * 100;   // 床なし
-    b.stakeSuppressed = suppressed;
-  });
-  return ranked;
-}
 
 function selfStyleScore(rid, course, courseStats){
   var style = getRacerCourseStyle(rid, course);

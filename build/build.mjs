@@ -128,6 +128,7 @@ async function main() {
     { marker: 'ANALYSIS_GBDT_RUNTIME', src: 'analysis/gbdt_runtime.js' },     // Tier 3 (2026-05-24) GBDT 評価ランタイム
     { marker: 'REPORTING_STATS_PAGE', src: 'reporting/stats_page.js' },       // Phase 2 完遂続き (renderStats + renderStatsChart)
     { marker: 'REPORTING_DAILY_STATS', src: 'reporting/daily_stats_page.js' }, // 2026-07-19 日別成績ページ
+    { marker: 'ANALYSIS_BET_GENERATION', src: 'analysis/bet_generation.js' },      // PR-2 (2026-07-26): 買い目生成を src 化
     { marker: 'ANALYSIS_PREDICT_SCENARIOS', src: 'analysis/predict_scenarios.js' }, // Phase 2 完遂続き (シナリオ + 進入予想)
     { marker: 'ANALYSIS_PREDICT_RACE', src: 'analysis/predict_race.js' },     // Phase 2 完遂続き (predictRace 本体)
     { marker: 'ANALYSIS_PREDICT_PROGRAM', src: 'analysis/predict_program.js' }, // Phase 2 完遂続き (番組予想)
@@ -169,6 +170,7 @@ async function main() {
       'analysis/l2_features.js',
       'analysis/score_boat.js',
       'analysis/predict_scenarios.js',
+      'analysis/bet_generation.js', // PR-2: 買い目生成 twin（手動コピー撲滅）
       'analysis/predict_race.js',
       'utils/features.js', // ← v2: pipeline override (must be last)
     ];

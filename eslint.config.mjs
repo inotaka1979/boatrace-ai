@@ -88,6 +88,9 @@ export default [
         L2_BIAS: 'readonly',
         FEATURE_DIM: 'readonly',
         TUNING: 'readonly',
+        // math 層 (src/utils/math.js) — PR-2 で bet_generation.js が参照
+        _plackettLuceTrifectaProb: 'readonly',
+        _plackettLuceExactaProb: 'readonly',
         // 動的 import される lib
         Chart: 'readonly',
         // PWA / worker

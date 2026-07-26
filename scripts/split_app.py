@@ -231,6 +231,8 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_STATS_PAGE',
     # 日別成績ページ (2026-07-19) — 日別タブ open 時のみ
     'REPORTING_DAILY_STATS',
+    # 買い目生成 (PR-2) — レース詳細を開いた時のみ。critical 起動には不要。
+    'ANALYSIS_BET_GENERATION',
     # predict 系はレース詳細を開いた時のみ。critical 起動には不要。
     'ANALYSIS_PREDICT_SCENARIOS',
     'ANALYSIS_PREDICT_RACE',
