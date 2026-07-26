@@ -153,6 +153,10 @@ step "A-03 confStars (baseline lift) tests" \
 step "S-02 bet generation (PL normalization) tests" \
      "node scripts/tests/test_bet_generation.js"
 
+# 9e) PR-1 黄金レース回帰 snapshot テスト
+step "Golden race regression snapshots" \
+     "node scripts/tests/test_golden_races.js"
+
 # 10) X2 正規化テスト
 step "X2 normalization tests" \
      "node scripts/tests/test_normalization.js"

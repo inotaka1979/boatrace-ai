@@ -1,0 +1,35 @@
+{
+  "_note": "黄金レース回帰テスト用（合成）。向かい風6m・波高8cm・F1持ち含む。荒天交差項 + F/L 乗数 + 穴(ana)判定の網羅。",
+  "sid": 3,
+  "rno": 10,
+  "program": {
+    "race_closed_at": "2026-07-26 17:20",
+    "race_grade_number": 2,
+    "boats": [
+      { "racer_boat_number": 1, "racer_number": 4201, "racer_class_number": 2, "racer_national_top_1_percent": 5.6, "racer_local_top_2_percent": 42.0, "racer_assigned_motor_top_2_percent": 36.0, "racer_assigned_boat_top_2_percent": 34.0, "racer_flying_count": 1, "racer_late_start_count_in_current_term": 0 },
+      { "racer_boat_number": 2, "racer_number": 4202, "racer_class_number": 2, "racer_national_top_1_percent": 5.4, "racer_local_top_2_percent": 41.0, "racer_assigned_motor_top_2_percent": 42.0, "racer_assigned_boat_top_2_percent": 35.0, "racer_flying_count": 0, "racer_late_start_count_in_current_term": 0 },
+      { "racer_boat_number": 3, "racer_number": 4203, "racer_class_number": 2, "racer_national_top_1_percent": 5.7, "racer_local_top_2_percent": 43.0, "racer_assigned_motor_top_2_percent": 39.0, "racer_assigned_boat_top_2_percent": 35.0, "racer_flying_count": 0, "racer_late_start_count_in_current_term": 0 },
+      { "racer_boat_number": 4, "racer_number": 4204, "racer_class_number": 2, "racer_national_top_1_percent": 5.2, "racer_local_top_2_percent": 39.0, "racer_assigned_motor_top_2_percent": 34.0, "racer_assigned_boat_top_2_percent": 33.0, "racer_flying_count": 0, "racer_late_start_count_in_current_term": 1 },
+      { "racer_boat_number": 5, "racer_number": 4205, "racer_class_number": 3, "racer_national_top_1_percent": 4.4, "racer_local_top_2_percent": 31.0, "racer_assigned_motor_top_2_percent": 33.0, "racer_assigned_boat_top_2_percent": 32.0, "racer_flying_count": 0, "racer_late_start_count_in_current_term": 0 },
+      { "racer_boat_number": 6, "racer_number": 4206, "racer_class_number": 3, "racer_national_top_1_percent": 4.0, "racer_local_top_2_percent": 28.0, "racer_assigned_motor_top_2_percent": 31.0, "racer_assigned_boat_top_2_percent": 31.0, "racer_flying_count": 0, "racer_late_start_count_in_current_term": 0 }
+    ]
+  },
+  "preview": {
+    "race_closed_at": "2026-07-26 17:20",
+    "weather": { "wind_speed": 6, "wind_direction": 5, "wave_height": 8, "water_temperature": 19 },
+    "boats": {
+      "1": { "racer_course_number": 1, "racer_exhibition_time": 6.90, "racer_start_timing": 0.20, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" },
+      "2": { "racer_course_number": 2, "racer_exhibition_time": 6.85, "racer_start_timing": 0.16, "racer_tilt_adjustment": 0.5, "racer_adjust_weight": 0.0, "racer_parts_replaced": "ペラ" },
+      "3": { "racer_course_number": 3, "racer_exhibition_time": 6.79, "racer_start_timing": 0.14, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" },
+      "4": { "racer_course_number": 4, "racer_exhibition_time": 6.88, "racer_start_timing": 0.18, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" },
+      "5": { "racer_course_number": 5, "racer_exhibition_time": 6.92, "racer_start_timing": 0.19, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" },
+      "6": { "racer_course_number": 6, "racer_exhibition_time": 6.95, "racer_start_timing": 0.21, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" }
+    }
+  },
+  "odds": {
+    "stadium": 3,
+    "race": 10,
+    "trifecta": { "3-1-2": 12.0, "3-2-1": 14.0, "1-3-2": 18.0, "2-3-1": 24.0, "3-2-4": 33.0 },
+    "win": { "1": 4.2, "2": 4.8, "3": 2.6, "4": 8.5, "5": 14.0, "6": 22.0 }
+  }
+}
