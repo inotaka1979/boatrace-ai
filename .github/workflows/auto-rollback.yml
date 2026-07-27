@@ -42,7 +42,7 @@ jobs:
         with:
           fetch-depth: 30   # rollback 候補を探すため過去 commit を持つ
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Check freshness and decide rollback
