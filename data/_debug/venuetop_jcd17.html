@@ -52,6 +52,29 @@
     </script>
 
 
+   <script>
+    function marquee() {
+	$.ajax({
+		type: "POST",
+		url: "./pages_php/marquee.php",
+		success:function(data){
+			$('.marquee').html(data);
+		}
+	});
+    }
+
+    //画面読み込み時、実行
+    window.onload = function(){
+    }
+
+    //定期更新
+    setInterval(function(){
+	marquee();
+    },60000);
+
+    </script>
+
+
 
 <script>
 $(function(){
@@ -98,8 +121,8 @@ if (count >= 3) {
             <div class="pc">
                 <div class="left">
                     <h1><a href="index.html"><img src="images/header_logo.png?1" alt="BOATRACE宮島"></a></h1>
-                    <time>6/28<i class="sunday">日</i></time>
-                    <div class="kaisai">開催中</div>                    <p class="open">開門時間：<b>9:55</b></p>					<p class="br_notice">ボートレースは適度に楽しみましょう。<br>舟券の購入は20歳になってから。</p>
+                    <time>7/31<i class="">金</i></time>
+                    <div class="kaisai off">非開催</div>                    					<p class="br_notice">ボートレースは適度に楽しみましょう。<br>舟券の購入は20歳になってから。</p>
                 </div>
             </div>
             <!--<div class="right">
@@ -118,13 +141,13 @@ if (count >= 3) {
         <div class="middle">
             <div class="race">
                 <div class="tit"><p>場外発売(本場①②)</p></div>
-                <ul><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>鳴門<img src="images/icon_racetype/sg.png" alt="SG"></li><li>住之江<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li></ul>
+                <p class="none">発売はありません</p>
             </div>
 
             <div class="race">
                 <div class="tit"><p>パルボート宮島(外向発売所)<br><i>開門時間</i><b>7:15</b></p></div>
 
-                <ul><li>宮島<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>芦屋<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>戸田<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>江戸川<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>尼崎<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>鳴門<img src="images/icon_racetype/sg.png" alt="SG"></li><li>津<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>平和島<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>住之江<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li><li>桐生<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>蒲郡<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>大村<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li></ul>            </div>
+                <ul><li>三国<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>常滑<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>びわこ<img src="images/icon_racetype/sg.png" alt="SG"></li><li>児島<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>浜名湖<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>福岡<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>下関<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>大村<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>桐生<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li><li>丸亀<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>若松<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li></ul>            </div>
 
         </div>
         <div class="gnv">
@@ -195,10 +218,10 @@ if (count >= 3) {
                                     <li><a href="momiji_card.html">キャッシュレス投票『モミジカード』</a></li>
                                     <li><a href="app.html">公式SNS・スマホ専用アプリ</a></li>
                                     <li><a href="beginners.html">初心者ガイド</a></li>
-                                    <li><a href="pairboat.html">ペアボート体験会</a></li>
                                     <li><a href="banners.html">横断幕について</a></li>
                                     <li><a href="panorama.html">パノラマムービー</a></li>
 									<li><a href="https://www.boatrace-miyajima.com/pdf/vr_schedule.pdf" class="betsu" target="_blank">ＶＲスプラッシュバトル実施予定日</a></li>
+                                    <li><a href="https://www.boatrace-miyajima.com/pdf/kutsurogi_r8.pdf" class="betsu" target="_blank">3Fくつろぎルームご利用案内&開放予定日</a></li>
 									<li><a href="ga-info.html">ギャンブル依存症関連</a></li>
 									<li><a href="https://gamble-shindan.com/?utm_source=sitelink&utm_medium=banner&utm_campaign=boatrace202203" class="betsu" target="_blank">ギャンブル依存症セルフチェック</a></li>
 									<li><a href="jalert-info.html">Jアラート関連</a></li>
@@ -316,10 +339,10 @@ if (count >= 3) {
                                     <li><a href="momiji_card.html">キャッシュレス投票『モミジカード』</a></li>
                                     <li><a href="app.html">公式SNS・スマホ専用アプリ</a></li>
                                     <li><a href="beginners.html">初心者ガイド</a></li>
-                                    <li><a href="pairboat.html">ペアボート体験会</a></li>
                                     <li><a href="banners.html">横断幕について</a></li>
                                     <li><a href="panorama.html">パノラマムービー</a></li>
 									<li><a href="https://www.boatrace-miyajima.com/pdf/vr_schedule.pdf" class="betsu" target="_blank">ＶＲスプラッシュバトル実施予定日</a></li>
+                                    <li><a href="https://www.boatrace-miyajima.com/pdf/kutsurogi_r8.pdf" class="betsu" target="_blank">3Fくつろぎルームご利用案内&開放予定日</a></li>
 									<li><a href="ga-info.html">ギャンブル依存症関連</a></li>
 									<li><a href="https://gamble-shindan.com/?utm_source=sitelink&utm_medium=banner&utm_campaign=boatrace202203" class="betsu" target="_blank">ギャンブル依存症セルフチェック</a></li>
 									<li><a href="jalert-info.html">Jアラート関連</a></li>
@@ -364,8 +387,8 @@ if (count >= 3) {
 
 
             <div class="bottomin">
-                <time>6/28<i class="sunday">日</i></time>
-                <div class="kaisai">開催中</div>                <p class="open">開門時間：<b>9:55</b></p>            </div>
+                <time>7/31<i class="">金</i></time>
+                <div class="kaisai off">非開催</div>                            </div>
         </div>
     </div>
 
@@ -377,7 +400,7 @@ if (count >= 3) {
     <div class="newshead">
         <p class="tit">NEWS</p>
         <div class="txtline">
-        <p class="marquee">只今、7R以降 発売中!!　　　　　　　　<font color="red"><b>今節のﾚｰｽ進行時間 ●1Rｽﾀｰﾄ展示開始･･･10:28 ●12R締切予定･･･16:43～53頃</b></font>　　　　　　　　</p>
+        <p class="marquee">　　　　　　　　<font color="red"><b></b></font>　　　　　　　　本日のレース開催はありません。</p>
         </div>
     </div>
     <div class="monta_run">
@@ -387,414 +410,76 @@ if (count >= 3) {
         <h2>本日の場外発売案内</h2>
         <div class="inner">
             <div class="tit"><p>場外発売(本場①②)</p></div>
-            <ul><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>鳴門<img src="images/icon_racetype/sg.png" alt="SG"></li><li>住之江<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li></ul>        </div>
+            <p class="none">発売はありません</p>        </div>
         <div class="inner">
             <div class="tit"><p>パルボート宮島<br class="sp">(外向発売所)<br><i>開門時間</i><b>7:15</b></p></div>
-            <ul><li>宮島<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>芦屋<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>戸田<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>江戸川<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>尼崎<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>鳴門<img src="images/icon_racetype/sg.png" alt="SG"></li><li>津<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>平和島<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>住之江<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li><li>桐生<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>蒲郡<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>大村<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li></ul>        </div>
+            <ul><li>三国<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>徳山<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/sun.png" alt="モーニング"></li><li>常滑<img src="images/icon_racetype/ippan.png" alt="一般"></li><li>びわこ<img src="images/icon_racetype/sg.png" alt="SG"></li><li>児島<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>浜名湖<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>福岡<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/summer.png" alt="サマー"></li><li>下関<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>大村<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>桐生<img src="images/icon_racetype/g3.png" alt="G3"><img src="images/icon_racetype/moon.png" alt="ナイター"><img src="images/icon_racetype/lady.png" alt="レディース"></li><li>丸亀<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li><li>若松<img src="images/icon_racetype/ippan.png" alt="一般"><img src="images/icon_racetype/moon.png" alt="ナイター"></li></ul>        </div>
 
 
     </section>
-<script src='race_common/js/race20231019.js?1234'></script>
-<script>
-	var width = window.innerWidth;
-	if (width <= 1024) {
-		location.href = 'https://www.boatrace-miyajima.com/index.html?m=1&month=6'
-	}
-</script>
-<div style="margin-top:15px;margin-bottom:-15px;text-align:center;"><a href="https://www.boatrace-miyajima.com/boatrace-contribution.html"><img src="https://www.boatrace-miyajima.com/images/contribution/bnr1200.png"></a></div>
-    <!--pc開催中 ここから-->
-
-<style>
-    /*css反映確認後削除*/
-    .other_angle_movie{
-        margin: 30px 0;
-    }
-    .other_angle_movie .spr_tabs{
-        margin-top: 10px;
-    }
-    .other_angle_movie_ttl {
-    font-size: 21px;
-    font-weight: bold;
-    color: #fff;
-    text-align: left;
-    margin-bottom: 1em;
-}
-    .top_on_block .racedetail .mid .left .other_angle_movie .spr_tabs li{
-        width: 24.5%;
-    }
-    .top_on_block .racedetail .mid .left .other_angle_movie .spr_tabs li a{
-        background-color: #e45a5a;
-        border: 1px solid #fb9797;
-        color: #fff;
-        font-size: 17px;
-        line-height: 1.2;
-        text-align: center;
-        padding:7px 0;
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        justify-content: center;
-        text-decoration: none;
-        cursor: pointer;
-        flex: 1;
-        margin-right: 6px;
-        font-weight: 600;
-        border-radius: 5px;
-        width: 100%;
-        height: auto;
-    }
-    .top_on_block .racedetail .mid .left .other_angle_movie .spr_tabs li.active a {
-        color: #fff;
-        background-color: #a52e2d;
-    }
-.link_btn_list{
-    display: flex;
-    flex-direction:row;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    width: 100%;
-}
-.link_btn_list li{
-	width: 24.5%;
-}
-.link_btn_list li a {
-    color: #a52e2d;
-    font-size: 12px;
-    font-weight: bold;
-    border: 1px solid #fb9797;
-    background-color: #a52e2d;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: flex-start;
-    text-decoration: none;
-    width: 100%;
-    height: 64px;
-    margin-bottom: 8px;
-    padding-left: 30px;
-    text-align: left;
-    line-height: 1.5;
-    background-repeat:no-repeat;
-    background-position: right 10px center;
-    transition-duration: 0.2s;
-    box-sizing: border-box;
-}
-.link_btn_list li:nth-child(7) a,.link_btn_list li:last-child a{
-    background: none;
-    border:none;
-    padding: 0;
-    display: initial;
-}
-.link_btn_list li:nth-child(7) a:hover,.link_btn_list li:last-child a:hover{
-    opacity: 0.8;
-    transition: 0.3s;
-}
-.link_btn_list li a:hover {
-    color: #fff;
-    transition: 0.3s;
-}
-.link_btn_list li a span {
-    font-size: 80% ;
-}
-.link_btn_list li .pdf {
-    background-image: url(./images/racedetail_icon_pdf2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat:no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .pdf:hover{
-    background-image: url(./images/racedetail_icon_pdf.svg),linear-gradient(to bottom, #a40519, #750917);
-}
-.link_btn_list li .kyoso {
-    background-image: url(./images/racedetail_icon_kyoso2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat:no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .kyoso:hover{
-    background-image: url(./images/racedetail_icon_kyoso.svg),linear-gradient(to bottom, #a40519, #750917);
-}
-.link_btn_list li .rank {
-    background-image: url(./images/racedetail_icon_rank2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .rank:hover{
-    background-image: url(./images/racedetail_icon_rank.svg),linear-gradient(to bottom, #a40519, #750917);    
-}
-.link_btn_list li .tro {
-    background-image: url(./images/racedetail_icon_tro2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .tro:hover{
-    background-image: url(./images/racedetail_icon_tro.svg),linear-gradient(to bottom, #a40519, #750917);      
-}
-.link_btn_list li .paper {
-    background-image: url(./images/racedetail_icon_paper2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .paper:hover{
-    background-image: url(./images/racedetail_icon_paper.svg),linear-gradient(to bottom, #a40519, #750917);    
-}
-.link_btn_list li .replay {
-    background-image: url(./images/racedetail_icon_replay2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .replay:hover{
-    background-image: url(./images/racedetail_icon_replay.svg),linear-gradient(to bottom, #a40519, #750917); 
-}
-.link_btn_list li .result {
-    background-image: url(./images/racedetail_icon_result2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-}
-.link_btn_list li .result:hover{
-    background-image: url(./images/racedetail_icon_result.svg),linear-gradient(to bottom, #a40519, #750917);    
-}
-.link_btn_list li .timedata {
-    background-image: url(./images/racedetail_icon_timedata2.svg), linear-gradient(to bottom, #f5f4ef, #dbdbdb);
-    background-repeat: no-repeat, repeat;
-    background-position: left 2px center, center;
-    background-size: 25px, auto;
-    font-size: 11px;
-}
-.link_btn_list li .timedata:hover{
-    background-image: url(./images/racedetail_icon_timedata.svg),linear-gradient(to bottom, #a40519, #750917);     
-}
-</style>    
-    <section class="top_on_block pc">
+<div style="margin-top:15px;margin-bottom:-15px;text-align:center;"><a href="https://www.boatrace-miyajima.com/boatrace-contribution.html"><img src="https://www.boatrace-miyajima.com/images/contribution/bnr1200.png"></a></div>    <!--非開催-->
+    <section class="top_off_block">
         <div class="titblock">
-            <div class="left"><i class="tag ippan">一般</i><b>第14回サッポロビール杯</b>
-                <select class="day selectday" name="select1" onChange="selectday()">
-                    <option value=""></option>
-                </select></div>
-            <ul class="right" id="title_week">
-		<li class="month">6/</li><li class='day '>26<i class="">金</i></li>
-<li class='day '>27<i class="saturday">土</i></li>
-<li class='day on'>28<i class="sunday">日</i></li>
-<li class='day '>29<i class="">月</i></li>
-<li class='day '>30<i class="">火</i></li>
-<li class="month">7/</li><li class='day '>1<i class="">水</i></li>
+            <p class="sp spcountdown">開催まであと<i class="day"><b>3</b>日</i></p>
+            <div class="left"><div class="pc"><span class="daycount">開催まであと<span class="day"><strong>3</strong>日</span></span></div><i class="ip">一般</i><b>第11回ポカリスエットカップ</b>
+            </div>
+            <ul class="right">
+		<li class="month">8/</li><li class='day'>3<i class="">月</i></li>
+<li class='day'>4<i class="">火</i></li>
+<li class='day'>5<i class="">水</i></li>
+<li class='day'>6<i class="">木</i></li>
+<li class='day'>7<i class="">金</i></li>
+<li class='day'>8<i class="saturday">土</i></li>
             </ul>
         </div>
 
-        <section class="racedetail">
 
+        <div class="off_detail">
             <div class="mid">
                 <div class="left">
-                    <div class="movhead">
-                        <p>レースライブ</p>
-                        <a href="https://livebb.jlc.ne.jp/bb_top/new_bb/index.php?tpl=17" onclick="window.open('http://livebb.jlc.ne.jp/bb_top/new_bb/index.php?tpl=17', '', 'width=1020,height=688,resizable=yes'); return false;">JLCライブ＆リプレイ</a>
+
+                    <div class="thum">
+                        <figure><img src="https://www.boatrace-miyajima.com/upimage/player/4236.jpg" alt="" style="width:110px;"></figure>
+                        <p class="num">4236/A1</p>
+                        <p class="name">松村 敏</p>
+                        <p class="area">福岡</p>
+                    </div>
+                    <div class="thum">
+                        <figure><img src="https://www.boatrace-miyajima.com/upimage/player/4798.jpg" alt="" style="width:110px;"></figure>
+                        <p class="num">4798/A1</p>
+                        <p class="name">浜先 真範</p>
+                        <p class="area">広島</p>
+                    </div>
+                    <div class="thum">
+                        <figure><img src="https://www.boatrace-miyajima.com/upimage/player/5043.jpg" alt="" style="width:110px;"></figure>
+                        <p class="num">5043/A1</p>
+                        <p class="name">中村 日向</p>
+                        <p class="area">香川</p>
                     </div>
 
-                    <div class="racelive"><img src="images/movie_dumjmyimg.png" alt=""></div>
-                    <div class="other_angle_movie">
-                        <h3 class="other_angle_movie_ttl">ＭＯＮＴＡスコープ（アングル別動画）</h3>
-                        <div class="spr_tab_content2" ></div>
-                        <ul class="spr_tabs">
-                            <li class="angle_1 active"><a href="javascript:void(0)" onclick="racelive_youtube(1);">全景</a></li>
-                            <li class="angle_2"><a href="javascript:void(0)" onclick="racelive_youtube(2);">ピット</a></li>
-                            <li class="angle_3"><a href="javascript:void(0)" onclick="racelive_youtube(3);">1マーク</a></li>
-                            <li class="angle_4"><a href="javascript:void(0)" onclick="racelive_youtube(4);">2マーク</a></li>
-                        </ul>
-                    </div>
+                </div>
 
-                    <div class="status">
-                        <div>
-                            <a href="https://www.boatrace-miyajima.com/weather_live/index.html" class="tit weather_btn">水面気象情報 LIVE</a>
-                        </div>
+                <div class="center">
+                    <h2>松村の円熟捌き熱闘のＶ取り主導！中村軸にルーキー世代の速攻警戒！</h2>
+                    <p class="pc">水上を疾走して酷暑を吹き飛ばす真夏の激闘シリーズ第１戦は男女混合戦。当地前走、23年「ういちの大ブッちぎりィ！！祭」２着で優出13と着実に激闘航跡を刻んできた松村敏が21年「日本モーターボート選手会会長賞…</p>
 
-                        <div id="sio">
-                        </div>
-                    </div>
+
+                    <a href="https://www.boatrace-miyajima.com/prospect_detail.html?id=470" class="detail">続きを読む(レース展望へ)</a>
+
                 </div>
 
                 <div class="right">
-
-                    <ul class="tab tab-top">
-                        <li class="tablist active">出走表</li>
-                        <li class="tablist">選手コメント・<br>前日予想</li>
-                        <li class="tablist">スタート展示・<br>周回タイム</li>
-                        <li class="tablist">枠番別<br>過去10走</li>
-                        <li class="tablist">得点率早見</li>
-                        <li class="tablist" id="btn_odds">オッズ</li>
-                        <li class="tablist" id="btn_result">結果</li>
-                    </ul>
-
-                    <!--出走表 タブ内容-->
-                    <div class="tabcontents" id="kaisai_chart">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner">
-
-                                    <!--タブ2-->
-                                    <ul class="tab2 tab-top2">
-                                        <li class="tablist2 active">選手データ・今節成績</li>
-                                        <li class="tablist2">モーター・ボート情報</li>
-                                        <li class="tablist2">全国成績過去3節</li>
-                                        <li class="tablist2">当地成績過去3節</li>
-                                    </ul>
-
-                                    <!--選手データ・今節成績 タブ内容-->
-                                    <div class="tabcontents2">
-                                        <div class="tabcontents-list2" id="list_chart_01">
-                                        </div>
-                                    </div>
-
-                                    <!--モーター・ボート情報 タブ内容-->
-                                    <div class="tabcontents2">
-                                        <div class="tabcontents-list2" id="list_chart_02">
-                                        </div>
-                                    </div>
-
-                                    <!--全国成績過去3節 タブ内容-->
-                                    <div class="tabcontents2">
-                                        <div class="tabcontents-list2" id="list_chart_03">
-                                        </div>
-                                    </div>
-
-                                    <!--当地成績過去3節 タブ内容-->
-                                    <div class="tabcontents2">
-                                        <div class="tabcontents-list2" id="list_chart_04">
-                                        </div>
-                                    </div>
-
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!--選手コメント・予想 タブ内容-->
-                    <div class="tabcontents" id="kaisai_yosou">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner " id="list_yosou_01">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!--直前情報・スタート展示 タブ内容-->
-                    <div class="tabcontents" id="kaisai_start">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner">
-
-                                    <!--タブ2-->
-                                    <ul class="tab_start tab-top_start">
-                                        <li class="tablist_start active">直前情報・スタート展示</li>
-                                        <li class="tablist_start">オリジナル展示タイム</li>
-                                    </ul>
-
-                                    <!--直前情報 タブ内容-->
-                                    <div class="tabcontents-list_start" id="list_start_01">
-                                    </div>
-
-                                    <!--スタート展示 タブ内容-->
-                                    <div class="tabcontents-list_start" id="list_start_02">
-                                    </div>
-
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!--枠番別・過去10走 タブ内容-->
-                    <div class="tabcontents" id="kaisai_wakuban">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner" id="list_wakuban_01">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!--得点率早見 タブ内容-->
-                    <div class="tabcontents" id="kaisai_tokuten">
-                        <div class="tabcontents-list">
-
-                            <div class="int">
-                                <div class="inner" id="list_tokuten_01">
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-
-                    <!--オッズ タブ内容-->
-                    <div class="tabcontents" id="kaisai_odds">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner">
-                                    <!--タブ2-->
-                                    <ul class="tab_odds tab-top_odds">
-                                        <li class="tablist_odds active">3連単</li>
-                                        <li class="tablist_odds">2連単・2連複</li>
-                                        <li class="tablist_odds">3連複・拡連複・ <br>単勝・複勝</li>
-                                        <li class="tablist_odds">人気・高配当ランキング</li>
-                                    </ul>
-
-                                    <!--3連単 タブ内容-->
-                                    <div class="tabcontents-list_odds" id="list_odds_01">
-                                    </div>
-
-                                    <!--2連単・2連複 タブ内容-->
-                                    <div class="tabcontents-list_odds" id="list_odds_02">
-                                    </div>
-
-                                    <!--3連複・拡連複・単勝・複勝 タブ内容-->
-                                    <div class="tabcontents-list_odds" id="list_odds_03">
-                                    </div>
-
-                                    <!--人気・高配当ランキング タブ内容-->
-                                    <div class="tabcontents-list_odds" id="list_odds_04">
-                                    </div>
-
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!--結果 タブ内容-->
-                    <div class="tabcontents" id="kaisai_result">
-                        <div class="tabcontents-list">
-                            <div class="int">
-                                <div class="inner">
-                                    <div class="top_odds_block" id="list_result_01">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-		    <ul class="link_btn_list">
-                        <li><a href="racecard.html" class="pdf">出走表PDF</a></li>
-                        <li><a href="racedata.html" class="kyoso">競走データPDF</a></li>
-                        <li><a href="yosen_point_rank.html" class="rank">予選得点率ランキング</a></li>
-                        <li><a href="raceinfo_timerank.html" class="tro">モーターボート抽選結果 <br>・前検タイムランキング</a></li>
-                        <li><a href="race_tenbou.html" class="timedata">専属記者レース展望動画・<br>優出選手インタビュー動画</a></li>
-                        <li><a href="race_result.html" class="result">今節のレース結果一覧</a></li>
-                        <li><a href="paper.html"><img src="images/bnr_kishayosou.png" alt="宮島記者予想 デイリー記者予想 無料専門紙PDF"></a></li>
-                        <li><a href="https://www.daily.co.jp/horse/boatrace/17/" target="_blank"><img src="images/bnr_tyokuzen.png" alt="デイリー直前予想"></a></li>                  
-                    </ul>
-
+                    <a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260803" class="list">出場予定選手一覧</a>
+                    <a href="results.html" class="result">過去のレース結果</a>
+                    <a href="https://livebb.jlc.ne.jp/bb_top/new_bb/index.php?tpl=17" target="_blank" class="replay pc">レースリプレイ</a>
+                    <a href="https://livebb.jlc.ne.jp/bb_top/sp_bb/vod_17.php" class="replay sp">レースリプレイ</a>
                 </div>
+
             </div>
-        </section>
+        </div>
+
     </section>
-    <!--pc開催中 ここまで-->
-    <script src="js/jquery.fancybox.js"></script>
-    <script>
-        $('[data-fancybox]').fancybox();
-    </script>
+    <!--非開催ここまで-->
 
 <style>
     .monta_run{
@@ -806,8 +491,11 @@ if (count >= 3) {
         <!-- Swiper -->
         <div class="swiper-container">
             <div class="swiper-wrapper">
-				<div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/news_detail.html?id=500" target="_blank"><img src="images/slide/065.jpg" alt=""></a></div>
+				<div class="swiper-slide"><a href="https://saikyoohfes-miyajima.com/" target="_blank"><img src="images/slide/087.jpg" alt=""></a></div>
+                <div class="swiper-slide"><a href="https://info-boatrace.jp/" target="_blank"><img src="images/slide/086.jpg" alt=""></a></div>
+                <div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/news_detail.html?id=500" target="_blank"><img src="images/slide/065.jpg" alt=""></a></div>
                 <div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/net-campaign.html" target="_blank"><img src="images/slide/085.png" alt=""></a></div>
+                <div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/coupon.html" target="_blank"><img src="images/slide/088.png" alt=""></a></div>
 				<div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/boatrace-contribution.html" target="_blank"><img src="images/slide/084.png" alt=""></a></div>
 				<div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/facility.html" target="_blank"><img src="images/slide/069.jpg" alt=""></a></div>
                 <div class="swiper-slide"><a href="https://www.boatrace-miyajima.com/youtube-cp.html" target="_blank"><img src="images/slide/083.png" alt=""></a></div>
@@ -878,7 +566,7 @@ if (count >= 3) {
             <div class="tabcontents-list4">
                 <div class="int scroll scroll2">
                     <ul>
-			<li><i>2026.6.28</i><a href="news_detail.html?id=717">【横断幕掲出終了のお知らせ】</a></li><li><i>2026.6.27</i><a href="news_detail.html?id=716">【場外発売日程変更のお知らせ】</a></li><li><i>2026.6.25</i><a href="news_detail.html?id=715">「第14回サッポロビール杯」ドリーム出場予定選手変更について</a></li><li><i>2026.6.22</i><a href="news_detail.html?id=714">【『ＧⅢマスターズリーグ第２戦 デイリースポーツ杯』優勝は....</a></li><li><i>2026.6.22</i><a href="news_detail.html?id=713">PALBOAT宮島イベント 6/28(日)･7/5(日)･1...</a></li><li><i>2026.6.20</i><a href="news_detail.html?id=712">6月20日（土）の8Rにおける着順判定につきまして</a></li><li><i>2026.6.18</i><a href="news_detail.html?id=711">MOMIJIカードでキャッシュレス投票しよう！「BOATRA...</a></li><li><i>2026.6.11</i><a href="news_detail.html?id=709">映像使用について【お知らせ】</a></li><li><i>2026.6.10</i><a href="news_detail.html?id=708">PALBOAT宮島 限定サービス！！【６月後半のプレゼント】</a></li><li><i>2026.6.9</i><a href="news_detail.html?id=707">【『ＧⅠ宮島チャンピオンカップ開設72周年記念』優勝は......</a></li><li><i>2026.6.3</i><a href="news_detail.html?id=705">【オープニングセレモニー】選手入場順変更のお知らせ</a></li><li><i>2026.6.3</i><a href="news_detail.html?id=704">【場外発売日程変更のお知らせ】</a></li><li><i>2026.6.1</i><a href="news_detail.html?id=703">『レーサー紹介記事(山口 剛 選手)』更新しました</a></li><li><i>2026.6.1</i><a href="news_detail.html?id=700">ドリーム戦出場選手変更のお知らせ</a></li><li><i>2026.6.1</i><a href="news_detail.html?id=699">令和8年度ネット投票キャンペーン エントリー開始！！</a></li><li><i>2022.4.4</i><a href="news_detail.html?id=2022000043">４月４日（月）の７Ｒにおける着順判定について</a></li>                    </ul>
+			<li><i>2026.7.29</i><a href="news_detail.html?id=731">【『第16回みやじマリンカップ』優勝は...】 </a></li><li><i>2026.7.29</i><a href="news_detail.html?id=730">【場外発売日程変更のお知らせ】</a></li><li><i>2026.7.24</i><a href="news_detail.html?id=729">PALBOAT宮島 限定サービス！！【８月前半のプレゼント】</a></li><li><i>2026.7.21</i><a href="news_detail.html?id=728">PALBOAT宮島イベント 8/2(日)･11(火･祝)･1...</a></li><li><i>2026.7.16</i><a href="news_detail.html?id=726">「BOATRACE地域振興クーポン」について</a></li><li><i>2026.7.19</i><a href="news_detail.html?id=727">【『ばんえい十勝杯』優勝は...】 </a></li><li><i>2026.7.1</i><a href="news_detail.html?id=720">「最強王図鑑フェスティバル in ボートレース宮島」開催！</a></li><li><i>2026.7.8</i><a href="news_detail.html?id=723">くつろぎルームの開放予定について</a></li><li><i>2026.7.10</i><a href="news_detail.html?id=724">PALBOAT宮島 限定サービス！！【７月後半のプレゼント】</a></li><li><i>2026.7.1</i><a href="news_detail.html?id=721">【『第14回サッポロビール杯』優勝は...】 </a></li><li><i>2026.6.29</i><a href="news_detail.html?id=719">PALBOAT宮島 限定サービス！！【７月前半のプレゼント】</a></li><li><i>2026.6.28</i><a href="news_detail.html?id=717">【横断幕掲出終了のお知らせ】</a></li><li><i>2026.6.27</i><a href="news_detail.html?id=716">【場外発売日程変更のお知らせ】</a></li><li><i>2026.6.25</i><a href="news_detail.html?id=715">「第14回サッポロビール杯」ドリーム出場予定選手変更について</a></li><li><i>2026.6.22</i><a href="news_detail.html?id=714">【『ＧⅢマスターズリーグ第２戦 デイリースポーツ杯』優勝は....</a></li><li><i>2022.4.4</i><a href="news_detail.html?id=2022000043">４月４日（月）の７Ｒにおける着順判定について</a></li>                    </ul>
                 </div>
 
                 <a href="news.html" class="detail">一 覧</a>
@@ -890,11 +578,9 @@ if (count >= 3) {
             <div class="tabcontents-list4">
                 <div class="int">
                     <ul>
-			<li><i>2026.6.28</i><a href="event.html#2070">迫力！【VR】 BOATRACEスプラッシュバトル
+			<li><i>2026.8.15</i><a href="event.html#2111">地域振興クーポンキャンペーンDay“舟券を購入してクーポンを...</a></li><li><i>2026.8.16</i><a href="event.html#2112">地域振興クーポンキャンペーンDay“舟券を購入してクーポンを...</a></li><li><i>2026.8.19</i><a href="event.html#2113">優勝戦出場選手公開インタビュー
 
-【...</a></li><li><i>2026.7.18</i><a href="event.html#2088">ばんえい十勝イベント in ボートレース宮島～北海道十勝フェ...</a></li><li><i>2026.7.19</i><a href="event.html#2089">ばんえい十勝イベント in ボートレース宮島～北海道十勝フェ...</a></li><li><i>2026.7.26</i><a href="event.html#2092">迫力！【VR】 BOATRACEスプラッシュバトル
-
-【...</a></li>                    </ul>
+時間：第６R発売中（1...</a></li>                    </ul>
                 </div>
                 <a href="event.html" class="detail">一 覧</a>
             </div>
@@ -904,7 +590,7 @@ if (count >= 3) {
             <div class="tabcontents-list4">
                 <div class="int">
                     <ul>
-			<li><i>2026.6.28</i><a href="fanservice.html#2082">【プレミア・ゴールド指定席限定】 サッポロ生ビール「黒ラベル...</a></li><li><i>2026.6.29</i><a href="fanservice.html#2083">【プレミア指定席限定】児島GⅡモーターボート大賞「クオカード...</a></li><li><i>2026.6.30</i><a href="fanservice.html#2084">【プレミア指定席限定】児島GⅡモーターボート大賞「クオカード...</a></li><li><i>2026.7.1</i><a href="fanservice.html#2085">【プレミア指定席限定】児島GⅡモーターボート大賞「クオカード...</a></li><li><i>2026.7.17</i><a href="fanservice.html#2094">【先着１００名様】「ボートレースギフト（２００円分）」プレゼ...</a></li><li><i>2026.7.18</i><a href="fanservice.html#2086">【先着200名様】北海道米「ななつぼし（150ｇ）」プレゼン...</a></li><li><i>2026.7.19</i><a href="fanservice.html#2087">【先着200名様】北海道米「ななつぼし（150ｇ）」プレゼン...</a></li>                    </ul>
+			<li><i>2026.8.3</i><a href="fanservice.html#2104">【指定席限定】徳山PGⅠレディースチャンピオン「かるじゃが」...</a></li><li><i>2026.8.4</i><a href="fanservice.html#2105">【プレミア指定席限定】徳山PGⅠレディースチャンピオン「クオ...</a></li><li><i>2026.8.5</i><a href="fanservice.html#2106">【プレミア指定席限定】徳山PGⅠレディースチャンピオン「クオ...</a></li><li><i>2026.8.6</i><a href="fanservice.html#2107">【プレミア指定席限定】徳山PGⅠレディースチャンピオン「クオ...</a></li><li><i>2026.8.7</i><a href="fanservice.html#2108">【プレミア・ゴールド指定席限定】大塚製薬「ポカリスエット（5...</a></li><li><i>2026.8.8</i><a href="fanservice.html#2109">【先着200名様】大塚製薬「ポカリスエット ゼリー」プレゼン...</a></li><li><i>2026.8.17</i><a href="fanservice.html#2110">【先着１００名様】「ボートレースギフト（２００円分）」プレゼ...</a></li>                    </ul>
                 </div>
                 <a href="fanservice.html" class="detail">一 覧</a>
             </div>
@@ -915,7 +601,7 @@ if (count >= 3) {
 
                 <div class="int">
                     <ul>
-			<li><a href="youtube_schedule.html#2093">「第14回サッポロビール杯」配信予定</a></li><li><a href="youtube_schedule.html#2095">「ばんえい十勝杯」配信予定</a></li>                    </ul>
+			<li><a href="youtube_schedule.html#2103">「第11回ポカリスエットカップ」配信予定</a></li><li><a href="youtube_schedule.html#2114">「第56回スポーツニッポン杯」配信予定</a></li>                    </ul>
                 </div>
                 <a href="youtube_schedule.html" class="detail">一 覧</a>
             </div>
@@ -956,7 +642,7 @@ if (count >= 3) {
 </style>
 <section class="calendar_head pc" id="calender">
     <div class="left">
-        <time><i>Jun<b>6</b></i>月</time>
+        <time><i>Jul<b>7</b></i>月</time>
     </div>
     <div class="center">
         <ul>
@@ -971,16 +657,16 @@ if (count >= 3) {
     </div>
     <div class="right">
         <a href="./pdf/schedule/schedule.pdf">年間スケジュールPDF</a>
-        <a href="index.html?month=07&year=2026#calender" >7月</a>
+        <a href="index.html?month=08&year=2026#calender" >8月</a>
     </div>
 </section>
 
 <section class="calendar_head_sp sp" id="calender_sp">
     <div class="int">
 	
-        <a href="index.html?month=05&year=2026#calender_sp" class="next"><img src="images/icon_sp_calender_back.jpg" alt=""></a>
-        <p><i class="month"><b>6</b>月</i>開催日程</p>
-        <a href="index.html?month=07&year=2026#calender_sp" class="next"><img src="images/icon_sp_calender_next.jpg" alt=""></a>
+        <a href="index.html?month=06&year=2026#calender_sp" class="next"><img src="images/icon_sp_calender_back.jpg" alt=""></a>
+        <p><i class="month"><b>7</b>月</i>開催日程</p>
+        <a href="index.html?month=08&year=2026#calender_sp" class="next"><img src="images/icon_sp_calender_next.jpg" alt=""></a>
     </div>
 </section>
 
@@ -1003,39 +689,38 @@ if (count >= 3) {
 				<td >1</td>
 <td >2</td>
 <td >3</td>
-<td >4</td>
-<td >5</td>
-<td class="sat">6</td>
-<td class="sun">7</td>
+<td class="sat">4</td>
+<td class="sun">5</td>
+<td >6</td>
+<td >7</td>
 <td >8</td>
 <td >9</td>
 <td >10</td>
-<td >11</td>
-<td >12</td>
-<td class="sat">13</td>
-<td class="sun">14</td>
+<td class="sat">11</td>
+<td class="sun">12</td>
+<td >13</td>
+<td >14</td>
 <td >15</td>
 <td >16</td>
 <td >17</td>
-<td >18</td>
-<td >19</td>
-<td class="sat">20</td>
-<td class="sun">21</td>
+<td class="sat">18</td>
+<td class="sun">19</td>
+<td class="sun">20</td>
+<td >21</td>
 <td >22</td>
 <td >23</td>
 <td >24</td>
-<td >25</td>
-<td >26</td>
-<td class="sat">27</td>
-<td class="sun">28</td>
+<td class="sat">25</td>
+<td class="sun">26</td>
+<td >27</td>
+<td >28</td>
 <td >29</td>
 <td >30</td>
+<td >31</td>
 
                         </tr>
                         <tr class="weekday">
-				<td >月</td>
-<td >火</td>
-<td >水</td>
+				<td >水</td>
 <td >木</td>
 <td >金</td>
 <td class="sat">土</td>
@@ -1054,7 +739,7 @@ if (count >= 3) {
 <td >金</td>
 <td class="sat">土</td>
 <td class="sun">日</td>
-<td >月</td>
+<td class="sun">月</td>
 <td >火</td>
 <td >水</td>
 <td >木</td>
@@ -1063,23 +748,33 @@ if (count >= 3) {
 <td class="sun">日</td>
 <td >月</td>
 <td >火</td>
+<td >水</td>
+<td >木</td>
+<td >金</td>
 
                         </tr>
 
                         <tr class="openingtime">
                             <th class="tit01 fixcell"><i>本場開門<br class="sp">時間</i></th>
-				<td></td>
+				<td colspan="1">9:55</td>
 <td></td>
 <td></td>
-<td colspan="1">9:00</td>
-<td colspan="5">9:45</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td colspan="5">9:55</td>
 
 
 
 
-<td></td>
-<td></td>
-<td></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1092,21 +787,12 @@ if (count >= 3) {
 
 <td></td>
 <td></td>
-<td></td>
-<td colspan="5">9:55</td>
-
-
-
-
 
                         </tr>
 
                         <tr>
                             <th class="tit01 fixcell"><i>宮島</i></th>
-				<td></td>
-<td></td>
-<td></td>
-<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260604">GⅠ宮島チャンピオンカップ<br>開設72周年記念</a></td>
+				<td class="honjyo" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260626">第14回ｻｯﾎﾟﾛﾋﾞｰﾙ杯</a></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1114,24 +800,32 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260617">GⅢマスターズリーグ第2戦<br>デイリースポーツ杯</a></td>
 <td></td>
 <td></td>
 <td></td>
-<td class="honjyo" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260626">第14回ｻｯﾎﾟﾛﾋﾞｰﾙ杯</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="honjyo" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260715">ばんえい十勝杯</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260724">第16回みやじマリンカップ</a></td>
+<td></td>
+<td></td>
 
                         </tr>
                         <tr class="tv">
                             <th class="tit01 fixcell">JLC</th>
-				<td></td>
+				<td><div><img src="images/tv_icon/03.png" title="JLC683"></div>
 <td></td>
 <td></td>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
-<td><div><img src="images/tv_icon/00.png" title="JLC680"></div>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1141,10 +835,8 @@ if (count >= 3) {
 <td></td>
 <td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
 <td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
-<td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
-<td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
-<td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
-<td><div><img src="images/tv_icon/02.png" title="JLC682"></div>
+<td><div><img src="images/tv_icon/04.png" title="JLC684[15:00]"></div>
+<td><div><img src="images/tv_icon/04.png" title="JLC684[15:00]"></div>
 <td></td>
 <td></td>
 <td></td>
@@ -1152,7 +844,11 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td><div><img src="images/tv_icon/01.png" title="JLC681"></div>
+<td><div><img src="images/tv_icon/04.png" title="JLC684[15:00]"></div>
+<td><div><img src="images/tv_icon/04.png" title="JLC684[15:00]"></div>
+<td><div><img src="images/tv_icon/04.png" title="JLC684"></div>
+<td></td>
+<td></td>
 
                         </tr>
                         <tr class="tv">
@@ -1184,7 +880,8 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="event" colspan=1><a href="https://www.boatrace-miyajima.com/event.html#2070">★</a></td>
+<td></td>
+<td></td>
 <td></td>
 <td></td>
 
@@ -1218,19 +915,15 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="event" colspan=1><a href="https://www.boatrace-miyajima.com/fanservice.html#2082">★</a></td>
-<td class="event" colspan=1><a href="https://www.boatrace-miyajima.com/fanservice.html#2083">★</a></td>
-<td class="event" colspan=1><a href="https://www.boatrace-miyajima.com/fanservice.html#2084">★</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
 
 
                         <tr>
                             <th rowspan="4" class="tit04 fixcell"><i>場外発売</i></th>
-				<td></td>
-<td></td>
-<td></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260531">尼崎</a></td>
-<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260602">ルーキー<br />三国</a></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260605">徳山</a></td>
+				<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260628">三国</a></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1238,24 +931,26 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260613">GⅠ<br />常滑</a></td>
-<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260616">GⅢ企業杯<br />徳山</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260617">尼崎</a></td>
 <td></td>
 <td></td>
 <td></td>
-<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260623">SGｸﾞﾗﾝﾄﾞﾁｬﾝﾋﾟｵﾝ<br />鳴門</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260624">江戸川</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260630">GⅡ<br />児島</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260713">GⅢオールレディース<br />尼崎<img src="images/tv_icon/heart.png"></a></td>
+<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260718">GⅢ<br />津</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260723">GⅢ企業杯<br />江戸川</a></td>
+<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260725">平和島<img src="images/tv_icon/heart.png"></a></td>
+<td></td>
+<td></td>
 
                         </tr>
                         <tr>
-				<td></td>
-<td></td>
-<td></td>
-<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260530">GⅢ<br />多摩川<img src="images/tv_icon/heart.png"></a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260603">日本未来<br />江戸川</a></td>
-<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260606">ヴィーナスシリーズ第5戦<br />丸亀<img src="images/tv_icon/heart.png"></a></td>
+				<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260627">戸田</a></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1263,47 +958,60 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260612">GⅢ<br />福岡<img src="images/tv_icon/heart.png"></a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260618">戸田<img src="images/tv_icon/heart.png"></a></td>
-<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=24&hd=20260617">GⅡﾓｰﾀｰﾎﾞｰﾄ誕生祭<br />大村</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260618">戸田<img src="images/tv_icon/heart.png"></a></td>
 <td></td>
 <td></td>
 <td></td>
-<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260622">唐津</a></td>
-<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260625">徳山</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260625">尼崎</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260710">男女W<br />浜名湖</a></td>
+<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260711">江戸川</a></td>
+<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260714">芦屋</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="morning" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260722">にっぽん未来プロジェクト競走<br />鳴門</a></td>
+<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260728">SG<br />びわこ</a></td>
+<td></td>
+<td></td>
+
+                        </tr>
+                        <tr class="enp">
+				<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260630">GⅡ<br />児島</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260713">GⅡ<br />蒲郡</a></td>
+<td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260719">GⅢ<br />下関<img src="images/tv_icon/heart.png"></a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260719">GⅢ<br />下関<img src="images/tv_icon/heart.png"></a></td>
+<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260722">尼崎</a></td>
+<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260724">戸田</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
 
                         </tr>
                         <tr class="enp">
 				<td></td>
 <td></td>
-<td></td>
-<td></td>
-<td></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260603">日本未来<br />江戸川</a></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260608">GⅠ<br />尼崎</a></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260618">ヴィーナス<br />戸田<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260621">児島</a></td>
-<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260624">ヴィーナスシリーズ<br />住之江<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-
-                        </tr>
-                        <tr class="enp">
-				<td></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1354,39 +1062,38 @@ if (count >= 3) {
 				<td >1</td>
 <td >2</td>
 <td >3</td>
-<td >4</td>
-<td >5</td>
-<td class="sat">6</td>
-<td class="sun">7</td>
+<td class="sat">4</td>
+<td class="sun">5</td>
+<td >6</td>
+<td >7</td>
 <td >8</td>
 <td >9</td>
 <td >10</td>
-<td >11</td>
-<td >12</td>
-<td class="sat">13</td>
-<td class="sun">14</td>
+<td class="sat">11</td>
+<td class="sun">12</td>
+<td >13</td>
+<td >14</td>
 <td >15</td>
 <td >16</td>
 <td >17</td>
-<td >18</td>
-<td >19</td>
-<td class="sat">20</td>
-<td class="sun">21</td>
+<td class="sat">18</td>
+<td class="sun">19</td>
+<td class="sun">20</td>
+<td >21</td>
 <td >22</td>
 <td >23</td>
 <td >24</td>
-<td >25</td>
-<td >26</td>
-<td class="sat">27</td>
-<td class="sun">28</td>
+<td class="sat">25</td>
+<td class="sun">26</td>
+<td >27</td>
+<td >28</td>
 <td >29</td>
 <td >30</td>
+<td >31</td>
 
                         </tr>
                         <tr class="weekday">
-				<td >月</td>
-<td >火</td>
-<td >水</td>
+				<td >水</td>
 <td >木</td>
 <td >金</td>
 <td class="sat">土</td>
@@ -1405,7 +1112,7 @@ if (count >= 3) {
 <td >金</td>
 <td class="sat">土</td>
 <td class="sun">日</td>
-<td >月</td>
+<td class="sun">月</td>
 <td >火</td>
 <td >水</td>
 <td >木</td>
@@ -1414,14 +1121,14 @@ if (count >= 3) {
 <td class="sun">日</td>
 <td >月</td>
 <td >火</td>
+<td >水</td>
+<td >木</td>
+<td >金</td>
 
                         </tr>
                         <tr>
                             <th class="tit01 fixcell"><i>宮島</i></th>
-				<td></td>
-<td></td>
-<td></td>
-<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260604">GⅠ宮島チャンピオンカップ<br>開設72周年記念</a></td>
+				<td class="honjyo" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260626">第14回ｻｯﾎﾟﾛﾋﾞｰﾙ杯</a></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1429,163 +1136,177 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
-<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260617">GⅢマスターズリーグ第2戦<br>デイリースポーツ杯</a></td>
 <td></td>
 <td></td>
 <td></td>
-<td class="honjyo" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260626">第14回ｻｯﾎﾟﾛﾋﾞｰﾙ杯</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="honjyo" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260715">ばんえい十勝杯</a></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td class="honjyo" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=17&hd=20260724">第16回みやじマリンカップ</a></td>
+<td></td>
+<td></td>
 
                         </tr>
                         <tr>
                             <th rowspan="14" class="tit04 fixcell"><i>場外発売</i></th>
-				<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260529">鳴門</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260603">芦屋</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260609">にっぽん未来プロジェクト競走<br />唐津</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260615">芦屋</a></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260621">三国</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260622">唐津</a></td>
-<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260625">芦屋</a></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260628">三国</a></td>
+				<td class="morning" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260630">唐津</a></td>
+<td></td>
+<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260707">GⅢマスターズリーグ第3戦<br />三国</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260710">唐津</a></td>
+<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260714">芦屋</a></td>
+<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260718">三国</a></td>
+<td class="morning" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260721">唐津</a></td>
+<td class="morning" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260727">三国</a></td>
 
                         </tr>
                         <tr>
-				<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260527">常滑</a></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260602">ﾙｰｷｰ<br />三国</a></td>
+				<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260628">三国</a></td>
+<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260702">芦屋</a></td>
+<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260704">徳山</a></td>
 <td></td>
-<td class="morning" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260602">ルーキーシリーズ第12戦<br />三国</a></td>
+<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260704">徳山</a></td>
+<td class="morning" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260709">鳴門</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260710">唐津</a></td>
+<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260715">徳山</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260721">唐津</a></td>
+<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260722">にっぽん未来プロジェクト競走<br />鳴門</a></td>
 <td></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260610">鳴門</a></td>
-<td class="morning" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260611">三国</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260616">GⅢ企業杯<br />徳山</a></td>
-<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260621">三国</a></td>
-<td class="morning" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260625">徳山</a></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260630">唐津</a></td>
+<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260729">徳山</a></td>
 
                         </tr>
                         <tr>
-				<td class="morning" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260529">唐津</a></td>
+				<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260629">常滑</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260702">芦屋</a></td>
 <td></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260529">GⅢ<br />津</a></td>
-<td class="morning" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=18&hd=20260605">徳山</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260611">ルーキーシリーズ第13戦<br />江戸川</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260617">尼崎</a></td>
-<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260621">常滑</a></td>
-<td></td>
-<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260627">戸田</a></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260707">GⅡ第8回全国ボートレース甲子園<br />戸田</a></td>
+<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260711">江戸川</a></td>
+<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260717">GⅢ企業杯<br />児島</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260723">芦屋</a></td>
+<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260724">戸田</a></td>
+<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260728">児島</a></td>
 
                         </tr>
                         <tr>
-				<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260529">GⅢマスターズ<br />津</a></td>
+				<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260627">戸田</a></td>
+<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260702">平和島</a></td>
 <td></td>
-<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260604">常滑</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260609">にっぽん未来プロジェクト競走<br />びわこ</a></td>
+<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260702">平和島</a></td>
 <td></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260616">津</a></td>
-<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260621">児島</a></td>
-<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260624">江戸川</a></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260630">GⅡ<br />児島</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260709">鳴門</a></td>
+<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260710">津</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260710">唐津</a></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260716">びわこ</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260721">唐津</a></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260723">GⅢ企業杯<br />江戸川</a></td>
+<td></td>
+<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260730">ルーキー<br />常滑</a></td>
 
                         </tr>
                         <tr>
-				<td></td>
+				<td class="summer" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260628">多摩川</a></td>
+<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260703">尼崎</a></td>
+<td></td>
+<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260703">尼崎</a></td>
+<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260709">児島</a></td>
+<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260711">平和島</a></td>
+<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260715">常滑</a></td>
+<td class="summer" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260718">平和島</a></td>
+<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260722">常滑</a></td>
+<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260727">津</a></td>
 <td></td>
 <td></td>
-<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260603">にっぽん未来プロジェクト競走<br />江戸川</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260607">津</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260613">GⅠ開設73周年記念<br />常滑</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260619">びわこ</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260625">尼崎</a></td>
+<td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260731">若松</a></td>
 
                         </tr>
                         <tr>
-				<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260529">びわこ</a></td>
-<td></td>
-<td></td>
-<td></td>
-<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=03&hd=20260603">日本未来<br />江戸川</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260608">GⅠ開設74周年記念<br />尼崎</a></td>
-<td></td>
-<td></td>
-<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=10&hd=20260611">三国</a></td>
-<td></td>
-<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260618">平和島</a></td>
-<td></td>
-<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260622">福岡</a></td>
-<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260624">平和島</a></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260629">びわこ</a></td>
-
-                        </tr>
-                        <tr>
-				<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260531">尼崎</a></td>
-<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260606">浜名湖</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260611">児島</a></td>
-<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260617">多摩川</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260623">SG第36回グランドチャンピオン<br />鳴門</a></td>
-<td class="summer" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260628">多摩川</a></td>
-
-                        </tr>
-                        <tr>
-				<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260530">GⅢオールレディース<br />多摩川<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-<td></td>
-<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260607">多摩川</a></td>
-<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260612">GⅢオールレディース<br />福岡<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-<td></td>
-<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260620">にっぽん未来プロジェクト競走<br />浜名湖</a></td>
-<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260624">平和島</a></td>
-<td></td>
-<td class="jyogai" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260624">津</a></td>
-<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260630">浜名湖</a></td>
-
-                        </tr>
-                        <tr>
-				<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260531">にっぽん未来プロジェクト競走<br />若松</a></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260606">ヴィーナスシリーズ第5戦<br />丸亀<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260613">浜名湖</a></td>
-<td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260617">蒲郡</a></td>
-<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260618">ヴィーナスシリーズ第6戦<br />戸田<img src="images/tv_icon/heart.png"></a></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260624">ヴィーナスシリーズ第7戦<br />住之江<img src="images/tv_icon/heart.png"></a></td>
-<td></td>
-
-                        </tr>
-                        <tr>
-				<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260528">桐生</a></td>
-<td></td>
-<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260603">蒲郡</a></td>
-<td></td>
-<td></td>
-<td></td>
-<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=14&hd=20260610">鳴門</a></td>
-<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260614">住之江</a></td>
-<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260617">蒲郡</a></td>
-<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260621">下関</a></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260625">GⅢ企業杯<br />桐生</a></td>
-
-                        </tr>
-                        <tr>
-				<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260530">住之江</a></td>
-<td></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260605">桐生</a></td>
-<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260611">若松</a></td>
-<td></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=24&hd=20260617">GⅡ第30回モーターボート誕生祭<br />大村</a></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260623">蒲郡</a></td>
-<td></td>
+				<td class="jyogai" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260629">びわこ</a></td>
 <td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260630">下関</a></td>
+<td class="jyogai" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260703">津</a></td>
+<td></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260707">ヴィーナスシリーズ第8戦<br />びわこ<img src="images/tv_icon/heart.png"></a></td>
+<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260712">多摩川</a></td>
+<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=02&hd=20260717">戸田</a></td>
+<td class="summer" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260719">多摩川</a></td>
+<td class="summer" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260724">浜名湖</a></td>
+<td class="jyogai" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=11&hd=20260728">SG第31回オーシャンカップ<br />びわこ</a></td>
 
                         </tr>
                         <tr>
-				<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260601">下関</a></td>
+				<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=16&hd=20260630">GⅡモーターボート大賞<br />児島</a></td>
+<td></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=08&hd=20260707">常滑</a></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260713">GⅢオールレディース<br />尼崎<img src="images/tv_icon/heart.png"></a></td>
+<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260719">GⅢ第13回ウエスタンヤング<br />福岡</a></td>
+<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260725">ヴィーナスシリーズ第9戦<br />平和島<img src="images/tv_icon/heart.png"></a></td>
+<td class="summer" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260731">GⅢ<br />浜名湖</a></td>
+
+                        </tr>
+                        <tr>
+				<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260701">福岡</a></td>
 <td></td>
 <td></td>
 <td></td>
-<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260609">蒲郡</a></td>
-<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260614">桐生</a></td>
 <td></td>
-<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260620">ルーキーシリーズ第14戦<br />丸亀</a></td>
-<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=24&hd=20260626">大村</a></td>
+<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260710">福岡</a></td>
+<td></td>
+<td></td>
+<td class="jyogai" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=09&hd=20260718">GⅢ第13回イースタンヤング<br />津</a></td>
+<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260724">住之江</a></td>
+<td class="morning" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=21&hd=20260723">芦屋</a></td>
+<td class="summer" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=22&hd=20260729">福岡</a></td>
+
+                        </tr>
+                        <tr>
+				<td class="summer" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260630">浜名湖</a></td>
+<td></td>
+<td class="summer" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=05&hd=20260705">多摩川</a></td>
+<td class="summer" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=06&hd=20260710">男女W優勝戦<br />浜名湖</a></td>
+<td></td>
+<td></td>
+<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260718">にっぽん未来プロジェクト競走<br />若松</a></td>
+<td class="jyogai" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=13&hd=20260722">尼崎</a></td>
+<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260727">下関</a></td>
+
+                        </tr>
+                        <tr>
+				<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260630">下関</a></td>
+<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260704">にっぽん未来<br />桐生</a></td>
+<td></td>
+<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260704">にっぽん未来<br />桐生</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260710">唐津</a></td>
+<td class="summer" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=04&hd=20260711">平和島</a></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260714">桐生</a></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260720">にっぽん未来プロジェクト競走<br />丸亀</a></td>
+<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260724">住之江</a></td>
+<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=24&hd=20260728">にっぽん未来プロジェクト競走<br />大村</a></td>
+
+                        </tr>
+                        <tr>
+				<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260701">ﾎﾞｰﾄﾚｰｽﾚﾃﾞｨｰｽVSﾙｰｷｰｽﾞﾊﾞﾄﾙ<br />蒲郡</a></td>
+<td></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260707">GⅢ企業杯<br />若松</a></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=07&hd=20260713">GⅡモーターボート大賞<br />蒲郡</a></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=19&hd=20260719">GⅢオールレディース<br />下関<img src="images/tv_icon/heart.png"></a></td>
+<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=20&hd=20260725">若松</a></td>
+<td class="morning" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=23&hd=20260729">唐津</a></td>
+<td class="nighter" colspan=1><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260731">GⅢ<br />桐生<img src="images/tv_icon/heart.png"></a></td>
+
+                        </tr>
+                        <tr>
+				<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=24&hd=20260626">大村</a></td>
+<td class="nighter" colspan=3><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260703">住之江</a></td>
+<td></td>
+<td class="nighter" colspan=2><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260703">住之江</a></td>
+<td class="nighter" colspan=6><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260709">丸亀</a></td>
+<td class="nighter" colspan=7><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=12&hd=20260715">住之江</a></td>
+<td></td>
+<td class="nighter" colspan=5><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=01&hd=20260723">桐生</a></td>
+<td class="nighter" colspan=4><a href="https://www.boatrace.jp/owpc/pc/race/assen?jcd=15&hd=20260728">男女W優勝戦<br />丸亀</a></td>
 
                         </tr>
                         <tr class="enp">
@@ -1619,10 +1340,12 @@ if (count >= 3) {
 <td></td>
 <td></td>
 <td></td>
+<td></td>
 
                         </tr>
                         <tr class="enp">
 				<td></td>
+<td></td>
 <td></td>
 <td></td>
 <td></td>
@@ -1753,10 +1476,10 @@ if (count >= 3) {
                 <li><a href="momiji_card.html">キャッシュレス投票『モミジカード』</a></li>
                 <li><a href="app.html">公式SNS・スマホ専用アプリ</a></li>
                 <li><a href="beginners.html">初心者ガイド</a></li>
-                <li><a href="pairboat.html">ペアボート体験会</a></li>
                 <li><a href="banners.html">横断幕について</a></li>
                 <li><a href="panorama.html">パノラマムービー</a></li>
 				<li><a href="https://www.boatrace-miyajima.com/pdf/vr_schedule.pdf" class="betsu" target="_blank">ＶＲスプラッシュバトル実施予定日</a></li>
+                <li><a href="https://www.boatrace-miyajima.com/pdf/kutsurogi_r8.pdf" class="betsu" target="_blank">3Fくつろぎルームご利用案内<br>&開放予定日</a></li>
 				<li><a href="ga-info.html">ギャンブル依存症関連</a></li>
 				<li><a href="https://gamble-shindan.com/?utm_source=sitelink&utm_medium=banner&utm_campaign=boatrace202203" class="betsu" target="_blank">ギャンブル依存症セルフチェック</a></li>
 				<li><a href="jalert-info.html">Jアラート関連</a></li>
@@ -1951,10 +1674,10 @@ if (count >= 3) {
                                 <li><a href="momiji_card.html">キャッシュレス投票『モミジカード』</a></li>
                                 <li><a href="app.html">公式SNS・スマホ専用アプリ</a></li>
                                 <li><a href="beginners.html">初心者ガイド</a></li>
-                                <li><a href="pairboat.html">ペアボート体験会</a></li>
                                 <li><a href="banners.html">横断幕について</a></li>
                                 <li><a href="panorama.html">パノラマムービー</a></li>
 								<li><a href="https://www.boatrace-miyajima.com/pdf/vr_schedule.pdf" class="betsu" target="_blank">ＶＲスプラッシュバトル実施予定日</a></li>
+                                <li><a href="https://www.boatrace-miyajima.com/pdf/kutsurogi_r8.pdf" class="betsu" target="_blank">3Fくつろぎルームご利用案内&開放予定日</a></li>
 								<li><a href="ga-info.html">ギャンブル依存症関連</a></li>
 								<li><a href="https://gamble-shindan.com/?utm_source=sitelink&utm_medium=banner&utm_campaign=boatrace202203" class="betsu" target="_blank">ギャンブル依存症セルフチェック</a></li>
 								<li><a href="jalert-info.html">Jアラート関連</a></li>
@@ -2063,10 +1786,10 @@ if (count >= 3) {
                                 <li><a href="momiji_card.html">キャッシュレス投票『モミジカード』</a></li>
                                 <li><a href="app.html">公式SNS・スマホ専用アプリ</a></li>
                                 <li><a href="beginners.html">初心者ガイド</a></li>
-                                <li><a href="pairboat.html">ペアボート体験会</a></li>
                                 <li><a href="banners.html">横断幕について</a></li>
                                 <li><a href="panorama.html">パノラマムービー</a></li>
 								<li><a href="https://www.boatrace-miyajima.com/pdf/vr_schedule.pdf" class="betsu" target="_blank">ＶＲスプラッシュバトル実施予定日</a></li>
+                                <li><a href="https://www.boatrace-miyajima.com/pdf/kutsurogi_r8.pdf" class="betsu" target="_blank">3Fくつろぎルームご利用案内&開放予定日</a></li>
 								<li><a href="ga-info.html">ギャンブル依存症関連</a></li>
 								<li><a href="https://gamble-shindan.com/?utm_source=sitelink&utm_medium=banner&utm_campaign=boatrace202203" class="betsu" target="_blank">ギャンブル依存症セルフチェック</a></li>
 								<li><a href="jalert-info.html">Jアラート関連</a></li>
