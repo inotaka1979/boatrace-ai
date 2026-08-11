@@ -177,6 +177,10 @@ step "S-05 degraded feature banner tests" \
 step "Web Worker protocol smoke" \
      "node scripts/tests/test_worker_protocol.js"
 
+# 9g2x) 今節成績(racedata)が空のまま一日ロックされない
+step "racedata empty lock-in guard (今節成績)" \
+     "python3 -m unittest scripts.tests.test_racedata_empty_lockin"
+
 # 9g2y) 「更新」で表示済みの結果/展示が消えない（全置換の取り残し防止）
 step "Refresh must not drop displayed results/previews" \
      "node scripts/tests/test_refresh_no_data_loss.js"

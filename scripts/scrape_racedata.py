@@ -341,11 +341,23 @@ def main() -> None:
                 prev = json.load(f)
             # 同じ race_date なら継続、別日付なら破棄
             if prev.get("race_date") == date_str and isinstance(prev.get("racedata"), list):
+                empty_n = 0
                 for entry in prev["racedata"]:
                     all_data.append(entry)
-                    existing_done_keys.add((entry.get("stadium"), entry.get("race")))
-                if existing_done_keys:
-                    print(f"  Resume: {len(existing_done_keys)} races already scraped today")
+                    # FIX (2026-08-11): boats が空の entry を「取得済み」に数えない。
+                    #   実害: 早朝の run では boatrace.jp の出走表に今節成績がまだ載らず
+                    #   boats=[] で保存される。旧実装はこれを done 扱いして以後スキップし、
+                    #   さらに scrape_all の _is_fresh_today も「今日の日付なら fresh」と
+                    #   判定するため、**その日は一日中 今節成績が空のまま**になっていた。
+                    #   （data/racedata/today.json の履歴で 0/13・0/15 の日が多数確認できる）
+                    #   空 entry は未取得とみなし、後続 run で再取得させる。
+                    if entry.get("boats"):
+                        existing_done_keys.add((entry.get("stadium"), entry.get("race")))
+                    else:
+                        empty_n += 1
+                if existing_done_keys or empty_n:
+                    print(f"  Resume: {len(existing_done_keys)} races already scraped today"
+                          f" ({empty_n} empty → 再取得対象)")
     except Exception as e:
         print(f"  WARN: resume load failed ({e}) — starting fresh")
         all_data = []
@@ -379,7 +391,18 @@ def main() -> None:
             # rt-fix3: 出走表タブから取得した「◯日目」ラベル（初日 / N日目 / 最終日）。
             if day_label:
                 entry["day_label"] = day_label
-            all_data.append(entry)
+            # FIX (2026-08-11): 空 entry を再取得対象にしたので、同じ (sid, rn) が
+            #   all_data に既に居る。append すると重複するため置換する。
+            #   併せて単調性を守る: 既存が boats を持つのに新規が空なら採用しない
+            #   （上流が一時的に空を返しても表示中の今節成績を壊さない）。
+            idx = next((k for k, e in enumerate(all_data)
+                        if e.get("stadium") == sid and e.get("race") == rn), None)
+            if idx is None:
+                all_data.append(entry)
+            elif boats or not all_data[idx].get("boats"):
+                if not day_label and all_data[idx].get("day_label"):
+                    entry["day_label"] = all_data[idx]["day_label"]
+                all_data[idx] = entry
 
         # Stadium 完了ごとに partial として保存 (timeout / network 障害耐性)
         atomic_write_json(OUTPUT_RACEDATA, {

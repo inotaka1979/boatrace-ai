@@ -107,10 +107,16 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         #   鮮度ゲート自体は test_results_age_gated が個別に stub して検証している。
         self._orig_age = scrape_all._age_minutes
         scrape_all._age_minutes = lambda path: 999.0
+        # 2026-08-11: racedata の中身ゲートも stub する（FA-10 と同じ理由）。
+        #   実ファイル data/racedata/today.json を読むため、stub しないと
+        #   チェックアウト内容で racedata の要否が変わりフレークになる。
+        self._orig_rd = scrape_all._racedata_has_empty
+        scrape_all._racedata_has_empty = lambda path: False
 
     def tearDown(self):
         scrape_all._is_fresh_today = self._orig
         scrape_all._age_minutes = self._orig_age
+        scrape_all._racedata_has_empty = self._orig_rd
 
     def _at(self, h, m):
         now = datetime.datetime(2026, 5, 17, h, m, tzinfo=JST)
@@ -179,9 +185,21 @@ class TestDecideTasksIdempotency(unittest.TestCase):
 
     def setUp(self):
         self._orig = scrape_all._is_fresh_today
+        # 2026-08-11: racedata の中身ゲートも stub（実ファイル依存のフレークを作らない）
+        self._orig_rd = scrape_all._racedata_has_empty
+        scrape_all._racedata_has_empty = lambda path: False
 
     def tearDown(self):
         scrape_all._is_fresh_today = self._orig
+        scrape_all._racedata_has_empty = self._orig_rd
+
+    def test_racedata_refetched_when_boats_empty(self):
+        """fresh でも boats が空なら再取得する（今節成績が一日中空になる不具合の防止）。"""
+        scrape_all._is_fresh_today = lambda path, now: True
+        scrape_all._racedata_has_empty = lambda path: True
+        now = datetime.datetime(2026, 5, 17, 14, 0, tzinfo=JST)
+        tasks = _names(scrape_all._decide_tasks(now, force_all=False))
+        self.assertIn("racedata", tasks, "空 racedata が再取得されない")
 
     def test_skip_when_data_all_fresh(self):
         scrape_all._is_fresh_today = lambda path, now: True
