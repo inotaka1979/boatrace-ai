@@ -1053,5 +1053,37 @@ QA/テストの 6 領域で全コード（約 16,000 行）を監査。各指摘
 検証: 60/60 テストステップ PASS（新規 4 ファイル 37 件）、build:check EXIT=0、
 eslint / tsc 0 errors、golden snapshot 不変、critical budget 99910B / 100000B。
 
-**残: `npm run format:check` は本作業以前から 16 ファイルで警告（`npm run gate` が赤）。
-別対応が必要（prettier --write は無関係な大量差分を生むため本 PR では触っていない）。**
+### FA-9: 「検査しているつもり」だった 2 つのゲート (2026-08-11)
+
+- **prettier が 3 ヶ月間まったく検査されていなかった**: `gate.yml` の step 名は
+  `Lint (eslint + prettier --check)`、`.husky/pre-commit` のコメントも
+  「Lint + format check」だったが、どちらも `npm run lint` (= eslint のみ) しか
+  実行していなかった。結果 src/ の 16 ファイルが整形から外れ、`npm run gate` を
+  ローカルで走らせた開発者だけが赤を踏む（CI は緑）状態だった。
+  → 16 ファイルに `prettier --write`（568/333 行、全て空白と改行位置のみ。minify が
+  空白を正規化するため成果物は不変・golden snapshot 9/9 不変・critical budget も同値）、
+  gate.yml を Lint / Format check の 2 step に分割、pre-commit にも format:check を追加。
+  **`npm run gate` が本セッション以前は赤、以後 EXIT=0。**
+
+- **VRT が 3 ヶ月間ゲートとして機能していなかった**: `vrt` ジョブは main への push を
+  含む全 run で同じ 2 件が fail し続けていた（少なくとも 2026-07-19 以降、失敗セットが
+  完全一致）。baseline の最終再生成は `88460479` (2026-05-10) で、それ以降の
+  **意図的な** UI 変更が未反映だったのが原因:
+
+  | テスト | 差分の原因 |
+  |---|---|
+  | `races page: … wrapper layout` | 2026-07-22 の `#racesViewToggle` 追加で 140px → 190px |
+  | `nav: 5ボタン bottom navigation` | Epic 22/25 の i18n による nav ラベル変更 |
+
+  恒常的に赤い＝本物の見た目退行が混ざっても気付けない状態で、e2e.yml のコメントは
+  「advisory 解除。今後は退行を CI が確実に block する」と事実に反していた。
+  → コメントを実態に合わせ、失敗時に復旧手順をログ出力する step を追加、
+  `docs/RUNBOOK.md §10` に切り分けと再生成手順を記載
+  （ローカル `--update-snapshots` はフォント差で CI と一致しないため禁止と明記）。
+
+**残（user 操作が必要、各 1 分）:**
+1. **VRT baseline 再生成** — Actions → 「E2E (Playwright)」→ Run workflow (main)。
+   これを実行するまで vrt は赤のまま（本 PR 由来ではなく 3 ヶ月前からの負債）。
+2. **Cloudflare Worker のデプロイ** — FA-5 の認証/CORS はコードのみ。併せて dashboard で
+   `TRIGGER_SECRET` を Secret 登録し、GitHub にも同名の Actions secret を追加すると
+   watchdog が即時復旧できる（未設定でも 5 分 throttle 経由で動作する）。
