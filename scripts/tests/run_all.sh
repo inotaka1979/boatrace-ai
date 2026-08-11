@@ -177,6 +177,10 @@ step "S-05 degraded feature banner tests" \
 step "Web Worker protocol smoke" \
      "node scripts/tests/test_worker_protocol.js"
 
+# 9g2y) 「更新」で表示済みの結果/展示が消えない（全置換の取り残し防止）
+step "Refresh must not drop displayed results/previews" \
+     "node scripts/tests/test_refresh_no_data_loss.js"
+
 # 9g2z) 校正 再フィットのフィードバックループ（raw_probs で fit する）
 step "Calibration refit feedback loop (raw probs)" \
      "node scripts/tests/test_calibration_feedback.js"

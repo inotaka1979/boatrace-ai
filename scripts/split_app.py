@@ -136,6 +136,11 @@ REST_ANCHORS = {
     '_mergeResultIndex', '_applyResultsRaw',
     # 2026-06-30: 直前情報(展示情報)オンデマンド補完
     '_sweepMissingPreviews', '_loadPreviewLive', '_isPreviewIncomplete', '_sweepMissing',
+    # 2026-08-11: previews 縮退防止マージ。loadAllData / forceRefresh (critical) からも
+    #   呼ぶが、DFS で critical に引き込むと予算超過 (100518B > 100000B) するため
+    #   rest 固定。呼出側は typeof guard 付きで、未 load 時は従来の全置換に degrade する
+    #   （初回ロードは previewData が null なので失うものが無く無害）。
+    '_mergePreviewIndex', '_previewRichness',
 }
 
 
