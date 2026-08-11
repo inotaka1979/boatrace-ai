@@ -62,6 +62,22 @@ function renderStats() {
     triRate3 +
     '%</div><div class="stat-label">3連単回収率</div></div>';
 
+  // FIX (2026-08-11): 事後生成（レース確定後に初めて計算した予想）は、その結果を
+  //   反映済みの racerDB/L2 と確定オッズで算出しているため実運用性能ではない。
+  //   件数が多いほど数値は楽観側に寄るので、割合を正直に開示する。
+  var _bf = document.getElementById('statLeakageNote');
+  if (_bf) {
+    if (s.backfilled > 0 && s.total > 0) {
+      _bf.textContent =
+        '⚠ ' + s.total + ' 件中 ' + s.backfilled + ' 件はレース確定後に生成された予想です。' +
+        'その結果を学習済みのデータと確定オッズで計算しているため、下の的中率・回収率は' +
+        '実際の運用成績より良く出ます。';
+      _bf.style.display = 'block';
+    } else {
+      _bf.style.display = 'none';
+    }
+  }
+
   var recHtml = '';
 
   // 券種別 (本日)

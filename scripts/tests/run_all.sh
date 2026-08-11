@@ -47,6 +47,10 @@ step "Python unit tests (aggregate_form)" \
 step "Python unit tests (archive_daily)" \
      "python3 -m unittest scripts.tests.test_archive_daily -v"
 
+# 1c4) 2026-08-11: スクレイパのデータ破壊経路ガード
+step "Python unit tests (scraper data-loss guards)" \
+     "python3 -m unittest scripts.tests.test_scraper_dataloss -v"
+
 # 1d) 2026-05-17: scrape_all._decide_tasks / _is_fresh_today ユニットテスト
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"
@@ -168,6 +172,30 @@ step "Golden race regression snapshots" \
 # 9f) PR-6 データ縮退バナー検出テスト
 step "S-05 degraded feature banner tests" \
      "node scripts/tests/test_degraded_banner.js"
+
+# 9g2) Web Worker プロトコル smoke（worker 経路の silent 死亡を検出）
+step "Web Worker protocol smoke" \
+     "node scripts/tests/test_worker_protocol.js"
+
+# 9g2z) 校正 再フィットのフィードバックループ（raw_probs で fit する）
+step "Calibration refit feedback loop (raw probs)" \
+     "node scripts/tests/test_calibration_feedback.js"
+
+# 9g2a) critical→rest 到達性 lint（PJ Phase 致命バグの再発防止 lint 自体の回帰）
+step "critical→rest reachability lint (AST)" \
+     "node scripts/tests/test_build_lint.mjs"
+
+# 9g2b) Cloudflare Worker HTTP 層（refresh-now 認証/throttle・CORS 許可リスト）
+step "Cloudflare Worker endpoint (auth / CORS)" \
+     "node scripts/tests/test_worker_cf_endpoint.mjs"
+
+# 9g3) look-ahead leakage 回帰（締切前予想の lock-in）
+step "Prediction lock-in (leakage guard)" \
+     "node scripts/tests/test_prediction_lockin.js"
+
+# 9g4) L2 コース主効果の二重計上 回帰
+step "L2 course prior (double-count guard)" \
+     "node scripts/tests/test_course_prior.js"
 
 # 9g) PR-11 オフライン履歴バックテスト CLI テスト
 step "A-02 offline backtest CLI tests" \

@@ -92,12 +92,6 @@ function predictRaceProgram(sid, raceNum) {
       classNum: l1s.classNum,
     };
   });
-  // PB-6 + Tier 2: 統一 calibration (Platt/Isotonic auto-select、場別あり)
-  finalProbs.forEach(function (p) {
-    p.prob = (typeof _applyCalibration === 'function')
-      ? _applyCalibration(p.prob, sid)
-      : _applyPlattCalibration(p.prob, sid);
-  });
   // P1-A4: F/L 1着確率乗数（番組予想にも適用）
   finalProbs.forEach(function (p) {
     var l1 = l1scores.find(function (s) {
@@ -108,14 +102,18 @@ function predictRaceProgram(sid, raceNum) {
     var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1.0;
     p.prob *= mult;
   });
-  var _sum2 = finalProbs.reduce(function (a, p) {
-    return a + p.prob;
-  }, 0);
-  if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
-    finalProbs.forEach(function (p) {
-      p.prob = p.prob / _sum2;
-    });
-  }
+  _renormalizeProbs(finalProbs);
+  // FA-7: 校正前の確率を保持（再校正はこの raw で fit する。詳細は predict_race.js）
+  finalProbs.forEach(function (p) {
+    p.probRaw = p.prob;
+  });
+  // PB-6 + Tier 2: 統一 calibration (Platt/Isotonic auto-select、場別あり)
+  finalProbs.forEach(function (p) {
+    p.prob = (typeof _applyCalibration === 'function')
+      ? _applyCalibration(p.prob, sid)
+      : _applyPlattCalibration(p.prob, sid);
+  });
+  _renormalizeProbs(finalProbs);
   finalProbs.sort(function (a, b) {
     return b.prob - a.prob;
   });

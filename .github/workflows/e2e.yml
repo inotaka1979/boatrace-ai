@@ -56,9 +56,11 @@ jobs:
           npx playwright install --with-deps webkit
       # FIX: tests/e2e/*.mjs が `@playwright/test` を import するが、deps は build/node_modules
       # にある。Node ESM resolution は test ファイルから上方向に node_modules を探すため、
-      # repo root に symlink を貼って tests/e2e から resolve できるようにする。
-      - name: Symlink node_modules for ESM resolution
-        run: ln -sf build/node_modules node_modules
+      # repo root から resolve できる経路を張る。
+      # FA-8: root node_modules ごとの symlink はローカルの `npm ci` と衝突するため、
+      #   ローカルと同一のスクリプト (@playwright スコープのみ symlink) に統一。
+      - name: Link @playwright for ESM resolution
+        run: bash scripts/ensure_e2e_deps.sh
       - name: Run WebKit smoke tests
         working-directory: build
         env:
@@ -97,9 +99,11 @@ jobs:
           npx playwright install --with-deps chromium
       # FIX: tests/e2e/*.mjs が `@playwright/test` を import するが、deps は build/node_modules
       # にある。Node ESM resolution は test ファイルから上方向に node_modules を探すため、
-      # repo root に symlink を貼って tests/e2e から resolve できるようにする。
-      - name: Symlink node_modules for ESM resolution
-        run: ln -sf build/node_modules node_modules
+      # repo root から resolve できる経路を張る。
+      # FA-8: root node_modules ごとの symlink はローカルの `npm ci` と衝突するため、
+      #   ローカルと同一のスクリプト (@playwright スコープのみ symlink) に統一。
+      - name: Link @playwright for ESM resolution
+        run: bash scripts/ensure_e2e_deps.sh
       - name: Run VRT
         working-directory: build
         env:
@@ -140,8 +144,8 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium webkit
-      - name: Symlink node_modules for ESM resolution
-        run: ln -sf build/node_modules node_modules
+      - name: Link @playwright for ESM resolution
+        run: bash scripts/ensure_e2e_deps.sh
       - name: Regenerate VRT baselines
         working-directory: build
         env:

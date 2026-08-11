@@ -111,20 +111,27 @@ function gbdtPredictLogits(model, features) {
  * predict_race.js / predict_program.js から呼ばれる blend エントリ。
  * 現状は scaffold のため GBDT model が無い / 学習データ不足のときは何もしない。
  *
+ * FIX (2026-08-11): no-op 時に currentLogits を「返して」いたため、呼出側が
+ *   「blend された」と誤認して softmax(logit(p)) で再正規化し、確率分布が
+ *   無条件に鋭化していた（本命 0.50 → 0.634、+13.4pt）。gbdt_model.json は
+ *   placeholder (n_trees=0) のため、これが全予測に発生していた。
+ *   no-op は null を返し、呼出側の Array.isArray ガードで確実に skip させる。
+ *
  * @param {number[]} currentLogits - L1+L2 から既に算出済の 6 艇 logit
  * @param {number[][]} features6 - 6 艇分の特徴量 (各 FEATURE_DIM 次元)
  * @param {number} [weight=0.3] - GBDT の混合比 (0=完全無視、1=GBDT のみ)
- * @returns {number[]} blend 後の 6 艇 logit (元配列は変更しない)
+ * @returns {number[]|null} blend 後の 6 艇 logit（元配列は変更しない）。
+ *   blend しなかった場合は null（呼出側は現在の確率をそのまま使うこと）。
  */
 function _blendGBDTPrediction(currentLogits, features6, weight) {
   // フラグで完全無効化 (将来 settings 経由で有効化)
   const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
-  if (!enabled) return currentLogits;
+  if (!enabled) return null;
   // モデル未取得 / 未学習なら no-op
   const model = _g._gbdtModel;
-  if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
+  if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return null;
   // データ不足 (5000 件未満) なら no-op — 過学習 risk
-  if (typeof model.n_train === 'number' && model.n_train < 5000) return currentLogits;
+  if (typeof model.n_train === 'number' && model.n_train < 5000) return null;
 
   const w = Number.isFinite(weight) ? weight : 0.3;
   const out = currentLogits.slice();

@@ -309,7 +309,7 @@ function reportError(payload) {
 //   起動時に boot から `_runMigrations()` を呼び、CURRENT_SCHEMA まで段階適用する。
 //   各 migration は idempotent（多重実行しても無害）に書くこと。
 const SCHEMA_KEY = 'boatrace_schema_version';
-const CURRENT_SCHEMA = 3;
+const CURRENT_SCHEMA = 4;
 const MIGRATIONS = {
   // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
   2: function () {
@@ -361,6 +361,21 @@ const MIGRATIONS = {
             mean: newMean, m2: newM2, n: f.n,
           }));
         }
+      }
+    } catch (_) {}
+  },
+  // v3→v4 (2026-08-11): コース主効果の二重計上を解消。
+  //   PB-11 で COURSE_LOG_PRIOR（全国コース別 1 着率の log）を logit に加算する
+  //   ようにしたのに、courseNorm(特徴量 index 3 = course/6) の手書き重み -4.0 を
+  //   残したため、コースだけで実勢の約 28 倍の確信度を出していた。学習済みの重みも
+  //   同じ偏りを引き継いでいるので index 3 を 0 に戻し、以後は prior からの偏差として
+  //   学習し直させる。他の次元は学習成果なので保持する。
+  4: function () {
+    try {
+      const w = JSON.parse(localStorage.getItem('boatrace_weights') || 'null');
+      if (Array.isArray(w) && w.length >= 4) {
+        w[3] = 0;
+        localStorage.setItem('boatrace_weights', JSON.stringify(w));
       }
     } catch (_) {}
   },

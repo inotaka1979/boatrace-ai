@@ -347,7 +347,15 @@ var DEFAULT_COURSE_TECHNIQUE={
 // v2 (2026-05-24): FEATURE_DIM 12 → 24 拡張。既存 12 (index 0..11) は値維持で完全後方互換。
 // v2 追加 (index 12..23) は 0 init → warmup 中は影響ゼロ、学習で発見させる。
 // 旧 12 要素 weights を持つ既存ユーザは MIGRATIONS[3] で自動 padding (safe_storage.js)。
-var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5,0,0,0,0,0,0,0,0,0,0,0,0];
+// FIX (2026-08-11): index 3 (courseNorm = course/6) を -4.0 → 0 に。
+//   PB-11 で COURSE_LOG_PRIOR（全国コース別 1 着率の log）を logit に加算するように
+//   したが、その前から存在した courseNorm の手書き重み -4.0 を残したため、コースの
+//   主効果が二重計上されていた。実測: prior のコース間スプレッド 3.31 logit に対し
+//   courseNorm が更に 3.33 logit を上乗せし合計 6.64（= オッズ比で実勢 27.5:1 の
+//   約 28 倍）。荒天レースで L1 が 1 号艇を最下位と評価しても L2 が 0.96 を返す主因。
+//   コースの主効果は prior が担い、courseNorm は 0 から学習で偏差を拾う設計にする。
+//   既存ユーザーの学習済み重みは migration 4 で index 3 を 0 に戻す。
+var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5,0,0,0,0,0,0,0,0,0,0,0,0];
 var L2_BIAS=0;
 var L2_LR=0.01;
 
@@ -646,7 +654,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     }
   }
   var SCHEMA_KEY = "boatrace_schema_version";
-  var CURRENT_SCHEMA = 3;
+  var CURRENT_SCHEMA = 4;
   var MIGRATIONS = {
     // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
     2: function() {
@@ -696,6 +704,22 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
               n: f.n
             }));
           }
+        }
+      } catch (_) {
+      }
+    },
+    // v3→v4 (2026-08-11): コース主効果の二重計上を解消。
+    //   PB-11 で COURSE_LOG_PRIOR（全国コース別 1 着率の log）を logit に加算する
+    //   ようにしたのに、courseNorm(特徴量 index 3 = course/6) の手書き重み -4.0 を
+    //   残したため、コースだけで実勢の約 28 倍の確信度を出していた。学習済みの重みも
+    //   同じ偏りを引き継いでいるので index 3 を 0 に戻し、以後は prior からの偏差として
+    //   学習し直させる。他の次元は学習成果なので保持する。
+    4: function() {
+      try {
+        const w = JSON.parse(localStorage.getItem("boatrace_weights") || "null");
+        if (Array.isArray(w) && w.length >= 4) {
+          w[3] = 0;
+          localStorage.setItem("boatrace_weights", JSON.stringify(w));
         }
       } catch (_) {
       }

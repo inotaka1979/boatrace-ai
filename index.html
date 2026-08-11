@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=6b15d6f5" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=6b15d6f5" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=8506de85" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=8506de85" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -524,6 +524,8 @@ button.action-btn:active{background:#F0F0F0}
 <div class="page" id="pageStats">
   <div class="title-md">成績トラッカー</div>
   <div class="stat-grid" id="statSummary"></div>
+  <!-- 2026-08-11: 事後生成予想の割合を開示（look-ahead leakage の正直な表示） -->
+  <div id="statLeakageNote" role="status" style="display:none;background:#FFF3CD;color:#856404;border:1px solid #FFE69C;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12px;line-height:1.5"></div>
   <div id="statRecovery"></div>
   <div class="chart-box"><canvas id="chartAccuracy"></canvas></div>
   <div id="statDetail"></div>
@@ -741,7 +743,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=6b15d6f5" defer></script>
-<script src="assets/app-rest.min.js?v=6b15d6f5" defer></script>
+<script src="assets/app-critical.min.js?v=8506de85" defer></script>
+<script src="assets/app-rest.min.js?v=8506de85" defer></script>
 </body>
 </html>

@@ -971,3 +971,87 @@ rest bundle の連結順＝出力が非決定的になって build:check 再現�
 - A-01（市場シュリンク）/ B-01（scenarioDist 買い目）: backtest で効果測定後。
 - B-03（監視の Worker 移管）: 要 wrangler デプロイ、設計はデータ安定後を指示。
 - B-06（選手写真の git 撤去）: 履歴書換 + probe workflow と絡むため独立対応。
+
+## 修正履歴 (2026-08-11: 多視点コード監査 — 6 領域の専門家レビューと修正)
+
+ML/統計・ベッティング/競艇ドメイン・アーキテクチャ・データ基盤/SRE・セキュリティ/PWA・
+QA/テストの 6 領域で全コード（約 16,000 行）を監査。各指摘は採用前に再検証し、
+誤報を排除したうえで深刻度順に修正した。
+
+### 修正済み（本コミット）
+- **Worker 経路の全滅（自己退行）**: f7f1bb05 が worker helper 17 個、1e25058c が
+  worker の L2 state 宣言 6 個を範囲削除で巻き込んでいた。strict mode の未宣言代入で
+  sync_state が ReferenceError → predict が `result:null` を返し、これは「エラーでない」
+  ため main fallback が効かず `_backfillTodayPredictions` が 0 件保存。両ブロックを復元し、
+  predictRaceAsync を null/想定外応答でも fallback + 8 秒 timeout に。恒久ガードとして
+  `test_worker_protocol.js`（worker を実プロトコルで往復）を新設。
+  併せて worker の手動 TUNING 乖離（MAX_STAKE_RATIO 1.0 = 上限 20 倍等）を app.js と同期。
+- **GBDT no-op が全予測を歪曲**: model 未ロード時に入力配列をそのまま返し、呼出側が
+  softmax(logit(p)) で再正規化 → 本命 0.50→0.634。null 返却に変更。
+- **stRank の `||5`**: rank 0（ST 最速）が 5（最遅）に化けていた。learning.js は正しく
+  `!= null` を使っており推論/学習が不整合だった。両経路を統一。
+- **ECE が ECE でない**: 勝者の確率のみ bin に入れ hit を無条件加算 → 常に `1-平均勝者確率`。
+  完全校正モデルで 0.68 を返していた。6 艇すべてを bin に入れる正しい定義に修正（同モデルで
+  0.0035）。snapshot 3 件の `ece` のみ変化。
+- **部分オッズで妙味/人気判定が反転**: 取得済み艇だけで正規化していたため、win={'1':1.0} だと
+  本命が「⚠過大評価」、他全艇が「🎯妙味」に。本日データで 288 中 177 レースが部分取得。
+  6 艇揃うまで判定しないガードを追加。
+- **updateDBFromResults の多重加算**: 90 秒ポーリング毎に同一確定レースを
+  stadiumDB.courseWinRate に再加算し、長期プライアが当日標本に侵食されていた。
+  l2learnedKeys と同型の date_sid_rno ガードを追加。
+- **SW オフラインの破綻**: precache キーはクエリ無し、実リクエストは `?v=`。静的分岐が
+  `ignoreSearch` 無しで常に cache miss → オフラインで JS が一切取れない（実ブラウザで実証）。
+  sw.js の設計コメント通り `ignoreSearch:true` に。
+- **CI が Python 依存を入れておらず 81 テストが常時 skip**: スクレイパ HTML パーサの回帰
+  テストが一度も実行されていなかった（bs4 導入後は全 PASS）。test.yml に pip install を追加。
+
+### 未修正（要フォローアップ、優先度順）
+1. **成績トラッカーの look-ahead leakage**: `_backfillTodayPredictions` が確定後に予想を
+   再計算し `savePrediction` が締切前の予想を上書きするため、的中率/回収率が構造的に楽観。
+   `getRacerForm` が当該レース自身の着順を含む。→ 締切前予想の lock-in に反転が必要。
+2. **getL2Features の二重定義**: critical(24次元 pipeline) を rest(12次元 legacy) が後勝ちで
+   上書きし、Epic 12 の v2 特徴量 12 本が死んでいる。`l2weights[12..23]` は恒久的に 0。
+3. **L2 のコース二重計上**: COURSE_LOG_PRIOR と `L2_INIT_WEIGHTS[3]=-4.0` が二重に効き、
+   コースだけで 6.64 logit（実勢 3.31 の約 28 倍過信）。要 weights schema version bump。
+4. **データ破壊経路**: scrape_results の全滅/部分 run が確定結果を上書き、build_db が
+   ファン手帳失敗時に racerDB を空で commit、scrape_odds に日跨ぎガードが無い（実データで
+   前日オッズ 120 件混入を確認）。
+5. **Cloudflare Worker `/api/refresh-now` が無認証**（KV 書込枠を第三者が枯渇可能）。
+6. **PJ Phase 再発防止 lint の穴**: `^\s` 除外と `^var` 除外により、実際に起きた
+   `var X = (function(){...restFn()...})()` の形を検出できない。acorn ベース解析へ置換推奨。
+7. calibration の feedback loop（校正後確率で再 fit）、`make install` が e2e を壊す
+   （root node_modules が build へのシンボリンク前提）、投資額の二重定義（設定値 vs 実点数）。
+
+### フォローアップ完遂 (FA-1〜8、2026-08-11)
+上記「未修正」7 項目を全て実装。各修正には回帰テストを併設した。
+
+- **FA-1 (leakage)**: `savePrediction` の上書きポリシーを反転。既存エントリには
+  結果の付与のみ行い、締切前の予想（marks / bets / raceType）は絶対に更新しない。
+  確定後に初めて生成した予想には `backfilled` を立て、成績タブに
+  「N/M 件は事後生成」と正直に開示（除外すると大半が消え指標が使えないため開示を選択）。
+- **FA-2 (二重定義)**: rest 側 legacy を `getL2FeaturesV1` に改名し globalThis export を撤去。
+  bundle レベルで `getL2Features(...).length === FEATURE_DIM(24)` をテストで固定。
+- **FA-3 (コース二重計上)**: `L2_INIT_WEIGHTS[3]` を -4.0 → 0（COURSE_LOG_PRIOR に一本化）。
+  localStorage schema 4 の migration で既存ユーザの重みも修正。修正後のコース起因の
+  1 号艇/6 号艇オッズ比は 27.5:1 で、実勢（勝率 0.55 / 0.02）と一致することを数値検証。
+- **FA-4 (データ破壊)**: scrape_results に `_merge_with_existing`（完全性スコアで単調マージ、
+  縮小書込を拒否）、build_db は racers 空なら書込前に exit 5、scrape_odds に日跨ぎガード。
+- **FA-5 (Worker)**: `/api/refresh-now` に TRIGGER_SECRET 認証 + 未認証は 5 分 throttle
+  (isolate ローカル + Cache API、KV 書込枠を使わない)。ACAO `'*'` を Origin 許可リストに
+  正規化（fetch 出口 1 箇所）。**Worker のデプロイは user 手動作業。**
+- **FA-6 (lint の穴)**: `build/lint_critical.mjs` を新設し acorn AST で eager 到達性を解析。
+  PJ Phase の実バグ形（`var X = (function(){...restFn()...})()`）を fixture 化して固定。
+- **FA-7 (校正ループ)**: 校正“後”の mark_probs で再フィットしていたため不動点に収束せず、
+  実測で a=0.60/b=-0.50 と identity を往復（表示確率が 0.50 ⇔ 0.38 で振動）。
+  校正前を `raw_probs` として保存し raw で fit。併せて `_applyCalibration` を F/L 乗算の
+  後ろへ移動（既定 identity なので出力不変、golden snapshot 9/9 も不変）。
+- **FA-8**: `scripts/ensure_e2e_deps.sh` で `node_modules/@playwright` のみ symlink し、
+  root `npm ci` と共存（ローカルと CI を同一手順に統一）。投資額を「実際に推奨した点数」に
+  統一（従来は分子が実点数・分母が設定点数で、買い目点数の設定変更だけで過去の回収率が
+  遡って変わっていた）。
+
+検証: 60/60 テストステップ PASS（新規 4 ファイル 37 件）、build:check EXIT=0、
+eslint / tsc 0 errors、golden snapshot 不変、critical budget 99910B / 100000B。
+
+**残: `npm run format:check` は本作業以前から 16 ファイルで警告（`npm run gate` が赤）。
+別対応が必要（prettier --write は無関係な大量差分を生むため本 PR では触っていない）。**

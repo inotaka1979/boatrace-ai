@@ -102,20 +102,26 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+// FIX (2026-08-11): 手動保守のためこの TUNING が assets/app.js から乖離していた。
+//   特に KELLY.MAX_STAKE_RATIO が S-04 修正前の 1.0（= 1 レースに資金 100%）の
+//   ままで、worker 経路が生きた瞬間に main の 20 倍の賭け金上限になる状態だった。
+//   RACE_TYPE も旧しきい値のままで ⚡/📊/🔥 判定が main と食い違い、GBDT 系キーは
+//   欠落していた。以下は assets/app.js の TUNING と一致させたもの。
+//   （恒久対策: TUNING を src/context 側へ移して twin auto-gen 対象にする — 別 PR）
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
   RACE_TYPE: Object.freeze({
-    HONMEI_TOP1_MIN: 0.40,        // top1 これ以上で本命候補
-    HONMEI_TOP2_MIN: 0.55,        // 本命は top1+top2 ≥ 0.55 を満たす必要
-    ANA_TOP1_MAX: 0.25,           // top1 これ未満は穴候補
+    HONMEI_TOP1_MIN: 0.50,        // top1 これ以上で本命候補（旧 0.40）
+    HONMEI_TOP2_MIN: 0.65,        // 本命は top1+top2 ≥ 0.65 を満たす必要（旧 0.55）
+    ANA_TOP1_MAX: 0.32,           // top1 これ未満は穴候補（旧 0.25）
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
-  // EV / Kelly（X1 設計）
+  // EV / Kelly（X1 設計 / S-04 安全化）
   KELLY: Object.freeze({
-    DEFAULT_FRAC: 0.5,            // half-Kelly を既定（過大ベット抑止）
-    MIN_FRAC: 0.0,                // 最低 fraction（負ベット禁止）
-    MAX_STAKE_RATIO: 1.0,         // bankroll 比 stake 上限
+    DEFAULT_FRAC: 0.25,          // quarter-Kelly
+    MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
+    MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -129,6 +135,9 @@ var TUNING = Object.freeze({
     STACKING_MODE: 'shrinkage',  // PB-5: 'shrinkage' | 'residual'（既定は線形融合）
     PLATT_MIN_SAMPLES: 200,      // Platt fit に必要な履歴最低件数
     ZSCORE_WARMUP_N: 100,        // z-score 適用開始までの観測数
+    ENABLE_GBDT: true,           // Tier 3: model 側 n_train で gating
+    GBDT_BLEND_WEIGHT: 0.3,
+    GBDT_MIN_TRAIN: 5000,
   }),
 });
 
@@ -289,17 +298,35 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     });
     return softmax(combinedLogits);
   }
-  function _extractPlattPairs(history) {
+  function _calibrationIsIdentity() {
+    try {
+      var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
+      var iso = typeof _isotonicCoeffs !== "undefined" ? _isotonicCoeffs : null;
+      var perSid = typeof _plattCoeffsByStadium !== "undefined" ? _plattCoeffsByStadium : null;
+      var g = typeof _plattCoeffs !== "undefined" ? _plattCoeffs : null;
+      if (iso && method !== "platt") return false;
+      if (perSid && Object.keys(perSid).length > 0) return false;
+      if (!g) return true;
+      return Math.abs(g.a - 1) < 1e-9 && Math.abs(g.b) < 1e-9;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _extractPlattPairs(history, allowLegacyOverride) {
     if (!Array.isArray(history)) return [];
+    var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
-      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+      if (!h.actual || h.actual.length === 0) return false;
+      if (Array.isArray(h.raw_probs)) return true;
+      return allowLegacy && Array.isArray(h.mark_probs);
     });
     if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
     var pairs = [];
     samples.forEach(function(h) {
       var winner = h.actual[0];
       var probs = {};
-      h.mark_probs.forEach(function(mp) {
+      var src = Array.isArray(h.raw_probs) ? h.raw_probs : h.mark_probs;
+      src.forEach(function(mp) {
         probs[mp.boat] = mp.prob;
       });
       var pWin = probs[winner];
@@ -314,7 +341,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     return pairs;
   }
   async function _refitPlattCoeffs(history) {
-    var pairs = _extractPlattPairs(history);
+    var allowLegacy = _calibrationIsIdentity();
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 100) return null;
     var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
     var globalResult;
@@ -355,12 +383,12 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
     safeSet("boatrace_platt", _plattCoeffs);
     try {
-      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+      _plattCoeffsByStadium = _refitPerStadiumPlatt(history, allowLegacy);
       safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
     } catch (_) {
     }
     try {
-      var iso = _refitIsotonicCalibration(history);
+      var iso = _refitIsotonicCalibration(history, allowLegacy);
       if (iso) {
         _isotonicCoeffs = iso;
         safeSet("boatrace_isotonic", _isotonicCoeffs);
@@ -368,7 +396,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     } catch (_) {
     }
     try {
-      var chosen = _chooseCalibrationMethod(history);
+      var chosen = _chooseCalibrationMethod(history, allowLegacy);
       _calibrationMethod = chosen;
       try {
         localStorage.setItem("boatrace_calib_method", chosen);
@@ -378,8 +406,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return _plattCoeffs;
   }
-  function _refitIsotonicCalibration(history) {
-    var pairs = _extractPlattPairs(history);
+  function _refitIsotonicCalibration(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 200) return null;
     pairs.sort(function(a, b) {
       return a.p - b.p;
@@ -415,7 +443,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return { points: compressed, fittedAt: Date.now(), n: pairs.length };
   }
-  function _refitPerStadiumPlatt(history) {
+  function _refitPerStadiumPlatt(history, allowLegacy) {
     if (!Array.isArray(history)) return {};
     var bySid = {};
     history.forEach(function(h) {
@@ -426,7 +454,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     });
     var out = {};
     for (var sid in bySid) {
-      var subPairs = _extractPlattPairs(bySid[sid]);
+      var subPairs = _extractPlattPairs(bySid[sid], allowLegacy);
       if (subPairs.length < 100) continue;
       var bestA = 1, bestB = 0, bestLoss = Infinity;
       for (var a = 0.5; a <= 2; a += 0.1) {
@@ -452,8 +480,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return out;
   }
-  function _chooseCalibrationMethod(history) {
-    var pairs = _extractPlattPairs(history);
+  function _chooseCalibrationMethod(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 300) return "platt";
     var split = Math.floor(pairs.length * 0.8);
     var heldOut = pairs.slice(split);
@@ -519,10 +547,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   }
   function _blendGBDTPrediction(currentLogits, features6, weight) {
     const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
-    if (!enabled) return currentLogits;
+    if (!enabled) return null;
     const model = _g._gbdtModel;
-    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
-    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
+    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return null;
+    if (typeof model.n_train === "number" && model.n_train < 5e3) return null;
     const w = Number.isFinite(weight) ? weight : 0.3;
     const out = currentLogits.slice();
     for (let b = 0; b < out.length && b < 6; b++) {
@@ -618,7 +646,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
   }
-  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
+  function getL2FeaturesV1(boat, preview, weather, etRank, stRank, sid) {
     var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
     var rid = boat.racer_number || 0;
     var racerCWR = getRacerCourseWinRate(rid, course);
@@ -700,7 +728,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   globalThis._classCourseMult = _classCourseMult;
   globalThis._computeRaceScenario = _computeRaceScenario;
   globalThis._resolveCourse = _resolveCourse;
-  globalThis.getL2Features = getL2Features;
+  globalThis.getL2FeaturesV1 = getL2FeaturesV1;
   globalThis.l2Predict = l2Predict;
   globalThis.l2Update = l2Update;
   function seriesAdjustmentScore(rid, sid) {
@@ -806,6 +834,20 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return { score: 0 };
   }
+  function _renormalizeProbs(list) {
+    if (!Array.isArray(list) || !list.length) return list;
+    var s = 0;
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i] && list[i].prob;
+      if (Number.isFinite(v) && v > 0) s += v;
+      else if (list[i]) list[i].prob = 0;
+    }
+    if (s > 0 && Math.abs(s - 1) > 1e-6) {
+      for (var j = 0; j < list.length; j++) list[j].prob /= s;
+    }
+    return list;
+  }
+  globalThis._renormalizeProbs = _renormalizeProbs;
   globalThis.seriesAdjustmentScore = seriesAdjustmentScore;
   globalThis.tideScore = tideScore;
   globalThis.stormBonus = stormBonus;
@@ -1334,6 +1376,11 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   }
   function calcOddsDivergence(aiProbsByBoat, oddsWin) {
     if (!oddsWin) return null;
+    var have = 0;
+    for (var bc = 1; bc <= 6; bc++) {
+      if (oddsWin[String(bc)] > 0) have++;
+    }
+    if (have < 6) return null;
     var sumInv = 0;
     for (var b = 1; b <= 6; b++) {
       if (oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)];
@@ -1549,17 +1596,36 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     var reqId = ++_appWorkerReqId;
     return new Promise(function(resolve, reject) {
+      var _settled = false;
+      var _fallback = function(why) {
+        if (_settled) return;
+        _settled = true;
+        _appWorkerCallbacks.delete(reqId);
+        console.warn("[worker] falling back to main thread:", why);
+        try {
+          resolve(predictRace(sid, raceNum));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      var _to = setTimeout(function() {
+        _fallback("timeout");
+      }, 8e3);
       _appWorkerCallbacks.set(reqId, function(msg) {
-        if (msg.type === "predict_done") resolve(msg.result);
-        else if (msg.type === "error") {
-          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
-          try {
-            resolve(predictRace(sid, raceNum));
-          } catch (e) {
-            reject(e);
+        clearTimeout(_to);
+        if (_settled) return;
+        if (msg.type === "predict_done") {
+          if (!msg.result) {
+            _fallback("worker returned null result");
+            return;
           }
+          _settled = true;
+          resolve(msg.result);
+        } else if (msg.type === "error") {
+          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
+          _fallback("worker error: " + msg.error);
         } else {
-          reject(new Error("unexpected worker message: " + JSON.stringify(msg).slice(0, 200)));
+          _fallback("unexpected worker message: " + JSON.stringify(msg).slice(0, 120));
         }
       });
       w.postMessage({
@@ -1622,7 +1688,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+      var _stR = stRanks[b.racer_boat_number];
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -1678,9 +1745,6 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {
         return s.boat === p.boat;
       });
@@ -1689,14 +1753,14 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
       p.prob *= mult;
     });
-    var _sumCalib = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sumCalib;
-      });
-    }
+    _renormalizeProbs(finalProbs);
+    finalProbs.forEach(function(p) {
+      p.probRaw = p.prob;
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    _renormalizeProbs(finalProbs);
     finalProbs.sort(function(a, b) {
       return b.prob - a.prob;
     });
@@ -2048,6 +2112,321 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
 
 /* BUILD:WORKER_TWIN_SYNCED:END */
 
+// =============================================================================
+// Worker ローカル state（手動保守領域）
+//
+// REGRESSION FIX (2026-08-11): commit 1e25058c (A-05 helper 抽出) の範囲削除が
+//   この宣言ブロックごと巻き込んで消していた。auto-gen される src/analysis/* は
+//   これらを free identifier として参照するだけで宣言しないため、worker.js:84 の
+//   `l2trainStep = state.trainStep` が strict mode の未宣言代入 → ReferenceError
+//   となり、sync_state / batch_learn が全滅、predict は programData 未設定のまま
+//   null を返していた（= Web Worker 経路が実ブラウザ 100% で沈黙）。
+//   下の worker smoke test (scripts/tests/test_worker_protocol.js) が恒久ガード。
+// =============================================================================
+
+// 学習用ハイパパラメータ (app.js と同期、変更時は両方更新)
+var L2_LR0 = 0.05;
+var L2_LR_TAU = 5000;
+var L2_LAMBDA = 1e-4;
+var L2_KEY_LIMIT = 10000;
+
+var l2trainStep = 0;
+var l2learnedKeys = {};
+
+// =============================================================================
+// REGRESSION FIX (2026-08-11): worker ローカル helper（手動保守領域）
+//   commit f7f1bb05 (PR-2 買い目生成の src 抽出) の範囲削除が、買い目関数と一緒に
+//   これらの helper まで巻き込んで消していた。auto-gen される twin 領域は
+//   src/analysis/* のみを供給するため、scoreBoatV2 / predictEntryCourses が
+//   参照する getStadiumCourseWinRate 等が worker context に存在せず、predict が
+//   ReferenceError になっていた（worker.js は error を返すが result:null 経路も
+//   あり main の fallback が効かない）。恒久ガードは test_worker_protocol.js。
+// =============================================================================
+
+function cacheKey(url){var cleanUrl=url.split('?')[0];var h=0;for(var i=0;i<cleanUrl.length;i++){h=((h<<5)-h)+cleanUrl.charCodeAt(i);h|=0}return'bc_'+Math.abs(h)}
+// F10: ヘッダー右「更新」ボタン用フルリロード
+//   旧バグ: SW がページを制御し続けていたため、unregister 直後の location.replace でも
+//          古いキャッシュが intercept されていた。
+//   解決: 1) SW に PURGE_ALL を送信し全 cache 削除を SW 側で待機
+//        2) クライアント側でも cache + bc_* localStorage を削除
+//        3) すべての SW を unregister
+//        4) cache:'reload' を使って index.html を一度 fetch し HTTP キャッシュも無効化
+//        5) location.assign で再ナビゲート（履歴に残してデバッグ容易に）
+async function hardReload(){
+  var btn = event && event.target;
+  if(btn){ btn.disabled=true; btn.textContent='⏳ 削除中...'; }
+  try{
+    // 1) アクティブな SW に purge を依頼（cache を SW が握っている場合の救済）
+    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+      try{
+        var purged = new Promise(function(resolve){
+          var to = setTimeout(resolve, 1500);  // タイムアウト 1.5s
+          navigator.serviceWorker.addEventListener('message', function _h(e){
+            if(e.data && e.data.type==='PURGED'){
+              clearTimeout(to);
+              navigator.serviceWorker.removeEventListener('message', _h);
+              resolve();
+            }
+          });
+          navigator.serviceWorker.controller.postMessage('PURGE_ALL');
+        });
+        await purged;
+      }catch(_){}
+    }
+    // 2) クライアント側でも全 cache を削除（念のため重複実行）
+    if('caches' in window){
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+    }
+    // 3) 全 SW を unregister
+    if('serviceWorker' in navigator){
+      var regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){ return r.unregister(); }));
+    }
+    // 4) bc_* localStorage を削除
+    var bcKeys=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf('bc_')===0) bcKeys.push(k);
+    }
+    bcKeys.forEach(function(k){ try{ localStorage.removeItem(k); }catch(_){} });
+    // 5) HTTP キャッシュも no-store で叩いて無効化（SW 解除後の素の fetch）
+    try{
+      var burst = new URL(location.href);
+      burst.searchParams.set('_warm', Date.now());
+      await fetch(burst.toString(), {cache:'reload', mode:'same-origin'});
+    }catch(_){}
+  }catch(e){ console.warn('hardReload prep error:', e); }
+  // 6) cache-busting query で再ナビゲート
+  var url = new URL(location.href);
+  url.searchParams.set('_r', Date.now());
+  location.assign(url.toString());
+}
+
+function classifyTidePhase(tideEntry, raceTimeJst){
+  if(!tideEntry || tideEntry.type !== 'saltwater' || !Array.isArray(tideEntry.today)) return null;
+  // raceTimeJst: 'HH:MM' or hour as int
+  var hour;
+  if(typeof raceTimeJst === 'string'){
+    hour = parseInt(raceTimeJst.split(':')[0], 10);
+  } else if(typeof raceTimeJst === 'number'){
+    hour = raceTimeJst;
+  } else {
+    return null;
+  }
+  if(!isFinite(hour)) return null;
+  // 当該時刻と前後 1h の潮位
+  var nowLv = (tideEntry.today.find(function(x){return x.hour===hour}) || {}).level_cm;
+  var prevLv = (tideEntry.today.find(function(x){return x.hour===hour-1}) || {}).level_cm;
+  var nextLv = (tideEntry.today.find(function(x){return x.hour===hour+1}) || {}).level_cm;
+  if(nowLv == null) return null;
+  // 単純分類: 潮位の変化方向 + 絶対位置
+  var rising = (nextLv != null && nextLv > nowLv) || (prevLv != null && nowLv > prevLv);
+  var falling = (nextLv != null && nextLv < nowLv) || (prevLv != null && nowLv < prevLv);
+  // 高潮位 / 低潮位の閾値（cm 単位、日中の最大値の上位 20% を high とみなす簡易判定）
+  var levels = tideEntry.today.map(function(x){return x.level_cm}).filter(function(v){return v!=null});
+  if(levels.length === 0) return null;
+  var sortedLv = levels.slice().sort(function(a,b){return a-b});
+  var p80 = sortedLv[Math.floor(levels.length * 0.8)];
+  var p20 = sortedLv[Math.floor(levels.length * 0.2)];
+  if(nowLv >= p80) return 'high';
+  if(nowLv <= p20) return 'low';
+  if(rising) return 'rising';
+  if(falling) return 'falling';
+  return null;
+}
+
+function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
+function getJSTDate(offsetDays){
+  var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
+  return new Date(t);
+}
+
+function exhibitionZScore(etTime, sid){
+  var s = stadiumExhibitionStats[String(sid)];
+  if(!s || s.count < 50 || !etTime || etTime > 8) return 0;
+  return (etTime - s.mean) / s.std;   // 速いほど負（良い）
+}
+
+function fetchWithFallback(url){
+  // キャッシュキーはクエリパラメータを除いたベースURL
+  var baseUrl=url.split('?')[0];
+  // Clearwing Phase 2: capabilities (worker) で AbortSignal.timeout 互換性を吸収
+  var signal=capabilities.makeTimeoutSignal(15000);
+  return fetch(url,{signal:signal,cache:'no-store'})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
+    .catch(function(e){
+      console.warn('API error:',baseUrl,e.message);
+      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
+      return null;
+    });
+}
+
+function getEntryDist(rid, boat, sid){
+  // 1. 選手個人データ
+  if(rid && racerDB[rid] && racerDB[rid].entryPattern && racerDB[rid].entryPattern.byBoat){
+    var personal = racerDB[rid].entryPattern.byBoat[String(boat)];
+    if(personal && Object.keys(personal).length > 0){
+      var personalSamples = racerDB[rid].entryPattern.samples || 0;
+      // 個人サンプル >= 8 で個人データのみ使用、それ未満は混合
+      if(personalSamples >= 8) return personal;
+      // 混合: w_personal = samples/8
+      var defaultD = (DEFAULT_ENTRY_BY_STADIUM[String(sid).padStart(2,'0')] || GLOBAL_DEFAULT_ENTRY)[boat] || {};
+      var w = Math.min(1, personalSamples / 8);
+      var mixed = {};
+      var allKeys = new Set(Object.keys(personal).concat(Object.keys(defaultD)));
+      allKeys.forEach(function(k){
+        mixed[k] = w * (personal[k]||0) + (1-w) * (defaultD[k]||0);
+      });
+      return mixed;
+    }
+  }
+  // 2. 場別デフォルト
+  var sidPad = String(sid).padStart(2,'0');
+  if(DEFAULT_ENTRY_BY_STADIUM[sidPad] && DEFAULT_ENTRY_BY_STADIUM[sidPad][boat]){
+    return DEFAULT_ENTRY_BY_STADIUM[sidPad][boat];
+  }
+  // 3. グローバルデフォルト
+  return GLOBAL_DEFAULT_ENTRY[boat] || {};
+}
+
+function getJSTDate(offsetDays){
+  var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
+  return new Date(t);
+}
+
+function getRacerCourseStyle(rid,course){
+  var rdb=racerDB[rid];
+  if(!rdb||!rdb.courseStyle||!rdb.courseStyle[course]) return null;
+  return rdb.courseStyle[course];
+}
+
+function getRacerCourseWinRate(rid,course){
+  var rdb=racerDB[rid];
+  if(!rdb||!rdb.courseStats||!rdb.courseStats[course]) return null;
+  var cs=rdb.courseStats[course];
+  if(cs.races<5) return null;
+  return cs.win/cs.races;
+}
+
+function getRacerForm(rid){
+  var rdb=racerDB[rid];
+  if(!rdb||!rdb.recentResults||rdb.recentResults.length<5) return null;
+  var recent5=rdb.recentResults.slice(-5);
+  var avg=recent5.reduce(function(a,b){return a+b},0)/5;
+  var top2=recent5.filter(function(r){return r<=2}).length/5;
+  var result={avg:avg,top2Rate:top2,score:0,trend:0,label:''};
+  if(avg<=2.0){result.score=6;result.label='絶好調'}
+  else if(avg<=3.0){result.score=3;result.label='好調'}
+  else if(avg<=4.0){result.score=0;result.label='普通'}
+  else if(avg<=5.0){result.score=-3;result.label='不調'}
+  else{result.score=-6;result.label='絶不調'}
+  if(top2>=0.6) result.score+=2;
+  else if(top2>=0.4) result.score+=1;
+  else if(top2<=0.2) result.score-=2;
+  if(rdb.recentResults.length>=10){
+    var prev5=rdb.recentResults.slice(-10,-5);
+    var prevAvg=prev5.reduce(function(a,b){return a+b},0)/5;
+    result.trend=prevAvg-avg;
+    if(result.trend>0.5) result.score+=1;
+    else if(result.trend<-0.5) result.score-=1;
+  }
+  return result;
+}
+
+function getStadiumCourseWinRate(sid,course){
+  var sdb=stadiumDB[sid];
+  if(!sdb||!sdb.courseWinRate||!sdb.courseWinRate[course]) return COURSE_WIN_RATE[course]||0;
+  var cw=sdb.courseWinRate[course];
+  if(cw.races<10) return COURSE_WIN_RATE[course]||0;
+  return cw.win/cw.races;
+}
+
+function isHeadWind(wd, sid){
+  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
+  var arr = p ? p.headWindDirs : GLOBAL_HEAD_DIRS;
+  return arr.indexOf(wd) >= 0;
+}
+
+function isTailWind(wd, sid){
+  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
+  var arr = p ? p.tailWindDirs : GLOBAL_TAIL_DIRS;
+  return arr.indexOf(wd) >= 0;
+}
+
+function linearSlope(values){
+  if(!Array.isArray(values) || values.length < 2) return 0;
+  var n = values.length;
+  var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for(var i=0; i<n; i++){
+    sumX += i;
+    sumY += values[i];
+    sumXY += i * values[i];
+    sumXX += i * i;
+  }
+  var den = n * sumXX - sumX * sumX;
+  if(den === 0) return 0;
+  return (n * sumXY - sumX * sumY) / den;
+}
+
+function motorScoreNormalized(motorRate, sid){
+  var s = stadiumMotorStats[String(sid)];
+  if(!s || s.count < 50){
+    // フォールバック: 旧 5 段階閾値
+    if(motorRate>=50) return {score:12, label:'超抜', emoji:'A'};
+    if(motorRate>=43) return {score: 8, label:'好機', emoji:'B'};
+    if(motorRate>=36) return {score: 4, label:'並機', emoji:'C'};
+    if(motorRate>=28) return {score: 0, label:'低調', emoji:'D'};
+    return {score:-3, label:'整備要', emoji:'E'};
+  }
+  var z = (motorRate - s.mean) / s.std;
+  if(z >= 1.5)  return {score:12, label:'超抜', emoji:'A', z:z};
+  if(z >= 0.7)  return {score: 8, label:'好機', emoji:'B', z:z};
+  if(z >= -0.7) return {score: 4, label:'並機', emoji:'C', z:z};
+  if(z >= -1.5) return {score: 0, label:'低調', emoji:'D', z:z};
+  return            {score:-3, label:'整備要', emoji:'E', z:z};
+}
+
+function pairwiseScore(rid, sid, opponentRids){
+  if(!rid || !opponentRids || opponentRids.length === 0) return { score: 0, hits: 0 };
+  if(!pairwiseDB) return { score: 0, hits: 0 };
+  var totalScore = 0, hits = 0;
+  opponentRids.forEach(function(oid){
+    if(!oid || oid === rid) return;
+    var key = (rid < oid) ? rid+'-'+oid : oid+'-'+rid;
+    var rec = pairwiseDB[key];
+    if(!rec || rec.races < 5) return;
+    var myWins = rec.head2head[String(rid)] || 0;
+    var oppWins = rec.head2head[String(oid)] || 0;
+    var diff = (myWins - oppWins) / rec.races;
+    // |diff| が大きい時のみ寄与（ノイズ回避）
+    if(Math.abs(diff) >= 0.2){
+      totalScore += diff * 1.0;   // ±1pt 程度
+      hits++;
+    }
+  });
+  return { score: Math.max(-2, Math.min(2, totalScore)), hits: hits };
+}
+
+function pf(v){return parseFloat(v)||0}
+
+function fetchWithFallback(url){
+  // キャッシュキーはクエリパラメータを除いたベースURL
+  var baseUrl=url.split('?')[0];
+  // Clearwing Phase 2: capabilities (worker) で AbortSignal.timeout 互換性を吸収
+  var signal=capabilities.makeTimeoutSignal(15000);
+  return fetch(url,{signal:signal,cache:'no-store'})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+    .then(function(d){try{localStorage.setItem(cacheKey(baseUrl),JSON.stringify({data:d,time:Date.now()}))}catch(e){}return d})
+    .catch(function(e){
+      console.warn('API error:',baseUrl,e.message);
+      try{var c=localStorage.getItem(cacheKey(baseUrl));if(c){var o=JSON.parse(c);if(Date.now()-o.time<600000)return o.data}}catch(ex){}
+      return null;
+    });
+}
 
 function batchLearnFromResults(input){
   // input.state で state を上書き
@@ -2115,7 +2494,11 @@ function batchLearnFromResults(input){
       var weather = prev ? prev.weather || prev : null;
       var features6 = prog.boats.map(function(b){
         var pv = prev && prev.boats ? prev.boats[String(b.racer_boat_number)] : null;
-        return getL2Features(b, pv, weather, etRanks[b.racer_boat_number]||5, stRanks[b.racer_boat_number]||5, sid);
+        // FIX (2026-08-11): etRanks/stRanks は 0 始まり。`||5` だと最速艇が最遅
+        //   (rank 5) として学習されていた。main 側の learnFromResults
+        //   (src/analysis/learning.js:162-163) と同じ `!= null` に揃える。
+        var _etR = etRanks[b.racer_boat_number], _stR = stRanks[b.racer_boat_number];
+        return getL2Features(b, pv, weather, _etR != null ? _etR : 5, _stR != null ? _stR : 5, sid);
       });
       var winnerIdx = prog.boats.findIndex(function(b){return b.racer_boat_number === winnerBoat});
       if(winnerIdx >= 0){

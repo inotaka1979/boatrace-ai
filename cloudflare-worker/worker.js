@@ -42,9 +42,114 @@ const KV_KEYS = {
   results:  'results:today',
 };
 const CORS = {
+  // FA-5 (2026-08-11): 既定値は '*' のままだが、fetch() の出口で _applyCors() が
+  //   リクエストの Origin に応じて必ず上書き（許可外なら削除）する。ここを個別に
+  //   書き換えると 30 箇所以上の呼出を触ることになるため、単一の出口で正規化する。
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, OPTIONS',
 };
+
+// FA-5: ブラウザから叩けるオリジンの許可リスト。
+//   本 Worker は /odds-proxy・/orig-exhibition-proxy 等 boatrace.jp への
+//   CORS パススルーを持つため、ACAO='*' のままだと「誰でも使える無料の CORS プロキシ」
+//   として第三者サイトから利用でき、CPU / subrequest / KV クォータを消費される。
+//   Origin ヘッダを持たない呼出 (curl / GitHub Actions / 外形監視) は CORS の
+//   対象外なので、ACAO を付けないだけで従来どおり動作する。
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://inotaka1979.github.io',
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+];
+
+function _allowedOrigins(env) {
+  const extra =
+    env && typeof env.ALLOWED_ORIGINS === 'string' && env.ALLOWED_ORIGINS
+      ? env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  return DEFAULT_ALLOWED_ORIGINS.concat(extra);
+}
+
+// レスポンスの ACAO を Origin 許可リストで正規化する（出口 1 箇所）。
+function _applyCors(request, env, res) {
+  let origin = null;
+  try { origin = request.headers.get('origin'); } catch (_) { origin = null; }
+  const headers = new Headers(res.headers);
+  headers.set('vary', 'Origin');
+  if (origin && _allowedOrigins(env).indexOf(origin) >= 0) {
+    headers.set('access-control-allow-origin', origin);
+  } else {
+    // Origin 無し = 非ブラウザ (CORS 判定なし、そのまま読める)。
+    // Origin 有りで許可外 = ブラウザが弾く。
+    headers.delete('access-control-allow-origin');
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+// FA-5: /api/refresh-now のレート制限。
+//   refreshAll() は upstream 3 fetch + 最大 20 HTML scrape + KV write を伴うため、
+//   未認証で無制限に叩けると第三者から容易にクォータを枯渇させられる。
+//   - TRIGGER_SECRET を提示した呼出 (GitHub Actions watchdog) は無制限
+//   - 未認証 (アプリの自動復旧トリガ含む) は最小間隔を強制
+//   isolate ローカル変数を第一段、Cache API (無料・コロケーション単位) を第二段に使う。
+//   KV は書込クォータ (無料枠 1000/日) を消費するため throttle 用途には使わない。
+const REFRESH_MIN_INTERVAL_MS = 300000; // 5 分（アプリ側 _lastEscalateAt と同値）
+const REFRESH_THROTTLE_CACHE_URL = 'https://throttle.invalid/api/refresh-now';
+let _lastRefreshAt = 0;
+
+// 長さと内容を定数時間で比較する（タイミング攻撃の緩和）。
+function _secretEquals(given, expected) {
+  if (typeof given !== 'string' || typeof expected !== 'string') return false;
+  if (given.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+function _isTriggerAuthorized(request, env, url) {
+  const expected = env && env.TRIGGER_SECRET;
+  if (!expected) return false; // 未設定なら「認証済み」は存在しない = 常に throttle 側
+  let given = '';
+  try { given = request.headers.get('x-trigger-secret') || ''; } catch (_) { given = ''; }
+  if (!given) given = url.searchParams.get('secret') || '';
+  return _secretEquals(given, expected);
+}
+
+// throttle 判定。呼んでよいなら null、抑止するなら残り秒数を返す。
+async function _refreshThrottleRemainingSec() {
+  const now = Date.now();
+  if (now - _lastRefreshAt < REFRESH_MIN_INTERVAL_MS) {
+    return Math.ceil((REFRESH_MIN_INTERVAL_MS - (now - _lastRefreshAt)) / 1000);
+  }
+  try {
+    const cache = caches.default;
+    const hit = await cache.match(new Request(REFRESH_THROTTLE_CACHE_URL));
+    if (hit) {
+      const at = parseInt(await hit.text(), 10);
+      if (Number.isFinite(at) && now - at < REFRESH_MIN_INTERVAL_MS) {
+        _lastRefreshAt = at;
+        return Math.ceil((REFRESH_MIN_INTERVAL_MS - (now - at)) / 1000);
+      }
+    }
+  } catch (_) { /* Cache API 不可でも isolate ローカルの抑止は効いている */ }
+  return null;
+}
+
+async function _markRefreshDone() {
+  _lastRefreshAt = Date.now();
+  try {
+    await caches.default.put(
+      new Request(REFRESH_THROTTLE_CACHE_URL),
+      new Response(String(_lastRefreshAt), {
+        headers: {
+          'cache-control': `max-age=${Math.ceil(REFRESH_MIN_INTERVAL_MS / 1000)}`,
+          'content-type': 'text/plain',
+        },
+      })
+    );
+  } catch (_) { /* best effort */ }
+}
 
 // 展示窓: 締切時刻の 30 分前 〜 5 分後 (この間に boatrace.jp に展示データ有)
 const EXHIBITION_WINDOW_BEFORE_MIN = 30;
@@ -958,7 +1063,13 @@ export default {
     console.log('refresh:', JSON.stringify(r));
   },
 
+  // FA-5: 全レスポンスの ACAO を出口 1 箇所で正規化する（許可外 Origin は ACAO を付けない）。
   async fetch(request, env, ctx) {
+    const res = await this._route(request, env, ctx);
+    return _applyCors(request, env, res);
+  },
+
+  async _route(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: { ...CORS, 'access-control-max-age': '86400' } });
@@ -1021,8 +1132,20 @@ export default {
     if (url.pathname === '/api/results')  return serveFromKV(env, 'results', ctx);
     if (url.pathname === '/api/refresh-now') {
       if (!env.BOATRACE_KV) return jsonResponse({ error: 'KV not bound' }, { status: 500 });
+      // FA-5: 未認証呼出はレート制限。TRIGGER_SECRET 提示時のみ無条件実行。
+      const authorized = _isTriggerAuthorized(request, env, url);
+      if (!authorized) {
+        const remain = await _refreshThrottleRemainingSec();
+        if (remain != null) {
+          return jsonResponse(
+            { refreshed: false, throttled: true, retry_after_sec: remain },
+            { status: 429, cacheControl: 'no-store' }
+          );
+        }
+      }
+      await _markRefreshDone();
       const r = await refreshAll(env);
-      return jsonResponse({ refreshed: r });
+      return jsonResponse({ refreshed: r, authorized });
     }
 
     if (url.pathname === '/odds-proxy') {

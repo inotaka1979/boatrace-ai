@@ -356,7 +356,7 @@ def parse_results_text(text: str, racers: dict, stadium_stats: dict) -> None:
                 continue
 
 
-def main() -> None:
+def main() -> int:
     """エントリーポイント: ファン手帳と過去 30 日分の競走成績をダウンロードし、
     racerDB.json / stadiumDB.json を atomic に出力する。"""
     os.makedirs(os.path.dirname(OUTPUT_RACER), exist_ok=True)
@@ -378,7 +378,16 @@ def main() -> None:
         except Exception as e:
             print(f"  ファン手帳 skip {url}: {type(e).__name__}: {e}")
     if not racers:
-        print("::error::ファン手帳を 1 件も取得できませんでした", file=sys.stderr)
+        # FIX (2026-08-11): 旧実装はエラーを print するだけで処理を続け、
+        #   {"racers": {}} を racerDB.json に書いて commit していた。直後に
+        #   aggregate_form.py が recentResults だけの空殻を再生成するため、
+        #   name / classNum / winRate / courseStats を失った DB が本番に出る。
+        #   充足度チェック (--min-ratio racers.recentResults) は空殻では ratio≒1.0 に
+        #   なるため必ず PASS し、無警告で全選手が全国平均へ縮退していた。
+        #   → 書込み前に中止する（既存 racerDB.json をそのまま残す）。
+        print("::error::ファン手帳を 1 件も取得できませんでした — "
+              "既存 racerDB を保持して中止します", file=sys.stderr)
+        return 5
 
     # PR-7 (2026-07-26): 競走成績 K ファイル (www1.mbrace.or.jp) は GitHub Actions の
     #   egress から到達できず 30 日分すべて失敗し、stadiumDB / recentResults を空の
@@ -430,7 +439,8 @@ def main() -> None:
     atomic_write_json(OUTPUT_STADIUM, stadium_out)
 
     print(f"=== 完了: {len(racers)}選手, {len(stadiums)}場 ===")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

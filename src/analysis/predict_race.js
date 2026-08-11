@@ -29,18 +29,38 @@ function predictRaceAsync(sid, raceNum) {
   }
   var reqId = ++_appWorkerReqId;
   return new Promise(function (resolve, reject) {
+    var _settled = false;
+    var _fallback = function (why) {
+      if (_settled) return;
+      _settled = true;
+      _appWorkerCallbacks.delete(reqId);
+      console.warn('[worker] falling back to main thread:', why);
+      try {
+        resolve(predictRace(sid, raceNum));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    // FIX (2026-08-11): worker が沈黙した場合に await が永久ハングし、
+    //   _backfillTodayPredictions がループ内で二度と返らなくなるため timeout を設ける。
+    var _to = setTimeout(function () { _fallback('timeout'); }, 8000);
     _appWorkerCallbacks.set(reqId, function (msg) {
-      if (msg.type === 'predict_done') resolve(msg.result);
-      else if (msg.type === 'error') {
+      clearTimeout(_to);
+      if (_settled) return;
+      if (msg.type === 'predict_done') {
+        // FIX (2026-08-11): worker が state 未同期などで null を返すケースがあり、
+        //   「エラーではない」ため従来は null がそのまま resolve され、呼出側
+        //   (_backfillTodayPredictions の `if(pred)`) が黙って skip していた。
+        //   結果として予想が 1 件も履歴に保存されない状態になり得た。null は失敗と
+        //   みなして main thread にフォールバックする。
+        if (!msg.result) { _fallback('worker returned null result'); return; }
+        _settled = true;
+        resolve(msg.result);
+      } else if (msg.type === 'error') {
         console.warn('[PG-4] worker predict error:', msg.error, msg.stack);
-        // フォールバック: main thread 実行
-        try {
-          resolve(predictRace(sid, raceNum));
-        } catch (e) {
-          reject(e);
-        }
+        _fallback('worker error: ' + msg.error);
       } else {
-        reject(new Error('unexpected worker message: ' + JSON.stringify(msg).slice(0, 200)));
+        _fallback('unexpected worker message: ' + JSON.stringify(msg).slice(0, 120));
       }
     });
     w.postMessage({
@@ -116,7 +136,12 @@ function predictRace(sid, raceNum) {
     var l1s = l1scores.find(function (s) {
       return s.boat === b.racer_boat_number;
     });
-    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+    // FIX (2026-08-11): stRanks は 0 始まり（ST 最速 = 0）。`|| 5` だと最速艇だけ
+    //   rank 5（最遅）に化け、特徴量 stRankNorm が 0.167 ではなく 1.0 になっていた。
+    //   学習側 (src/analysis/learning.js:163) は `!= null` を使っており、推論と
+    //   学習で特徴量の意味が食い違っていた。学習側の書き方に合わせる。
+    var _stR = stRanks[b.racer_boat_number];
+    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
   });
   var l2probs = l2Predict(features6);
 
@@ -131,6 +156,9 @@ function predictRace(sid, raceNum) {
         var clipped = Math.min(0.9999, Math.max(0.0001, p));
         return Math.log(clipped / (1 - clipped));
       });
+      // FIX (2026-08-11): blend しなかった場合は null が返る。以前は入力配列が
+      //   そのまま返り、下の再 softmax が softmax(logit(p)) を適用して確率を
+      //   無条件に鋭化させていた（placeholder モデルのため全予測に発生）。
       var blended = _blendGBDTPrediction(l2logits, features6, TUNING.PREDICTION.GBDT_BLEND_WEIGHT);
       if (Array.isArray(blended) && blended.length === l2probs.length) {
         // softmax で再正規化 (Σ=1)
@@ -189,15 +217,6 @@ function predictRace(sid, raceNum) {
       classNum: l1s.classNum,
     };
   });
-  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
-  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
-  finalProbs.forEach(function (p) {
-    // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
-    //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
-    p.prob = (typeof _applyCalibration === 'function')
-      ? _applyCalibration(p.prob, sid)
-      : _applyPlattCalibration(p.prob, sid);
-  });
   // P1-A4: F/L ペナルティを 1着確率乗数として post-hoc 適用
   //   既存の score 減点 (-25/-15/-5) は L1 段階の減衰、本層は確率の心理的補正:
   //   F2 持ちは斡旋停止リスクで 2 着狙いに走り、1 着確率は更に 0.75 倍程度になる経験則。
@@ -211,14 +230,29 @@ function predictRace(sid, raceNum) {
     var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1.0;
     p.prob *= mult;
   });
-  var _sumCalib = finalProbs.reduce(function (a, p) {
-    return a + p.prob;
-  }, 0);
-  if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-    finalProbs.forEach(function (p) {
-      p.prob = p.prob / _sumCalib;
-    });
-  }
+  _renormalizeProbs(finalProbs);
+  // FA-7 (2026-08-11): 校正「前」の確率を probRaw として保持する。
+  //   _refitPlattCoeffs は履歴の mark_probs（＝校正「後」）で再フィットしており、
+  //   校正の上に校正を重ねるフィードバックループになっていた。実測では収束せず
+  //   a=0.6/b=-0.5 と identity の間を毎回振動し、同じレースの表示確率が
+  //   「設定画面を何回開いたか」で 0.50 ⇔ 0.38 と変わる状態だった。
+  //   raw を保存し、raw で fit することで不動点になる（検証済み）。
+  //
+  //   FA-7 で calibration を F/L 乗算の「後」に移動した。校正器が学習する入力と
+  //   実際に校正器へ入る値を一致させるため（既定 identity なので出力は不変）。
+  finalProbs.forEach(function (p) {
+    p.probRaw = p.prob;
+  });
+  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
+  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
+  finalProbs.forEach(function (p) {
+    // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
+    //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
+    p.prob = (typeof _applyCalibration === 'function')
+      ? _applyCalibration(p.prob, sid)
+      : _applyPlattCalibration(p.prob, sid);
+  });
+  _renormalizeProbs(finalProbs);
   finalProbs.sort(function (a, b) {
     return b.prob - a.prob;
   });

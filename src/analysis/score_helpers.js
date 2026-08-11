@@ -130,7 +130,32 @@ function selfStyleScore(rid, course, _courseStats){
   }
   return { score: 0 };
 }
+/**
+ * FA-7: `{prob:number}` の配列を Σprob=1 に再正規化する（in-place）。
+ *
+ * 予想パイプラインは F/L 乗算・calibration など確率の総和を崩す後処理を複数持ち、
+ * 同じ再正規化コードがコピペされていた。1 箇所に集約する。
+ * （critical 予算を守るため utils/math ではなく REST_ONLY の本ファイルに置く）
+ *
+ * @param {Array<{prob:number}>} list 再正規化対象（in-place で書き換える）
+ * @returns {Array<{prob:number}>} 引数と同じ配列
+ */
+function _renormalizeProbs(list){
+  if(!Array.isArray(list) || !list.length) return list;
+  var s = 0;
+  for(var i=0; i<list.length; i++){
+    var v = list[i] && list[i].prob;
+    if(Number.isFinite(v) && v > 0) s += v;
+    else if(list[i]) list[i].prob = 0;
+  }
+  if(s > 0 && Math.abs(s-1) > 1e-6){
+    for(var j=0; j<list.length; j++) list[j].prob /= s;
+  }
+  return list;
+}
+
 // globalThis export (REST_ONLY)
+globalThis._renormalizeProbs = _renormalizeProbs;
 globalThis.seriesAdjustmentScore = seriesAdjustmentScore;
 globalThis.tideScore = tideScore;
 globalThis.stormBonus = stormBonus;

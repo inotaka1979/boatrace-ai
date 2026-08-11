@@ -84,6 +84,42 @@ t('payout 未取得の的中は回収 0 で数えられる (silent 加算しな�
   assert.strictEqual(d[0].hit3, 1);
   assert.strictEqual(d[0].payout, 0);
 });
+// --- FA-8 (2026-08-11): 投資額は「実際に推奨した点数」で数える ----------------
+// 旧実装は現在の設定 betCount3/2 を全過去レースに適用しており、的中判定
+// (trifecta_hit は h.trifecta_bets との突合で決まる) と分母が食い違っていた。
+// 設定の点数を変えるだけで過去の回収率が遡って変わる状態でもあった。
+t('FA-8: 保存済 bets があれば設定点数ではなく実点数で投資額を数える', () => {
+  const h = [{
+    date: '20260801', actual: [1, 2, 3],
+    trifecta_bets: ['1-2-3', '1-3-2', '2-1-3'],   // 実 3 点
+    exacta_bets: ['1-2'],                          // 実 1 点
+    trifecta_hit: true, payout3: 1000,
+  }];
+  const d = calcDailyStats(h, 10, 5, 30);
+  assert.strictEqual(d[0].invest, 400, '設定点数 (10+5)×100=1500 で数えている');
+});
+t('FA-8: 設定点数を変えても保存済 bets のあるレースの投資額は変わらない', () => {
+  const h = [{
+    date: '20260801', actual: [1, 2, 3],
+    trifecta_bets: ['1-2-3', '1-3-2'], exacta_bets: ['1-2'],
+    trifecta_hit: false,
+  }];
+  assert.strictEqual(calcDailyStats(h, 10, 5, 30)[0].invest,
+    calcDailyStats(h, 30, 20, 30)[0].invest, '設定変更で過去の投資額が遡って変わる');
+});
+t('FA-8: bets 未保存の旧エントリは設定点数にフォールバックする', () => {
+  const h = [{ date: '20260801', actual: [1, 2, 3], trifecta_hit: false }];
+  assert.strictEqual(calcDailyStats(h, 10, 5, 30)[0].invest, 1500);
+});
+t('FA-8: EV フィルタで 0 点になったレースは投資 0', () => {
+  const h = [{
+    date: '20260801', actual: [1, 2, 3],
+    trifecta_bets: [], exacta_bets: [], trifecta_hit: false,
+  }];
+  assert.strictEqual(calcDailyStats(h, 10, 5, 30)[0].invest, 0,
+    '買っていないレースに投資額を計上している');
+});
+
 t('空 history は空配列', () => {
   // vm 別レルムの Array と deepStrictEqual の prototype 比較を避け length で検証
   assert.strictEqual(calcDailyStats([], 10, 5, 30).length, 0);

@@ -59,8 +59,9 @@ Cloudflare ダッシュボードで「コードを編集する」する必要は
 # ヘルスチェック
 curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health
 
-# 手動 dispatch (TRIGGER_SECRET 必須)
-curl "https://boatrace-scrape-trigger.inotaka1979.workers.dev/trigger?secret=YOUR_SECRET&workflow=scrape-odds.yml"
+# 手動 refresh（TRIGGER_SECRET があれば無条件、無ければ 5 分に 1 回まで → 429）
+curl -H "x-trigger-secret: YOUR_SECRET" \
+  "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/refresh-now"
 
 # odds 実時間プロキシ (PWA から呼ばれるエンドポイント)
 curl "https://boatrace-scrape-trigger.inotaka1979.workers.dev/odds-proxy?type=trifecta&sid=22&rno=5&hd=20260510"
@@ -121,7 +122,11 @@ https://github.com/settings/personal-access-tokens/new
 Workers & Pages → `boatrace-scrape-trigger` → 設定 → 環境変数 → Secret 追加
 
 - `GITHUB_TOKEN` = (1) で生成した PAT
-- `TRIGGER_SECRET` = 任意のランダム文字列（手動 /trigger エンドポイント用）
+- `TRIGGER_SECRET` = 任意のランダム文字列（`/api/refresh-now` の throttle バイパス用）
+  - 未設定でも Worker は動作する（全 refresh-now が 5 分 throttle 対象になるだけ）
+  - GitHub 側にも同名の Actions secret を登録すると worker-watchdog が即時再生成できる
+- `ALLOWED_ORIGINS`（任意）= CORS 許可オリジンの追加分をカンマ区切りで
+  （既定で `https://inotaka1979.github.io` と localhost:8000/8080 を許可）
 
 ### 3. Cron トリガー追加
 

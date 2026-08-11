@@ -195,6 +195,72 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
     return result
 
 
+def _completeness(r: dict | None) -> int:
+    """レース結果の「確定度」。大きいほど情報が揃っている。
+
+    単調マージの比較キー。確定 (race_technique_number) > 着順あり > 払戻あり の順で
+    重みを付け、部分取得が完全な既存データを上書きするのを防ぐ。
+    """
+    if not r:
+        return -1
+    score = 0
+    if r.get("race_technique_number"):
+        score += 4
+    if r.get("boats"):
+        score += 2
+    payouts = r.get("payouts") or {}
+    if payouts.get("trifecta"):
+        score += 1
+    return score
+
+
+def _merge_with_existing(path: str, fresh: list[dict], date_str: str) -> list[dict]:
+    """既存 today.json と新規結果を (stadium, race) 単位で単調マージする。
+
+    既存側が当日 (date_str) 以外の日付なら破棄する（日跨ぎ汚染の防止）。
+    同一レースは _completeness が大きいほうを採用し、同点なら新しいほうを採る。
+    """
+    merged: dict[tuple, dict] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            prev = json.load(f)
+        want = (date_str or "").replace("-", "")
+        for r in prev.get("results", []) or []:
+            sid, rno = r.get("race_stadium_number"), r.get("race_number")
+            if sid is None or rno is None:
+                continue
+            rdate = str(r.get("race_date") or "").replace("-", "")
+            if want and rdate and rdate != want:
+                continue  # 前日以前のデータは持ち越さない
+            merged[(sid, rno)] = r
+    except (OSError, json.JSONDecodeError) as e:
+        log.info("no usable existing results to merge (%s): %s", path, type(e).__name__)
+
+    kept = 0
+    for r in fresh:
+        sid, rno = r.get("race_stadium_number"), r.get("race_number")
+        if sid is None or rno is None:
+            continue
+        old = merged.get((sid, rno))
+        if _completeness(r) >= _completeness(old):
+            merged[(sid, rno)] = r
+        else:
+            kept += 1
+    if kept:
+        log.warning("Kept %d existing races that were more complete than this run", kept)
+    return [merged[k] for k in sorted(merged.keys())]
+
+
+def _count_finished(path: str) -> int:
+    """既存アーカイブの確定レース数（存在しなければ 0）。"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return len([r for r in d.get("results", []) or [] if r.get("race_technique_number")])
+    except (OSError, json.JSONDecodeError):
+        return 0
+
+
 def main() -> None:
     """エントリーポイント: 本日の全レース結果を取得し OUTPUT に書き出す。"""
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
@@ -300,8 +366,17 @@ def main() -> None:
     finished_n = len([r for r in all_results if r.get('race_technique_number')])
     requested_n = len(races) if races else 1
     rel = finished_n / requested_n if requested_n > 0 else 1.0
+    # FIX (2026-08-11): 単調マージ。旧実装は all_results を無条件に書いていたため、
+    #   (a) 全 fetch 失敗（本ファイル冒頭に記録のある 168/168 read timeout 等）で
+    #       {"results": []} が当日の確定結果を丸ごと消す、
+    #   (b) WALL_BUDGET 超過で残りを cancel した部分 run が、直前の完全な run を
+    #       subset で上書きする、
+    #   という不可逆なデータ損失があった（「no programs」経路にだけガードがあり、
+    #   この経路は素通りだった）。レース単位で「より確定しているほう」を残す。
+    merged = _merge_with_existing(OUTPUT, all_results, date_str)
+    finished_n = len([r for r in merged if r.get("race_technique_number")])
     output = {
-        "results": all_results,
+        "results": merged,
         "updated_at": utc_iso_seconds(),  # PC-10
         "_meta": quality_header(
             schema_version=1,
@@ -314,10 +389,18 @@ def main() -> None:
 
     # PR-7 (2026-07-26): aggregate_form.py が直近フォーム / 場別統計を組み立てる
     #   ための日次アーカイブ。確定レースがある時だけ書く（空ファイルで蓄積を汚さない）。
+    # FIX (2026-08-11): アーカイブが縮む書込みも拒否する（恒久データなので不可逆）。
     if finished_n > 0 and date_str:
         archive = os.path.join(os.path.dirname(OUTPUT), f"{date_str}.json")
-        atomic_write_json(archive, output)
-        log.info("Archived %d finished races to %s", finished_n, archive)
+        prev_finished = _count_finished(archive)
+        if finished_n >= prev_finished:
+            atomic_write_json(archive, output)
+            log.info("Archived %d finished races to %s", finished_n, archive)
+        else:
+            log.warning(
+                "Archive skipped: %d finished < existing %d (%s) — 縮退書込みを拒否",
+                finished_n, prev_finished, archive,
+            )
 
     log.info(
         "Done! %d finished races",

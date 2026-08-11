@@ -28,6 +28,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Probe /health and self-heal
+        env:
+          # FA-5: /api/refresh-now は未認証だと 5 分に 1 回へ throttle される。
+          #   watchdog は「stale を検知した今すぐ」再生成させたいので secret を提示する。
+          #   未設定でも動作する（throttle に当たれば 429 → 次回 run で再試行）。
+          TRIGGER_SECRET: ${{ secrets.TRIGGER_SECRET }}
         run: |
           set -uo pipefail
           BASE="https://boatrace-scrape-trigger.inotaka1979.workers.dev"
@@ -50,8 +55,13 @@ jobs:
           fi
 
           echo "⚠️ Worker stale/down (HTTP $status) — triggering /api/refresh-now"
-          rn=$(curl -sS -m 60 -o /tmp/refresh.json -w "%{http_code}" "$BASE/api/refresh-now" || echo "000")
+          rn=$(curl -sS -m 60 -o /tmp/refresh.json -w "%{http_code}" \
+                 -H "x-trigger-secret: ${TRIGGER_SECRET:-}" \
+                 "$BASE/api/refresh-now" || echo "000")
           echo "refresh-now status: $rn"
+          if [ "$rn" = "429" ]; then
+            echo "::warning::refresh-now が throttle された（TRIGGER_SECRET 未設定 or 直近 5 分に実行済）"
+          fi
           head -c 500 /tmp/refresh.json 2>/dev/null || true
           echo ""
 

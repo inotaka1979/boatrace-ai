@@ -24,6 +24,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
+      # FIX (2026-08-11): requirements を入れていなかったため bs4 が無く、
+      #   HTML パーサ回帰テスト 81 件が @skipUnless で silent skip されたまま
+      #   「OK」と表示されていた（＝公式サイトの markup 変更を検出できない）。
+      - name: Install Python deps (scraper parser tests need bs4)
+        run: pip install -r scripts/requirements.txt
       - name: Run all tests
         run: bash scripts/tests/run_all.sh
       # Path B (2026-05-16): code-split 静的アナライザを CI ゲート化。
