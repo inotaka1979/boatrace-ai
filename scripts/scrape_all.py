@@ -81,11 +81,37 @@ def _scrape_programs() -> int:
     return _run_subprocess("scrape_programs.py", timeout_sec=1800)
 
 
+# 2026-08-11: job 全体の wall-clock 予算。workflow の timeout-minutes: 50 に対し
+#   commit & push とアーカイブ処理の余地を残して 42 分。
+_RUN_STARTED = time.monotonic()
+JOB_BUDGET_SEC = 42 * 60
+
+
+def _remaining_budget_sec(cap_sec: int) -> int:
+    """job 予算の残りと cap の小さい方を返す（最低 120 秒）。
+
+    racedata のような長時間 scraper が job timeout を食い潰し、
+    後続タスクや commit & push まで巻き添えにするのを防ぐ。
+    """
+    left = JOB_BUDGET_SEC - (time.monotonic() - _RUN_STARTED)
+    return max(120, min(cap_sec, int(left)))
+
+
 def _scrape_racedata() -> int:
     # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
     #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
     #   2400s (40 min) に拡張。実 fetch は通常 25-30 min で完了。
-    return _run_subprocess("scrape_racedata.py", timeout_sec=2400)
+    # 2026-08-11: 残り予算でクリップする。racedata は stadium 単位で partial 保存
+    #   しており、途中で切られても次 run が続きから再開する。ここで打ち切らないと
+    #   commit & push まで到達せず、その run の成果が丸ごと失われる。
+    budget = _remaining_budget_sec(2400)
+    rc = _run_subprocess("scrape_racedata.py", timeout_sec=budget)
+    if rc == 124:
+        # timeout は失敗扱いにしない: partial 保存済みで次 run が再開するため、
+        # watchdog を誤検知させる意味が無い。
+        log.warning("  racedata: 予算 %ds で打ち切り（partial 保存済、次 run で再開）", budget)
+        return 0
+    return rc
 
 
 def _scrape_schedule_quick() -> int:
@@ -274,7 +300,16 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         or _racedata_has_empty("data/racedata/today.json")
     )
     if racedata_stale:
-        tasks.append(("racedata", _scrape_racedata))
+        # 2026-08-11 FIX: racedata は **最後**に回す（従来はここで先頭に置いていた）。
+        #   旧コメントの前提「stale な racedata は 1 日 1 回しか走らない」は、
+        #   「boats が空なら再取得する」修正 (PR #271) で成立しなくなった。
+        #   racedata は 25-40 分かかるため先頭に置くと job timeout (50 分) を食い潰し、
+        #   後続の odds / previews / results が **毎 run 実行されなくなる**。
+        #   実障害: 18:15 の run が 44 分 racedata に費やし、results が 92 分
+        #   更新されず 32 レースの結果が欠落した。
+        #   racedata は stadium 単位で partial 保存しており run をまたいで再開できる。
+        #   一方 odds / previews / results は「今」取れないと価値が無い。
+        #   → 速い real-time 系を先に確定させ、racedata は残り時間で進める。
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
 
     # programs（公式番組表）: 番組表は日次でほぼ静的。本日分が未取得なら朝の窓で 1 回取得。
@@ -309,6 +344,11 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     #   concurrency:scrape-all で防止されるため安全)。
     if 10 <= h <= 22 and _age_minutes("data/results/today.json") >= 20:
         tasks.append(("results", _scrape_results))
+
+    # 2026-08-11 FIX: racedata は real-time 系 (odds/previews/results) の後に実行する。
+    #   理由は上の racedata_stale ブロックのコメント参照。
+    if racedata_stale:
+        tasks.append(("racedata", _scrape_racedata))
 
     # racedata fresh だが next_open.json は古い場合 (前日跨ぎ等) の単独 refresh。
     # racedata stale 時は上の優先 block で既に処理済み。

@@ -132,3 +132,60 @@ class TestScrapeRacedataSourceInvariants(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestTaskOrdering(unittest.TestCase):
+    """racedata が real-time 系 (odds/previews/results) を枯渇させないこと。
+
+    実障害 (2026-08-11): 「boats が空なら再取得」修正の副作用で racedata が毎 run
+    stale 判定されるようになり、25-40 分かかる racedata が先頭に置かれていたため
+    job timeout (50 分) を食い潰した。18:15 の run は 44 分 racedata に費やし、
+    results は 92 分更新されず 32 レースの結果が欠落した。
+    racedata は stadium 単位で partial 保存し run をまたいで再開できるが、
+    odds / previews / results は「今」取れないと価値が無い。
+    """
+
+    def setUp(self):
+        self._orig_fresh = scrape_all._is_fresh_today
+        self._orig_age = scrape_all._age_minutes
+        self._orig_rd = scrape_all._racedata_has_empty
+        scrape_all._is_fresh_today = lambda path, now: False
+        scrape_all._age_minutes = lambda path: 999.0
+        scrape_all._racedata_has_empty = lambda path: True
+
+    def tearDown(self):
+        scrape_all._is_fresh_today = self._orig_fresh
+        scrape_all._age_minutes = self._orig_age
+        scrape_all._racedata_has_empty = self._orig_rd
+
+    def _names(self, h, m):
+        import datetime as _dt
+        now = _dt.datetime(2026, 5, 17, h, m, tzinfo=scrape_all.JST)
+        return [n for n, _ in scrape_all._decide_tasks(now, force_all=False)]
+
+    def test_racedata_runs_after_realtime_scrapers(self):
+        names = self._names(14, 0)
+        self.assertIn("racedata", names)
+        for rt in ("odds", "previews", "results"):
+            self.assertIn(rt, names)
+            self.assertLess(names.index(rt), names.index("racedata"),
+                            f"{rt} が racedata より後ろ = 枯渇する")
+
+    def test_racedata_appears_once(self):
+        names = self._names(14, 0)
+        self.assertEqual(names.count("racedata"), 1, "racedata が重複登録されている")
+
+    def test_budget_clips_and_has_floor(self):
+        self.assertLessEqual(scrape_all._remaining_budget_sec(2400), 2400)
+        self.assertGreaterEqual(scrape_all._remaining_budget_sec(1), 120)
+
+    def test_budget_never_exceeds_job_timeout(self):
+        """workflow の timeout-minutes より必ず小さいこと。"""
+        import re as _re
+        wf = os.path.join(os.path.dirname(__file__), "..", "..",
+                          ".github", "workflows", "scrape-all.yml")
+        with open(wf, encoding="utf-8") as f:
+            m = _re.search(r"timeout-minutes:\s*(\d+)", f.read())
+        self.assertIsNotNone(m, "scrape-all.yml に timeout-minutes が無い")
+        self.assertLess(scrape_all.JOB_BUDGET_SEC, int(m.group(1)) * 60,
+                        "job 予算が workflow timeout 以上 = commit & push まで届かない")
