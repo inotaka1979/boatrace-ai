@@ -173,3 +173,46 @@ GitHub Actions の dispatch が必要なら、ローカル CLI / GitHub CLI 経�
 ```bash
 gh workflow run scrape-odds.yml
 ```
+
+## 10. VRT (Playwright スナップショット) が赤いとき
+
+E2E ワークフローの `vrt` ジョブが fail したときの判断手順。
+
+### 10.1 まず「stale baseline か本物の退行か」を切り分ける
+
+VRT は「前回 commit した PNG」と現在のレンダリングを比較するだけなので、
+**意図的な UI 変更でも必ず赤くなる**。差分画像を見て判断する:
+
+1. 失敗した run の artifact `playwright-vrt-report` をダウンロード
+2. `*-diff.png` を開き、差分が「今回入れた変更そのもの」かを確認
+   - 差分＝意図した変更 → **10.2 で baseline を再生成**
+   - 差分＝身に覚えのない崩れ → 本物の退行。コードを直す
+
+サイズ違い（`Expected an image 390px by 140px, received 390px by 190px` のような
+メッセージ）は要素が増減したサインで、レンダリング揺らぎではない。
+
+### 10.2 baseline の再生成（唯一の正しい手順）
+
+ローカルで `--update-snapshots` して commit してはいけない。
+開発機と GitHub Actions の ubuntu-latest ではフォントとレンダリングが違い、
+ローカル生成の PNG は CI で必ず落ちる。**必ず CI 上で再生成する**:
+
+1. GitHub → Actions → 「E2E (Playwright)」
+2. 「Run workflow」→ ブランチに `main` を選んで実行（`workflow_dispatch` 限定の
+   `update-snapshots` ジョブが走る）
+3. ジョブが `tests/e2e/screens.vrt.spec.mjs-snapshots/` を再生成し、
+   `vrt: regenerate snapshots (…)` として自動 commit + push する
+4. 以降の PR は本物の退行だけが赤くなる
+
+### 10.3 既知の負債（2026-08-11 時点）
+
+baseline の最終再生成は `88460479` (2026-05-10)。それ以降に入った
+**意図的な** UI 変更が未反映のため、`main` を含む全 run で同じ 2 件が赤い:
+
+| テスト | 差分の原因 |
+|---|---|
+| `races page: レース一覧 page wrapper layout` | 2026-07-22 の `#racesViewToggle`（🎯AI予想 / 🏁結果一覧 トグル）追加で `#pageRaces` が 140px → 190px |
+| `nav: 5ボタン bottom navigation` | Epic 22/25 の i18n 導入による nav ラベル変更 |
+
+**恒常的に赤い＝本物の退行が混ざっても気付けない**状態なので、
+10.2 の再生成を一度実施して解消することを推奨する（所要 1 分、user 操作のみ）。

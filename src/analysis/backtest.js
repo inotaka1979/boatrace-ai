@@ -306,7 +306,9 @@ function _bootstrapROICI(races, nResamples) {
     }
     rois[r] = sumStake > 0 ? sumPayout / sumStake : 0;
   }
-  rois.sort(function (a, b) { return a - b; });
+  rois.sort(function (a, b) {
+    return a - b;
+  });
   const loIdx = Math.floor(nResamples * 0.025);
   const hiIdx = Math.ceil(nResamples * 0.975) - 1;
   return { lo: rois[loIdx], hi: rois[hiIdx], n: n };
@@ -330,7 +332,9 @@ function _computeReliabilityBins(entries) {
     const winner = h.actual[0];
     /** @type {Record<number, number>} */
     const probs = {};
-    h.mark_probs.forEach(function (mp) { probs[mp.boat] = mp.prob; });
+    h.mark_probs.forEach(function (mp) {
+      probs[mp.boat] = mp.prob;
+    });
     // 各 6 艇それぞれを bin に振り分け、勝者かどうかで hit 判定
     for (let b = 1; b <= 6; b++) {
       const p = probs[b];

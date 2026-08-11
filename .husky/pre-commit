@@ -10,7 +10,10 @@
 set -e
 
 # 1) Lint + format check (秒オーダー)
+#    FA-9 (2026-08-11): コメントは「+ format check」と書いてあったが実際は eslint
+#    しか走っておらず、prettier 未整形が 16 ファイル溜まっていた。両方走らせる。
 npm run lint
+npm run format:check
 
 # 2) Type check (~5 秒、jsconfig.json で 5 ファイル限定)
 npm run type

@@ -43,7 +43,9 @@ function predictRaceAsync(sid, raceNum) {
     };
     // FIX (2026-08-11): worker が沈黙した場合に await が永久ハングし、
     //   _backfillTodayPredictions がループ内で二度と返らなくなるため timeout を設ける。
-    var _to = setTimeout(function () { _fallback('timeout'); }, 8000);
+    var _to = setTimeout(function () {
+      _fallback('timeout');
+    }, 8000);
     _appWorkerCallbacks.set(reqId, function (msg) {
       clearTimeout(_to);
       if (_settled) return;
@@ -53,7 +55,10 @@ function predictRaceAsync(sid, raceNum) {
         //   (_backfillTodayPredictions の `if(pred)`) が黙って skip していた。
         //   結果として予想が 1 件も履歴に保存されない状態になり得た。null は失敗と
         //   みなして main thread にフォールバックする。
-        if (!msg.result) { _fallback('worker returned null result'); return; }
+        if (!msg.result) {
+          _fallback('worker returned null result');
+          return;
+        }
         _settled = true;
         resolve(msg.result);
       } else if (msg.type === 'error') {
@@ -149,8 +154,12 @@ function predictRace(sid, raceNum) {
   //   _blendGBDTPrediction は ENABLE_GBDT + n_train >= GBDT_MIN_TRAIN を内部で check
   //   結果は logit 空間で blend されるため、ここでは softmax 適用前の確率を一度
   //   logit 化してから blend → softmax で再正規化する。
-  if (typeof _blendGBDTPrediction === 'function' && typeof TUNING !== 'undefined'
-        && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
+  if (
+    typeof _blendGBDTPrediction === 'function' &&
+    typeof TUNING !== 'undefined' &&
+    TUNING.PREDICTION &&
+    TUNING.PREDICTION.ENABLE_GBDT
+  ) {
     try {
       var l2logits = l2probs.map(function (p) {
         var clipped = Math.min(0.9999, Math.max(0.0001, p));
@@ -165,8 +174,15 @@ function predictRace(sid, raceNum) {
         var maxL = -Infinity;
         for (var bi = 0; bi < blended.length; bi++) if (blended[bi] > maxL) maxL = blended[bi];
         var sumE = 0;
-        var expL = blended.map(function (l) { var e = Math.exp(l - maxL); sumE += e; return e; });
-        if (sumE > 0) l2probs = expL.map(function (e) { return e / sumE; });
+        var expL = blended.map(function (l) {
+          var e = Math.exp(l - maxL);
+          sumE += e;
+          return e;
+        });
+        if (sumE > 0)
+          l2probs = expL.map(function (e) {
+            return e / sumE;
+          });
       }
     } catch (_e) {
       // GBDT 失敗は致命にしない (L1+L2 のみで続行)
@@ -182,13 +198,9 @@ function predictRace(sid, raceNum) {
   //   学習が進むほど L2 に寄る（PB-8 の当初設計意図）。
   //   定数は critical bundle 予算（TUNING は critical 側で満杯）を守るため rest
   //   側の本モジュールに置く。将来 TUNING.BLEND が定義されればそれを優先する。
-  var _BLEND = (typeof TUNING !== 'undefined' && TUNING.BLEND)
-    ? TUNING.BLEND
-    : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
-  var _n =
-    typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0
-      ? l2trainStep
-      : 0;
+  var _BLEND =
+    typeof TUNING !== 'undefined' && TUNING.BLEND ? TUNING.BLEND : { N0_PRERACE: 300, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
+  var _n = typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
   var alpha = _BLEND.N0_PRERACE / (_BLEND.N0_PRERACE + _n);
   if (alpha < _BLEND.ALPHA_MIN) alpha = _BLEND.ALPHA_MIN;
   if (alpha > _BLEND.ALPHA_MAX) alpha = _BLEND.ALPHA_MAX;
@@ -248,9 +260,8 @@ function predictRace(sid, raceNum) {
   finalProbs.forEach(function (p) {
     // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
     //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
-    p.prob = (typeof _applyCalibration === 'function')
-      ? _applyCalibration(p.prob, sid)
-      : _applyPlattCalibration(p.prob, sid);
+    p.prob =
+      typeof _applyCalibration === 'function' ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
   });
   _renormalizeProbs(finalProbs);
   finalProbs.sort(function (a, b) {
@@ -367,9 +378,10 @@ function predictRace(sid, raceNum) {
   //   しきい値は critical bundle 予算を守るため rest 側にローカル定義。
   var conf = Math.round(topProb * 100);
   bets.confidence = conf;
-  var _baseline = (typeof COURSE_WIN_RATE !== 'undefined' && COURSE_WIN_RATE[marks[0].course])
-    ? COURSE_WIN_RATE[marks[0].course]
-    : 0.16;
+  var _baseline =
+    typeof COURSE_WIN_RATE !== 'undefined' && COURSE_WIN_RATE[marks[0].course]
+      ? COURSE_WIN_RATE[marks[0].course]
+      : 0.16;
   var _lift = _baseline > 0 ? topProb / _baseline : 1.0;
   bets.confLift = Math.round(_lift * 100) / 100;
   bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;

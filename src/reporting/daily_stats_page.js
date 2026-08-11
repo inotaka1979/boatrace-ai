@@ -43,8 +43,14 @@ function calcDailyStats(history, betCount3, betCount2, maxDays) {
     var d = byDate[h.date];
     if (!d) {
       d = byDate[h.date] = {
-        date: h.date, total: 0, hit3: 0, hit2: 0,
-        anaRaces: 0, anaHits: 0, invest: 0, payout: 0,
+        date: h.date,
+        total: 0,
+        hit3: 0,
+        hit2: 0,
+        anaRaces: 0,
+        anaHits: 0,
+        invest: 0,
+        payout: 0,
       };
     }
     d.total++;
@@ -53,15 +59,26 @@ function calcDailyStats(history, betCount3, betCount2, maxDays) {
     var n3 = Array.isArray(h.trifecta_bets) ? h.trifecta_bets.length : betCount3;
     var n2 = Array.isArray(h.exacta_bets) ? h.exacta_bets.length : betCount2;
     d.invest += (n3 + n2) * unitBet;
-    if (h.trifecta_hit) { d.hit3++; d.payout += h.payout3 || 0; }
-    if (h.exacta_hit) { d.hit2++; d.payout += h.payout2 || 0; }
+    if (h.trifecta_hit) {
+      d.hit3++;
+      d.payout += h.payout3 || 0;
+    }
+    if (h.exacta_hit) {
+      d.hit2++;
+      d.payout += h.payout2 || 0;
+    }
     if (Array.isArray(h.ana_bets) && h.ana_bets.length > 0) {
       d.anaRaces++;
       d.invest += h.ana_bets.length * unitBet;
-      if (h.ana_hit) { d.anaHits++; d.payout += h.ana_payout || 0; }
+      if (h.ana_hit) {
+        d.anaHits++;
+        d.payout += h.ana_payout || 0;
+      }
     }
   });
-  var days = Object.keys(byDate).sort().slice(-(maxDays || 30));
+  var days = Object.keys(byDate)
+    .sort()
+    .slice(-(maxDays || 30));
   return days.map(function (k) {
     var d = byDate[k];
     d.rate3 = d.total > 0 ? (d.hit3 / d.total) * 100 : 0;
@@ -87,7 +104,10 @@ function renderDailyStats() {
   var last7 = daily.slice(-7);
   var t = { races: 0, hit3: 0, invest: 0, payout: 0 };
   last7.forEach(function (d) {
-    t.races += d.total; t.hit3 += d.hit3; t.invest += d.invest; t.payout += d.payout;
+    t.races += d.total;
+    t.hit3 += d.hit3;
+    t.invest += d.invest;
+    t.payout += d.payout;
   });
   var sumRate = t.races > 0 ? ((t.hit3 / t.races) * 100).toFixed(1) : '0.0';
   var sumRec = t.invest > 0 ? Math.round((t.payout / t.invest) * 100) : 0;
@@ -95,12 +115,16 @@ function renderDailyStats() {
   if (sumEl) {
     // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は数値(判定R/的中率/回収率)のみ、外部文字列なし
     sumEl.innerHTML =
-      '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + t.races +
+      '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' +
+      t.races +
       '</div><div class="stat-label">直近7日 判定R</div></div>' +
-      '<div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + sumRate +
+      '<div class="stat-card"><div class="stat-num" style="color:var(--gold)">' +
+      sumRate +
       '%</div><div class="stat-label">3連単的中率</div></div>' +
       '<div class="stat-card"><div class="stat-num" style="color:' +
-      (sumRec >= 100 ? 'var(--success)' : 'var(--danger)') + '">' + sumRec +
+      (sumRec >= 100 ? 'var(--success)' : 'var(--danger)') +
+      '">' +
+      sumRec +
       '%</div><div class="stat-label">回収率</div></div>';
   }
 
@@ -116,21 +140,49 @@ function renderDailyStats() {
       var html = '<div class="card" class="p-overflow-hidden">';
       html += '<div class="card-header-row">日別 的中率・回収率 (直近30日)</div>';
       html += '<table class="recovery-table">';
-      html += '<thead><tr><th>日付</th><th>判定R</th><th>3連単</th><th>2連単</th><th>収支</th><th>回収率</th></tr></thead><tbody>';
-      daily.slice().reverse().forEach(function (d) {
-        var rec = Math.round(d.recovery);
-        var net = d.payout - d.invest;
-        html +=
-          '<tr><td><b>' + _fmtDate(d.date) + '</b></td><td>' + d.total +
-          '</td><td>' + d.hit3 + ' (' + d.rate3.toFixed(0) + '%)' +
-          '</td><td>' + d.hit2 + ' (' + d.rate2.toFixed(0) + '%)' +
-          '</td><td style="color:' + (net >= 0 ? 'var(--success)' : 'var(--danger)') + '">' +
-          (net >= 0 ? '+' : '') + '¥' + net.toLocaleString() +
-          '</td><td class="' + _g._rateColor(rec) + '">' + rec + '%</td></tr>';
-      });
+      html +=
+        '<thead><tr><th>日付</th><th>判定R</th><th>3連単</th><th>2連単</th><th>収支</th><th>回収率</th></tr></thead><tbody>';
+      daily
+        .slice()
+        .reverse()
+        .forEach(function (d) {
+          var rec = Math.round(d.recovery);
+          var net = d.payout - d.invest;
+          html +=
+            '<tr><td><b>' +
+            _fmtDate(d.date) +
+            '</b></td><td>' +
+            d.total +
+            '</td><td>' +
+            d.hit3 +
+            ' (' +
+            d.rate3.toFixed(0) +
+            '%)' +
+            '</td><td>' +
+            d.hit2 +
+            ' (' +
+            d.rate2.toFixed(0) +
+            '%)' +
+            '</td><td style="color:' +
+            (net >= 0 ? 'var(--success)' : 'var(--danger)') +
+            '">' +
+            (net >= 0 ? '+' : '') +
+            '¥' +
+            net.toLocaleString() +
+            '</td><td class="' +
+            _g._rateColor(rec) +
+            '">' +
+            rec +
+            '%</td></tr>';
+        });
       html += '</tbody></table>';
-      html += '<div style="font-size:9px;color:var(--text-dim);padding:6px 10px">' +
-        '※ 投資額は現在の設定点数 (3連単' + b3 + '点+2連単' + b2 + '点+穴買い目、各¥100) で算出</div>';
+      html +=
+        '<div style="font-size:9px;color:var(--text-dim);padding:6px 10px">' +
+        '※ 投資額は現在の設定点数 (3連単' +
+        b3 +
+        '点+2連単' +
+        b2 +
+        '点+穴買い目、各¥100) で算出</div>';
       html += '</div>';
       el.innerHTML = html;
     }
@@ -151,30 +203,54 @@ function _renderDailyChart(daily) {
   if (box) box.style.display = '';
   _g.capabilities.refresh('chart');
   if (!_g.capabilities.has('chart')) {
-    _g._loadChartLib().then(function () { _renderDailyChart(daily); }, function () {
-      if (box)
-        box.innerHTML =
-          '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
-    });
+    _g._loadChartLib().then(
+      function () {
+        _renderDailyChart(daily);
+      },
+      function () {
+        if (box)
+          box.innerHTML =
+            '<div style="padding:20px;text-align:center;color:#999;font-size:11px">グラフ描画ライブラリの読込に失敗しました</div>';
+      }
+    );
     return;
   }
-  if (_g._dailyChart) { try { _g._dailyChart.destroy(); } catch (_) {} }
+  if (_g._dailyChart) {
+    try {
+      _g._dailyChart.destroy();
+    } catch (_) {}
+  }
   var last14 = daily.slice(-14);
   _g._dailyChart = new _g.Chart(ctx, {
     data: {
-      labels: last14.map(function (d) { return _fmtDate(d.date); }),
+      labels: last14.map(function (d) {
+        return _fmtDate(d.date);
+      }),
       datasets: [
         {
-          type: 'bar', label: '3連単的中率',
-          data: last14.map(function (d) { return Math.round(d.rate3 * 10) / 10; }),
-          backgroundColor: 'rgba(25,118,210,0.45)', borderColor: '#1976D2',
-          borderWidth: 1, borderRadius: 4, yAxisID: 'y',
+          type: 'bar',
+          label: '3連単的中率',
+          data: last14.map(function (d) {
+            return Math.round(d.rate3 * 10) / 10;
+          }),
+          backgroundColor: 'rgba(25,118,210,0.45)',
+          borderColor: '#1976D2',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y',
         },
         {
-          type: 'line', label: '回収率',
-          data: last14.map(function (d) { return Math.round(d.recovery); }),
-          borderColor: '#A56A00', backgroundColor: '#A56A00',
-          borderWidth: 2, pointRadius: 3, tension: 0.25, yAxisID: 'y1',
+          type: 'line',
+          label: '回収率',
+          data: last14.map(function (d) {
+            return Math.round(d.recovery);
+          }),
+          borderColor: '#A56A00',
+          backgroundColor: '#A56A00',
+          borderWidth: 2,
+          pointRadius: 3,
+          tension: 0.25,
+          yAxisID: 'y1',
         },
       ],
     },
@@ -189,13 +265,16 @@ function _renderDailyChart(daily) {
       scales: {
         x: { ticks: { font: { size: 9 }, color: '#999' }, grid: { display: false } },
         y: {
-          beginAtZero: true, max: 100, position: 'left',
+          beginAtZero: true,
+          max: 100,
+          position: 'left',
           title: { display: true, text: '的中率%', font: { size: 9 }, color: '#1976D2' },
           ticks: { font: { size: 9 }, color: '#999' },
           grid: { color: 'rgba(0,0,0,0.06)' },
         },
         y1: {
-          beginAtZero: true, position: 'right',
+          beginAtZero: true,
+          position: 'right',
           title: { display: true, text: '回収率%', font: { size: 9 }, color: '#A56A00' },
           ticks: { font: { size: 9 }, color: '#999' },
           grid: { drawOnChartArea: false },

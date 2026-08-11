@@ -82,11 +82,13 @@ function _normalizeFeatures(featRow) {
 function _applyPlattCalibration(p, sid) {
   if (!TUNING.PREDICTION.ENABLE_PLATT) return p;
   // 2026-05-24: 場別 Platt がある場合は優先 (n >= 100 のみ)、無ければ global
-  var a = _plattCoeffs.a, b = _plattCoeffs.b;
+  var a = _plattCoeffs.a,
+    b = _plattCoeffs.b;
   if (sid != null && typeof _plattCoeffsByStadium === 'object' && _plattCoeffsByStadium) {
     var ps = _plattCoeffsByStadium[String(sid)];
     if (ps && Number.isFinite(ps.a) && Number.isFinite(ps.b) && ps.n >= 100) {
-      a = ps.a; b = ps.b;
+      a = ps.a;
+      b = ps.b;
     }
   }
   if (a === 1 && b === 0) return p; // 高速 path: identity
@@ -109,10 +111,12 @@ function _applyIsotonicCalibration(p) {
   if (p <= pts[0].x) return pts[0].y;
   if (p >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
   // 二分探索で挟む 2 点を見つける
-  var lo = 0, hi = pts.length - 1;
+  var lo = 0,
+    hi = pts.length - 1;
   while (hi - lo > 1) {
     var mid = (lo + hi) >> 1;
-    if (pts[mid].x <= p) lo = mid; else hi = mid;
+    if (pts[mid].x <= p) lo = mid;
+    else hi = mid;
   }
   var dx = pts[hi].x - pts[lo].x;
   if (dx <= 0) return pts[lo].y;
@@ -123,7 +127,7 @@ function _applyIsotonicCalibration(p) {
 // 2026-05-24: 統一エントリ — 選択された method (Platt | Isotonic | none) で校正
 //   呼出側はこれを通せば method 切替の影響を受けない。sid は Platt 場別用。
 function _applyCalibration(p, sid) {
-  var method = (typeof _calibrationMethod === 'string') ? _calibrationMethod : 'platt';
+  var method = typeof _calibrationMethod === 'string' ? _calibrationMethod : 'platt';
   if (method === 'isotonic') return _applyIsotonicCalibration(p);
   if (method === 'none') return p;
   return _applyPlattCalibration(p, sid);
@@ -183,8 +187,7 @@ function _calibrationIsIdentity() {
 //   （同じレースの表示確率が「設定画面を何回開いたか」で 0.50 ⇔ 0.38 と変わる）。
 function _extractPlattPairs(history, allowLegacyOverride) {
   if (!Array.isArray(history)) return [];
-  var allowLegacy =
-    typeof allowLegacyOverride === 'boolean' ? allowLegacyOverride : _calibrationIsIdentity();
+  var allowLegacy = typeof allowLegacyOverride === 'boolean' ? allowLegacyOverride : _calibrationIsIdentity();
   var samples = history.filter(function (h) {
     if (!h.actual || h.actual.length === 0) return false;
     if (Array.isArray(h.raw_probs)) return true;
@@ -266,7 +269,9 @@ async function _refitPlattCoeffs(history) {
   try {
     _plattCoeffsByStadium = _refitPerStadiumPlatt(history, allowLegacy);
     safeSet('boatrace_platt_perstadium', _plattCoeffsByStadium);
-  } catch (_) { /* 場別失敗は致命にしない */ }
+  } catch (_) {
+    /* 場別失敗は致命にしない */
+  }
 
   // 2026-05-24 (Tier 2): Isotonic も同時に fit
   try {
@@ -281,7 +286,9 @@ async function _refitPlattCoeffs(history) {
   try {
     var chosen = _chooseCalibrationMethod(history, allowLegacy);
     _calibrationMethod = chosen;
-    try { localStorage.setItem('boatrace_calib_method', chosen); } catch (_) {}
+    try {
+      localStorage.setItem('boatrace_calib_method', chosen);
+    } catch (_) {}
   } catch (_) {}
 
   return _plattCoeffs;
@@ -298,7 +305,9 @@ function _refitIsotonicCalibration(history, allowLegacy) {
   var pairs = _extractPlattPairs(history, allowLegacy);
   if (pairs.length < 200) return null;
   // 1) p 昇順ソート
-  pairs.sort(function (a, b) { return a.p - b.p; });
+  pairs.sort(function (a, b) {
+    return a.p - b.p;
+  });
   // 2) PAV (pool adjacent violators)
   //    各点を (sum_y, count) の block として開始、隣接で逆順 (mean が前 block より低い) なら merge
   var blocks = pairs.map(function (pi) {
@@ -329,9 +338,12 @@ function _refitIsotonicCalibration(history, allowLegacy) {
   // 4) 圧縮: 連続して y が等しい点を端点だけ残す
   var compressed = [];
   for (var k = 0; k < points.length; k++) {
-    if (k > 0 && k < points.length - 1
-        && Math.abs(points[k].y - points[k - 1].y) < 1e-9
-        && Math.abs(points[k].y - points[k + 1].y) < 1e-9) {
+    if (
+      k > 0 &&
+      k < points.length - 1 &&
+      Math.abs(points[k].y - points[k - 1].y) < 1e-9 &&
+      Math.abs(points[k].y - points[k + 1].y) < 1e-9
+    ) {
       continue;
     }
     compressed.push(points[k]);
@@ -360,7 +372,9 @@ function _refitPerStadiumPlatt(history, allowLegacy) {
   for (var sid in bySid) {
     var subPairs = _extractPlattPairs(bySid[sid], allowLegacy);
     if (subPairs.length < 100) continue; // 場別は 100 サンプル下限 (global は 200)
-    var bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
+    var bestA = 1.0,
+      bestB = 0.0,
+      bestLoss = Infinity;
     for (var a = 0.5; a <= 2.0; a += 0.1) {
       for (var b = -1.0; b <= 1.0; b += 0.1) {
         var loss = 0;
@@ -373,7 +387,11 @@ function _refitPerStadiumPlatt(history, allowLegacy) {
           pp = Math.min(0.9999, Math.max(0.0001, pp));
           loss += pi.y ? -Math.log(pp) : -Math.log(1 - pp);
         }
-        if (loss < bestLoss) { bestLoss = loss; bestA = a; bestB = b; }
+        if (loss < bestLoss) {
+          bestLoss = loss;
+          bestA = a;
+          bestB = b;
+        }
       }
     }
     out[sid] = { a: bestA, b: bestB, n: subPairs.length, fittedAt: Date.now() };
@@ -390,7 +408,8 @@ function _chooseCalibrationMethod(history, allowLegacy) {
   var split = Math.floor(pairs.length * 0.8);
   var heldOut = pairs.slice(split);
   if (heldOut.length < 50) return 'platt';
-  var plattLoss = 0, isoLoss = 0;
+  var plattLoss = 0,
+    isoLoss = 0;
   var iso = _isotonicCoeffs;
   for (var i = 0; i < heldOut.length; i++) {
     var pi = heldOut[i];

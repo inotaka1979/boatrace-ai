@@ -19,7 +19,7 @@
  */
 function _detectDegradedFeatures() {
   var out = [];
-  var sdb = (typeof stadiumDB !== 'undefined' && stadiumDB) ? stadiumDB : {};
+  var sdb = typeof stadiumDB !== 'undefined' && stadiumDB ? stadiumDB : {};
   var sids = Object.keys(sdb);
   // 場別コース勝率: 24 場中 20 場未満なら縮退扱い
   var withCwr = 0;
@@ -30,7 +30,7 @@ function _detectDegradedFeatures() {
   if (withCwr < 20) out.push('場別コース傾向');
 
   // 直近フォーム: sample 200 選手で非空率 < 30% なら縮退扱い
-  var rdb = (typeof racerDB !== 'undefined' && racerDB) ? racerDB : {};
+  var rdb = typeof racerDB !== 'undefined' && racerDB ? racerDB : {};
   var rids = Object.keys(rdb).slice(0, 200);
   if (rids.length >= 50) {
     var withForm = 0;
@@ -56,8 +56,7 @@ function _renderDegradedBanner() {
     el.style.display = 'none';
     return;
   }
-  el.textContent =
-    '⚠ ' + missing.join(' / ') + ' のデータが未取得です。これらを除いたスコアで予想しています。';
+  el.textContent = '⚠ ' + missing.join(' / ') + ' のデータが未取得です。これらを除いたスコアで予想しています。';
   el.style.display = 'block';
   try {
     console.error('[degraded] unavailable features: ' + missing.join(','));

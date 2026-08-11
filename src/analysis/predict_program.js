@@ -58,14 +58,10 @@ function predictRaceProgram(sid, raceNum) {
   //   ため L1 比率高め (N0=600)。旧実装は分母に racerDB のキー数を使っており
   //   L2 学習量と無関係な定数に固定されていた。n = l2trainStep（L2 の実学習量）
   //   を分母にするのが正しい。詳細は predict_race.js の同修正コメント参照。
-  var _BLEND = (typeof TUNING !== 'undefined' && TUNING.BLEND)
-    ? TUNING.BLEND
-    : { N0_PROGRAM: 600, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
+  var _BLEND =
+    typeof TUNING !== 'undefined' && TUNING.BLEND ? TUNING.BLEND : { N0_PROGRAM: 600, ALPHA_MIN: 0.05, ALPHA_MAX: 1.0 };
   var _n0 = _BLEND.N0_PROGRAM != null ? _BLEND.N0_PROGRAM : 600;
-  var _n =
-    typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0
-      ? l2trainStep
-      : 0;
+  var _n = typeof l2trainStep === 'number' && Number.isFinite(l2trainStep) && l2trainStep > 0 ? l2trainStep : 0;
   var alpha = _n0 / (_n0 + _n);
   var _amin = _BLEND.ALPHA_MIN != null ? _BLEND.ALPHA_MIN : 0.05;
   var _amax = _BLEND.ALPHA_MAX != null ? _BLEND.ALPHA_MAX : 1.0;
@@ -109,9 +105,8 @@ function predictRaceProgram(sid, raceNum) {
   });
   // PB-6 + Tier 2: 統一 calibration (Platt/Isotonic auto-select、場別あり)
   finalProbs.forEach(function (p) {
-    p.prob = (typeof _applyCalibration === 'function')
-      ? _applyCalibration(p.prob, sid)
-      : _applyPlattCalibration(p.prob, sid);
+    p.prob =
+      typeof _applyCalibration === 'function' ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
   });
   _renormalizeProbs(finalProbs);
   finalProbs.sort(function (a, b) {

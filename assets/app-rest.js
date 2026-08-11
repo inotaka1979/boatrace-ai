@@ -1219,9 +1219,10 @@
             sumE += e;
             return e;
           });
-          if (sumE > 0) l2probs = expL.map(function(e) {
-            return e / sumE;
-          });
+          if (sumE > 0)
+            l2probs = expL.map(function(e) {
+              return e / sumE;
+            });
         }
       } catch (_e) {
       }
@@ -1989,25 +1990,30 @@
     }
     if (course === 2) {
       if (sashi >= 0.5) return { score: 3 * conf, reason: "\u81EA\u5DF1\u5DEE\u3057\u7387 " + (sashi * 100).toFixed(0) + "%(\u5DEE\u3057\u5DE7\u8005)" };
-      if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(2\u30B3\u30FC\u30B9\u6372\u308A)" };
+      if (makuri >= 0.3)
+        return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(2\u30B3\u30FC\u30B9\u6372\u308A)" };
       if (sashi + makuri <= 0.25) return { score: -2 * conf, risk: "2\u30B3\u30FC\u30B9\u3067\u306E\u6C7A\u3081\u624B\u4E4F\u3057\u3044" };
       return { score: 0 };
     }
     if (course === 3) {
-      if (aggressive >= 0.45) return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30BB\u30F3\u30BF\u30FC\u5F37)" };
-      if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(3\u30B3\u30FC\u30B9\u6372\u308A)" };
+      if (aggressive >= 0.45)
+        return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30BB\u30F3\u30BF\u30FC\u5F37)" };
+      if (makuri >= 0.3)
+        return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(3\u30B3\u30FC\u30B9\u6372\u308A)" };
       if (sashi >= 0.3) return { score: 1 * conf, reason: "\u81EA\u5DF1\u5DEE\u3057\u7387 " + (sashi * 100).toFixed(0) + "%(3\u30B3\u30FC\u30B9\u5DEE\u3057)" };
       if (aggressive <= 0.15) return { score: -2 * conf, risk: "3\u30B3\u30FC\u30B9\u3067\u653B\u3081\u306E\u6C7A\u3081\u624B\u4E4F\u3057\u3044" };
       return { score: 0 };
     }
     if (course === 4) {
-      if (aggressive >= 0.4) return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30AB\u30C9\u5F37)" };
+      if (aggressive >= 0.4)
+        return { score: 4 * conf, reason: "\u81EA\u5DF1\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u30AB\u30C9\u5F37)" };
       if (makuri >= 0.3) return { score: 3 * conf, reason: "\u81EA\u5DF1\u307E\u304F\u308A\u7387 " + (makuri * 100).toFixed(0) + "%(\u30AB\u30C9\u6372\u308A)" };
       if (aggressive <= 0.15) return { score: -3 * conf, risk: "\u30AB\u30C9\u3067\u653B\u3081\u308C\u306A\u3044" };
       return { score: 0 };
     }
     if (course === 5 || course === 6) {
-      if (aggressive >= 0.3) return { score: 3 * conf, reason: "\u30A2\u30A6\u30C8\u3067\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u7A74\u958B\u3051)" };
+      if (aggressive >= 0.3)
+        return { score: 3 * conf, reason: "\u30A2\u30A6\u30C8\u3067\u653B\u6483\u7387 " + (aggressive * 100).toFixed(0) + "%(\u7A74\u958B\u3051)" };
       if (aggressive <= 0.1) return { score: -1 * conf };
       return { score: 0 };
     }

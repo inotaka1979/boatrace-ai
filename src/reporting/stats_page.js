@@ -69,7 +69,11 @@ function renderStats() {
   if (_bf) {
     if (s.backfilled > 0 && s.total > 0) {
       _bf.textContent =
-        '⚠ ' + s.total + ' 件中 ' + s.backfilled + ' 件はレース確定後に生成された予想です。' +
+        '⚠ ' +
+        s.total +
+        ' 件中 ' +
+        s.backfilled +
+        ' 件はレース確定後に生成された予想です。' +
         'その結果を学習済みのデータと確定オッズで計算しているため、下の的中率・回収率は' +
         '実際の運用成績より良く出ます。';
       _bf.style.display = 'block';

@@ -348,8 +348,7 @@ const MIGRATIONS = {
       const fRaw = localStorage.getItem('boatrace_featurestats');
       if (fRaw) {
         const f = JSON.parse(fRaw);
-        if (f && Array.isArray(f.mean) && f.mean.length === 12
-                && Array.isArray(f.m2) && f.m2.length === 12) {
+        if (f && Array.isArray(f.mean) && f.mean.length === 12 && Array.isArray(f.m2) && f.m2.length === 12) {
           const newMean = f.mean.slice();
           const newM2 = f.m2.slice();
           for (let i = 0; i < 12; i++) {
@@ -357,9 +356,14 @@ const MIGRATIONS = {
             newM2.push(1); // ← variance=1 for safe z-score (divide by zero 防止)
           }
           // n は保持 (旧 warmup 完了状態を維持)
-          localStorage.setItem('boatrace_featurestats', JSON.stringify({
-            mean: newMean, m2: newM2, n: f.n,
-          }));
+          localStorage.setItem(
+            'boatrace_featurestats',
+            JSON.stringify({
+              mean: newMean,
+              m2: newM2,
+              n: f.n,
+            })
+          );
         }
       }
     } catch (_) {}

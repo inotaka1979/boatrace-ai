@@ -56,7 +56,12 @@ function openRace(sid, rn) {
       if (_pm) _pcMs = Date.UTC(+_pm[1], +_pm[2] - 1, +_pm[3], +_pm[4] - 9, +_pm[5], +_pm[6]);
     }
     // 展示窓(締切-45分〜+15分)で、展示が欠けていれば取りに行く。
-    if (_pcMs && Date.now() > _pcMs - 45 * 60000 && Date.now() < _pcMs + 15 * 60000 && globalThis._isPreviewIncomplete(_pv[rn] || null)) {
+    if (
+      _pcMs &&
+      Date.now() > _pcMs - 45 * 60000 &&
+      Date.now() < _pcMs + 15 * 60000 &&
+      globalThis._isPreviewIncomplete(_pv[rn] || null)
+    ) {
       globalThis._loadPreviewLive(sid, rn);
     }
   }
@@ -250,10 +255,8 @@ function openRace(sid, rn) {
       // 2026-07-05: 🔥穴予想の的中も判定・表示する(旧実装は 3 連単買い目のみ判定で、
       //   穴予想が的中しても「不的中」と表示されていた)
       var anaHit = Array.isArray(pred.ana) && pred.ana.indexOf(actualCombo) >= 0;
-      var banner = hit && anaHit ? '3連単 的中! ＋ 🔥穴予想 的中!'
-        : hit ? '3連単 的中!'
-        : anaHit ? '🔥穴予想 的中!'
-        : '不的中';
+      var banner =
+        hit && anaHit ? '3連単 的中! ＋ 🔥穴予想 的中!' : hit ? '3連単 的中!' : anaHit ? '🔥穴予想 的中!' : '不的中';
       resHtml +=
         '<div style="margin-top:8px;font-size:14px;font-weight:700;text-align:center" class="' +
         (hit || anaHit ? 'hit' : 'miss') +
@@ -263,7 +266,9 @@ function openRace(sid, rn) {
     } else if (pred && places.length < 3) {
       resHtml +=
         '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);text-align:center">' +
-        '結果データ取得中 (着順 ' + places.length + '/3 件)</div>';
+        '結果データ取得中 (着順 ' +
+        places.length +
+        '/3 件)</div>';
     }
     resHtml += '</div>';
   }
@@ -346,11 +351,14 @@ function openRace(sid, rn) {
       // 一部の場(住之江等)は boatrace.jp 直前情報が未取得でも、オリジナル展示ページ側に
       //   ST/展示タイムがある。preview が欠ければ OE 由来の値でフォールバックする。
       var _oebST = (_oeRace && _oeRace[bn]) || {};
-      var stVal = pv && pv.racer_start_timing != null ? pv.racer_start_timing
-        : (_oebST.st_time != null ? _oebST.st_time : null);
+      var stVal =
+        pv && pv.racer_start_timing != null ? pv.racer_start_timing : _oebST.st_time != null ? _oebST.st_time : null;
       var etVal =
-        pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0 ? pv.racer_exhibition_time
-        : ((_oebST.ex_time || 0) > 0 ? _oebST.ex_time : null);
+        pv && pv.racer_exhibition_time != null && pv.racer_exhibition_time > 0
+          ? pv.racer_exhibition_time
+          : (_oebST.ex_time || 0) > 0
+            ? _oebST.ex_time
+            : null;
       var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
       var propVal = pv && pv.racer_propeller ? pv.racer_propeller : '';
       var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : '';
@@ -406,9 +414,21 @@ function openRace(sid, rn) {
         var _turn = (_oeb2.turn_time || 0) > 0 ? _oeb2.turn_time.toFixed(2) : '---';
         var _str = (_oeb2.straight_time || 0) > 0 ? _oeb2.straight_time.toFixed(2) : '---';
         exhHtml +=
-          '<td class="' + _oeCls(_lapRk[bn]) + '">' + _lap + '</td>' +
-          '<td class="' + _oeCls(_turnRk[bn]) + '">' + _turn + '</td>' +
-          '<td class="' + _oeCls(_strRk[bn]) + '">' + _str + '</td>';
+          '<td class="' +
+          _oeCls(_lapRk[bn]) +
+          '">' +
+          _lap +
+          '</td>' +
+          '<td class="' +
+          _oeCls(_turnRk[bn]) +
+          '">' +
+          _turn +
+          '</td>' +
+          '<td class="' +
+          _oeCls(_strRk[bn]) +
+          '">' +
+          _str +
+          '</td>';
       }
       exhHtml += '<td class="fs-9">' + maintDisp + '</td>';
       exhHtml += '<td>' + adjDisp + '</td>';

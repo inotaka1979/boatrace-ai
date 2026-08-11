@@ -81,7 +81,7 @@ function _traverseTree(tree, features) {
     if (typeof node.feat !== 'number' || typeof node.thr !== 'number') return 0;
     const fv = features[node.feat];
     const fvNum = Number.isFinite(fv) ? fv : 0;
-    idx = fvNum <= node.thr ? (node.left || 0) : (node.right || 0);
+    idx = fvNum <= node.thr ? node.left || 0 : node.right || 0;
     if (idx <= 0 || idx >= tree.nodes.length) return 0;
   }
   return 0;
