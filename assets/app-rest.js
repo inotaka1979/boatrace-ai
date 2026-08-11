@@ -4869,8 +4869,20 @@ async function refreshThisRace(){
     var rawPv=_filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json'+ts));
     var rawRs=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts);
     if(rawPg) programData=indexByStadiumRace(rawPg,'programs');
-    if(rawPv) previewData=indexPreviews(rawPv);
-    if(rawRs) resultData=indexResults(rawRs);
+    if(rawPv){
+      var _pvIdx2=indexPreviews(rawPv);
+      previewData=(typeof _mergePreviewIndex==='function')?_mergePreviewIndex(_pvIdx2):_pvIdx2;
+    }
+    // FIX (2026-08-11): 「🔄 このレースを更新」で確定結果が消える不具合。
+    //   全置換すると /result-proxy でオンデマンド取得済みの確定結果（bulk にまだ
+    //   無いもの）が失われ、_resLiveTried[key] が true のため再取得もされない。
+    //   rt-fix3 の _mergeResultIndex（確定→未確定の巻き戻り禁止 / 払戻の退行禁止）
+    //   を通す。previews も同様に縮退防止の _mergePreviewIndex を経由させる。
+    if(rawRs){
+      resultData=(typeof _mergeResultIndex==='function')
+        ? _mergeResultIndex(resultData,indexResults(rawRs))
+        : indexResults(rawRs);
+    }
 
     // F19: 自前データを GitHub Pages 経由で取得してマージ
     try{

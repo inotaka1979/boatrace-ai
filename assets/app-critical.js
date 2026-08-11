@@ -4383,7 +4383,15 @@ async function forceRefresh(){
     var rawP  = await fetchWithFallback(API_BASE+'/programs/v2/today.json?_='+t);
     if(rawP){ programData=indexByStadiumRace(rawP,'programs'); _noteUpdatedAt(rawP.updated_at); _noteTodayDataFromRaw(rawP,'programs'); }
     var rawPv = _filterStalePreviews(await fetchWithFallback(API_BASE+'/previews/v2/today.json?_='+t));
-    if(rawPv){ previewData=indexPreviews(rawPv); _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews'); }
+    // FIX (2026-08-11): 全置換をやめ縮退防止マージを通す。rt-fix2 P0-D は 90 秒 poll
+    //   経路だけを _mergePreviewIndex 化しており、forceRefresh と refreshThisRace が
+    //   取り残されていた。live 側が展示を持たない縮退応答を返すと、表示済みの
+    //   展示タイム/ST が「更新」で消える。
+    if(rawPv){
+      var _pvIdx=indexPreviews(rawPv);
+      previewData=(typeof _mergePreviewIndex==='function')?_mergePreviewIndex(_pvIdx):_pvIdx;
+      _noteUpdatedAt(rawPv.updated_at); _noteTodayDataFromRaw(rawPv,'previews');
+    }
     // results: 自前 data/results/today.json を優先、fallback で Open API
     var rawR = null;
     try{
@@ -4698,6 +4706,7 @@ async function loadAllData(){
   await _yieldToMain();   // PH-5
   programData = indexByStadiumRace(rawPrograms, 'programs');
   await _yieldToMain();   // PH-5
+  // 注意: 起動時 1 回のみのため previewData は必ず null = 全置換で安全（上記コメント参照）。
   previewData = indexPreviews(rawPreviews);
   await _yieldToMain();   // PH-5
   if(rawPrograms && typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawPrograms.updated_at);
@@ -4729,6 +4738,9 @@ async function loadAllData(){
   }catch(e){}
   if(!rawResults){rawResults=await fetchWithFallback(API_BASE+'/results/v2/today.json'+ts)}
   await _yieldToMain();   // PH-5
+  // 注意: 本経路は起動時 1 回のみ (呼出は boot の loadAllData() だけ) で、この時点の
+  //   resultData は必ず null のためマージ不要 = 全置換で安全。critical 予算を使わない。
+  //   「更新」系 (forceRefresh / refreshThisRace / 90 秒 poll) は必ず単調マージを通すこと。
   resultData=indexResults(rawResults);
   await _yieldToMain();   // PH-5
   if(rawResults&&typeof _noteUpdatedAt==='function') _noteUpdatedAt(rawResults.updated_at);
