@@ -971,3 +971,53 @@ rest bundle の連結順＝出力が非決定的になって build:check 再現�
 - A-01（市場シュリンク）/ B-01（scenarioDist 買い目）: backtest で効果測定後。
 - B-03（監視の Worker 移管）: 要 wrangler デプロイ、設計はデータ安定後を指示。
 - B-06（選手写真の git 撤去）: 履歴書換 + probe workflow と絡むため独立対応。
+
+## 修正履歴 (2026-08-11: 多視点コード監査 — 6 領域の専門家レビューと修正)
+
+ML/統計・ベッティング/競艇ドメイン・アーキテクチャ・データ基盤/SRE・セキュリティ/PWA・
+QA/テストの 6 領域で全コード（約 16,000 行）を監査。各指摘は採用前に再検証し、
+誤報を排除したうえで深刻度順に修正した。
+
+### 修正済み（本コミット）
+- **Worker 経路の全滅（自己退行）**: f7f1bb05 が worker helper 17 個、1e25058c が
+  worker の L2 state 宣言 6 個を範囲削除で巻き込んでいた。strict mode の未宣言代入で
+  sync_state が ReferenceError → predict が `result:null` を返し、これは「エラーでない」
+  ため main fallback が効かず `_backfillTodayPredictions` が 0 件保存。両ブロックを復元し、
+  predictRaceAsync を null/想定外応答でも fallback + 8 秒 timeout に。恒久ガードとして
+  `test_worker_protocol.js`（worker を実プロトコルで往復）を新設。
+  併せて worker の手動 TUNING 乖離（MAX_STAKE_RATIO 1.0 = 上限 20 倍等）を app.js と同期。
+- **GBDT no-op が全予測を歪曲**: model 未ロード時に入力配列をそのまま返し、呼出側が
+  softmax(logit(p)) で再正規化 → 本命 0.50→0.634。null 返却に変更。
+- **stRank の `||5`**: rank 0（ST 最速）が 5（最遅）に化けていた。learning.js は正しく
+  `!= null` を使っており推論/学習が不整合だった。両経路を統一。
+- **ECE が ECE でない**: 勝者の確率のみ bin に入れ hit を無条件加算 → 常に `1-平均勝者確率`。
+  完全校正モデルで 0.68 を返していた。6 艇すべてを bin に入れる正しい定義に修正（同モデルで
+  0.0035）。snapshot 3 件の `ece` のみ変化。
+- **部分オッズで妙味/人気判定が反転**: 取得済み艇だけで正規化していたため、win={'1':1.0} だと
+  本命が「⚠過大評価」、他全艇が「🎯妙味」に。本日データで 288 中 177 レースが部分取得。
+  6 艇揃うまで判定しないガードを追加。
+- **updateDBFromResults の多重加算**: 90 秒ポーリング毎に同一確定レースを
+  stadiumDB.courseWinRate に再加算し、長期プライアが当日標本に侵食されていた。
+  l2learnedKeys と同型の date_sid_rno ガードを追加。
+- **SW オフラインの破綻**: precache キーはクエリ無し、実リクエストは `?v=`。静的分岐が
+  `ignoreSearch` 無しで常に cache miss → オフラインで JS が一切取れない（実ブラウザで実証）。
+  sw.js の設計コメント通り `ignoreSearch:true` に。
+- **CI が Python 依存を入れておらず 81 テストが常時 skip**: スクレイパ HTML パーサの回帰
+  テストが一度も実行されていなかった（bs4 導入後は全 PASS）。test.yml に pip install を追加。
+
+### 未修正（要フォローアップ、優先度順）
+1. **成績トラッカーの look-ahead leakage**: `_backfillTodayPredictions` が確定後に予想を
+   再計算し `savePrediction` が締切前の予想を上書きするため、的中率/回収率が構造的に楽観。
+   `getRacerForm` が当該レース自身の着順を含む。→ 締切前予想の lock-in に反転が必要。
+2. **getL2Features の二重定義**: critical(24次元 pipeline) を rest(12次元 legacy) が後勝ちで
+   上書きし、Epic 12 の v2 特徴量 12 本が死んでいる。`l2weights[12..23]` は恒久的に 0。
+3. **L2 のコース二重計上**: COURSE_LOG_PRIOR と `L2_INIT_WEIGHTS[3]=-4.0` が二重に効き、
+   コースだけで 6.64 logit（実勢 3.31 の約 28 倍過信）。要 weights schema version bump。
+4. **データ破壊経路**: scrape_results の全滅/部分 run が確定結果を上書き、build_db が
+   ファン手帳失敗時に racerDB を空で commit、scrape_odds に日跨ぎガードが無い（実データで
+   前日オッズ 120 件混入を確認）。
+5. **Cloudflare Worker `/api/refresh-now` が無認証**（KV 書込枠を第三者が枯渇可能）。
+6. **PJ Phase 再発防止 lint の穴**: `^\s` 除外と `^var` 除外により、実際に起きた
+   `var X = (function(){...restFn()...})()` の形を検出できない。acorn ベース解析へ置換推奨。
+7. calibration の feedback loop（校正後確率で再 fit）、`make install` が e2e を壊す
+   （root node_modules が build へのシンボリンク前提）、投資額の二重定義（設定値 vs 実点数）。
