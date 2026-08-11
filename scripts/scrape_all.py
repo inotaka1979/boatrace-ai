@@ -149,6 +149,36 @@ def _prerender_top() -> int:
     return _run_subprocess("prerender_top.py", timeout_sec=120)
 
 
+def _racedata_has_empty(path: str) -> bool:
+    """racedata に boats が空の entry が残っているか。
+
+    今節成績は boatrace.jp の出走表が当日分を出すまで取れない。早朝の run では
+    boats=[] で保存されるが、_is_fresh_today は「partial=False かつ updated_at が今日」
+    だけを見るため fresh 扱いになり、その日は二度と取りに行かなくなっていた。
+    中身を見て未取得が残っていれば再取得を促す。
+
+    Args:
+        path: data/racedata/today.json への相対 or 絶対パス。
+
+    Returns:
+        boats が空の entry が 1 件でもあれば True。ファイル不在 / 壊れている場合は
+        False（その場合は _is_fresh_today 側が False を返して再取得される）。
+    """
+    full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
+    try:
+        with open(full, encoding="utf-8") as f:
+            data = json.load(f)
+        entries = data.get("racedata")
+        if not isinstance(entries, list) or not entries:
+            return False
+        empty = sum(1 for e in entries if not e.get("boats"))
+        if empty:
+            log.info("  racedata: boats 空 %d/%d 件 → 再取得対象", empty, len(entries))
+        return empty > 0
+    except Exception:
+        return False
+
+
 def _is_fresh_today(path: str, now_jst: datetime.datetime) -> bool:
     """data/<scope>/today.json が今日 (JST) の完了データかを判定する。
 
@@ -234,7 +264,15 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     # 5 min が重なると racedata (~15 min) が完走できない事故が発生。
     # stale な racedata は 1 日 1 回しか走らないので先に取り、その後 odds 等を走らせる。
     racedata_window = (h == 8 and m >= 30) or (9 <= h <= 22)
-    racedata_stale = racedata_window and not _is_fresh_today("data/racedata/today.json", now)
+    # FIX (2026-08-11): 「今日の日付が入っている」だけでは fresh と言えない。
+    #   早朝 run では boatrace.jp の出走表に今節成績がまだ載らず boats=[] で保存される。
+    #   partial=False かつ updated_at=今日 なので _is_fresh_today は True を返し、
+    #   その日は二度と racedata を取りに行かない = 今節成績が一日中空のままだった。
+    #   中身（boats を持つ entry の割合）も見て、空が残っていれば再取得させる。
+    racedata_stale = racedata_window and (
+        not _is_fresh_today("data/racedata/today.json", now)
+        or _racedata_has_empty("data/racedata/today.json")
+    )
     if racedata_stale:
         tasks.append(("racedata", _scrape_racedata))
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
