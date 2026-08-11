@@ -307,7 +307,9 @@
         };
       }
       d.total++;
-      d.invest += (betCount3 + betCount2) * unitBet;
+      var n3 = Array.isArray(h.trifecta_bets) ? h.trifecta_bets.length : betCount3;
+      var n2 = Array.isArray(h.exacta_bets) ? h.exacta_bets.length : betCount2;
+      d.invest += (n3 + n2) * unitBet;
       if (h.trifecta_hit) {
         d.hit3++;
         d.payout += h.payout3 || 0;

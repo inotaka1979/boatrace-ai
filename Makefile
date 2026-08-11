@@ -39,6 +39,9 @@ help:
 install:
 	npm ci
 	cd build && npm ci
+	# FA-8: root の npm ci が node_modules を実体で作り直すため、e2e の
+	#   @playwright 解決経路を毎回張り直す（張らないと直後の make test-e2e が落ちる）
+	bash scripts/ensure_e2e_deps.sh
 
 lint:
 	npm run lint
@@ -54,6 +57,7 @@ test:
 	npm test
 
 test-e2e:
+	bash scripts/ensure_e2e_deps.sh
 	npm run test:e2e
 
 # Clearwing Phase 5: snapshot 再生成。

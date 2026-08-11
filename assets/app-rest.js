@@ -371,17 +371,35 @@
     });
     return softmax(combinedLogits);
   }
-  function _extractPlattPairs(history) {
+  function _calibrationIsIdentity() {
+    try {
+      var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
+      var iso = typeof _isotonicCoeffs !== "undefined" ? _isotonicCoeffs : null;
+      var perSid = typeof _plattCoeffsByStadium !== "undefined" ? _plattCoeffsByStadium : null;
+      var g = typeof _plattCoeffs !== "undefined" ? _plattCoeffs : null;
+      if (iso && method !== "platt") return false;
+      if (perSid && Object.keys(perSid).length > 0) return false;
+      if (!g) return true;
+      return Math.abs(g.a - 1) < 1e-9 && Math.abs(g.b) < 1e-9;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _extractPlattPairs(history, allowLegacyOverride) {
     if (!Array.isArray(history)) return [];
+    var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
-      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+      if (!h.actual || h.actual.length === 0) return false;
+      if (Array.isArray(h.raw_probs)) return true;
+      return allowLegacy && Array.isArray(h.mark_probs);
     });
     if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
     var pairs = [];
     samples.forEach(function(h) {
       var winner = h.actual[0];
       var probs = {};
-      h.mark_probs.forEach(function(mp) {
+      var src = Array.isArray(h.raw_probs) ? h.raw_probs : h.mark_probs;
+      src.forEach(function(mp) {
         probs[mp.boat] = mp.prob;
       });
       var pWin = probs[winner];
@@ -396,7 +414,8 @@
     return pairs;
   }
   async function _refitPlattCoeffs(history) {
-    var pairs = _extractPlattPairs(history);
+    var allowLegacy = _calibrationIsIdentity();
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 100) return null;
     var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
     var globalResult;
@@ -437,12 +456,12 @@
     _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
     safeSet("boatrace_platt", _plattCoeffs);
     try {
-      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+      _plattCoeffsByStadium = _refitPerStadiumPlatt(history, allowLegacy);
       safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
     } catch (_) {
     }
     try {
-      var iso = _refitIsotonicCalibration(history);
+      var iso = _refitIsotonicCalibration(history, allowLegacy);
       if (iso) {
         _isotonicCoeffs = iso;
         safeSet("boatrace_isotonic", _isotonicCoeffs);
@@ -450,7 +469,7 @@
     } catch (_) {
     }
     try {
-      var chosen = _chooseCalibrationMethod(history);
+      var chosen = _chooseCalibrationMethod(history, allowLegacy);
       _calibrationMethod = chosen;
       try {
         localStorage.setItem("boatrace_calib_method", chosen);
@@ -460,8 +479,8 @@
     }
     return _plattCoeffs;
   }
-  function _refitIsotonicCalibration(history) {
-    var pairs = _extractPlattPairs(history);
+  function _refitIsotonicCalibration(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 200) return null;
     pairs.sort(function(a, b) {
       return a.p - b.p;
@@ -497,7 +516,7 @@
     }
     return { points: compressed, fittedAt: Date.now(), n: pairs.length };
   }
-  function _refitPerStadiumPlatt(history) {
+  function _refitPerStadiumPlatt(history, allowLegacy) {
     if (!Array.isArray(history)) return {};
     var bySid = {};
     history.forEach(function(h) {
@@ -508,7 +527,7 @@
     });
     var out = {};
     for (var sid in bySid) {
-      var subPairs = _extractPlattPairs(bySid[sid]);
+      var subPairs = _extractPlattPairs(bySid[sid], allowLegacy);
       if (subPairs.length < 100) continue;
       var bestA = 1, bestB = 0, bestLoss = Infinity;
       for (var a = 0.5; a <= 2; a += 0.1) {
@@ -534,8 +553,8 @@
     }
     return out;
   }
-  function _chooseCalibrationMethod(history) {
-    var pairs = _extractPlattPairs(history);
+  function _chooseCalibrationMethod(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 300) return "platt";
     var split = Math.floor(pairs.length * 0.8);
     var heldOut = pairs.slice(split);
@@ -1033,9 +1052,6 @@
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {
         return s.boat === p.boat;
       });
@@ -1044,14 +1060,14 @@
       var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
       p.prob *= mult;
     });
-    var _sum2 = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sum2 > 0 && Math.abs(_sum2 - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sum2;
-      });
-    }
+    _renormalizeProbs(finalProbs);
+    finalProbs.forEach(function(p) {
+      p.probRaw = p.prob;
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    _renormalizeProbs(finalProbs);
     finalProbs.sort(function(a, b) {
       return b.prob - a.prob;
     });
@@ -1240,9 +1256,6 @@
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {
         return s.boat === p.boat;
       });
@@ -1251,14 +1264,14 @@
       var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
       p.prob *= mult;
     });
-    var _sumCalib = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sumCalib;
-      });
-    }
+    _renormalizeProbs(finalProbs);
+    finalProbs.forEach(function(p) {
+      p.probRaw = p.prob;
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    _renormalizeProbs(finalProbs);
     finalProbs.sort(function(a, b) {
       return b.prob - a.prob;
     });
@@ -2000,6 +2013,20 @@
     }
     return { score: 0 };
   }
+  function _renormalizeProbs(list) {
+    if (!Array.isArray(list) || !list.length) return list;
+    var s = 0;
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i] && list[i].prob;
+      if (Number.isFinite(v) && v > 0) s += v;
+      else if (list[i]) list[i].prob = 0;
+    }
+    if (s > 0 && Math.abs(s - 1) > 1e-6) {
+      for (var j = 0; j < list.length; j++) list[j].prob /= s;
+    }
+    return list;
+  }
+  globalThis._renormalizeProbs = _renormalizeProbs;
   globalThis.seriesAdjustmentScore = seriesAdjustmentScore;
   globalThis.tideScore = tideScore;
   globalThis.stormBonus = stormBonus;
@@ -3675,6 +3702,21 @@ function savePrediction(date,sid,rn,pred,result){
         for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
         return out;
       })(),
+      // FA-7 (2026-08-11): 校正「前」の確率。_refitPlattCoeffs は従来 mark_probs
+      //   (= 校正後) で再フィットしており、校正の上に校正を重ねるループになっていた
+      //   （実測で収束せず a=0.6/b=-0.5 ⇔ identity を振動）。raw を残して raw で fit する。
+      raw_probs: (function(){
+        var byBoat = {};
+        (pred.marks||[]).forEach(function(m){
+          if(m && m.boat && Number.isFinite(m.probRaw)) byBoat[m.boat] = m.probRaw;
+        });
+        var out = [];
+        for(var b=1;b<=6;b++){
+          if(!Number.isFinite(byBoat[b])) return null;   // 1 艇でも欠けたら raw 無し扱い
+          out.push({boat:b, prob: byBoat[b]});
+        }
+        return out;
+      })(),
       trifecta_bets:pred.trifecta.map(function(t){return t.combo}),
       exacta_bets:pred.exacta.map(function(t){return t.combo}),
       // B14 (2026-05-17): 🔥穴予想 (高EV chip) を履歴追跡。pred.ana が無い
@@ -4398,8 +4440,18 @@ function calcTodayStats(){
   var warnings = { tri_zero: [], exa_zero: [] };
 
   verified.forEach(function(h){
-    var triInvest=betCount3*unitBet;
-    var exaInvest=betCount2*unitBet;
+    // FA-8 (2026-08-11): 投資額は「実際に推奨した点数」で数える。
+    //   旧実装は現在の設定 (settings.betCount3/2) を全過去レースに適用しており、
+    //   同じ 1 レースに対して 2 つの投資額定義が併存していた:
+    //     - calcTodayStats: 現在の設定点数 × 100 円
+    //     - runBacktestEngine (backtest.js:119): (h.trifecta_bets||[]).length × 100 円
+    //   的中判定 (trifecta_hit) は h.trifecta_bets を突合して決まるため、
+    //   分子は実点数・分母は設定点数という同一指標内の不整合になっていた。
+    //   さらに設定の買い目点数を 10→5 に変えるだけで過去の回収率が遡って 2 倍になる。
+    //   EV モード / KPI モードは点数を動的に絞るので実害は日常的に出る。
+    //   旧エントリ (bets 未保存) のみ設定値へフォールバックする。
+    var triInvest=(Array.isArray(h.trifecta_bets) ? h.trifecta_bets.length : betCount3)*unitBet;
+    var exaInvest=(Array.isArray(h.exacta_bets) ? h.exacta_bets.length : betCount2)*unitBet;
     tri.invest+=triInvest;
     exa.invest+=exaInvest;
     if(h.trifecta_hit){

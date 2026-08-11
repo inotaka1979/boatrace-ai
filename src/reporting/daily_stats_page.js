@@ -48,7 +48,11 @@ function calcDailyStats(history, betCount3, betCount2, maxDays) {
       };
     }
     d.total++;
-    d.invest += (betCount3 + betCount2) * unitBet;
+    // FA-8: 投資額は実際に推奨した点数で数える（詳細は calcTodayStats のコメント）。
+    //   引数の betCount3/2 は bets 未保存の旧エントリ向けフォールバック。
+    var n3 = Array.isArray(h.trifecta_bets) ? h.trifecta_bets.length : betCount3;
+    var n2 = Array.isArray(h.exacta_bets) ? h.exacta_bets.length : betCount2;
+    d.invest += (n3 + n2) * unitBet;
     if (h.trifecta_hit) { d.hit3++; d.payout += h.payout3 || 0; }
     if (h.exacta_hit) { d.hit2++; d.payout += h.payout2 || 0; }
     if (Array.isArray(h.ana_bets) && h.ana_bets.length > 0) {

@@ -298,17 +298,35 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     });
     return softmax(combinedLogits);
   }
-  function _extractPlattPairs(history) {
+  function _calibrationIsIdentity() {
+    try {
+      var method = typeof _calibrationMethod === "string" ? _calibrationMethod : "platt";
+      var iso = typeof _isotonicCoeffs !== "undefined" ? _isotonicCoeffs : null;
+      var perSid = typeof _plattCoeffsByStadium !== "undefined" ? _plattCoeffsByStadium : null;
+      var g = typeof _plattCoeffs !== "undefined" ? _plattCoeffs : null;
+      if (iso && method !== "platt") return false;
+      if (perSid && Object.keys(perSid).length > 0) return false;
+      if (!g) return true;
+      return Math.abs(g.a - 1) < 1e-9 && Math.abs(g.b) < 1e-9;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _extractPlattPairs(history, allowLegacyOverride) {
     if (!Array.isArray(history)) return [];
+    var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
-      return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+      if (!h.actual || h.actual.length === 0) return false;
+      if (Array.isArray(h.raw_probs)) return true;
+      return allowLegacy && Array.isArray(h.mark_probs);
     });
     if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
     var pairs = [];
     samples.forEach(function(h) {
       var winner = h.actual[0];
       var probs = {};
-      h.mark_probs.forEach(function(mp) {
+      var src = Array.isArray(h.raw_probs) ? h.raw_probs : h.mark_probs;
+      src.forEach(function(mp) {
         probs[mp.boat] = mp.prob;
       });
       var pWin = probs[winner];
@@ -323,7 +341,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     return pairs;
   }
   async function _refitPlattCoeffs(history) {
-    var pairs = _extractPlattPairs(history);
+    var allowLegacy = _calibrationIsIdentity();
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 100) return null;
     var w = typeof _getPlattWorker === "function" ? _getPlattWorker() : null;
     var globalResult;
@@ -364,12 +383,12 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     _plattCoeffs = { a: globalResult.a, b: globalResult.b, fittedAt: Date.now(), n: globalResult.n };
     safeSet("boatrace_platt", _plattCoeffs);
     try {
-      _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+      _plattCoeffsByStadium = _refitPerStadiumPlatt(history, allowLegacy);
       safeSet("boatrace_platt_perstadium", _plattCoeffsByStadium);
     } catch (_) {
     }
     try {
-      var iso = _refitIsotonicCalibration(history);
+      var iso = _refitIsotonicCalibration(history, allowLegacy);
       if (iso) {
         _isotonicCoeffs = iso;
         safeSet("boatrace_isotonic", _isotonicCoeffs);
@@ -377,7 +396,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     } catch (_) {
     }
     try {
-      var chosen = _chooseCalibrationMethod(history);
+      var chosen = _chooseCalibrationMethod(history, allowLegacy);
       _calibrationMethod = chosen;
       try {
         localStorage.setItem("boatrace_calib_method", chosen);
@@ -387,8 +406,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return _plattCoeffs;
   }
-  function _refitIsotonicCalibration(history) {
-    var pairs = _extractPlattPairs(history);
+  function _refitIsotonicCalibration(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 200) return null;
     pairs.sort(function(a, b) {
       return a.p - b.p;
@@ -424,7 +443,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return { points: compressed, fittedAt: Date.now(), n: pairs.length };
   }
-  function _refitPerStadiumPlatt(history) {
+  function _refitPerStadiumPlatt(history, allowLegacy) {
     if (!Array.isArray(history)) return {};
     var bySid = {};
     history.forEach(function(h) {
@@ -435,7 +454,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     });
     var out = {};
     for (var sid in bySid) {
-      var subPairs = _extractPlattPairs(bySid[sid]);
+      var subPairs = _extractPlattPairs(bySid[sid], allowLegacy);
       if (subPairs.length < 100) continue;
       var bestA = 1, bestB = 0, bestLoss = Infinity;
       for (var a = 0.5; a <= 2; a += 0.1) {
@@ -461,8 +480,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return out;
   }
-  function _chooseCalibrationMethod(history) {
-    var pairs = _extractPlattPairs(history);
+  function _chooseCalibrationMethod(history, allowLegacy) {
+    var pairs = _extractPlattPairs(history, allowLegacy);
     if (pairs.length < 300) return "platt";
     var split = Math.floor(pairs.length * 0.8);
     var heldOut = pairs.slice(split);
@@ -815,6 +834,20 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }
     return { score: 0 };
   }
+  function _renormalizeProbs(list) {
+    if (!Array.isArray(list) || !list.length) return list;
+    var s = 0;
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i] && list[i].prob;
+      if (Number.isFinite(v) && v > 0) s += v;
+      else if (list[i]) list[i].prob = 0;
+    }
+    if (s > 0 && Math.abs(s - 1) > 1e-6) {
+      for (var j = 0; j < list.length; j++) list[j].prob /= s;
+    }
+    return list;
+  }
+  globalThis._renormalizeProbs = _renormalizeProbs;
   globalThis.seriesAdjustmentScore = seriesAdjustmentScore;
   globalThis.tideScore = tideScore;
   globalThis.stormBonus = stormBonus;
@@ -1712,9 +1745,6 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       };
     });
     finalProbs.forEach(function(p) {
-      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
-    });
-    finalProbs.forEach(function(p) {
       var l1 = l1scores.find(function(s) {
         return s.boat === p.boat;
       });
@@ -1723,14 +1753,14 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1;
       p.prob *= mult;
     });
-    var _sumCalib = finalProbs.reduce(function(a, p) {
-      return a + p.prob;
-    }, 0);
-    if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-      finalProbs.forEach(function(p) {
-        p.prob = p.prob / _sumCalib;
-      });
-    }
+    _renormalizeProbs(finalProbs);
+    finalProbs.forEach(function(p) {
+      p.probRaw = p.prob;
+    });
+    finalProbs.forEach(function(p) {
+      p.prob = typeof _applyCalibration === "function" ? _applyCalibration(p.prob, sid) : _applyPlattCalibration(p.prob, sid);
+    });
+    _renormalizeProbs(finalProbs);
     finalProbs.sort(function(a, b) {
       return b.prob - a.prob;
     });

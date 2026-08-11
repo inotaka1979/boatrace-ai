@@ -217,15 +217,6 @@ function predictRace(sid, raceNum) {
       classNum: l1s.classNum,
     };
   });
-  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
-  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
-  finalProbs.forEach(function (p) {
-    // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
-    //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
-    p.prob = (typeof _applyCalibration === 'function')
-      ? _applyCalibration(p.prob, sid)
-      : _applyPlattCalibration(p.prob, sid);
-  });
   // P1-A4: F/L ペナルティを 1着確率乗数として post-hoc 適用
   //   既存の score 減点 (-25/-15/-5) は L1 段階の減衰、本層は確率の心理的補正:
   //   F2 持ちは斡旋停止リスクで 2 着狙いに走り、1 着確率は更に 0.75 倍程度になる経験則。
@@ -239,14 +230,29 @@ function predictRace(sid, raceNum) {
     var mult = fc >= 2 ? 0.75 : fc >= 1 ? 0.85 : lc >= 1 ? 0.95 : 1.0;
     p.prob *= mult;
   });
-  var _sumCalib = finalProbs.reduce(function (a, p) {
-    return a + p.prob;
-  }, 0);
-  if (_sumCalib > 0 && Math.abs(_sumCalib - 1) > 1e-6) {
-    finalProbs.forEach(function (p) {
-      p.prob = p.prob / _sumCalib;
-    });
-  }
+  _renormalizeProbs(finalProbs);
+  // FA-7 (2026-08-11): 校正「前」の確率を probRaw として保持する。
+  //   _refitPlattCoeffs は履歴の mark_probs（＝校正「後」）で再フィットしており、
+  //   校正の上に校正を重ねるフィードバックループになっていた。実測では収束せず
+  //   a=0.6/b=-0.5 と identity の間を毎回振動し、同じレースの表示確率が
+  //   「設定画面を何回開いたか」で 0.50 ⇔ 0.38 と変わる状態だった。
+  //   raw を保存し、raw で fit することで不動点になる（検証済み）。
+  //
+  //   FA-7 で calibration を F/L 乗算の「後」に移動した。校正器が学習する入力と
+  //   実際に校正器へ入る値を一致させるため（既定 identity なので出力は不変）。
+  finalProbs.forEach(function (p) {
+    p.probRaw = p.prob;
+  });
+  // PB-6: Platt scaling で確率を post-hoc 校正（identity 初期では no-op）
+  //       fitting 後は ECE が改善する想定。再正規化で Σp=1 を維持
+  finalProbs.forEach(function (p) {
+    // 2026-05-24 (Tier 2): _applyCalibration が method (Platt/Isotonic) を自動選択
+    //   sid を渡すと場別 Platt が利用可能 (場内 100 サンプル以上ある場合のみ、無ければ global)
+    p.prob = (typeof _applyCalibration === 'function')
+      ? _applyCalibration(p.prob, sid)
+      : _applyPlattCalibration(p.prob, sid);
+  });
+  _renormalizeProbs(finalProbs);
   finalProbs.sort(function (a, b) {
     return b.prob - a.prob;
   });

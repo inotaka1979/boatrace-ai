@@ -177,6 +177,18 @@ step "S-05 degraded feature banner tests" \
 step "Web Worker protocol smoke" \
      "node scripts/tests/test_worker_protocol.js"
 
+# 9g2z) 校正 再フィットのフィードバックループ（raw_probs で fit する）
+step "Calibration refit feedback loop (raw probs)" \
+     "node scripts/tests/test_calibration_feedback.js"
+
+# 9g2a) critical→rest 到達性 lint（PJ Phase 致命バグの再発防止 lint 自体の回帰）
+step "critical→rest reachability lint (AST)" \
+     "node scripts/tests/test_build_lint.mjs"
+
+# 9g2b) Cloudflare Worker HTTP 層（refresh-now 認証/throttle・CORS 許可リスト）
+step "Cloudflare Worker endpoint (auth / CORS)" \
+     "node scripts/tests/test_worker_cf_endpoint.mjs"
+
 # 9g3) look-ahead leakage 回帰（締切前予想の lock-in）
 step "Prediction lock-in (leakage guard)" \
      "node scripts/tests/test_prediction_lockin.js"

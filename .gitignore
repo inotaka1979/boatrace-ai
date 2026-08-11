@@ -9,7 +9,9 @@ __pycache__/
 *.bak
 .DS_Store
 node_modules/
-# Epic 20: tests/e2e から build/node_modules を解決するための symlink
+# Epic 20 / FA-8: tests/e2e から build/node_modules を解決するための
+#   node_modules/@playwright symlink（scripts/ensure_e2e_deps.sh が張る）を含む。
+#   root node_modules 自体は eslint / prettier / tsc の実体でもある。
 /node_modules
 dist/
 .venv/

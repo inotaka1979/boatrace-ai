@@ -401,63 +401,54 @@ async function main() {
   //   const { randomBytes } = await import('node:crypto');
   //   const nonce = randomBytes(16).toString('base64');
 
-  // Epic 27: critical bundle が rest 関数を typeof guard なしで呼んでいないかを lint
-  //   PJ Phase / Epic 26 後の致命バグ (commit 05f4a2c) と同種の事故を build 時に防ぐ。
-  //   検出条件:
-  //     1) /* MOVED: function xxx */ で rest へ移譲された関数 xxx を取得
-  //     2) critical の top-level (= 行頭が空白で始まらない) で `xxx(...)` を直接呼出
-  //     3) ただし以下は OK:
-  //        - 同行に typeof xxx (guard あり)
-  //        - 同行に setTimeout / setInterval (deferred 実行)
-  //        - 関数定義行 (function ...) や var/let/const 宣言行
-  //        - コメント行
+  // Epic 27 / FA-6: critical bundle が「起動時に必ず実行される位置」で rest 関数を
+  //   typeof guard なしに呼んでいないかを lint する。
+  //   PJ Phase の致命バグ (var X = (function(){ ... restFn() ... })(); による silent halt)
+  //   と同種の事故を build 時に止める。
+  //
+  //   FA-6 (2026-08-11): 旧実装は「行頭が非空白の行」ベースのヒューリスティックで、
+  //   `^var` 除外と `^\s` 除外の両方に該当する当の PJ バグ形を構造的に見逃していた
+  //   （= 再発防止 lint が防ぐべき再発パターンだけ検出できない状態）。
+  //   acorn の AST による eager 到達性解析に置換した。詳細は build/lint_critical.mjs。
   try {
     const criticalSrcLint = await readFile(criticalSrc, 'utf8').catch(()=>null);
     if (criticalSrcLint){
-      // MOVED コメントで rest 移譲されたものを取得
-      const moved = new Set();
-      for (const m of criticalSrcLint.matchAll(/\/\* MOVED: function (\w+) \*\//g)) moved.add(m[1]);
-      // ただし critical 内に function 定義もある場合 (重複定義) は除外
-      //   split_app.py が anchor 判定で両方に出力するケースがある (例: _runIdleTask)
-      const definedInCritical = new Set();
-      for (const m of criticalSrcLint.matchAll(/^(?:async\s+)?function\s+(\w+)\s*\(/gm)) {
-        definedInCritical.add(m[1]);
-      }
-      const trulyMoved = new Set([...moved].filter(fn => !definedInCritical.has(fn)));
-
-      const violations = [];
-      const linesL = criticalSrcLint.split('\n');
-      for (let i = 0; i < linesL.length; i++){
-        const line = linesL[i];
-        // top-level statement のみ (行頭非空白)
-        if (line.length === 0 || /^\s/.test(line)) continue;
-        // 関数定義 / 変数宣言 / コメントは除外（async function も含む）
-        if (/^(async\s+)?function\s|^var\s|^let\s|^const\s|^class\s/.test(line)) continue;
-        if (/^\/\/|^\/\*|^\*/.test(line)) continue;
-        for (const fn of trulyMoved){
-          const re = new RegExp(`\\b${fn}\\s*\\(`);
-          if (!re.test(line)) continue;
-          if (line.includes(`typeof ${fn}`)) continue;        // guard あり OK
-          if (/\bsetTimeout\b|\bsetInterval\b/.test(line)) continue; // deferred OK
-          if (/\bif\s*\(\s*typeof\b/.test(line)) continue;     // typeof if guard 同様
-          violations.push({ line: i + 1, fn, src: line.trim().slice(0, 140) });
+      const { lintEagerRestCalls, collectMovedFns } = await import('./lint_critical.mjs');
+      const trulyMoved = collectMovedFns(criticalSrcLint);
+      let acorn = null;
+      try { acorn = await import('acorn'); } catch(_){ acorn = null; }
+      if (!acorn){
+        console.error('[lint FAIL] acorn を解決できないため critical→rest 到達性 lint を実行できません');
+        console.error('  対処: cd build && npm ci (acorn は lighthouse 経由で導入されます)');
+        if (CHECK_MODE) process.exit(1);
+      } else {
+        const { violations, tryGuarded } = lintEagerRestCalls(criticalSrcLint, trulyMoved, acorn);
+        const lintTag = violations.length === 0 ? '[lint OK]' : '[lint FAIL]';
+        console.log(lintTag + ' critical→rest 起動時直接呼出 = ' + violations.length
+          + ' (moved=' + trulyMoved.size + ', try 内=' + tryGuarded.length + ') [AST]');
+        if (tryGuarded.length > 0){
+          console.log('  参考: try/catch 内のため halt はしないが起動時に失敗する呼出:');
+          for (const v of tryGuarded.slice(0, 10)){
+            console.log('    L' + v.line + ' [' + v.fn + ']: ' + v.src);
+          }
         }
-      }
-      const lintTag = violations.length === 0 ? '[lint OK]' : '[lint FAIL]';
-      console.log(lintTag + ' critical→rest 直接呼出 = ' + violations.length + ' (Epic 27 / PJ Phase 致命バグ防止)');
-      if (violations.length > 0){
-        console.error('  以下の箇所で rest 関数を typeof guard なしに呼んでいます:');
-        for (const v of violations){
-          console.error('    L' + v.line + ' [' + v.fn + ']: ' + v.src);
-        }
-        console.error('  対処: typeof xxx === "function" の guard、または setTimeout / polling でラップしてください。');
-        if (CHECK_MODE){
-          console.error('[lint] critical→rest violation found — failing CI');
-          process.exit(1);
+        if (violations.length > 0){
+          console.error('  以下は起動時に評価され、rest 未 load 時に ReferenceError で script 全体が halt します:');
+          for (const v of violations){
+            console.error('    L' + v.line + ' [' + v.fn + ']: ' + v.src);
+          }
+          console.error('  対処: typeof xxx === "function" の guard、または setTimeout / polling でラップしてください。');
+          if (CHECK_MODE){
+            console.error('[lint] critical→rest violation found — failing CI');
+            process.exit(1);
+          }
         }
       }
     }
-  } catch(_){}
+  } catch(e){
+    console.error('[lint FAIL] critical→rest lint が例外で中断: ' + (e && e.message));
+    if (CHECK_MODE) process.exit(1);
+  }
 
   // Path B (2026-05-16): SW VERSION と index.html の `?v=` を **自動同期**。
   //   旧運用: 手動で sw.js + index.html 4 箇所を bump → 漏れると stale 化

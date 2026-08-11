@@ -152,18 +152,52 @@ function _stackedPredict(features6, l1probs) {
 // Platt re-fit (grid search、Worker 委譲対応)
 // ─────────────────────────────────────────────
 
+/**
+ * FA-7 (2026-08-11): 現在の校正が identity（無変換）かどうか。
+ *
+ * raw_probs を持たない旧エントリの mark_probs は「その時点の校正後」の確率であり、
+ * 校正が identity のときに限り raw と一致する。identity でないときに旧エントリを
+ * 混ぜると、校正の上に校正を重ねるフィードバックになるため除外する。
+ * @returns {boolean}
+ */
+function _calibrationIsIdentity() {
+  try {
+    var method = typeof _calibrationMethod === 'string' ? _calibrationMethod : 'platt';
+    var iso = typeof _isotonicCoeffs !== 'undefined' ? _isotonicCoeffs : null;
+    var perSid = typeof _plattCoeffsByStadium !== 'undefined' ? _plattCoeffsByStadium : null;
+    var g = typeof _plattCoeffs !== 'undefined' ? _plattCoeffs : null;
+    if (iso && method !== 'platt') return false;
+    if (perSid && Object.keys(perSid).length > 0) return false;
+    if (!g) return true;
+    return Math.abs(g.a - 1) < 1e-9 && Math.abs(g.b) < 1e-9;
+  } catch (_) {
+    return false;
+  }
+}
+
 // 履歴から Platt scaling の入力 pairs を抽出
-function _extractPlattPairs(history) {
+//
+// FA-7: 校正「前」の確率 (raw_probs) を優先して使う。従来は mark_probs
+//   (= 校正「後」) で再フィットしており、再校正するたびに校正が二重掛けになり、
+//   実測で不動点に収束せず a=0.6/b=-0.5 と identity の間を振動していた
+//   （同じレースの表示確率が「設定画面を何回開いたか」で 0.50 ⇔ 0.38 と変わる）。
+function _extractPlattPairs(history, allowLegacyOverride) {
   if (!Array.isArray(history)) return [];
+  var allowLegacy =
+    typeof allowLegacyOverride === 'boolean' ? allowLegacyOverride : _calibrationIsIdentity();
   var samples = history.filter(function (h) {
-    return h.actual && h.actual.length > 0 && Array.isArray(h.mark_probs);
+    if (!h.actual || h.actual.length === 0) return false;
+    if (Array.isArray(h.raw_probs)) return true;
+    // raw_probs 未保存の旧エントリ: identity のときだけ mark_probs == raw とみなせる
+    return allowLegacy && Array.isArray(h.mark_probs);
   });
   if (samples.length < TUNING.PREDICTION.PLATT_MIN_SAMPLES) return [];
   var pairs = [];
   samples.forEach(function (h) {
     var winner = h.actual[0];
     var probs = {};
-    h.mark_probs.forEach(function (mp) {
+    var src = Array.isArray(h.raw_probs) ? h.raw_probs : h.mark_probs;
+    src.forEach(function (mp) {
       probs[mp.boat] = mp.prob;
     });
     var pWin = probs[winner];
@@ -181,7 +215,10 @@ function _extractPlattPairs(history) {
 // PB-6 + PF-9 + PG-3: Web Worker への分離 (失敗時は main thread fallback)
 // 2026-05-24 (Tier 2): refit の最後に Isotonic + 場別 Platt + auto-select も実行
 async function _refitPlattCoeffs(history) {
-  var pairs = _extractPlattPairs(history);
+  // FA-7: allowLegacy は「今の校正が identity か」で決まるが、本関数は途中で
+  //   _plattCoeffs を書き換える。1 回の refit の中で判定がぶれないよう先に固定する。
+  var allowLegacy = _calibrationIsIdentity();
+  var pairs = _extractPlattPairs(history, allowLegacy);
   if (pairs.length < 100) return null;
   var w = typeof _getPlattWorker === 'function' ? _getPlattWorker() : null;
   var globalResult;
@@ -227,13 +264,13 @@ async function _refitPlattCoeffs(history) {
 
   // 2026-05-24 (Tier 2): 場別 Platt も同時に fit
   try {
-    _plattCoeffsByStadium = _refitPerStadiumPlatt(history);
+    _plattCoeffsByStadium = _refitPerStadiumPlatt(history, allowLegacy);
     safeSet('boatrace_platt_perstadium', _plattCoeffsByStadium);
   } catch (_) { /* 場別失敗は致命にしない */ }
 
   // 2026-05-24 (Tier 2): Isotonic も同時に fit
   try {
-    var iso = _refitIsotonicCalibration(history);
+    var iso = _refitIsotonicCalibration(history, allowLegacy);
     if (iso) {
       _isotonicCoeffs = iso;
       safeSet('boatrace_isotonic', _isotonicCoeffs);
@@ -242,7 +279,7 @@ async function _refitPlattCoeffs(history) {
 
   // 2026-05-24 (Tier 2): auto-select (Platt vs Isotonic) — held-out log loss が低い方
   try {
-    var chosen = _chooseCalibrationMethod(history);
+    var chosen = _chooseCalibrationMethod(history, allowLegacy);
     _calibrationMethod = chosen;
     try { localStorage.setItem('boatrace_calib_method', chosen); } catch (_) {}
   } catch (_) {}
@@ -257,8 +294,8 @@ async function _refitPlattCoeffs(history) {
 //   piece-wise constant 関数を作る。連続点を merge して breakpoints に圧縮。
 //   既存 _extractPlattPairs を再利用 (同じデータ形式)。
 
-function _refitIsotonicCalibration(history) {
-  var pairs = _extractPlattPairs(history);
+function _refitIsotonicCalibration(history, allowLegacy) {
+  var pairs = _extractPlattPairs(history, allowLegacy);
   if (pairs.length < 200) return null;
   // 1) p 昇順ソート
   pairs.sort(function (a, b) { return a.p - b.p; });
@@ -309,7 +346,7 @@ function _refitIsotonicCalibration(history) {
 //   既存 _refitPlattCoeffs と同じ grid search を場別に適用。
 //   Worker 委譲は global のみ (場別 24 × grid search はメインで十分高速)。
 
-function _refitPerStadiumPlatt(history) {
+function _refitPerStadiumPlatt(history, allowLegacy) {
   if (!Array.isArray(history)) return {};
   // history を場別に group 化
   var bySid = {};
@@ -321,7 +358,7 @@ function _refitPerStadiumPlatt(history) {
   });
   var out = {};
   for (var sid in bySid) {
-    var subPairs = _extractPlattPairs(bySid[sid]);
+    var subPairs = _extractPlattPairs(bySid[sid], allowLegacy);
     if (subPairs.length < 100) continue; // 場別は 100 サンプル下限 (global は 200)
     var bestA = 1.0, bestB = 0.0, bestLoss = Infinity;
     for (var a = 0.5; a <= 2.0; a += 0.1) {
@@ -346,8 +383,8 @@ function _refitPerStadiumPlatt(history) {
 
 // 2026-05-24: Platt vs Isotonic の自動選択 — held-out log loss が低い方を採用
 //   履歴を 80/20 で時系列 split、後ろ 20% で評価。
-function _chooseCalibrationMethod(history) {
-  var pairs = _extractPlattPairs(history);
+function _chooseCalibrationMethod(history, allowLegacy) {
+  var pairs = _extractPlattPairs(history, allowLegacy);
   if (pairs.length < 300) return 'platt'; // データ不足時は安定な Platt
   // pairs は extract 内で順序保持されている (sort はしない)、time-based 順
   var split = Math.floor(pairs.length * 0.8);
