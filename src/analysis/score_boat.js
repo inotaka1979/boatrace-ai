@@ -217,7 +217,7 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
 
     // オリジナル展示(各場サイトの実測 一周/まわり足): レース内で相対的に速い艇へ小さく加点。
     //   データのある対応場(多摩川/三国/鳴門/若松/芦屋)のみ作用。他場は oeRace=null で完全に不変。
-    var oeRace = ((((typeof globalThis !== 'undefined' && globalThis._origExhibIndex) || {})[sid] || {})[rno]) || null;
+    var oeRace = (((typeof globalThis !== 'undefined' && globalThis._origExhibIndex) || {})[sid] || {})[rno] || null;
     if (oeRace) {
       var _oeRank = function (field) {
         var arr = [];

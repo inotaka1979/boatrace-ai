@@ -75,8 +75,18 @@ jobs:
           retention-days: 7
 
   # VRT: Chromium snapshot — 10 画面の見た目退行を検出
-  # update-snapshots で baseline を JS-load 状態に再生成済 (8846047) のため
-  # advisory 解除。今後は退行を CI が確実に block する。
+  #
+  # ⚠ FA-9 (2026-08-11) 現状: baseline の最終再生成は 88460479 (2026-05-10)。
+  #   以降に入った意図的な UI 変更（2026-07-22 の #racesViewToggle 追加で
+  #   #pageRaces が 140px → 190px、Epic 22/25 の i18n による nav ラベル変更）を
+  #   baseline に反映していないため、**main を含む全 run で同じ 2 件が fail し続けて
+  #   いる**（`nav: 5ボタン bottom navigation` / `races page: レース一覧 page wrapper
+  #   layout`）。恒常的に赤いので、本物の見た目退行が混ざっても誰も気付けない
+  #   ＝ VRT が 3 ヶ月間ゲートとして機能していない状態。
+  #
+  #   復旧手順: Actions タブ → 「E2E (Playwright)」→ Run workflow (workflow_dispatch)
+  #   で下の update-snapshots ジョブを main に対して実行する。baseline が
+  #   自動 commit され、以降は本物の退行だけが赤くなる。
   vrt:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -109,6 +119,16 @@ jobs:
         env:
           CI: '1'
         run: npx playwright test --config playwright.config.mjs --project=chromium-vrt
+      # FA-9: 失敗時に「stale baseline なのか本物の退行なのか」を判断する手順を
+      #   ログ上で必ず示す。3 ヶ月間 stale のまま誰も再生成しなかった主因は、
+      #   失敗ログから復旧手順に辿り着けなかったこと。
+      - name: How to fix (baseline regeneration)
+        if: failure()
+        run: |
+          echo "::warning::VRT が fail しました。差分画像は artifact 'playwright-vrt-report' を参照。"
+          echo "意図的な UI 変更なら Actions → 'E2E (Playwright)' → Run workflow で"
+          echo "update-snapshots ジョブを実行し、baseline を再生成してください。"
+          echo "最終再生成: 88460479 (2026-05-10) — それ以降の UI 変更は未反映です。"
       - name: Upload diff report on failure
         if: failure()
         uses: actions/upload-artifact@v7

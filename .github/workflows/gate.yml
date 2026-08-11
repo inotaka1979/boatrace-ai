@@ -62,8 +62,16 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
-      - name: Lint (eslint + prettier --check)
+      - name: Lint (eslint)
         run: npm run lint
+
+      # FA-9 (2026-08-11): 旧構成は step 名が「eslint + prettier --check」なのに
+      #   `npm run lint` (= eslint のみ) しか実行しておらず、prettier は誰も検査して
+      #   いなかった。結果 src/ の 16 ファイルが整形から外れ、`npm run gate` を
+      #   ローカルで走らせた開発者だけが赤を踏む（CI は緑）状態になっていた。
+      #   step 名の主張どおり実際に検査する。
+      - name: Format check (prettier --check src/)
+        run: npm run format:check
 
       - name: Type check (tsc --noEmit -p jsconfig.json)
         run: npm run type

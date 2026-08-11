@@ -43,11 +43,12 @@ function _renderRaceDetailBets(ctx) {
         // X1: EV モードの場合、Kelly 配分（円）を表示。
         // S-04: ENABLE_STAKE_SUGGESTION が false（既定）の間は賭け金を出さず、
         //   EV / オッズ乖離の「情報」表示に留める（未検証の確率で賭け金を推奨しない）。
-        var stakeStr = t.stakeYen && !t.stakeSuppressed
-          ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
-            t.stakeYen.toLocaleString() +
-            '</span>'
-          : '';
+        var stakeStr =
+          t.stakeYen && !t.stakeSuppressed
+            ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
+              t.stakeYen.toLocaleString() +
+              '</span>'
+            : '';
         predHtml +=
           '<span class="bet-chip">' +
           t.combo +

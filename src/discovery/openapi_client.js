@@ -246,7 +246,9 @@ function indexByStadiumRace(apiJson, key) {
         todayIso = t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6, 8);
       }
     }
-  } catch (_) { /* fall back: フィルタなし */ }
+  } catch (_) {
+    /* fall back: フィルタなし */
+  }
   arr.forEach(function (/** @type {any} */ item) {
     // race_date フィールドがある場合、今日 JST と一致しないものは除外
     if (todayIso && item.race_date && item.race_date !== todayIso) return;

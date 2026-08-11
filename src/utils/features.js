@@ -68,9 +68,9 @@ function _waveCourse(ctx) {
 //   TIDE_PHASE_COURSE_BIAS: high/low/rising/falling × 1..6
 //   既存 TIDE_COURSE_BIAS と独立した重み学習を可能に
 const TIDE_PHASE_COURSE_BIAS = Object.freeze({
-  high:    [0, +0.1, +0.05, 0, -0.05, -0.1, -0.1],
-  low:     [0, -0.1, -0.05, 0, +0.05, +0.1, +0.1],
-  rising:  [0, +0.05, 0, 0, 0, -0.05, -0.05],
+  high: [0, +0.1, +0.05, 0, -0.05, -0.1, -0.1],
+  low: [0, -0.1, -0.05, 0, +0.05, +0.1, +0.1],
+  rising: [0, +0.05, 0, 0, 0, -0.05, -0.05],
   falling: [0, -0.05, 0, 0, 0, +0.05, +0.05],
 });
 function _tidePhaseCourse(ctx) {
@@ -106,7 +106,7 @@ function _pairwiseH2H(ctx) {
   if (oppRids.length === 0) return 0;
   const r = pwScore(ctx.rid, ctx.sid, oppRids);
   // r.score は ±2 にクリップ済 → /2 で ±1 に
-  return (r && Number.isFinite(r.score)) ? r.score / 2 : 0;
+  return r && Number.isFinite(r.score) ? r.score / 2 : 0;
 }
 
 // ── v2 追加: class 分散 (混戦度、レース内で大きいほど波乱)
@@ -174,20 +174,29 @@ const FEATURE_PIPELINE = Object.freeze([
   // v2 (index 12..23) — 当初 weights=0 から学習開始
   { name: 'localWinPct', fn: (ctx) => ctx.pf(ctx.boat.racer_local_top_1_percent) / 10 },
   { name: 'localTop2Pct', fn: (ctx) => ctx.pf(ctx.boat.racer_local_top_2_percent) / 100 },
-  { name: 'weightZ', fn: (ctx) => {
-    const w = ctx.pf(ctx.boat.racer_weight);
-    if (!w) return 0;
-    return Math.max(-3, Math.min(3, (w - 52) / 2));
-  } },
-  { name: 'ageNorm', fn: (ctx) => {
-    const a = ctx.pf(ctx.boat.racer_age);
-    if (!a) return 0.5;
-    return Math.max(0, Math.min(1, a / 60));
-  } },
-  { name: 'weightAdjust', fn: (ctx) => {
-    const myPv = ctx.myPv || {};
-    return ctx.pf(myPv.racer_weight_adjustment) / 5;
-  } },
+  {
+    name: 'weightZ',
+    fn: (ctx) => {
+      const w = ctx.pf(ctx.boat.racer_weight);
+      if (!w) return 0;
+      return Math.max(-3, Math.min(3, (w - 52) / 2));
+    },
+  },
+  {
+    name: 'ageNorm',
+    fn: (ctx) => {
+      const a = ctx.pf(ctx.boat.racer_age);
+      if (!a) return 0.5;
+      return Math.max(0, Math.min(1, a / 60));
+    },
+  },
+  {
+    name: 'weightAdjust',
+    fn: (ctx) => {
+      const myPv = ctx.myPv || {};
+      return ctx.pf(myPv.racer_weight_adjustment) / 5;
+    },
+  },
   { name: 'tiltRaw', fn: (ctx) => ctx.tilt }, // ctx.tilt は既に pf 済
   { name: 'waveCourse', fn: _waveCourse },
   { name: 'tidePhaseCourse', fn: _tidePhaseCourse },
@@ -217,9 +226,7 @@ function buildL2Features(boat, preview, weather, etRank, stRank, sid, helpers, e
   const myPv = preview || {};
   const st = myPv.racer_start_timing != null ? pf(myPv.racer_start_timing) : 99;
   // v1 は racer_tilt_adjustment、v2 fixture は racer_tilt → 両対応
-  const tilt = myPv.racer_tilt_adjustment != null
-    ? pf(myPv.racer_tilt_adjustment)
-    : pf(myPv.racer_tilt);
+  const tilt = myPv.racer_tilt_adjustment != null ? pf(myPv.racer_tilt_adjustment) : pf(myPv.racer_tilt);
   const form = h.getRacerForm ? h.getRacerForm(rid) : null;
 
   const ctx = {
@@ -259,14 +266,23 @@ globalThis.buildL2Features = buildL2Features;
 //   helpers 引数がない呼出（既存 app.js から）は global の関数を自動 lookup
 //   extras 引数 (7th) は新規 — 呼出元が allBoats / raceHour を渡せば v2 特徴量が有効
 globalThis.getL2Features = function (boat, preview, weather, etRank, stRank, sid, extras) {
-  return buildL2Features(boat, preview, weather, etRank, stRank, sid, {
-    pf: typeof globalThis.pf === 'function' ? globalThis.pf : null,
-    getRacerCourseWinRate: globalThis.getRacerCourseWinRate,
-    getStadiumCourseWinRate: globalThis.getStadiumCourseWinRate,
-    getRacerForm: globalThis.getRacerForm,
-    pairwiseScore: globalThis.pairwiseScore,
-    classifyTidePhase: globalThis.classifyTidePhase,
-    tideData: globalThis.tideData,
-    racerDB: globalThis.racerDB,
-  }, extras);
+  return buildL2Features(
+    boat,
+    preview,
+    weather,
+    etRank,
+    stRank,
+    sid,
+    {
+      pf: typeof globalThis.pf === 'function' ? globalThis.pf : null,
+      getRacerCourseWinRate: globalThis.getRacerCourseWinRate,
+      getStadiumCourseWinRate: globalThis.getStadiumCourseWinRate,
+      getRacerForm: globalThis.getRacerForm,
+      pairwiseScore: globalThis.pairwiseScore,
+      classifyTidePhase: globalThis.classifyTidePhase,
+      tideData: globalThis.tideData,
+      racerDB: globalThis.racerDB,
+    },
+    extras
+  );
 };

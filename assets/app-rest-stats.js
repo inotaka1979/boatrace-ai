@@ -393,12 +393,15 @@
     if (box) box.style.display = "";
     _g.capabilities.refresh("chart");
     if (!_g.capabilities.has("chart")) {
-      _g._loadChartLib().then(function() {
-        _renderDailyChart(daily);
-      }, function() {
-        if (box)
-          box.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
-      });
+      _g._loadChartLib().then(
+        function() {
+          _renderDailyChart(daily);
+        },
+        function() {
+          if (box)
+            box.innerHTML = '<div style="padding:20px;text-align:center;color:#999;font-size:11px">\u30B0\u30E9\u30D5\u63CF\u753B\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F</div>';
+        }
+      );
       return;
     }
     if (_g._dailyChart) {

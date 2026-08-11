@@ -98,9 +98,19 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         # _is_fresh_today を monkey-patch して時刻だけ評価)
         self._orig = scrape_all._is_fresh_today
         scrape_all._is_fresh_today = lambda path, now: False
+        # FA-10 (2026-08-11): results の鮮度ゲートも stub する。
+        #   本クラスは「時刻だけ評価」する意図だが _age_minutes だけ stub されておらず、
+        #   実ファイル data/results/today.json の更新時刻を読んでいた。scraper cron が
+        #   直前に commit していると age < 20 分になり test_evening_22_30_in_window が
+        #   落ちる（＝チェックアウトのタイミング次第で成否が変わるフレーク）。実際に
+        #   age=4.5 分の状態で再現。時刻の網羅性を検証したいのだから鮮度は固定する。
+        #   鮮度ゲート自体は test_results_age_gated が個別に stub して検証している。
+        self._orig_age = scrape_all._age_minutes
+        scrape_all._age_minutes = lambda path: 999.0
 
     def tearDown(self):
         scrape_all._is_fresh_today = self._orig
+        scrape_all._age_minutes = self._orig_age
 
     def _at(self, h, m):
         now = datetime.datetime(2026, 5, 17, h, m, tzinfo=JST)
