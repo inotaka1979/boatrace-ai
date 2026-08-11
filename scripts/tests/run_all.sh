@@ -47,6 +47,10 @@ step "Python unit tests (aggregate_form)" \
 step "Python unit tests (archive_daily)" \
      "python3 -m unittest scripts.tests.test_archive_daily -v"
 
+# 1c4) 2026-08-11: スクレイパのデータ破壊経路ガード
+step "Python unit tests (scraper data-loss guards)" \
+     "python3 -m unittest scripts.tests.test_scraper_dataloss -v"
+
 # 1d) 2026-05-17: scrape_all._decide_tasks / _is_fresh_today ユニットテスト
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"

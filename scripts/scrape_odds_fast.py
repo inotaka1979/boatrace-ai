@@ -260,9 +260,27 @@ async def async_main():
     if os.path.exists(OUTPUT):
         try:
             with open(OUTPUT, encoding="utf-8") as f:
-                for r in json.load(f).get("odds", []): existing[(r["stadium"], r["race"])] = r
+                prev = json.load(f)
+            # FIX (2026-08-11): 日跨ぎガード。previews は old_date != date_str で
+            #   既存を破棄しているが odds だけ無かったため、前日のオッズを今日のものと
+            #   して保持し続けていた（実測: 本日非開催の 10 場 120 レース分が残存し、
+            #   直近スクレイプが updated:0 / reliability:0.0 でも updated_at だけ新鮮）。
+            #   EV / Kelly / 買い目がその古い価格で計算されるため実害が大きい。
+            prev_date = str(prev.get("race_date") or "").replace("-", "")
+            if prev_date and date_str and prev_date != date_str:
+                log.warning("existing odds are from %s (today=%s) — discarding", prev_date, date_str)
+            else:
+                for r in prev.get("odds", []):
+                    existing[(r["stadium"], r["race"])] = r
         except (json.JSONDecodeError, OSError) as e:
             log.warning("existing odds load failed (%s) — start from empty", e)
+    # 当日のレース一覧に無いキーは持ち越さない（前日の残骸 / 別日の混入を排除）
+    if races:
+        stale = [k for k in existing if k not in races]
+        for k in stale:
+            del existing[k]
+        if stale:
+            log.warning("Dropped %d odds entries not in today's race list", len(stale))
     sem = asyncio.Semaphore(CONCURRENCY); limiter = RateLimiter(INTERVAL); results = {}
     # 2026-05-10: 1 task 失敗が gather を中断して全体を巻き込むのを防ぐ
     async with aiohttp.ClientSession() as session:
@@ -297,6 +315,9 @@ async def async_main():
     # D-01: atomic write — 失敗 race も含めて updated_at を更新（PWA に "scrape は走った" を伝える）
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
+        # FIX (2026-08-11): 出力に対象日を持たせる。これが無かったため次回起動時に
+        #   日跨ぎ判定ができず、前日のオッズを今日のものとして持ち越していた。
+        "race_date": date_str,
         "scrape_stats": {
             "total": len(active),
             "updated": updated,
