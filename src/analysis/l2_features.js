@@ -127,7 +127,17 @@ function _resolveCourse(boat, preview, predictedEntries) {
   }
   return { course: preview ? preview.racer_boat_number : bn, entryConf: 1.0, source: 'frame' };
 }
-function getL2Features(boat, preview, weather, etRank, stRank, sid) {
+// FIX (2026-08-11): v1 の 12 次元実装。名前を getL2FeaturesV1 に変更した。
+//   旧称のままだと (a) globalThis.getL2Features を features.js の 24 次元
+//   pipeline より **後に** 上書きしてしまい（critical→rest のロード順）、
+//   FEATURE_DIM=24 / l2weights=24 に対して 12 次元しか供給されず v2 特徴量
+//   12 本が恒久的に死ぬ、(b) worker twin では同一 IIFE 内のローカル宣言が
+//   内部呼出をレキシカルに捕まえ、手動領域の batchLearnFromResults が使う
+//   global(24 次元) と食い違う、という 2 つの不整合を生んでいた。
+//   本関数は後方互換の検証用（test_features_pipeline.js が先頭 12 要素の
+//   一致を固定している）としてのみ残す。実行時の唯一の入口は
+//   src/utils/features.js の globalThis.getL2Features（24 次元）。
+function getL2FeaturesV1(boat, preview, weather, etRank, stRank, sid) {
   var course =
     preview && preview.racer_course_number != null
       ? preview.racer_course_number
@@ -227,6 +237,8 @@ globalThis._computeClassAttenuation = _computeClassAttenuation;
 globalThis._classCourseMult = _classCourseMult;
 globalThis._computeRaceScenario = _computeRaceScenario;
 globalThis._resolveCourse = _resolveCourse;
-globalThis.getL2Features = getL2Features;
+// NOTE: globalThis.getL2Features はここでは export しない（上のコメント参照）。
+//   実行時の入口は src/utils/features.js の 24 次元 pipeline に一本化する。
+globalThis.getL2FeaturesV1 = getL2FeaturesV1;
 globalThis.l2Predict = l2Predict;
 globalThis.l2Update = l2Update;

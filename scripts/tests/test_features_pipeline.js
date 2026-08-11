@@ -12,7 +12,8 @@ const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'app.js'), 'utf8');
 
-// 旧 getL2Features を抽出（function 宣言）
+// 旧 v1 実装 getL2FeaturesV1 を抽出（function 宣言）。2026-08-11 に 24 次元 pipeline
+// との衝突回避のためリネーム済。ここでは後方互換（先頭 12 要素一致）の検証に使う。
 //   Clearwing Phase 2 完遂続きで src/analysis/l2_features.js に extract された後、
 //   BUILD:ANALYSIS_L2_FEATURES bundle 内に IIFE 経由で再注入される (esbuild 出力は
 //   インデント有り)。regex は top-level と indented 両方に対応。
@@ -58,7 +59,7 @@ const ctx = vm.createContext({
 vm.runInContext(bundleMatch[0], ctx);
 
 // 旧 inline 版を別名で読み込み（衝突回避）
-const oldFnSrc = extractFn('getL2Features', html).replace('function getL2Features', 'function getL2Features_OLD');
+const oldFnSrc = extractFn('getL2FeaturesV1', html).replace('function getL2FeaturesV1', 'function getL2Features_OLD');
 vm.runInContext(oldFnSrc, ctx);
 
 let pass = 0, fail = 0;
@@ -149,6 +150,31 @@ const badSample = [
 const badOut = ctx.getL2Features.apply(null, badSample);
 t('全要素が finite (NaN/Infinity を含まない)',
   badOut.every(v => Number.isFinite(v)));
+
+// ─────────────────────────────────────────────────────────────
+// 2026-08-11: bundle 結合後の実効次元を固定する。
+//   critical(FEATURES=24次元) を rest(ANALYSIS_L2_FEATURES=12次元 legacy) が
+//   後勝ちで上書きし、FEATURE_DIM=24 / l2weights=24 に対して 12 次元しか
+//   供給されない状態が長期間見逃されていた。単体 module のテストでは
+//   ロード順の問題を踏めないため、app.js 全体をロードして検証する。
+// ─────────────────────────────────────────────────────────────
+console.log('');
+console.log('[bundle 結合後の実効次元 (ロード順の退行防止)]');
+{
+  const { makeCtx } = require('./_vm_harness');
+  const full = makeCtx();
+  const b = {
+    racer_boat_number: 1, racer_number: 4001, racer_class_number: 1,
+    racer_national_top_1_percent: 6, racer_local_top_2_percent: 40,
+    racer_assigned_motor_top_2_percent: 35, racer_assigned_boat_top_2_percent: 34,
+    racer_flying_count: 0,
+  };
+  const dim = full.getL2Features(b, null, null, 2, 2, 7).length;
+  t(`globalThis.getL2Features が FEATURE_DIM(${full.FEATURE_DIM}) 次元を返す (実測 ${dim})`,
+    dim === full.FEATURE_DIM);
+  t('l2weights の長さと特徴量次元が一致する',
+    full.l2weights.length === dim);
+}
 
 console.log('');
 console.log(`=== Result: ${pass} passed, ${fail} failed ===`);

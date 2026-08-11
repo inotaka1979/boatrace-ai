@@ -718,7 +718,7 @@
     }
     return { course: preview ? preview.racer_boat_number : bn, entryConf: 1, source: "frame" };
   }
-  function getL2Features(boat, preview, weather, etRank, stRank, sid) {
+  function getL2FeaturesV1(boat, preview, weather, etRank, stRank, sid) {
     var course = preview && preview.racer_course_number != null ? preview.racer_course_number : preview ? preview.racer_boat_number : boat.racer_boat_number;
     var rid = boat.racer_number || 0;
     var racerCWR = getRacerCourseWinRate(rid, course);
@@ -800,7 +800,7 @@
   globalThis._classCourseMult = _classCourseMult;
   globalThis._computeRaceScenario = _computeRaceScenario;
   globalThis._resolveCourse = _resolveCourse;
-  globalThis.getL2Features = getL2Features;
+  globalThis.getL2FeaturesV1 = getL2FeaturesV1;
   globalThis.l2Predict = l2Predict;
   globalThis.l2Update = l2Update;
 })();
