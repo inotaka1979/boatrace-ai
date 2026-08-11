@@ -1021,3 +1021,37 @@ QA/テストの 6 領域で全コード（約 16,000 行）を監査。各指摘
    `var X = (function(){...restFn()...})()` の形を検出できない。acorn ベース解析へ置換推奨。
 7. calibration の feedback loop（校正後確率で再 fit）、`make install` が e2e を壊す
    （root node_modules が build へのシンボリンク前提）、投資額の二重定義（設定値 vs 実点数）。
+
+### フォローアップ完遂 (FA-1〜8、2026-08-11)
+上記「未修正」7 項目を全て実装。各修正には回帰テストを併設した。
+
+- **FA-1 (leakage)**: `savePrediction` の上書きポリシーを反転。既存エントリには
+  結果の付与のみ行い、締切前の予想（marks / bets / raceType）は絶対に更新しない。
+  確定後に初めて生成した予想には `backfilled` を立て、成績タブに
+  「N/M 件は事後生成」と正直に開示（除外すると大半が消え指標が使えないため開示を選択）。
+- **FA-2 (二重定義)**: rest 側 legacy を `getL2FeaturesV1` に改名し globalThis export を撤去。
+  bundle レベルで `getL2Features(...).length === FEATURE_DIM(24)` をテストで固定。
+- **FA-3 (コース二重計上)**: `L2_INIT_WEIGHTS[3]` を -4.0 → 0（COURSE_LOG_PRIOR に一本化）。
+  localStorage schema 4 の migration で既存ユーザの重みも修正。修正後のコース起因の
+  1 号艇/6 号艇オッズ比は 27.5:1 で、実勢（勝率 0.55 / 0.02）と一致することを数値検証。
+- **FA-4 (データ破壊)**: scrape_results に `_merge_with_existing`（完全性スコアで単調マージ、
+  縮小書込を拒否）、build_db は racers 空なら書込前に exit 5、scrape_odds に日跨ぎガード。
+- **FA-5 (Worker)**: `/api/refresh-now` に TRIGGER_SECRET 認証 + 未認証は 5 分 throttle
+  (isolate ローカル + Cache API、KV 書込枠を使わない)。ACAO `'*'` を Origin 許可リストに
+  正規化（fetch 出口 1 箇所）。**Worker のデプロイは user 手動作業。**
+- **FA-6 (lint の穴)**: `build/lint_critical.mjs` を新設し acorn AST で eager 到達性を解析。
+  PJ Phase の実バグ形（`var X = (function(){...restFn()...})()`）を fixture 化して固定。
+- **FA-7 (校正ループ)**: 校正“後”の mark_probs で再フィットしていたため不動点に収束せず、
+  実測で a=0.60/b=-0.50 と identity を往復（表示確率が 0.50 ⇔ 0.38 で振動）。
+  校正前を `raw_probs` として保存し raw で fit。併せて `_applyCalibration` を F/L 乗算の
+  後ろへ移動（既定 identity なので出力不変、golden snapshot 9/9 も不変）。
+- **FA-8**: `scripts/ensure_e2e_deps.sh` で `node_modules/@playwright` のみ symlink し、
+  root `npm ci` と共存（ローカルと CI を同一手順に統一）。投資額を「実際に推奨した点数」に
+  統一（従来は分子が実点数・分母が設定点数で、買い目点数の設定変更だけで過去の回収率が
+  遡って変わっていた）。
+
+検証: 60/60 テストステップ PASS（新規 4 ファイル 37 件）、build:check EXIT=0、
+eslint / tsc 0 errors、golden snapshot 不変、critical budget 99910B / 100000B。
+
+**残: `npm run format:check` は本作業以前から 16 ファイルで警告（`npm run gate` が赤）。
+別対応が必要（prettier --write は無関係な大量差分を生むため本 PR では触っていない）。**
