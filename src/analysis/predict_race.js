@@ -29,18 +29,38 @@ function predictRaceAsync(sid, raceNum) {
   }
   var reqId = ++_appWorkerReqId;
   return new Promise(function (resolve, reject) {
+    var _settled = false;
+    var _fallback = function (why) {
+      if (_settled) return;
+      _settled = true;
+      _appWorkerCallbacks.delete(reqId);
+      console.warn('[worker] falling back to main thread:', why);
+      try {
+        resolve(predictRace(sid, raceNum));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    // FIX (2026-08-11): worker が沈黙した場合に await が永久ハングし、
+    //   _backfillTodayPredictions がループ内で二度と返らなくなるため timeout を設ける。
+    var _to = setTimeout(function () { _fallback('timeout'); }, 8000);
     _appWorkerCallbacks.set(reqId, function (msg) {
-      if (msg.type === 'predict_done') resolve(msg.result);
-      else if (msg.type === 'error') {
+      clearTimeout(_to);
+      if (_settled) return;
+      if (msg.type === 'predict_done') {
+        // FIX (2026-08-11): worker が state 未同期などで null を返すケースがあり、
+        //   「エラーではない」ため従来は null がそのまま resolve され、呼出側
+        //   (_backfillTodayPredictions の `if(pred)`) が黙って skip していた。
+        //   結果として予想が 1 件も履歴に保存されない状態になり得た。null は失敗と
+        //   みなして main thread にフォールバックする。
+        if (!msg.result) { _fallback('worker returned null result'); return; }
+        _settled = true;
+        resolve(msg.result);
+      } else if (msg.type === 'error') {
         console.warn('[PG-4] worker predict error:', msg.error, msg.stack);
-        // フォールバック: main thread 実行
-        try {
-          resolve(predictRace(sid, raceNum));
-        } catch (e) {
-          reject(e);
-        }
+        _fallback('worker error: ' + msg.error);
       } else {
-        reject(new Error('unexpected worker message: ' + JSON.stringify(msg).slice(0, 200)));
+        _fallback('unexpected worker message: ' + JSON.stringify(msg).slice(0, 120));
       }
     });
     w.postMessage({
@@ -116,7 +136,12 @@ function predictRace(sid, raceNum) {
     var l1s = l1scores.find(function (s) {
       return s.boat === b.racer_boat_number;
     });
-    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+    // FIX (2026-08-11): stRanks は 0 始まり（ST 最速 = 0）。`|| 5` だと最速艇だけ
+    //   rank 5（最遅）に化け、特徴量 stRankNorm が 0.167 ではなく 1.0 になっていた。
+    //   学習側 (src/analysis/learning.js:163) は `!= null` を使っており、推論と
+    //   学習で特徴量の意味が食い違っていた。学習側の書き方に合わせる。
+    var _stR = stRanks[b.racer_boat_number];
+    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
   });
   var l2probs = l2Predict(features6);
 
@@ -131,6 +156,9 @@ function predictRace(sid, raceNum) {
         var clipped = Math.min(0.9999, Math.max(0.0001, p));
         return Math.log(clipped / (1 - clipped));
       });
+      // FIX (2026-08-11): blend しなかった場合は null が返る。以前は入力配列が
+      //   そのまま返り、下の再 softmax が softmax(logit(p)) を適用して確率を
+      //   無条件に鋭化させていた（placeholder モデルのため全予測に発生）。
       var blended = _blendGBDTPrediction(l2logits, features6, TUNING.PREDICTION.GBDT_BLEND_WEIGHT);
       if (Array.isArray(blended) && blended.length === l2probs.length) {
         // softmax で再正規化 (Σ=1)

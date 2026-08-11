@@ -83,6 +83,15 @@ function selectBetsByEV(probs, odds, opt){
  */
 function calcOddsDivergence(aiProbsByBoat, oddsWin){
   if(!oddsWin) return null;
+  // FIX (2026-08-11): 単勝オッズからの implied probability は「全 6 艇のオッズが
+  //   揃っている」ことが前提。欠落艇を確率 0 として扱うと、存在する艇の市場確率が
+  //   水増しされ、判定が反転する。実例: win={'1':1.0} のみのとき sumInv=1.0 →
+  //   1 号艇 market=1.00 / 他 0.00 となり、本命に「⚠過大評価」、他全艇に
+  //   「🎯妙味」が付く。本日データでは 288 レース中 177 レースが部分取得だった。
+  //   欠落は「市場の主張」ではなく単なる未取得なので、揃うまで判定しない。
+  var have = 0;
+  for(var bc=1; bc<=6; bc++){ if(oddsWin[String(bc)] > 0) have++; }
+  if(have < 6) return null;
   var sumInv = 0;
   for(var b=1; b<=6; b++){ if(oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)]; }
   if(sumInv === 0) return null;

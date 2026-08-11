@@ -355,7 +355,8 @@ function _computeReliabilityBins(entries) {
 function _computeCalibrationMetrics(entries) {
   let logLossSum = 0,
     brierSum = 0,
-    n = 0;
+    n = 0,
+    eceN = 0; // ECE 用: 艇単位の観測数（n はレース単位なので分けて数える）
   /** @type {Array<{ sum: number; hit: number; n: number }>} */
   const bins = [];
   for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
@@ -376,11 +377,22 @@ function _computeCalibrationMetrics(entries) {
       const y = b === winner ? 1 : 0;
       brierSum += (p - y) * (p - y);
     }
-    // ECE: 1 着確率 vs 1 着率を 10 分位 bin で
-    const binIdx = Math.min(9, Math.floor(pWin * 10));
-    bins[binIdx].sum += pWin;
-    bins[binIdx].hit += 1;
-    bins[binIdx].n += 1;
+    // ECE: 予測確率 vs 実測 1 着率を 10 分位 bin で。
+    // FIX (2026-08-11): 旧実装は「勝者の確率だけ」を bin に入れて hit を無条件に
+    //   +1 していたため、実測率が全 bin で常に 1.0 になり ece ≡ 1 - 平均勝者確率
+    //   に退化していた（完全に校正されたモデルでも ece≈0.68 を報告する）。校正の
+    //   良し悪しを測る唯一の指標が機能しておらず、Platt/Isotonic の効果検証も
+    //   不能だった。上の _computeReliabilityBins と同じく 6 艇すべてを bin に入れ、
+    //   勝者のときだけ hit を加算する正しい定義に合わせる。
+    for (let b2 = 1; b2 <= 6; b2++) {
+      const pb = probs[b2];
+      if (!Number.isFinite(pb) || pb <= 0 || pb >= 1) continue;
+      const binIdx = Math.min(9, Math.floor(pb * 10));
+      bins[binIdx].sum += pb;
+      bins[binIdx].n += 1;
+      if (b2 === winner) bins[binIdx].hit += 1;
+      eceN++;
+    }
     n++;
   });
   const logLoss = n > 0 ? logLossSum / n : 0;
@@ -390,7 +402,8 @@ function _computeCalibrationMetrics(entries) {
     if (b.n === 0) return;
     const avgP = b.sum / b.n;
     const actRate = b.hit / b.n;
-    ece += (b.n / Math.max(1, n)) * Math.abs(avgP - actRate);
+    // 重みは「艇単位の観測数」で正規化する（bin の n は艇数なので分母も艇数）
+    ece += (b.n / Math.max(1, eceN)) * Math.abs(avgP - actRate);
   });
   return { logLoss: logLoss, brier: brier, ece: ece, n: n };
 }

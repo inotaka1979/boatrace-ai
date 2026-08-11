@@ -1427,6 +1427,9 @@ var l2weights=_bootParseLS('boatrace_weights', null) || L2_INIT_WEIGHTS.slice();
 // PB-1: 学習済レースキーセット（同レース二重学習を防ぐ）。Set ではなく
 //       JSON 互換の object 形式 { "20260504_22_1": 1, ... } で永続化
 var l2learnedKeys=_bootParseLS('boatrace_learned', {});
+// FIX (2026-08-11): updateDBFromResults の適用済レースキー。l2learnedKeys と同型で、
+//   90 秒ポーリングによる stadiumDB.courseWinRate の多重加算を防ぐ。
+var _dbAppliedKeys=_bootParseLS('boatrace_db_applied', {});
 // PB-2: 学習更新カウンタ（LR decay 用）
 var l2trainStep=(function(){ var v=_bootParseLS('boatrace_trainstep', 0); return (typeof v==='number'&&Number.isFinite(v))?v:0; })();
 

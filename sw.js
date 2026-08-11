@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-6b15d6f5';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
+const VERSION = 'br-oracle-79c862de';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
@@ -223,7 +223,14 @@ self.addEventListener('fetch', (e) => {
   }
 
   // 静的アセット: キャッシュ優先
+  // FIX (2026-08-11): ignoreSearch を付けていなかったため、precache のキー
+  //   ('./assets/app-critical.min.js') と実リクエスト ('...?v=<hash>') が一致せず
+  //   **常に cache miss → fetch フォールバック**していた。オンラインでは気付けないが
+  //   オフラインでは JS が一切取得できず PWA が白画面になる（実ブラウザで再現確認）。
+  //   上の normalizeRequest のコメント通り「静的アセットの cache bust は VERSION
+  //   (cache 名) で行い ?v= には依存しない」設計に実装を合わせる。activate で旧
+  //   VERSION の cache ごと削除されるため stale を掴むことはない。
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    caches.match(e.request, { ignoreSearch: true }).then((cached) => cached || fetch(e.request))
   );
 });

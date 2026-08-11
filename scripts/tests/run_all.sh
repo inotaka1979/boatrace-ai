@@ -169,6 +169,10 @@ step "Golden race regression snapshots" \
 step "S-05 degraded feature banner tests" \
      "node scripts/tests/test_degraded_banner.js"
 
+# 9g2) Web Worker プロトコル smoke（worker 経路の silent 死亡を検出）
+step "Web Worker protocol smoke" \
+     "node scripts/tests/test_worker_protocol.js"
+
 # 9g) PR-11 オフライン履歴バックテスト CLI テスト
 step "A-02 offline backtest CLI tests" \
      "node scripts/tests/test_backtest_offline.mjs"

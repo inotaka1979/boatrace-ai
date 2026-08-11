@@ -62,6 +62,11 @@
   }
   function calcOddsDivergence(aiProbsByBoat, oddsWin) {
     if (!oddsWin) return null;
+    var have = 0;
+    for (var bc = 1; bc <= 6; bc++) {
+      if (oddsWin[String(bc)] > 0) have++;
+    }
+    if (have < 6) return null;
     var sumInv = 0;
     for (var b = 1; b <= 6; b++) {
       if (oddsWin[String(b)]) sumInv += 1 / oddsWin[String(b)];
@@ -605,10 +610,10 @@
   }
   function _blendGBDTPrediction(currentLogits, features6, weight) {
     const enabled = _g.TUNING && _g.TUNING.PREDICTION && _g.TUNING.PREDICTION.ENABLE_GBDT;
-    if (!enabled) return currentLogits;
+    if (!enabled) return null;
     const model = _g._gbdtModel;
-    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return currentLogits;
-    if (typeof model.n_train === "number" && model.n_train < 5e3) return currentLogits;
+    if (!model || !Array.isArray(model.trees) || model.trees.length === 0) return null;
+    if (typeof model.n_train === "number" && model.n_train < 5e3) return null;
     const w = Number.isFinite(weight) ? weight : 0.3;
     const out = currentLogits.slice();
     for (let b = 0; b < out.length && b < 6; b++) {
@@ -1086,17 +1091,36 @@
     }
     var reqId = ++_appWorkerReqId;
     return new Promise(function(resolve, reject) {
+      var _settled = false;
+      var _fallback = function(why) {
+        if (_settled) return;
+        _settled = true;
+        _appWorkerCallbacks.delete(reqId);
+        console.warn("[worker] falling back to main thread:", why);
+        try {
+          resolve(predictRace(sid, raceNum));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      var _to = setTimeout(function() {
+        _fallback("timeout");
+      }, 8e3);
       _appWorkerCallbacks.set(reqId, function(msg) {
-        if (msg.type === "predict_done") resolve(msg.result);
-        else if (msg.type === "error") {
-          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
-          try {
-            resolve(predictRace(sid, raceNum));
-          } catch (e) {
-            reject(e);
+        clearTimeout(_to);
+        if (_settled) return;
+        if (msg.type === "predict_done") {
+          if (!msg.result) {
+            _fallback("worker returned null result");
+            return;
           }
+          _settled = true;
+          resolve(msg.result);
+        } else if (msg.type === "error") {
+          console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
+          _fallback("worker error: " + msg.error);
         } else {
-          reject(new Error("unexpected worker message: " + JSON.stringify(msg).slice(0, 200)));
+          _fallback("unexpected worker message: " + JSON.stringify(msg).slice(0, 120));
         }
       });
       w.postMessage({
@@ -1159,7 +1183,8 @@
       var l1s = l1scores.find(function(s) {
         return s.boat === b.racer_boat_number;
       });
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, stRanks[b.racer_boat_number] || 5, sid);
+      var _stR = stRanks[b.racer_boat_number];
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -3241,6 +3266,14 @@ function exhibitionZScore(etTime, sid){
 
 function updateDBFromResults(resultsJson, programsJson){
   if(!resultsJson) return;
+  // FIX (2026-08-11): 適用済みガードが無く、90 秒ポーリング (_applyResultsRaw) から
+  //   呼ばれるたびに同じ確定レースを stadiumDB.courseWinRate に再加算していた。
+  //   長時間開いたままだと当日 12 レースが数百回加算され、場別コース勝率の長期
+  //   プライアが「本日の標本」に乗っ取られる（= 同じレースの予想が時間経過だけで
+  //   漂流する）。L2 学習の l2learnedKeys (PB-1) と同型の date_sid_rno ガードを導入。
+  var _applied = _dbAppliedKeys;
+  var _dayKey = (typeof jstYmd === 'function') ? jstYmd(0) : '';
+  var _appliedDirty = false;
   for(var sid in resultsJson){
     var races=resultsJson[sid];
     if(!stadiumDB[sid]) stadiumDB[sid]={courseWinRate:{},techniqueRate:{},courseTechnique:{}};
@@ -3249,6 +3282,10 @@ function updateDBFromResults(resultsJson, programsJson){
     for(var rn in races){
       var race=races[rn];
       if(!race||!race.isFinished||!race.results||!race.results.length) continue;
+      var _appKey = _dayKey + '_' + sid + '_' + rn;
+      if(_applied[_appKey]) continue;   // このレースは適用済み
+      _applied[_appKey] = 1;
+      _appliedDirty = true;
       var sortedRes=race.results.slice().sort(function(a,b){return a.place-b.place});
       var techNum=race.technique_number||0;
       var winner=sortedRes[0];
@@ -3301,6 +3338,14 @@ function updateDBFromResults(resultsJson, programsJson){
       }
     }
     sdb.lastUpdated=todayStr();
+  }
+  // 適用済みキーを永続化（上限を超えたら古い順に切り捨て — l2learnedKeys と同方針）
+  if(_appliedDirty){
+    var _ak = Object.keys(_applied);
+    if(_ak.length > L2_KEY_LIMIT){
+      _ak.slice(0, _ak.length - L2_KEY_LIMIT).forEach(function(k){ delete _applied[k]; });
+    }
+    safeSet('boatrace_db_applied', _applied);
   }
   saveDB();
 }
@@ -3905,7 +3950,14 @@ function calcPopularity(raceOdds){
   if(!raceOdds) return null;
   if(raceOdds.win){
     var entries=[];
-    for(var b in raceOdds.win) entries.push({boat:parseInt(b),odds:raceOdds.win[b]});
+    for(var b in raceOdds.win){
+      var ov = raceOdds.win[b];
+      if(ov > 0) entries.push({boat:parseInt(b),odds:ov});
+    }
+    // FIX (2026-08-11): 一部の艇しかオッズが無い状態で「1番人気」を断定すると
+    //   実際の人気順と乖離する（本日データで 288 中 177 レースが部分取得）。
+    //   6 艇揃っている場合のみ人気順を返す。
+    if(entries.length < 6) return null;
     entries.sort(function(a,b){return a.odds-b.odds});
     return entries.map(function(e,i){e.rank=i+1;return e});
   }

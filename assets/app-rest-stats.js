@@ -229,7 +229,7 @@
     });
   }
   function _computeCalibrationMetrics(entries) {
-    let logLossSum = 0, brierSum = 0, n = 0;
+    let logLossSum = 0, brierSum = 0, n = 0, eceN = 0;
     const bins = [];
     for (let i = 0; i < 10; i++) bins.push({ sum: 0, hit: 0, n: 0 });
     entries.forEach(function(h) {
@@ -247,10 +247,15 @@
         const y = b === winner ? 1 : 0;
         brierSum += (p - y) * (p - y);
       }
-      const binIdx = Math.min(9, Math.floor(pWin * 10));
-      bins[binIdx].sum += pWin;
-      bins[binIdx].hit += 1;
-      bins[binIdx].n += 1;
+      for (let b2 = 1; b2 <= 6; b2++) {
+        const pb = probs[b2];
+        if (!Number.isFinite(pb) || pb <= 0 || pb >= 1) continue;
+        const binIdx = Math.min(9, Math.floor(pb * 10));
+        bins[binIdx].sum += pb;
+        bins[binIdx].n += 1;
+        if (b2 === winner) bins[binIdx].hit += 1;
+        eceN++;
+      }
       n++;
     });
     const logLoss = n > 0 ? logLossSum / n : 0;
@@ -260,7 +265,7 @@
       if (b.n === 0) return;
       const avgP = b.sum / b.n;
       const actRate = b.hit / b.n;
-      ece += b.n / Math.max(1, n) * Math.abs(avgP - actRate);
+      ece += b.n / Math.max(1, eceN) * Math.abs(avgP - actRate);
     });
     return { logLoss, brier, ece, n };
   }
