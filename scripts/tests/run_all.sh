@@ -173,6 +173,10 @@ step "S-05 degraded feature banner tests" \
 step "Web Worker protocol smoke" \
      "node scripts/tests/test_worker_protocol.js"
 
+# 9g3) look-ahead leakage 回帰（締切前予想の lock-in）
+step "Prediction lock-in (leakage guard)" \
+     "node scripts/tests/test_prediction_lockin.js"
+
 # 9g) PR-11 オフライン履歴バックテスト CLI テスト
 step "A-02 offline backtest CLI tests" \
      "node scripts/tests/test_backtest_offline.mjs"

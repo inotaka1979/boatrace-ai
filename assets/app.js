@@ -7175,16 +7175,46 @@ function savePrediction(date,sid,rn,pred,result){
       // 既存エントリは型混在しうるので parseInt で比較を頑健化
       if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
     }
-    // F19b: 既存エントリ更新ポリシー (カウント安定化版)
-    //   - 既存が actual あり (確定済) → ロックイン、常に skip
-    //   - 既存が actual 無し + 新規 result あり → 上書き (初回確定時の予想を保存)
-    //   - 既存が actual 無し + 新規 result 無し → skip (mid-day churn 回避)
+    // 結果 (actual / 的中 / 払戻) を entry に付与する共通処理。
+    //   予想フィールドには一切触らないこと（下の leakage 対策の前提）。
+    var _attachResult = function(e){
+      if(!(result && result.isFinished && result.results)) return;
+      // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
+      // actual=昨日」の汚染が発生していた。result.race_date が date 引数と一致しない
+      // 場合は result を無視して予想だけ保存する（actual を null のまま残す）
+      var rdate = (result.race_date||'').replace(/-/g,'');
+      if(rdate && rdate !== date){
+        console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
+        return;
+      }
+      var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
+      e.actual=sorted.map(function(r){return r.racer_boat_number});
+      checkHit(e);
+      if(result.refund){
+        // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
+        if(e.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+          e.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
+        if(e.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
+          e.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
+        // B14: 穴予想の的中は同じ 3連単 refund を流用 (同じ着順 → 同じ payout)
+        if(e.ana_hit&&result.refund.trifecta&&result.refund.trifecta[0])
+          e.ana_payout = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
+      }
+    };
+    // F19b + FIX (2026-08-11): 既存エントリ更新ポリシー。
+    //   旧実装は「既存が actual 無し + 新規 result あり」で既存を splice して
+    //   **確定後に再計算した予想で置き換えて**いた。再計算時点では当該レースの結果が
+    //   既に racerDB.recentResults（getRacerForm が直近 5 走として参照）と L2 に
+    //   反映済みで、オッズも確定値なので、これは直接的な look-ahead leakage であり、
+    //   成績タブの的中率・回収率が構造的に楽観化していた。
+    //   → 締切前に保存した予想は不変とし、結果だけを追記する。
     if(existIdx >= 0){
       var existing = history[existIdx];
-      if(existing.actual && existing.actual.length > 0) return;
-      var newHasResult = result && result.isFinished && result.results;
-      if(!newHasResult) return;
-      history.splice(existIdx, 1);
+      if(existing.actual && existing.actual.length > 0) return;   // 確定済はロックイン
+      if(!(result && result.isFinished && result.results)) return; // mid-day churn 回避
+      _attachResult(existing);
+      safeSet(key, history);   // P3 L-05
+      return;
     }
     // F19c: レース終了時の予想を snapshot 保存 → 表示・統計を一致させる
     var snapshot = null;
@@ -7218,31 +7248,13 @@ function savePrediction(date,sid,rn,pred,result){
       ana_bets: Array.isArray(pred.ana) ? pred.ana.slice() : [],
       raceType:pred.raceType,
       pred_snapshot:snapshot,
+      // FIX (2026-08-11): 結果が既に出ている時点で初めて生成された予想は
+      //   「事後予想」であり、締切前に見えていた予想ではない。成績表示で
+      //   区別できるよう印を付ける（_computeLeakageRatio / 成績タブの注記）。
+      backfilled: !!(result && result.isFinished && result.results),
       actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false,ana_hit:false
     };
-    if(result&&result.isFinished&&result.results){
-      // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
-      // actual=昨日」の汚染が発生していた。result.race_date が date 引数と一致しない
-      // 場合は result を無視して予想だけ保存する（actual を null のまま残す）
-      var rdate = (result.race_date||'').replace(/-/g,'');
-      if(!rdate || rdate === date){
-        var sorted=result.results.slice().sort(function(a,b){return a.place-b.place});
-        entry.actual=sorted.map(function(r){return r.racer_boat_number});
-        checkHit(entry);
-        if(result.refund){
-          // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
-          if(entry.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
-            entry.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
-          if(entry.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
-            entry.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
-          // B14: 穴予想の的中は同じ 3連単 refund を流用 (同じ着順 → 同じ payout)
-          if(entry.ana_hit&&result.refund.trifecta&&result.refund.trifecta[0])
-            entry.ana_payout = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
-        }
-      } else {
-        console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
-      }
-    }
+    _attachResult(entry);
     history.push(entry);
     if(history.length>2000) history.splice(0, history.length-2000);   // P3 L-15: 過剰push後の整列
     safeSet(key, history);   // P3 L-05
@@ -9855,10 +9867,15 @@ function calcTodayStats(){
     if(h.exacta_hit){  ss.hit2++; ss.payout2+=(h.payout2||0); }
   });
 
+  // FIX (2026-08-11): 事後生成（レース確定後に初めて予想したもの）は、その結果を
+  //   学習済みの racerDB/L2 と確定オッズで計算しているため実運用性能ではない。
+  //   件数を返し、成績タブで正直に開示する（除外すると大半が消えて指標が使えなく
+  //   なるため、除外ではなく開示を選択）。
+  var backfilledN = verified.filter(function(h){ return h.backfilled; }).length;
   return {
     today:today, total:verified.length, tri:tri, exa:exa, ana:ana,
     typeStats:typeStats, stadiumStats:stadiumStats,
-    warnings:warnings,
+    warnings:warnings, backfilled:backfilledN,
     unitBet:unitBet, betCount3:betCount3, betCount2:betCount2,
   };
 }
@@ -9890,6 +9907,15 @@ function _rateColor(rate){
     var s = calcTodayStats();
     var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
     document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
+    var _bf = document.getElementById("statLeakageNote");
+    if (_bf) {
+      if (s.backfilled > 0 && s.total > 0) {
+        _bf.textContent = "\u26A0 " + s.total + " \u4EF6\u4E2D " + s.backfilled + " \u4EF6\u306F\u30EC\u30FC\u30B9\u78BA\u5B9A\u5F8C\u306B\u751F\u6210\u3055\u308C\u305F\u4E88\u60F3\u3067\u3059\u3002\u305D\u306E\u7D50\u679C\u3092\u5B66\u7FD2\u6E08\u307F\u306E\u30C7\u30FC\u30BF\u3068\u78BA\u5B9A\u30AA\u30C3\u30BA\u3067\u8A08\u7B97\u3057\u3066\u3044\u308B\u305F\u3081\u3001\u4E0B\u306E\u7684\u4E2D\u7387\u30FB\u56DE\u53CE\u7387\u306F\u5B9F\u969B\u306E\u904B\u7528\u6210\u7E3E\u3088\u308A\u826F\u304F\u51FA\u307E\u3059\u3002";
+        _bf.style.display = "block";
+      } else {
+        _bf.style.display = "none";
+      }
+    }
     var recHtml = "";
     recHtml += '<div class="card" class="p-overflow-hidden">';
     recHtml += '<div class="card-header-row">\u672C\u65E5 \u5238\u7A2E\u5225</div>';

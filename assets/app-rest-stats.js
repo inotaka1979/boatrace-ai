@@ -496,6 +496,15 @@
     var s = calcTodayStats();
     var triRate3 = s.tri.invest > 0 ? Math.round(s.tri.payout / s.tri.invest * 100) : 0;
     document.getElementById("statSummary").innerHTML = '<div class="stat-card"><div class="stat-num" style="color:var(--accent)">' + s.total + '</div><div class="stat-label">\u672C\u65E5 \u5224\u5B9A\u6E08</div></div><div class="stat-card"><div class="stat-num" style="color:var(--gold)">' + s.tri.hits + '</div><div class="stat-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="stat-card"><div class="stat-num" style="color:' + (triRate3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + triRate3 + '%</div><div class="stat-label">3\u9023\u5358\u56DE\u53CE\u7387</div></div>';
+    var _bf = document.getElementById("statLeakageNote");
+    if (_bf) {
+      if (s.backfilled > 0 && s.total > 0) {
+        _bf.textContent = "\u26A0 " + s.total + " \u4EF6\u4E2D " + s.backfilled + " \u4EF6\u306F\u30EC\u30FC\u30B9\u78BA\u5B9A\u5F8C\u306B\u751F\u6210\u3055\u308C\u305F\u4E88\u60F3\u3067\u3059\u3002\u305D\u306E\u7D50\u679C\u3092\u5B66\u7FD2\u6E08\u307F\u306E\u30C7\u30FC\u30BF\u3068\u78BA\u5B9A\u30AA\u30C3\u30BA\u3067\u8A08\u7B97\u3057\u3066\u3044\u308B\u305F\u3081\u3001\u4E0B\u306E\u7684\u4E2D\u7387\u30FB\u56DE\u53CE\u7387\u306F\u5B9F\u969B\u306E\u904B\u7528\u6210\u7E3E\u3088\u308A\u826F\u304F\u51FA\u307E\u3059\u3002";
+        _bf.style.display = "block";
+      } else {
+        _bf.style.display = "none";
+      }
+    }
     var recHtml = "";
     recHtml += '<div class="card" class="p-overflow-hidden">';
     recHtml += '<div class="card-header-row">\u672C\u65E5 \u5238\u7A2E\u5225</div>';
