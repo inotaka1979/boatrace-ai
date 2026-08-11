@@ -177,6 +177,10 @@ step "Web Worker protocol smoke" \
 step "Prediction lock-in (leakage guard)" \
      "node scripts/tests/test_prediction_lockin.js"
 
+# 9g4) L2 コース主効果の二重計上 回帰
+step "L2 course prior (double-count guard)" \
+     "node scripts/tests/test_course_prior.js"
+
 # 9g) PR-11 オフライン履歴バックテスト CLI テスト
 step "A-02 offline backtest CLI tests" \
      "node scripts/tests/test_backtest_offline.mjs"

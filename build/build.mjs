@@ -336,7 +336,13 @@ async function main() {
     // 2026-07-19: 99500 → 99800。日別成績ページの routing (showPage 'daily' 分岐 +
     //   stats chunk 共通ヘルパ化、実測 +219B)。render 本体は stats sub-chunk 行きで
     //   critical には routing のみ。
-    { path: 'assets/app-critical.min.js', max: 99800,  level: 'fail' },   // v2 (24 dim) features 含む
+    // 2026-08-11: 99800 → 100000。多視点監査で見つかった boot 必須の正しさ修正
+    //   (schema v4 migration = L2 の courseNorm 重みリセット、savePrediction の
+    //   look-ahead leakage 対策) を critical に追加した分 (実測 +110B)。
+    //   移せるもの (updateDBFromResults の適用済キー) は rest へ退避済み。
+    //   ~100KB に対し 0.1% で LCP 影響は無視可能。安易な引き上げを避けるため、
+    //   次に超過したら「rest へ移す」を先に検討すること。
+    { path: 'assets/app-critical.min.js', max: 100000, level: 'fail' },   // v2 (24 dim) features 含む
     { path: 'assets/app-rest.min.js',     max: 100000, level: 'warn' },   // detail chunk 分離後 (~95KB)
     // 2026-07-19: 20000 → 27000。日別成績ページ (calcDailyStats + renderDailyStats +
     //   複合チャート ~6KB) を stats sub-chunk に追加 (lazy load、起動 TBT に影響なし)。

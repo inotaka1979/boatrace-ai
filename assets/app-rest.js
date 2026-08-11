@@ -3271,7 +3271,10 @@ function updateDBFromResults(resultsJson, programsJson){
   //   長時間開いたままだと当日 12 レースが数百回加算され、場別コース勝率の長期
   //   プライアが「本日の標本」に乗っ取られる（= 同じレースの予想が時間経過だけで
   //   漂流する）。L2 学習の l2learnedKeys (PB-1) と同型の date_sid_rno ガードを導入。
-  var _applied = _dbAppliedKeys;
+  // 適用済レースキー（l2learnedKeys と同型）。critical bundle を太らせないよう
+  //   top-level ではなくここで遅延初期化する（本関数は rest bundle）。
+  if(!globalThis._dbAppliedKeys) globalThis._dbAppliedKeys = _bootParseLS('boatrace_db_applied', {});
+  var _applied = globalThis._dbAppliedKeys;
   var _dayKey = (typeof jstYmd === 'function') ? jstYmd(0) : '';
   var _appliedDirty = false;
   for(var sid in resultsJson){
