@@ -1096,7 +1096,13 @@ results は「10-22 時 かつ 20 分以上古い」ときにスケジュール�
 → setUp / tearDown で `_age_minutes` も stub / 復元。results の updated_at を「今」に
 書き換えた状態（旧実装なら必ず落ちる条件）でも 21/21 PASS することを確認。
 
-**残（user 操作が必要）:**
-- **Cloudflare Worker のデプロイ** — FA-5 の認証/CORS はコードのみ。併せて dashboard で
-  `TRIGGER_SECRET` を Secret 登録し、GitHub にも同名の Actions secret を追加すると
-  watchdog が即時復旧できる（未設定でも 5 分 throttle 経由で動作する）。
+**Cloudflare Worker は自動デプロイ済** — `.github/workflows/deploy-worker.yml` が
+`cloudflare-worker/**` の変更で発火する。PR #267 のマージ (`7da279b3`) で
+run 31467685127 が success（`/health` 200 の Verify deploy ステップ込み）となり、
+FA-5 の認証 / CORS は既に本番反映されている。手動 wrangler 操作は不要。
+
+**残（任意、user 操作）:**
+- `TRIGGER_SECRET` の登録 — 未設定でも Worker は正常動作する（全 refresh-now が
+  5 分 throttle 対象になるだけ）。登録すると worker-watchdog が stale 検知時に
+  throttle を待たず即時再生成できる。Cloudflare dashboard の Secret と GitHub の
+  Actions secret に同じ値を入れる（`wrangler deploy` は dashboard の secret を保持する）。
