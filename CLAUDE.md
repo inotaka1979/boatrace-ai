@@ -1081,9 +1081,22 @@ eslint / tsc 0 errors、golden snapshot 不変、critical budget 99910B / 100000
   `docs/RUNBOOK.md §10` に切り分けと再生成手順を記載
   （ローカル `--update-snapshots` はフォント差で CI と一致しないため禁止と明記）。
 
-**残（user 操作が必要、各 1 分）:**
-1. **VRT baseline 再生成** — Actions → 「E2E (Playwright)」→ Run workflow (main)。
-   これを実行するまで vrt は赤のまま（本 PR 由来ではなく 3 ヶ月前からの負債）。
-2. **Cloudflare Worker のデプロイ** — FA-5 の認証/CORS はコードのみ。併せて dashboard で
-   `TRIGGER_SECRET` を Secret 登録し、GitHub にも同名の Actions secret を追加すると
-   watchdog が即時復旧できる（未設定でも 5 分 throttle 経由で動作する）。
+**VRT baseline は 2026-08-11 に再生成済** (`bb5ee1c7`)。差分は事前診断どおり
+`bottom-nav` と `races-page-wrapper` の 2 枚のみで、3 ヶ月分の負債が解消された。
+
+### FA-10: scrape_all タイミング行列テストのフレーク (2026-08-11)
+
+`TestDecideTasksTimingMatrix` は「時刻だけを評価する」意図で `_is_fresh_today` を
+stub していたが、results の鮮度ゲートが使う `_age_minutes` は stub されておらず、
+実ファイル `data/results/today.json` の更新時刻を読んでいた。
+results は「10-22 時 かつ 20 分以上古い」ときにスケジュールされるため、scraper cron が
+直前に commit したチェックアウトでは `test_evening_22_30_in_window` が落ちる
+（＝チェックアウトのタイミングだけで成否が変わる。CI は毎回 fresh clone なので実質
+コイントス）。rebase 後に age=4.5 分の状態で実際に再現。
+→ setUp / tearDown で `_age_minutes` も stub / 復元。results の updated_at を「今」に
+書き換えた状態（旧実装なら必ず落ちる条件）でも 21/21 PASS することを確認。
+
+**残（user 操作が必要）:**
+- **Cloudflare Worker のデプロイ** — FA-5 の認証/CORS はコードのみ。併せて dashboard で
+  `TRIGGER_SECRET` を Secret 登録し、GitHub にも同名の Actions secret を追加すると
+  watchdog が即時復旧できる（未設定でも 5 分 throttle 経由で動作する）。
