@@ -1410,6 +1410,13 @@ var _oeLiveTried={};
 //   (20件/run・締切+360分窓) で夜のナイター場が処理しきれず、結果/払戻が「途中で
 //   止まる」(成績の「払戻未取得」大量発生)。Worker /result-proxy で 1 レース単位に補完する。
 var _resLiveTried={};
+// 2026-08-11 FIX: 自動更新が効かない不具合。90 秒 poll の再描画条件は bulk
+//   (programs/previews/results/odds) の updated_at だけを見ており、
+//   /result-proxy・/beforeinfo-proxy・/odds-proxy でオンデマンドに届いたデータでは
+//   キーが変わらず**再描画されなかった**。bulk は 1 日数回しか更新されないため、
+//   実際に新しくなった結果が画面に出ず「更新ボタンを押さないと変わらない」状態だった。
+//   オンデマンドで state が実際に改善したときに増やし、poll の再描画キーに混ぜる。
+var _dRev=0;
 var _resLiveAttempts={};   // レース毎の補完試行回数(無限リトライ防止)
 var _RES_MAX_ATTEMPTS=30;   // 2026-07-05: 6 だと締切後~9分で尽き、払戻掲出(5-15分後)に届かないことがあった
 var _resLiveLastAt={};        // レース毎の最終試行時刻(150秒間隔で無駄打ち抑制)
@@ -4256,8 +4263,10 @@ setManagedInterval(async function(){
     //   pageDetail は openRace 全再描画が flicker するため除外
     //   (オッズ表は _kickOffLiveOddsRefresh / updateOddsUI が部分更新する)。
     try{
+      // 2026-08-11 FIX: bulk の updated_at だけだとオンデマンド到着で再描画されない。
+      //   _dRev を混ぜ、実際にデータが良くなったときは必ず再描画する。
       var _rk=(rawP&&rawP.updated_at||'')+'|'+(rawPv&&rawPv.updated_at||'')+'|'+
-              (rawR&&rawR.updated_at||'')+'|'+(oddsData&&oddsData.updated_at||'');
+              (rawR&&rawR.updated_at||'')+'|'+(oddsData&&oddsData.updated_at||'')+'|'+_dRev;
       if(_rk!==_lastAutoRenderKey){
         _lastAutoRenderKey=_rk;
         var _pg=document.querySelector('.page.active');
