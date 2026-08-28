@@ -181,6 +181,10 @@ step "Web Worker protocol smoke" \
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"
 
+# 9g2w) 自動更新(90秒 poll)がオンデマンド到着で再描画される
+step "Auto-refresh re-render key (on-demand data)" \
+     "node scripts/tests/test_auto_refresh_render.js"
+
 # 9g2y) 「更新」で表示済みの結果/展示が消えない（全置換の取り残し防止）
 step "Refresh must not drop displayed results/previews" \
      "node scripts/tests/test_refresh_no_data_loss.js"

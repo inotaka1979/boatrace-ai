@@ -2612,6 +2612,7 @@ function _loadResultLive(sid,rno){
         try{ if(typeof updateHistoryWithResults==='function') updateHistoryWithResults(); }catch(e){}
         // 実際に改善した時(新規確定 or 払戻新着)だけ閲覧中レースを再描画
         var improved=(cur.isFinished&&!beforeFin)||(afterPay&&!beforePay);
+        if(improved) _dRev++;   // 一覧/トップは 90 秒 poll 側で再描画される
         if(improved && String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
           openRace(sid,rno);
         }
@@ -2691,6 +2692,7 @@ function _loadPreviewLive(sid,rno){
           obj.weather={wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0,weather_number:0};
           previewData[sid][rno]=obj;
         }
+        _dRev++;   // 展示が入った = 一覧/詳細を再描画すべき
         // 展示が埋まったら相性の良い場はオリジナル展示も取りに行く
         if(typeof _loadOrigExhibitionLive==='function') _loadOrigExhibitionLive(sid,rno);
         if(String(currentStadium)===String(sid)&&String(currentRace)===String(rno)&&typeof openRace==='function'){
