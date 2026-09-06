@@ -159,7 +159,13 @@ const EXHIBITION_WINDOW_AFTER_MIN  = 5;
 //   → exhibition と results に分けて 20 ずつ (実測 fail なら 18 に下げる)。
 // 旧 12 だと 1 run で 12 races しか処理できず、ピーク (12 場同時開催 + モーニング場
 // 蓄積) で starve していた。
-const MAX_HTML_SCRAPES_PER_RUN     = 20;
+// 2026-09-06: 20 → 12。実障害: 9/6 (土) 日中は cron が 1 度も完走せず heartbeat が
+//   夜間 (05:31 JST, 対象ほぼ 0) の 1 回しか進まなかった。refreshAll は展示 20 + 結果 20 の
+//   HTML 取得/解析を **KV 書込より前** に行っていたため、CPU/実行時間の上限で途中 kill
+//   されると KV も heartbeat も残らない (RUNBOOK §8.3-2 が警告していた形)。
+//   base-first 書込 (下記 refreshAll) と併せて 1 run の重さを下げる。5 分 cadence で
+//   12/run = 144/時 は、ピーク (12 場同時 × 約 1.7 R/時 ≒ 20 R/時) に対して十分。
+const MAX_HTML_SCRAPES_PER_RUN     = 12;
 
 function jsonResponse(obj, opts = {}) {
   return new Response(JSON.stringify(obj), {
@@ -824,7 +830,11 @@ function _isValidResult(r) {
 // -----------------------------------------------------------------------
 // Cron で呼ばれる。openapi + boatrace.jp 直スクレイプを統合して KV に格納
 // -----------------------------------------------------------------------
-async function refreshAll(env) {
+// opts.onBaseWritten: base (upstream) データの KV 書込が終わった直後に呼ばれる (2026-09-06)。
+//   scheduled() はここで heartbeat を書く = 「cron が発火し base データを配信した」証跡。
+//   以前は heartbeat が全処理の最後だったため、重い HTML スクレイプで kill されると
+//   base 書込ごと失われ、cron が「発火していない」ように見えていた。
+async function refreshAll(env, opts) {
   const out = {};
   let previews = null, programs = null, results = null;
   try { previews = await fetchUpstream(UPSTREAM.previews); out.previews = { ok: true }; }
@@ -882,36 +892,63 @@ async function refreshAll(env) {
     }
   }
 
+  // 2026-05-24: 内部診断フィールド _kv_merge を KV/レスポンスから除外
+  if (results && results._kv_merge) delete results._kv_merge;
+
+  // ---------------------------------------------------------------------------
+  // 2026-09-06 base-first 書込 (Phase 1)
+  //   upstream 取得 + KV carry merge が終わった時点で、まず KV に書く。
+  //   従来は「展示 20 + 結果 20 の HTML スクレイプ → 最後に KV 書込」で、日中の重い run が
+  //   CPU/実行時間の上限で途中 kill されると **KV も heartbeat も何も残らなかった**
+  //   (実障害 9/6: heartbeat は夜間の軽い run でしか進まず、日中は keys が src=ondemand のまま)。
+  //   kvWrite は内容ハッシュが変わった時だけ put するので、書込枠の増分は
+  //   「base が変わった時 (openapi の ~30 分 cadence)」に限られ、無料枠 1000/日 に収まる。
+  // ---------------------------------------------------------------------------
+  const kvAvail = !!env.BOATRACE_KV;
+  async function writeKey(kind, data, tag) {
+    if (!kvAvail || !data) return;
+    try { await kvWrite(env, KV_KEYS[kind], data); out[kind][tag] = true; }
+    catch (e) { out[kind][tag + '_err'] = String(e).slice(0, 100); }
+  }
+  await writeKey('previews', previews, 'kv_base_ok');
+  await writeKey('programs', programs, 'kv_base_ok');
+  await writeKey('results',  results,  'kv_base_ok');
+  if (opts && typeof opts.onBaseWritten === 'function') {
+    try { await opts.onBaseWritten(out); } catch (e) { out.on_base_written_err = String(e).slice(0, 100); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 2: boatrace.jp 直スクレイプで補完 (重い処理は base 書込の後ろへ)
+  //   途中で kill されても Phase 1 の base は既に配信されている。
+  // ---------------------------------------------------------------------------
   const nowMs = Date.now();
-  // boatrace.jp 直スクレイプで展示データを補完
+  let exMerged = 0, rsMerged = 0;
+  // 展示データを補完
   if (previews && programs) {
     try {
       const mergeStats = await mergeBoatraceJpExhibition(programs, previews, nowMs);
       out.exhibition_scrape = mergeStats;
+      exMerged = (mergeStats && mergeStats.merged) || 0;
     } catch (e) {
       out.exhibition_scrape = { error: String(e).slice(0,200) };
     }
   }
-  // C6: boatrace.jp 直スクレイプで結果データを補完
+  // C6: 結果データを補完
   if (results && programs) {
     try {
       const mergeStats = await mergeBoatraceJpResults(programs, results, nowMs);
       out.result_scrape = mergeStats;
+      rsMerged = (mergeStats && mergeStats.merged) || 0;
     } catch (e) {
       out.result_scrape = { error: String(e).slice(0,200) };
     }
   }
 
-  // KV 書込 (env.BOATRACE_KV があれば)
-  if (env.BOATRACE_KV) {
-    if (previews) { try { await kvWrite(env, KV_KEYS.previews, previews); out.previews.kv_ok=true; } catch(e) { out.previews.kv_err=String(e).slice(0,100); } }
-    if (programs) { try { await kvWrite(env, KV_KEYS.programs, programs); out.programs.kv_ok=true; } catch(e) { out.programs.kv_err=String(e).slice(0,100); } }
-    if (results)  {
-      // 2026-05-24: 内部診断フィールド _kv_merge を KV/レスポンスから除外
-      if (results._kv_merge) delete results._kv_merge;
-      try { await kvWrite(env, KV_KEYS.results,  results);  out.results.kv_ok=true;  } catch(e) { out.results.kv_err=String(e).slice(0,100);  }
-    }
-  }
+  // Phase 3: スクレイプで実際に増えた分だけ書き直す (programs はスクレイプで変わらない)。
+  //   kvWrite のハッシュ比較で二重 put は起きないが、無変化なら呼出自体を省く。
+  if (exMerged > 0) await writeKey('previews', previews, 'kv_ok');
+  if (results && results._kv_merge) delete results._kv_merge;
+  if (rsMerged > 0) await writeKey('results', results, 'kv_ok');
   return out;
 }
 
@@ -1109,13 +1146,24 @@ export default {
       console.error('BOATRACE_KV binding missing');
       return;
     }
-    const r = await refreshAll(env);
     // rt-fix3 (2026-06-27): cron 生存ハートビート。内容変化に関わらず毎 run 1 write。
     //   /health?strict=1 はこれ (cron_age_sec) で cron 死活を判定する。
     //   データキー (programs 等) の wrote_at は kvWrite が「内容変化時のみ」更新するため、
     //   静的な programs では常に古くなり strict が false positive (Worker 正常でも 500) を
     //   返していた。cron 専用ハートビートに分離して誤検知を恒久解消する。
-    try { await env.BOATRACE_KV.put('health:heartbeat', new Date().toISOString()); } catch (_) {}
+    // 2026-09-06: heartbeat は「base データを KV に書いた直後」に打つ (onBaseWritten)。
+    //   従来は全処理 (重い HTML スクレイプ含む) の最後だったため、日中に途中 kill されると
+    //   heartbeat が進まず「cron が発火していない」ように見え、かつ base も失われていた。
+    //   意味は「cron が発火し base データを配信した」に明確化される。スクレイプの成否は
+    //   ログ (refresh: ...) と keys.*.src で追う。
+    let hbWritten = false;
+    const writeHb = async () => {
+      if (hbWritten) return;
+      hbWritten = true;
+      try { await env.BOATRACE_KV.put('health:heartbeat', new Date().toISOString()); } catch (_) {}
+    };
+    const r = await refreshAll(env, { onBaseWritten: writeHb });
+    await writeHb(); // base が 1 件も無かった等で未実行なら、完走の証跡として最後に打つ
     console.log('refresh:', JSON.stringify(r));
   },
 

@@ -316,5 +316,117 @@ await t('serve-heal は heartbeat を書かない (cron 生存証跡を偽装し
     'serve-heal が heartbeat を更新している → watchdog が cron 死亡を検知できなくなる');
 });
 
+
+// ---------------------------------------------------------------------------
+// 2026-09-06: base-first — 重い HTML スクレイプより先に base を KV へ書き、heartbeat も
+//   base 書込直後に打つ。実障害: 日中の run が途中 kill されると KV も heartbeat も
+//   残らず、cron が「発火していない」ように見えていた。
+// ---------------------------------------------------------------------------
+console.log('\n=== base-first (KV 書込と heartbeat をスクレイプより前に) ===');
+
+function jstCloseAt(minutesFromNow) {
+  const t = new Date(Date.now() + minutesFromNow * 60000 + 9 * 3600000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())} ` +
+         `${p(t.getUTCHours())}:${p(t.getUTCMinutes())}:00`;
+}
+function jstToday() {
+  return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+}
+// イベント順を記録する stub 一式。races 件のレースが「展示窓内 (締切 10 分後)」にある programs を返す。
+function withOrderedStubs(races) {
+  const log = [];
+  const origFetch = globalThis.fetch;
+  const programs = [];
+  for (let i = 1; i <= races; i++) {
+    programs.push({
+      race_stadium_number: 1, race_number: i, race_date: jstToday(),
+      race_closed_at: jstCloseAt(10 + i), // 全て展示窓 [close-30m, close+5m] 内
+      boats: [],
+    });
+  }
+  globalThis.fetch = async (input) => {
+    const u = String(input && input.url ? input.url : input);
+    if (u.includes('boatrace.jp')) {
+      log.push('scrape:' + (u.includes('beforeinfo') ? 'beforeinfo' : u.includes('raceresult') ? 'raceresult' : 'other'));
+      return new Response('<html><body></body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    fetchCalls++;
+    // mergeBoatraceJpExhibition は「previews に同じレースがあり boats に展示が無い」ものだけを
+    // 対象にする (該当 preview が無ければ continue)。programs と対になる previews を返す。
+    const previewsArr = programs.map((p) => ({
+      race_stadium_number: p.race_stadium_number, race_number: p.race_number,
+      race_date: p.race_date, race_closed_at: p.race_closed_at, boats: {},
+    }));
+    const body = u.includes('results') ? { results: [] }
+      : u.includes('programs') ? { programs, race_date: jstToday() }
+      : { previews: previewsArr };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const kv = makeKV();
+  const origPut = kv.put.bind(kv);
+  kv.put = async (k, v, o) => { log.push('put:' + k); return origPut(k, v, o); };
+  return { log, kv, restore: () => { globalThis.fetch = origFetch; } };
+}
+const firstIdx = (log, pred) => log.findIndex(pred);
+
+await t('refreshAll: base の KV 書込が最初の HTML スクレイプより前に起きる', async () => {
+  const w = await freshWorker();
+  const st = withOrderedStubs(3);
+  try {
+    const res = await w.fetch(req('/api/refresh-now'), { BOATRACE_KV: st.kv }, makeCtx());
+    assert.strictEqual(res.status, 200);
+    const j = await res.json();
+    assert.ok(j.refreshed && j.refreshed.previews && j.refreshed.previews.kv_base_ok, 'kv_base_ok が立っていない: ' + JSON.stringify(j.refreshed.previews));
+    const iPut = firstIdx(st.log, (e) => e === 'put:previews:today');
+    const iScrape = firstIdx(st.log, (e) => e.startsWith('scrape:'));
+    assert.ok(iPut >= 0, 'previews が KV に書かれていない');
+    assert.ok(iScrape >= 0, 'テスト前提: 展示窓内のレースがあるのにスクレイプが走っていない');
+    assert.ok(iPut < iScrape, `KV 書込 (${iPut}) がスクレイプ (${iScrape}) より後 = 途中 kill で全損する順序`);
+  } finally { st.restore(); }
+});
+
+await t('scheduled(): heartbeat が最初の HTML スクレイプより前に書かれる', async () => {
+  const w = await freshWorker();
+  const st = withOrderedStubs(3);
+  try {
+    await w.scheduled({}, { BOATRACE_KV: st.kv }, makeCtx());
+    const iHb = firstIdx(st.log, (e) => e === 'put:health:heartbeat');
+    const iScrape = firstIdx(st.log, (e) => e.startsWith('scrape:'));
+    assert.ok(iHb >= 0, 'heartbeat が書かれていない');
+    assert.ok(iScrape >= 0, 'テスト前提: スクレイプが走っていない');
+    assert.ok(iHb < iScrape, `heartbeat (${iHb}) がスクレイプ (${iScrape}) より後 = 途中 kill で cron 死亡に見える`);
+    assert.strictEqual(st.log.filter((e) => e === 'put:health:heartbeat').length, 1, 'heartbeat を 2 回書いている (KV 書込枠の浪費)');
+  } finally { st.restore(); }
+});
+
+await t('HTML スクレイプが失敗しても base は KV に残る', async () => {
+  const w = await freshWorker();
+  const st = withOrderedStubs(2);
+  const f = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const u = String(input && input.url ? input.url : input);
+    if (u.includes('boatrace.jp')) throw new Error('boatrace.jp down');
+    return f(input);
+  };
+  try {
+    await w.fetch(req('/api/refresh-now'), { BOATRACE_KV: st.kv }, makeCtx());
+    assert.ok(st.kv._store.has('previews:today'), 'previews が無い');
+    assert.ok(st.kv._store.has('programs:today'), 'programs が無い');
+    assert.ok(st.kv._store.has('results:today'), 'results が無い');
+  } finally { globalThis.fetch = f; st.restore(); }
+});
+
+await t('1 run の展示スクレイプは MAX_HTML_SCRAPES_PER_RUN (12) を超えない', async () => {
+  const w = await freshWorker();
+  const st = withOrderedStubs(20); // 展示窓内に 20 レース
+  try {
+    await w.fetch(req('/api/refresh-now'), { BOATRACE_KV: st.kv }, makeCtx());
+    const n = st.log.filter((e) => e === 'scrape:beforeinfo').length;
+    assert.ok(n > 0, 'テスト前提: 展示スクレイプが走っていない');
+    assert.ok(n <= 12, `展示スクレイプ ${n} 件 > 12 (1 run が重すぎて途中 kill の再発リスク)`);
+  } finally { st.restore(); }
+});
+
 console.log(`\n合計: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);

@@ -153,6 +153,13 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
   issue（label `worker-cron-dead`）を開く。復旧すると自動クローズ。直近 3 時間に deploy 済なら
   再デプロイを見送り、issue でダッシュボード確認を促す。
 
+- **base-first 書込（Worker 内、2026-09-06 同日 2 件目）**: `refreshAll` は「upstream 取得 → 最大 40 ページの
+  HTML スクレイプ → 最後に KV 書込 → heartbeat」の順だったため、日中の重い run が CPU/実行時間で途中 kill
+  されると **KV も heartbeat も残らず**、cron が「発火していない」ように見えていた（9/6 実測: heartbeat は
+  夜間の軽い run でしか進まず、日中は keys が `src=ondemand` のまま）。upstream base を先に KV へ書き、
+  heartbeat もその直後に打ち、スクレイプ上限を 20→12/run に下げた。heartbeat の意味は
+  「cron が発火し base データを配信した」。スクレイプ成否は Cloudflare Logs の `refresh:` 行で追う。
+
 **issue `worker-cron-dead` が数時間開いたままなら、以下を手動で行う:**
 1. `/health` を確認: `curl 'https://boatrace-scrape-trigger.inotaka1979.workers.dev/health'`
    - `cron_age_sec` が大きい（> 40分）→ cron 死亡。`/api/refresh-now` を 1 回叩くとデータは更新
