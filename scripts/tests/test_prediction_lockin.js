@@ -115,5 +115,77 @@ t('確定済エントリは再保存しても不変（従来の lock-in を維�
   assert.strictEqual(JSON.stringify(historyOf(ctx)[0]), before, '確定済が書き換わった');
 });
 
+
+// ---------------------------------------------------------------------------
+// 2026-09-06: 「終了したレースの予想が保持されず消える」の回帰
+//   FA-1 は結果追記時に pred_snapshot を作らず、かつ最初の保存で予想を固定していた。
+// ---------------------------------------------------------------------------
+function closedAt(minFromNow){
+  const t = new Date(Date.now() + minFromNow*60000 + 9*3600000);
+  const p = (n)=>String(n).padStart(2,'0');
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth()+1)}-${p(t.getUTCDate())} ${p(t.getUTCHours())}:${p(t.getUTCMinutes())}:00`;
+}
+
+t('締切前の保存で pred_snapshot が作られる (scenarios は保存しない)', () => {
+  const ctx = makeCtx();
+  ctx.localStorage.setItem('boatrace_history', '[]');
+  ctx.savePrediction(DATE, 7, 3, prePred(), null);
+  const e = historyOf(ctx)[0];
+  assert.ok(e.pred_snapshot && Array.isArray(e.pred_snapshot.marks), 'snapshot が無い');
+  assert.strictEqual(e.pred_snapshot.marks.length, 6);
+  assert.strictEqual(e.pred_snapshot.marks[0].mark, '◎');
+  assert.ok(!('scenarios' in e.pred_snapshot), 'scenarios を保存している (localStorage 肥大)');
+});
+
+t('締切前は予想が最新に更新される (08:30 の番組予想で固定されない)', () => {
+  const ctx = makeCtx();
+  ctx.localStorage.setItem('boatrace_history', '[]');
+  ctx.programData = { 7: { 3: { race_closed_at: closedAt(+30) } } }; // 30 分後締切
+  ctx.savePrediction(DATE, 7, 3, prePred(), null);
+  const upd = prePred(); upd.marks[0].prob = 0.55; upd.trifecta = [{ combo: '1-2-4', prob: 0.25 }];
+  ctx.savePrediction(DATE, 7, 3, upd, null);
+  const h = historyOf(ctx);
+  assert.strictEqual(h.length, 1);
+  assert.deepStrictEqual(h[0].trifecta_bets, ['1-2-4'], '締切前の更新が反映されない');
+  assert.ok(Math.abs(h[0].pred_snapshot.marks[0].prob - 0.55) < 1e-9, 'snapshot が更新されない');
+});
+
+t('締切後 (結果未着) は予想を更新しない', () => {
+  const ctx = makeCtx();
+  ctx.localStorage.setItem('boatrace_history', '[]');
+  ctx.programData = { 7: { 3: { race_closed_at: closedAt(+30) } } };
+  ctx.savePrediction(DATE, 7, 3, prePred(), null);
+  ctx.programData = { 7: { 3: { race_closed_at: closedAt(-5) } } };  // 5 分前に締切
+  ctx.savePrediction(DATE, 7, 3, postPred(), null);
+  assert.deepStrictEqual(historyOf(ctx)[0].predicted, [1,2,3,4,5,6], '締切後に予想が書き換わった (leakage)');
+});
+
+t('snapshot の無い旧エントリに結果が来たら、保存済みフィールドから復元される', () => {
+  const ctx = makeCtx();
+  ctx.localStorage.setItem('boatrace_history', JSON.stringify([{
+    date: DATE, stadium: 7, race: 3, predicted: [1,2,3,4,5,6],
+    mark_probs: [1,2,3,4,5,6].map((b,i)=>({boat:b, prob:[0.45,0.2,0.15,0.1,0.06,0.04][i]})),
+    trifecta_bets: ['1-2-3'], exacta_bets: ['1-2'], raceType: 'honmei', pred_snapshot: null, actual: null,
+  }]));
+  ctx.savePrediction(DATE, 7, 3, postPred(), RESULT);
+  const e = historyOf(ctx)[0];
+  assert.ok(e.pred_snapshot && e.pred_snapshot.restored, 'snapshot が復元されていない');
+  assert.strictEqual(e.pred_snapshot.marks[0].boat, 1, '復元 snapshot が事後予想 (5 号艇本命) になっている');
+  assert.strictEqual(e.pred_snapshot.marks[0].mark, '◎');
+});
+
+t('_findLockedPred: sid/rn が文字列でも終了レースの予想を見つける', () => {
+  const ctx = makeCtx();
+  ctx.localStorage.setItem('boatrace_history', '[]');
+  ctx.savePrediction(DATE, 7, 3, prePred(), null);
+  ctx.savePrediction(DATE, 7, 3, postPred(), RESULT);
+  ctx.todayStr = () => DATE;
+  assert.strictEqual(typeof ctx._findLockedPred, 'function', '_findLockedPred が bundle に無い');
+  const lk = ctx._findLockedPred('7', '3', postPred());
+  assert.ok(lk && lk.locked, '文字列 sid/rn で見つからない (旧実装の型不一致バグ)');
+  assert.strictEqual(lk.marks[0].boat, 1, '締切時点の予想ではなく事後予想を返している');
+  assert.deepStrictEqual(lk.trifecta.map(t=>t.combo), ['1-2-3','1-3-2']);
+});
+
 console.log(`\n=== Result: ${pass} passed, ${fail} failed ===`);
 process.exit(fail);

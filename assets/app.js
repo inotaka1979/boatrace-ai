@@ -7255,28 +7255,89 @@ async function _backfillTodayPredictions(){
   if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races (worker=' + useWorker + ')');
 }
 
+// 2026-09-06: 締切判定。programData の race_closed_at (JST 文字列) を使う。
+//   不明なら「未締切」扱い（結果が無い段階では予想更新を許す = 実運用の締切前と同じ）。
+function _isRaceClosedNow(sid, rn){
+  try{
+    var p = programData && programData[sid] && programData[sid][rn];
+    var c = p && p.race_closed_at;
+    var m = c && /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(c);
+    if(!m) return false;
+    return Date.now() >= Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+m[6]);
+  }catch(_){ return false; }
+}
+// 2026-09-06: 表示用スナップショット（scenarios は大きく情報表示のみなので保存しない。
+//   表示側は snapshot に無い項目を live 予想でフォールバックする）。
+function _buildPredSnapshot(pred){
+  return {
+    marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score, mark:m.mark}}),
+    trifecta: (pred.trifecta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
+    exacta: (pred.exacta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
+    raceType: pred.raceType, typeCls: pred.typeCls, typeLabel: pred.typeLabel,
+    confidence: pred.confidence, confStars: pred.confStars
+  };
+}
+// 2026-09-06: snapshot を持たない旧エントリ (FA-1 以降〜本修正前に保存) から、
+//   保存済みフィールドだけで表示用 snapshot を復元する（事後予想は一切使わない）。
+//   買い目の確率は保存していないので trifecta/exacta は付けず、表示側の live フォールバックに任せる。
+function _snapshotFromEntry(e){
+  try{
+    var MARKS=['◎','○','▲','△','×','×'];
+    var probBy={}; (e.mark_probs||[]).forEach(function(mp){ probBy[mp.boat]=mp.prob; });
+    var order = Array.isArray(e.predicted) && e.predicted.length ? e.predicted : [1,2,3,4,5,6];
+    var marks = order.map(function(b,i){ return {boat:b, prob:probBy[b], score:null, mark:MARKS[i]||'×'}; });
+    return { marks: marks, raceType: e.raceType, typeCls: e.raceType ? 'type-'+e.raceType : undefined,
+             typeLabel: e.raceType==='honmei'?'本命':e.raceType==='ana'?'穴':e.raceType==='middle'?'混戦':undefined,
+             restored: true };
+  }catch(_){ return null; }
+}
+function _predFields(pred){
+  return {
+    predicted: pred.marks.map(function(m){return m.boat}),
+    mark_probs: (function(){
+      var byBoat = {};
+      (pred.marks||[]).forEach(function(m){ if(m && m.boat) byBoat[m.boat] = m.prob; });
+      var out = [];
+      for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
+      return out;
+    })(),
+    // FA-7 (2026-08-11): 校正「前」の確率。_refitPlattCoeffs は raw で fit する。
+    raw_probs: (function(){
+      var byBoat = {};
+      (pred.marks||[]).forEach(function(m){
+        if(m && m.boat && Number.isFinite(m.probRaw)) byBoat[m.boat] = m.probRaw;
+      });
+      var out = [];
+      for(var b=1;b<=6;b++){
+        if(!Number.isFinite(byBoat[b])) return null;   // 1 艇でも欠けたら raw 無し扱い
+        out.push({boat:b, prob: byBoat[b]});
+      }
+      return out;
+    })(),
+    trifecta_bets: pred.trifecta.map(function(t){return t.combo}),
+    exacta_bets: pred.exacta.map(function(t){return t.combo}),
+    // B14 (2026-05-17): 🔥穴予想 (高EV chip) を履歴追跡。
+    ana_bets: Array.isArray(pred.ana) ? pred.ana.slice() : [],
+    raceType: pred.raceType,
+    pred_snapshot: _buildPredSnapshot(pred)
+  };
+}
 function savePrediction(date,sid,rn,pred,result){
   try{
-    // 2026-06-29 FIX: sid/rn を数値に正規化。_backfillTodayPredictions は
-    //   for-in のキー(=文字列)で、openStadium は数値で savePrediction を呼ぶため、
-    //   下の重複判定 (===) が型不一致で外れ、同一レースが二重登録されていた
-    //   （成績「本日 場別」で R 数が 12 を超える＝芦屋24/三国24/桐生20 の原因）。
+    // 2026-06-29 FIX: sid/rn を数値に正規化（型混在で二重登録されていた）。
     sid = parseInt(sid); rn = parseInt(rn);
     if(!(sid>=1) || !(rn>=1)) return;
     var key='boatrace_history';
     var history=safeParse(key, []);   // PA-5: 検証付き parse
     var existIdx = -1;
     for(var i=0;i<history.length;i++){
-      // 既存エントリは型混在しうるので parseInt で比較を頑健化
       if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
     }
-    // 結果 (actual / 的中 / 払戻) を entry に付与する共通処理。
-    //   予想フィールドには一切触らないこと（下の leakage 対策の前提）。
+    var hasRes = !!(result && result.isFinished && result.results);
+    // 結果 (actual / 的中 / 払戻) を entry に付与する共通処理。予想フィールドには触らない。
     var _attachResult = function(e){
-      if(!(result && result.isFinished && result.results)) return;
-      // 2026-05-07 fix: Open API が前日の確定結果を返すケースで「entry.date=今日 /
-      // actual=昨日」の汚染が発生していた。result.race_date が date 引数と一致しない
-      // 場合は result を無視して予想だけ保存する（actual を null のまま残す）
+      if(!hasRes) return;
+      // 2026-05-07 fix: Open API が前日の確定結果を返すケースの汚染防止
       var rdate = (result.race_date||'').replace(/-/g,'');
       if(rdate && rdate !== date){
         console.warn('[savePrediction] race_date mismatch: entry='+date+' result='+rdate+' ('+sid+'-'+rn+'R) → actual を保存しない');
@@ -7286,87 +7347,48 @@ function savePrediction(date,sid,rn,pred,result){
       e.actual=sorted.map(function(r){return r.racer_boat_number});
       checkHit(e);
       if(result.refund){
-        // F6: Open API / 自前スクレイパーともに payout フィールド。旧 amount は念のため互換維持
         if(e.trifecta_hit&&result.refund.trifecta&&result.refund.trifecta[0])
           e.payout3 = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
         if(e.exacta_hit&&result.refund.exacta&&result.refund.exacta[0])
           e.payout2 = result.refund.exacta[0].payout || result.refund.exacta[0].amount || 0;
-        // B14: 穴予想の的中は同じ 3連単 refund を流用 (同じ着順 → 同じ payout)
         if(e.ana_hit&&result.refund.trifecta&&result.refund.trifecta[0])
           e.ana_payout = result.refund.trifecta[0].payout || result.refund.trifecta[0].amount || 0;
       }
     };
-    // F19b + FIX (2026-08-11): 既存エントリ更新ポリシー。
-    //   旧実装は「既存が actual 無し + 新規 result あり」で既存を splice して
-    //   **確定後に再計算した予想で置き換えて**いた。再計算時点では当該レースの結果が
-    //   既に racerDB.recentResults（getRacerForm が直近 5 走として参照）と L2 に
-    //   反映済みで、オッズも確定値なので、これは直接的な look-ahead leakage であり、
-    //   成績タブの的中率・回収率が構造的に楽観化していた。
-    //   → 締切前に保存した予想は不変とし、結果だけを追記する。
+    // 既存エントリの更新ポリシー (FA-1 2026-08-11 → 2026-09-06 改訂):
+    //   - 確定済 (actual あり): 不変 (lock-in)
+    //   - 結果が来た: 予想は不変、結果だけ追記。snapshot が無い旧エントリは保存済み
+    //     フィールドから復元する（★ user 報告「終了レースの予想が消える」の直接原因。
+    //     FA-1 は結果追記時に snapshot を作らず、表示側は snapshot 無しの終了レースを
+    //     事後再計算 or 非表示にしていた）
+    //   - 結果なし & 締切前: 予想を最新に更新（展示/オッズ到着で直前予想は変わる。
+    //     FA-1 は「最初の保存」で固定していたため 08:30 の番組予想が締切前予想として
+    //     残っていた。leakage 対策として必要なのは「締切後に更新しない」こと）
+    //   - 結果なし & 締切後: 不変
     if(existIdx >= 0){
       var existing = history[existIdx];
-      if(existing.actual && existing.actual.length > 0) return;   // 確定済はロックイン
-      if(!(result && result.isFinished && result.results)) return; // mid-day churn 回避
-      _attachResult(existing);
-      safeSet(key, history);   // P3 L-05
+      if(existing.actual && existing.actual.length > 0) return;
+      if(hasRes){
+        if(!existing.pred_snapshot) existing.pred_snapshot = _snapshotFromEntry(existing);
+        _attachResult(existing);
+        safeSet(key, history);
+        return;
+      }
+      if(_isRaceClosedNow(sid, rn)) return;
+      var nf = _predFields(pred);
+      if(existing.pred_snapshot && JSON.stringify(existing.pred_snapshot)===JSON.stringify(nf.pred_snapshot)) return; // 無変化
+      for(var k in nf) existing[k] = nf[k];
+      safeSet(key, history);
       return;
     }
-    // F19c: レース終了時の予想を snapshot 保存 → 表示・統計を一致させる
-    var snapshot = null;
-    if(result && result.isFinished){
-      snapshot = {
-        marks: (pred.marks||[]).map(function(m){return {boat:m.boat, prob:m.prob, score:m.score, mark:m.mark}}),
-        trifecta: (pred.trifecta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
-        exacta: (pred.exacta||[]).map(function(t){return {combo:t.combo, prob:t.prob}}),
-        raceType: pred.raceType,
-        typeCls: pred.typeCls,
-        typeLabel: pred.typeLabel,
-        confidence: pred.confidence,
-        confStars: pred.confStars,
-        scenarios: pred.scenarios
-      };
-    }
-    var entry={
-      date:date,stadium:sid,race:rn,
-      predicted:pred.marks.map(function(m){return m.boat}),
-      mark_probs: (function(){
-        var byBoat = {};
-        (pred.marks||[]).forEach(function(m){ if(m && m.boat) byBoat[m.boat] = m.prob; });
-        var out = [];
-        for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
-        return out;
-      })(),
-      // FA-7 (2026-08-11): 校正「前」の確率。_refitPlattCoeffs は従来 mark_probs
-      //   (= 校正後) で再フィットしており、校正の上に校正を重ねるループになっていた
-      //   （実測で収束せず a=0.6/b=-0.5 ⇔ identity を振動）。raw を残して raw で fit する。
-      raw_probs: (function(){
-        var byBoat = {};
-        (pred.marks||[]).forEach(function(m){
-          if(m && m.boat && Number.isFinite(m.probRaw)) byBoat[m.boat] = m.probRaw;
-        });
-        var out = [];
-        for(var b=1;b<=6;b++){
-          if(!Number.isFinite(byBoat[b])) return null;   // 1 艇でも欠けたら raw 無し扱い
-          out.push({boat:b, prob: byBoat[b]});
-        }
-        return out;
-      })(),
-      trifecta_bets:pred.trifecta.map(function(t){return t.combo}),
-      exacta_bets:pred.exacta.map(function(t){return t.combo}),
-      // B14 (2026-05-17): 🔥穴予想 (高EV chip) を履歴追跡。pred.ana が無い
-      //   古い predictor 経由でも壊さないよう Array.isArray でガード。
-      ana_bets: Array.isArray(pred.ana) ? pred.ana.slice() : [],
-      raceType:pred.raceType,
-      pred_snapshot:snapshot,
-      // FIX (2026-08-11): 結果が既に出ている時点で初めて生成された予想は
-      //   「事後予想」であり、締切前に見えていた予想ではない。成績表示で
-      //   区別できるよう印を付ける（_computeLeakageRatio / 成績タブの注記）。
-      backfilled: !!(result && result.isFinished && result.results),
-      actual:null,trifecta_hit:false,exacta_hit:false,quinella_hit:false,ana_hit:false
-    };
+    var entry = _predFields(pred);
+    entry.date=date; entry.stadium=sid; entry.race=rn;
+    // FIX (2026-08-11): 結果が既に出ている時点で初めて生成された予想は「事後予想」。
+    entry.backfilled = hasRes;
+    entry.actual=null; entry.trifecta_hit=false; entry.exacta_hit=false; entry.quinella_hit=false; entry.ana_hit=false;
     _attachResult(entry);
     history.push(entry);
-    if(history.length>2000) history.splice(0, history.length-2000);   // P3 L-15: 過剰push後の整列
+    if(history.length>2000) history.splice(0, history.length-2000);   // P3 L-15
     safeSet(key, history);   // P3 L-05
   }catch(e){console.warn('savePrediction error:',e)}
 }
@@ -8434,34 +8456,12 @@ function racerBadges(boat,form,divergence){
       var progPred = predictRaceProgram(sid, parseInt(rn));
       var hasResult = resultData && resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
       if (pred) savePrediction(todayStr(), sid, rn, pred, hasResult ? resultData[sid][rn] : null);
-      if (hasResult) {
-        try {
-          var _h = safeParse("boatrace_history", []);
-          for (var _hi = 0; _hi < _h.length; _hi++) {
-            var _e = _h[_hi];
-            if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-              var _liveMarkByBoat = {};
-              (pred && pred.marks ? pred.marks : []).forEach(function(_m) {
-                if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
-              });
-              var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m) {
-                return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || "" });
-              });
-              pred = {
-                marks: _snapMarks,
-                trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-                exacta: _e.pred_snapshot.exacta || pred.exacta,
-                raceType: _e.pred_snapshot.raceType || pred.raceType,
-                typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-                typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-                confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-                confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-                scenarios: _e.pred_snapshot.scenarios || pred.scenarios
-              };
-              break;
-            }
-          }
-        } catch (_) {
+      var _lockedPred = false;
+      if (hasResult && typeof _findLockedPred === "function") {
+        var _lk = _findLockedPred(sid, rn, pred);
+        if (_lk) {
+          pred = _lk;
+          _lockedPred = true;
         }
       }
       var pvData = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
@@ -8474,7 +8474,7 @@ function racerBadges(boat,form,divergence){
           }
         }
       }
-      var dispPred = hasRealPv && pred ? pred : null;
+      var dispPred = (hasRealPv || _lockedPred) && pred ? pred : null;
       var typeSource = dispPred || progPred;
       var typeIcon = typeSource ? typeSource.raceType === "honmei" ? "\u26A1" : typeSource.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}" : "";
       var typeCls = dispPred ? dispPred.typeCls : progPred ? "type-" + (progPred.raceType || "middle") : "";
@@ -8961,34 +8961,12 @@ async function _loadNextOpen(){
     var preview = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
     var result = resultData && resultData[sid] && resultData[sid][rn] ? resultData[sid][rn] : null;
     var pred = predictRace(sid, parseInt(rn));
+    var _lockedPred = false;
     if (result && result.isFinished) {
-      try {
-        var _h = safeParse("boatrace_history", []);
-        for (var _hi = 0; _hi < _h.length; _hi++) {
-          var _e = _h[_hi];
-          if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-            var _liveMarkByBoat = {};
-            (pred && pred.marks ? pred.marks : []).forEach(function(_m2) {
-              if (_m2 && _m2.boat) _liveMarkByBoat[_m2.boat] = _m2.mark;
-            });
-            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m2) {
-              return Object.assign({}, _m2, { mark: _m2.mark || _liveMarkByBoat[_m2.boat] || "" });
-            });
-            pred = {
-              marks: _snapMarks,
-              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-              exacta: _e.pred_snapshot.exacta || pred.exacta,
-              raceType: _e.pred_snapshot.raceType || pred.raceType,
-              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-              scenarios: _e.pred_snapshot.scenarios || pred.scenarios
-            };
-            break;
-          }
-        }
-      } catch (_) {
+      var _lk = _findLockedPred(sid, rn, pred);
+      if (_lk) {
+        pred = _lk;
+        _lockedPred = true;
       }
     }
     var raceOdds = getOddsForRace(sid, rn);
@@ -9175,6 +9153,7 @@ async function _loadNextOpen(){
       rn,
       race,
       pred,
+      lockedPred: _lockedPred,
       preview,
       result,
       popularity,
@@ -9187,6 +9166,47 @@ async function _loadNextOpen(){
     } catch (_) {
     }
   }
+  function _findLockedPred(sid, rn, livePred) {
+    try {
+      var s = parseInt(sid), r = parseInt(rn);
+      var today = todayStr();
+      var h = safeParse("boatrace_history", []);
+      for (var i = h.length - 1; i >= 0; i--) {
+        var e = h[i];
+        if (e.date !== today || parseInt(e.stadium) !== s || parseInt(e.race) !== r) continue;
+        var snap = e.pred_snapshot;
+        if (!snap && e.actual && e.actual.length && typeof _snapshotFromEntry === "function") {
+          snap = _snapshotFromEntry(e);
+        }
+        if (!snap || !Array.isArray(snap.marks) || !snap.marks.length) return null;
+        var lp = livePred || {};
+        var liveMarkByBoat = {};
+        (lp.marks || []).forEach(function(m) {
+          if (m && m.boat) liveMarkByBoat[m.boat] = m.mark;
+        });
+        var marks = snap.marks.map(function(m) {
+          return Object.assign({}, m, { mark: m.mark || liveMarkByBoat[m.boat] || "" });
+        });
+        return {
+          marks,
+          trifecta: snap.trifecta || lp.trifecta || [],
+          exacta: snap.exacta || lp.exacta || [],
+          ana: lp.ana || [],
+          raceType: snap.raceType || lp.raceType,
+          typeCls: snap.typeCls || lp.typeCls,
+          typeLabel: snap.typeLabel || lp.typeLabel,
+          confidence: snap.confidence != null ? snap.confidence : lp.confidence,
+          confStars: snap.confStars != null ? snap.confStars : lp.confStars,
+          scenarios: snap.scenarios || lp.scenarios,
+          locked: true,
+          restored: !!snap.restored
+        };
+      }
+    } catch (_) {
+    }
+    return null;
+  }
+  globalThis._findLockedPred = _findLockedPred;
   globalThis.openRace = openRace;
 })();
 
@@ -9496,7 +9516,11 @@ async function _loadNextOpen(){
     }
     predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
     predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
-    if (hasRealPreview && pred) {
+    var lockedPred = !!ctx.lockedPred;
+    if ((hasRealPreview || lockedPred) && pred) {
+      if (lockedPred) {
+        predHtml += '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">\u{1F512} \u7DE0\u5207\u6642\u70B9\u306E\u4E88\u60F3\u3092\u8868\u793A\u3057\u3066\u3044\u307E\u3059' + (pred.restored ? "\uFF08\u4FDD\u5B58\u30C7\u30FC\u30BF\u304B\u3089\u5FA9\u5143\uFF09" : "") + "</div>";
+      }
       var diff = comparePredictions(progPred, pred);
       pred.marks.forEach(function(m, i) {
         if (i >= 4) return;

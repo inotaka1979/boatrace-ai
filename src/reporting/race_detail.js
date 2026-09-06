@@ -118,36 +118,17 @@ function openRace(sid, rn) {
   var preview = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
   var result = resultData && resultData[sid] && resultData[sid][rn] ? resultData[sid][rn] : null;
   var pred = predictRace(sid, parseInt(rn));
-  // F19c: 終了済レースは履歴の pred_snapshot を優先 (lock & 統計と一致)
+  // F19c + 2026-09-06: 終了済レースは履歴の pred_snapshot（締切時点の予想）を優先する。
+  //   user 報告「終了したレースの予想が保持されず消える」の修正: 旧実装は
+  //   (a) sid/rn の型 (数値 vs 文字列) 不一致で snapshot が見つからず、
+  //   (b) snapshot が無いと事後再計算 or 「展示データ未取得」で非表示 になっていた。
+  var _lockedPred = false;
   if (result && result.isFinished) {
-    try {
-      var _h = safeParse('boatrace_history', []);
-      for (var _hi = 0; _hi < _h.length; _hi++) {
-        var _e = _h[_hi];
-        if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-          // 旧 snapshot は mark フィールドを保持しないため、現 pred の mark を boat 番号で merge
-          var _liveMarkByBoat = {};
-          (pred && pred.marks ? pred.marks : []).forEach(function (_m) {
-            if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
-          });
-          var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function (_m) {
-            return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || '' });
-          });
-          pred = {
-            marks: _snapMarks,
-            trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-            exacta: _e.pred_snapshot.exacta || pred.exacta,
-            raceType: _e.pred_snapshot.raceType || pred.raceType,
-            typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-            typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-            confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-            confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-            scenarios: _e.pred_snapshot.scenarios || pred.scenarios,
-          };
-          break;
-        }
-      }
-    } catch (_) {}
+    var _lk = _findLockedPred(sid, rn, pred);
+    if (_lk) {
+      pred = _lk;
+      _lockedPred = true;
+    }
   }
   var raceOdds = getOddsForRace(sid, rn);
   var popularity = calcPopularity(raceOdds);
@@ -489,6 +470,7 @@ function openRace(sid, rn) {
     rn: rn,
     race: race,
     pred: pred,
+    lockedPred: _lockedPred,
     preview: preview,
     result: result,
     popularity: popularity,
@@ -513,4 +495,51 @@ function openRace(sid, rn) {
 }
 
 // globalThis export (REST_ONLY)
+
+// 2026-09-06: 終了済レース用に、履歴の pred_snapshot から表示用 pred を組み立てる。
+//   sid/rn は数値/文字列が混在して呼ばれる (openStadium は Object.keys の文字列、
+//   openRace は dataset 由来) ため parseInt で突合する。snapshot に無い項目は live 予想で補う。
+//   戻り値 null = 該当エントリ無し（呼出側は live 予想のまま）。
+function _findLockedPred(sid, rn, livePred) {
+  try {
+    var s = parseInt(sid),
+      r = parseInt(rn);
+    var today = todayStr();
+    var h = safeParse('boatrace_history', []);
+    for (var i = h.length - 1; i >= 0; i--) {
+      var e = h[i];
+      if (e.date !== today || parseInt(e.stadium) !== s || parseInt(e.race) !== r) continue;
+      var snap = e.pred_snapshot;
+      if (!snap && e.actual && e.actual.length && typeof _snapshotFromEntry === 'function') {
+        snap = _snapshotFromEntry(e); // FA-1 期の旧エントリ: 保存済みフィールドから復元
+      }
+      if (!snap || !Array.isArray(snap.marks) || !snap.marks.length) return null;
+      var lp = livePred || {};
+      var liveMarkByBoat = {};
+      (lp.marks || []).forEach(function (m) {
+        if (m && m.boat) liveMarkByBoat[m.boat] = m.mark;
+      });
+      var marks = snap.marks.map(function (m) {
+        return Object.assign({}, m, { mark: m.mark || liveMarkByBoat[m.boat] || '' });
+      });
+      return {
+        marks: marks,
+        trifecta: snap.trifecta || lp.trifecta || [],
+        exacta: snap.exacta || lp.exacta || [],
+        ana: lp.ana || [],
+        raceType: snap.raceType || lp.raceType,
+        typeCls: snap.typeCls || lp.typeCls,
+        typeLabel: snap.typeLabel || lp.typeLabel,
+        confidence: snap.confidence != null ? snap.confidence : lp.confidence,
+        confStars: snap.confStars != null ? snap.confStars : lp.confStars,
+        scenarios: snap.scenarios || lp.scenarios,
+        locked: true,
+        restored: !!snap.restored,
+      };
+    }
+  } catch (_) {}
+  return null;
+}
+globalThis._findLockedPred = _findLockedPred;
+
 globalThis.openRace = openRace;
