@@ -3,12 +3,17 @@ name: Worker Watchdog (self-heal)
 # rt-fix3 P2-1 (2026-06-27): Cloudflare Worker の死活を叩き、KV が stale (cron 死亡の兆候)
 #   なら /api/refresh-now を呼んで KV 再生成を促す能動的セルフヒール（backstop）。
 #
-#   注意: GitHub schedule は本リポジトリで 1 workflow あたり 4-6 回/日に間引かれるため、
-#   これは「保険」であり主系ではない。Worker cron 死亡を分単位で検知する主系は
-#   外部死活監視 (healthchecks.io / UptimeRobot で /health?strict=1 を 5 分監視 → メール)。
-#   docs/RUNBOOK.md §8.2 参照。
+# 2026-09-06: cron 死亡 (reason=cron_heartbeat_stale / _missing) を検知したら、
+#   RUNBOOK §8.3-3 の手順どおり deploy-worker.yml を dispatch して cron trigger を
+#   再登録する（refresh-now はデータを更新するだけで cron は復活しないため）。
+#   併せて issue (label: worker-cron-dead) で検知/復旧を可視化する。
+#   実障害: 9/5 22:36 JST に cron が停止し、翌朝まで誰も気付けなかった。
 #
-#   secrets 不要（公開エンドポイントを curl するだけ）。
+#   注意: GitHub schedule は本リポジトリで 1 workflow あたり 4-6 回/日に間引かれるため、
+#   これは「保険」であり主系ではない。Worker 側は /api/* サーブ時に heartbeat stale を
+#   検知すると自前で refreshAll を回す (serve-heal) ので、cron 死亡中もデータ鮮度は保たれる。
+#   分単位の外形監視は healthchecks.io / UptimeRobot で /health?strict=1 を 5 分監視
+#   (docs/RUNBOOK.md §8.2)。
 
 on:
   workflow_dispatch:
@@ -17,6 +22,8 @@ on:
 
 permissions:
   contents: read
+  actions: write   # 2026-09-06: cron 死亡時に deploy-worker.yml を dispatch して cron を再登録
+  issues: write    # 2026-09-06: 検知 / 復旧を issue で可視化
 
 concurrency:
   group: worker-watchdog
@@ -33,15 +40,31 @@ jobs:
           #   watchdog は「stale を検知した今すぐ」再生成させたいので secret を提示する。
           #   未設定でも動作する（throttle に当たれば 429 → 次回 run で再試行）。
           TRIGGER_SECRET: ${{ secrets.TRIGGER_SECRET }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           BASE="https://boatrace-scrape-trigger.inotaka1979.workers.dev"
           # strict=1 は cron ハートビート (cron_age_sec) で判定。夜間 cron は 30 分間隔のため
           # 余裕を見て 2400s(40分)。これより古い = cron 停止の兆候。
           HEALTH="$BASE/health?strict=1&max_age_sec=2400"
+          LABEL="worker-cron-dead"
 
           probe() {
             curl -sS -m 15 -o /tmp/health.json -w "%{http_code}" "$HEALTH" || echo "000"
+          }
+          health_reason() {
+            python3 -c 'import json; print(json.load(open("/tmp/health.json")).get("reason",""))' 2>/dev/null || echo ""
+          }
+          # 復旧時: 開いている検知 issue を閉じる (冪等)
+          close_issue_if_open() {
+            local n
+            n=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --repo "$GITHUB_REPOSITORY" \
+                --body "✅ $(date -u +%Y-%m-%dT%H:%MZ) watchdog: /health?strict=1 が 200 に復旧しました（cron heartbeat 再開）。自動クローズします。" >/dev/null 2>&1 || true
+              gh issue close "$n" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+              echo "closed issue #$n"
+            fi
           }
 
           status=$(probe)
@@ -51,6 +74,7 @@ jobs:
 
           if [ "$status" = "200" ]; then
             echo "✅ Worker KV is fresh — nothing to do"
+            close_issue_if_open
             exit 0
           fi
 
@@ -74,9 +98,75 @@ jobs:
 
           if [ "$status2" = "200" ]; then
             echo "✅ recovered via /api/refresh-now"
+            close_issue_if_open
             exit 0
           fi
 
-          # 復旧しない場合は非ゼロ終了で Actions に可視化（外部監視が主系の通知）。
-          echo "::error::Worker still stale after refresh-now (HTTP $status2). cron/CPU の確認が必要 — docs/RUNBOOK.md §8.3"
+          reason=$(health_reason)
+          echo "reason: ${reason:-<none>}"
+          action="なし"
+
+          # cron だけが死んでいる (Worker は応答する) → 再デプロイで cron trigger を再登録 (RUNBOOK §8.3-3)。
+          #   refresh-now が 200/429 = HTTP ハンドラは生きている。000/5xx なら Worker 全体停止で再デプロイ対象外。
+          if { [ "$reason" = "cron_heartbeat_stale" ] || [ "$reason" = "cron_heartbeat_missing" ]; } \
+             && { [ "$rn" = "200" ] || [ "$rn" = "429" ]; }; then
+            last=$(gh run list --workflow deploy-worker.yml --limit 1 --json createdAt --jq '.[0].createdAt' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+            recent=0
+            if [ -n "$last" ]; then
+              recent=$(python3 - "$last" <<'PY'
+          import datetime, sys
+          t = datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          print(1 if (datetime.datetime.now(datetime.timezone.utc) - t).total_seconds() < 3 * 3600 else 0)
+          PY
+              )
+            fi
+            if [ "$recent" = "1" ]; then
+              action="再デプロイ見送り（deploy-worker が 3 時間以内に実行済: $last。再デプロイでは復旧しない可能性が高く、Cloudflare ダッシュボードの確認が必要）"
+              echo "::warning::$action"
+            else
+              if gh workflow run deploy-worker.yml --ref main --repo "$GITHUB_REPOSITORY"; then
+                action="deploy-worker.yml を dispatch（cron trigger の再登録。数分後の次回 watchdog / /health で回復を確認）"
+                echo "::notice::$action"
+              else
+                action="deploy-worker.yml の dispatch に失敗（Actions 権限 / 同時実行を確認）"
+                echo "::warning::$action"
+              fi
+            fi
+          fi
+
+          # 検知を issue で可視化（冪等: 既存の open issue があればコメント追記）
+          gh label create "$LABEL" --color d93f0b --description "Cloudflare Worker の cron が停止" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+          hb=$(python3 -c 'import json; d=json.load(open("/tmp/health.json")); print(d.get("cron_heartbeat"), d.get("cron_age_sec"))' 2>/dev/null || echo "?")
+          body="$(cat <<EOF
+          ## Cloudflare Worker cron 停止を検知
+
+          - 検知時刻: $(date -u +%Y-%m-%dT%H:%MZ) UTC
+          - /health?strict=1: HTTP $status → refresh-now $rn → 再 probe HTTP $status2
+          - reason: \`${reason:-<none>}\`
+          - cron_heartbeat / age_sec: \`$hb\`
+          - 自動対処: $action
+
+          ### 意味
+          Worker 自体は応答しています。データは Worker の serve-heal（/api/* アクセス時に refreshAll を 5 分 throttle で自走）と
+          この watchdog の refresh-now で更新されますが、\`scheduled()\` が動いていないため cron heartbeat が止まっています。
+
+          ### 自動復旧しない場合（この issue が数時間開いたまま）
+          Cloudflare ダッシュボード → Workers & Pages → boatrace-scrape-trigger →
+          1. **Settings → Triggers → Cron Triggers**: 2 件（\`*/5 23,0-13 * * *\` / \`*/30 14-22 * * *\`）が有効か
+          2. **Logs / Observability**: scheduled の invocation にエラー、または CPU time が 10ms を超えていないか
+
+          手順の詳細: docs/RUNBOOK.md §8.3
+          EOF
+          )"
+          existing=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null 2>&1 && echo "commented on issue #$existing" || echo "::warning::issue comment failed"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+              --title "Worker cron 停止を検知 ($(date -u +%Y-%m-%d %H:%MZ))" --body "$body" >/dev/null 2>&1 \
+              && echo "opened issue" || echo "::warning::issue create failed"
+          fi
+
+          # 復旧しない場合は非ゼロ終了で Actions に可視化。
+          echo "::error::Worker still stale after refresh-now (HTTP $status2, reason=${reason:-?}). 対処: $action — docs/RUNBOOK.md §8.3"
           exit 1

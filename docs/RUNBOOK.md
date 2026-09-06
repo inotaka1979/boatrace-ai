@@ -142,6 +142,18 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
   `/api/refresh-now` を呼んで KV 再生成を促す。schedule 間引きの影響を受けるため backstop 扱い。
 
 ### 8.3 Worker が完全停止した時の復旧手順
+
+**2026-09-06 以降は 2 段の自動復旧が入っている**（実障害: 9/5 22:36 JST に cron が停止し翌朝まで放置）:
+- **serve-heal（Worker 内）**: `/api/*` を叩く通常のアプリ通信で `health:heartbeat` が閾値
+  （JST 8-22 時は 15 分、夜間は 45 分）より古ければ、`refresh-now` と同じ 5 分 throttle の下で
+  `refreshAll()` を裏で回す。cron が死んでいてもデータ鮮度は 5-6 分に保たれる。
+  `/health` の `serve_heal.last_at` で発火を確認できる（isolate ローカルの値）。
+- **watchdog の自動再デプロイ**: `reason=cron_heartbeat_stale/_missing` かつ Worker が応答する
+  （refresh-now 200/429）場合、`deploy-worker.yml` を dispatch して cron trigger を再登録し、
+  issue（label `worker-cron-dead`）を開く。復旧すると自動クローズ。直近 3 時間に deploy 済なら
+  再デプロイを見送り、issue でダッシュボード確認を促す。
+
+**issue `worker-cron-dead` が数時間開いたままなら、以下を手動で行う:**
 1. `/health` を確認: `curl 'https://boatrace-scrape-trigger.inotaka1979.workers.dev/health'`
    - `cron_age_sec` が大きい（> 40分）→ cron 死亡。`/api/refresh-now` を 1 回叩くとデータは更新
      されるが cron は復活しない（ハートビートは cron run のみ更新）。3 で再デプロイして cron 再登録。
