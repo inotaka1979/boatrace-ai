@@ -922,6 +922,62 @@ async function refreshAll(env) {
 //   新版は KV の updated_at を見て、STALE_MS より古ければ上流 openapi を
 //   live fetch (Cloudflare edge cache 経由 = KV write 枠を一切消費しない) して
 //   fresh を返す。これにより KV write が完全に止まっても /api/* は fresh を返す。
+// =============================================================================
+// 2026-09-06: cron 死亡時のサーブ時セルフヒール (serve-heal)
+//
+// 実障害: 9/5 22:36 JST に scheduled() が止まった (health:heartbeat が更新されず、
+//   watchdog が reason=cron_heartbeat_stale)。Worker 自体は応答し /api/refresh-now も
+//   通るのに、cron だけが死んでいた。この状態では
+//     - KV は SERVE_STALE_MS (12 分) を超えて初めて key 単位の live fetch + bounded
+//       scrape の縮退モードに入る (展示マージは「少数」だけ)
+//     - watchdog は GitHub schedule の間引きで 1 日数回しか走らない
+//     - アプリの自己復旧 (/api/refresh-now) は「データ世代 25 分 stale」が発火条件
+//   となり、体感は「結果・展示の更新が 15-30 分遅れる」に落ちる。
+//
+// 対策: /api/* を叩く通常のアプリ通信 (90 秒 poll) を cron の代替トリガにする。
+//   heartbeat が閾値より古い時だけ、refresh-now と同じ 5 分 throttle
+//   (isolate ローカル + Cache API) の下で refreshAll() を waitUntil で走らせる。
+//   cron が生きている間は一切動かない (閾値未満で即 return)。
+//   heartbeat は **書かない**: heartbeat は cron の生存証跡であり、watchdog の
+//   検知 → deploy-worker dispatch による cron 再登録を妨げないため。
+// =============================================================================
+const CRON_DEAD_MS_DAY = 15 * 60 * 1000;   // JST 08-22: cron 5 分間隔 → 3 tick 欠落で死亡扱い
+const CRON_DEAD_MS_NIGHT = 45 * 60 * 1000; // JST 23-07: cron 30 分間隔
+const HB_CHECK_INTERVAL_MS = 60 * 1000;    // isolate 毎の heartbeat 再読込間隔 (KV read 節約)
+let _hbCheckedAt = 0;
+let _hbValueMs = 0;
+let _lastServeHealAt = 0;
+
+function _cronDeadThresholdMs(nowMs) {
+  const jstHour = new Date(nowMs + 9 * 3600000).getUTCHours();
+  return jstHour >= 8 && jstHour <= 22 ? CRON_DEAD_MS_DAY : CRON_DEAD_MS_NIGHT;
+}
+
+async function _healIfCronDead(env, ctx) {
+  if (!env || !env.BOATRACE_KV || !ctx || typeof ctx.waitUntil !== 'function') return false;
+  const now = Date.now();
+  if (now - _hbCheckedAt >= HB_CHECK_INTERVAL_MS) {
+    _hbCheckedAt = now;
+    try {
+      const hb = await env.BOATRACE_KV.get('health:heartbeat');
+      _hbValueMs = hb ? new Date(hb).getTime() : 0;
+    } catch (_) {
+      return false;
+    }
+  }
+  if (!_hbValueMs) return false; // heartbeat 未生成 (旧 Worker / 未実行) は watchdog に任せる
+  const ageMs = now - _hbValueMs;
+  if (ageMs < _cronDeadThresholdMs(now)) return false;
+  if ((await _refreshThrottleRemainingSec()) != null) return false;
+  await _markRefreshDone();
+  _lastServeHealAt = now;
+  console.warn(`[serve-heal] cron heartbeat stale ${Math.round(ageMs / 1000)}s → refreshAll`);
+  ctx.waitUntil(
+    refreshAll(env).catch((e) => console.error('[serve-heal] refreshAll failed:', e))
+  );
+  return true;
+}
+
 const SERVE_STALE_MS = 12 * 60 * 1000; // KV がこれより古ければ live fetch に切替 (cron は 5 分間隔)
 
 // rt-fix3 P1-1 (2026-06-27): 展示の Worker cron 非依存化。
@@ -1115,6 +1171,12 @@ export default {
         try { cronHb = await env.BOATRACE_KV.get('health:heartbeat'); } catch (_) {}
         out.cron_heartbeat = cronHb;
         out.cron_age_sec = cronHb ? Math.round((Date.now() - new Date(cronHb).getTime()) / 1000) : null;
+        // 2026-09-06 serve-heal の観測: この isolate が最後に cron 代替 refresh を発火した時刻。
+        //   isolate ローカルなので null でも「未発火」とは限らない (別 isolate が発火し得る)。
+        out.serve_heal = {
+          last_at: _lastServeHealAt ? new Date(_lastServeHealAt).toISOString() : null,
+          threshold_sec: Math.round(_cronDeadThresholdMs(Date.now()) / 1000),
+        };
         if (strict) {
           // cron が maxAgeSec 以内に走っていれば healthy。ハートビート未生成 (旧 Worker /
           //   一度も cron 未実行) や maxAgeSec 超過なら 500。
@@ -1126,6 +1188,13 @@ export default {
         }
       }
       return jsonResponse(out, { cacheControl: 'no-store' });
+    }
+    // 2026-09-06 serve-heal: cron が死んでいれば、この通常アクセスを代替トリガにして
+    //   refreshAll を裏で走らせる (5 分 throttle)。応答は待たせない。
+    if (url.pathname === '/api/previews' || url.pathname === '/api/programs' || url.pathname === '/api/results') {
+      try {
+        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(_healIfCronDead(env, ctx));
+      } catch (_) { /* never affect the response */ }
     }
     if (url.pathname === '/api/previews') return serveFromKV(env, 'previews', ctx);
     if (url.pathname === '/api/programs') return serveFromKV(env, 'programs', ctx);

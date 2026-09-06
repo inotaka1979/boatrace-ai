@@ -214,5 +214,107 @@ await t('OPTIONS preflight も ACAO が正規化される', async () => {
   );
 });
 
+
+// ---------------------------------------------------------------------------
+// 2026-09-06: serve-heal — cron が死んでいたら通常の /api/* アクセスで refreshAll を自走する
+//   実障害: 9/5 22:36 JST に scheduled() が停止し heartbeat が更新されず、翌朝まで
+//   データが縮退モード (12 分 stale 後の key 単位 live fetch) のままだった。
+// ---------------------------------------------------------------------------
+console.log('\n=== serve-heal (cron 死亡時のサーブ時セルフヒール) ===');
+
+const WORKER_HREF = pathToFileURL(path.join(ROOT, 'cloudflare-worker', 'worker.js')).href;
+let _freshN = 0;
+// module ローカルの throttle / heartbeat キャッシュを捨てるため毎回 fresh import する
+async function freshWorker() {
+  _cacheStore.clear();
+  return (await import(WORKER_HREF + '?fresh=' + ++_freshN)).default;
+}
+function makeCtx() {
+  const promises = [];
+  return {
+    waitUntil(p) { promises.push(Promise.resolve(p).catch(() => {})); },
+    promises,
+  };
+}
+// 入れ子の waitUntil (heal → refreshAll) も含めて全て待つ
+async function drain(ctx) {
+  let i = 0;
+  while (i < ctx.promises.length) await ctx.promises[i++];
+}
+function kvWithHeartbeat(ageMs) {
+  const kv = makeKV();
+  kv._store.set('programs:today', {
+    value: JSON.stringify({ updated_at: new Date().toISOString(), data: { programs: [] } }),
+    meta: { wrote_at: new Date().toISOString(), src: 'cron' },
+  });
+  if (ageMs != null) {
+    kv._store.set('health:heartbeat', { value: new Date(Date.now() - ageMs).toISOString(), meta: null });
+  }
+  return kv;
+}
+
+await t('heartbeat が閾値超えなら /api/programs アクセスで refreshAll が走る', async () => {
+  const w = await freshWorker();
+  const env = { BOATRACE_KV: kvWithHeartbeat(60 * 60 * 1000) }; // 60 分前 = 昼夜どちらの閾値も超える
+  const ctx = makeCtx();
+  const before = fetchCalls;
+  const res = await w.fetch(req('/api/programs'), env, ctx);
+  assert.strictEqual(res.status, 200);
+  await drain(ctx);
+  assert.ok(fetchCalls > before, 'cron 死亡なのに upstream を取りに行っていない (refreshAll 未発火)');
+  const h = await (await w.fetch(req('/health'), env, ctx)).json();
+  assert.ok(h.serve_heal && h.serve_heal.last_at, '/health に serve_heal.last_at が出ていない');
+});
+
+await t('heartbeat が新鮮なら何もしない (cron 正常時の挙動は不変)', async () => {
+  const w = await freshWorker();
+  const env = { BOATRACE_KV: kvWithHeartbeat(0) };
+  const ctx = makeCtx();
+  const before = fetchCalls;
+  await w.fetch(req('/api/programs'), env, ctx);
+  await drain(ctx);
+  assert.strictEqual(fetchCalls, before, 'cron 正常なのに refreshAll を発火している');
+  const h = await (await w.fetch(req('/health'), env, ctx)).json();
+  assert.strictEqual(h.serve_heal.last_at, null);
+});
+
+await t('heartbeat 未生成 (旧 Worker) では発火しない (watchdog に任せる)', async () => {
+  const w = await freshWorker();
+  const env = { BOATRACE_KV: kvWithHeartbeat(null) };
+  const ctx = makeCtx();
+  const before = fetchCalls;
+  await w.fetch(req('/api/programs'), env, ctx);
+  await drain(ctx);
+  assert.strictEqual(fetchCalls, before);
+});
+
+await t('連続アクセスでも refreshAll は 5 分に 1 回 (refresh-now と同じ throttle を共有)', async () => {
+  const w = await freshWorker();
+  const env = { BOATRACE_KV: kvWithHeartbeat(60 * 60 * 1000) };
+  const c1 = makeCtx();
+  await w.fetch(req('/api/programs'), env, c1);
+  await drain(c1);
+  const afterFirst = fetchCalls;
+  assert.ok(afterFirst > 0);
+  const c2 = makeCtx();
+  await w.fetch(req('/api/previews'), env, c2);
+  await drain(c2);
+  // previews は KV に無いので serveFromKV 自身が live fetch する (1-2 回)。
+  // heal による refreshAll (3+ fetch) が二重に走っていないことを、throttle 状態で確認する。
+  const r = await w.fetch(req('/api/refresh-now'), env, makeCtx());
+  assert.strictEqual(r.status, 429, 'heal 発火後に throttle が効いていない = 連打で refreshAll が多重実行される');
+});
+
+await t('serve-heal は heartbeat を書かない (cron 生存証跡を偽装しない)', async () => {
+  const w = await freshWorker();
+  const kv = kvWithHeartbeat(60 * 60 * 1000);
+  const hbBefore = kv._store.get('health:heartbeat').value;
+  const ctx = makeCtx();
+  await w.fetch(req('/api/programs'), { BOATRACE_KV: kv }, ctx);
+  await drain(ctx);
+  assert.strictEqual(kv._store.get('health:heartbeat').value, hbBefore,
+    'serve-heal が heartbeat を更新している → watchdog が cron 死亡を検知できなくなる');
+});
+
 console.log(`\n合計: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);
