@@ -3385,6 +3385,17 @@ var _workerHeavyLoaded = false;
 
 /* MOVED: function _backfillTodayPredictions */
 
+// 2026-09-06: 締切判定。programData の race_closed_at (JST 文字列) を使う。
+//   不明なら「未締切」扱い（結果が無い段階では予想更新を許す = 実運用の締切前と同じ）。
+/* MOVED: function _isRaceClosedNow */
+// 2026-09-06: 表示用スナップショット（scenarios は大きく情報表示のみなので保存しない。
+//   表示側は snapshot に無い項目を live 予想でフォールバックする）。
+/* MOVED: function _buildPredSnapshot */
+// 2026-09-06: snapshot を持たない旧エントリ (FA-1 以降〜本修正前に保存) から、
+//   保存済みフィールドだけで表示用 snapshot を復元する（事後予想は一切使わない）。
+//   買い目の確率は保存していないので trifecta/exacta は付けず、表示側の live フォールバックに任せる。
+/* MOVED: function _snapshotFromEntry */
+/* MOVED: function _predFields */
 /* MOVED: function savePrediction */
 
 /* MOVED: function checkHit */
@@ -3750,34 +3761,12 @@ var _backfillTimer = null;
       var progPred = predictRaceProgram(sid, parseInt(rn));
       var hasResult = resultData && resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
       if (pred) savePrediction(todayStr(), sid, rn, pred, hasResult ? resultData[sid][rn] : null);
-      if (hasResult) {
-        try {
-          var _h = safeParse("boatrace_history", []);
-          for (var _hi = 0; _hi < _h.length; _hi++) {
-            var _e = _h[_hi];
-            if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-              var _liveMarkByBoat = {};
-              (pred && pred.marks ? pred.marks : []).forEach(function(_m) {
-                if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
-              });
-              var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m) {
-                return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || "" });
-              });
-              pred = {
-                marks: _snapMarks,
-                trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-                exacta: _e.pred_snapshot.exacta || pred.exacta,
-                raceType: _e.pred_snapshot.raceType || pred.raceType,
-                typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-                typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-                confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-                confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-                scenarios: _e.pred_snapshot.scenarios || pred.scenarios
-              };
-              break;
-            }
-          }
-        } catch (_) {
+      var _lockedPred = false;
+      if (hasResult && typeof _findLockedPred === "function") {
+        var _lk = _findLockedPred(sid, rn, pred);
+        if (_lk) {
+          pred = _lk;
+          _lockedPred = true;
         }
       }
       var pvData = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
@@ -3790,7 +3779,7 @@ var _backfillTimer = null;
           }
         }
       }
-      var dispPred = hasRealPv && pred ? pred : null;
+      var dispPred = (hasRealPv || _lockedPred) && pred ? pred : null;
       var typeSource = dispPred || progPred;
       var typeIcon = typeSource ? typeSource.raceType === "honmei" ? "\u26A1" : typeSource.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}" : "";
       var typeCls = dispPred ? dispPred.typeCls : progPred ? "type-" + (progPred.raceType || "middle") : "";

@@ -51,34 +51,12 @@
     var preview = previewData && previewData[sid] && previewData[sid][rn] ? previewData[sid][rn] : null;
     var result = resultData && resultData[sid] && resultData[sid][rn] ? resultData[sid][rn] : null;
     var pred = predictRace(sid, parseInt(rn));
+    var _lockedPred = false;
     if (result && result.isFinished) {
-      try {
-        var _h = safeParse("boatrace_history", []);
-        for (var _hi = 0; _hi < _h.length; _hi++) {
-          var _e = _h[_hi];
-          if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-            var _liveMarkByBoat = {};
-            (pred && pred.marks ? pred.marks : []).forEach(function(_m2) {
-              if (_m2 && _m2.boat) _liveMarkByBoat[_m2.boat] = _m2.mark;
-            });
-            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function(_m2) {
-              return Object.assign({}, _m2, { mark: _m2.mark || _liveMarkByBoat[_m2.boat] || "" });
-            });
-            pred = {
-              marks: _snapMarks,
-              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-              exacta: _e.pred_snapshot.exacta || pred.exacta,
-              raceType: _e.pred_snapshot.raceType || pred.raceType,
-              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-              scenarios: _e.pred_snapshot.scenarios || pred.scenarios
-            };
-            break;
-          }
-        }
-      } catch (_) {
+      var _lk = _findLockedPred(sid, rn, pred);
+      if (_lk) {
+        pred = _lk;
+        _lockedPred = true;
       }
     }
     var raceOdds = getOddsForRace(sid, rn);
@@ -265,6 +243,7 @@
       rn,
       race,
       pred,
+      lockedPred: _lockedPred,
       preview,
       result,
       popularity,
@@ -277,6 +256,47 @@
     } catch (_) {
     }
   }
+  function _findLockedPred(sid, rn, livePred) {
+    try {
+      var s = parseInt(sid), r = parseInt(rn);
+      var today = todayStr();
+      var h = safeParse("boatrace_history", []);
+      for (var i = h.length - 1; i >= 0; i--) {
+        var e = h[i];
+        if (e.date !== today || parseInt(e.stadium) !== s || parseInt(e.race) !== r) continue;
+        var snap = e.pred_snapshot;
+        if (!snap && e.actual && e.actual.length && typeof _snapshotFromEntry === "function") {
+          snap = _snapshotFromEntry(e);
+        }
+        if (!snap || !Array.isArray(snap.marks) || !snap.marks.length) return null;
+        var lp = livePred || {};
+        var liveMarkByBoat = {};
+        (lp.marks || []).forEach(function(m) {
+          if (m && m.boat) liveMarkByBoat[m.boat] = m.mark;
+        });
+        var marks = snap.marks.map(function(m) {
+          return Object.assign({}, m, { mark: m.mark || liveMarkByBoat[m.boat] || "" });
+        });
+        return {
+          marks,
+          trifecta: snap.trifecta || lp.trifecta || [],
+          exacta: snap.exacta || lp.exacta || [],
+          ana: lp.ana || [],
+          raceType: snap.raceType || lp.raceType,
+          typeCls: snap.typeCls || lp.typeCls,
+          typeLabel: snap.typeLabel || lp.typeLabel,
+          confidence: snap.confidence != null ? snap.confidence : lp.confidence,
+          confStars: snap.confStars != null ? snap.confStars : lp.confStars,
+          scenarios: snap.scenarios || lp.scenarios,
+          locked: true,
+          restored: !!snap.restored
+        };
+      }
+    } catch (_) {
+    }
+    return null;
+  }
+  globalThis._findLockedPred = _findLockedPred;
   globalThis.openRace = openRace;
 })();
 
@@ -737,7 +757,11 @@
     }
     predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
     predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
-    if (hasRealPreview && pred) {
+    var lockedPred = !!ctx.lockedPred;
+    if ((hasRealPreview || lockedPred) && pred) {
+      if (lockedPred) {
+        predHtml += '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">\u{1F512} \u7DE0\u5207\u6642\u70B9\u306E\u4E88\u60F3\u3092\u8868\u793A\u3057\u3066\u3044\u307E\u3059' + (pred.restored ? "\uFF08\u4FDD\u5B58\u30C7\u30FC\u30BF\u304B\u3089\u5FA9\u5143\uFF09" : "") + "</div>";
+      }
       var diff = comparePredictions(progPred, pred);
       pred.marks.forEach(function(m, i) {
         if (i >= 4) return;

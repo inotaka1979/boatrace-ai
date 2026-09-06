@@ -237,36 +237,15 @@ function openStadium(sid) {
     var hasResult = resultData && resultData[sid] && resultData[sid][rn] && resultData[sid][rn].isFinished;
 
     if (pred) savePrediction(todayStr(), sid, rn, pred, hasResult ? resultData[sid][rn] : null);
-    // F19c: 終了済レースは履歴の pred_snapshot を優先 (lock & 統計と一致)
-    if (hasResult) {
-      try {
-        var _h = safeParse('boatrace_history', []);
-        for (var _hi = 0; _hi < _h.length; _hi++) {
-          var _e = _h[_hi];
-          if (_e.date === todayStr() && _e.stadium === sid && _e.race === rn && _e.pred_snapshot) {
-            // 旧 snapshot は mark フィールドを保持しないため、現 pred の mark を boat 番号で merge
-            var _liveMarkByBoat = {};
-            (pred && pred.marks ? pred.marks : []).forEach(function (_m) {
-              if (_m && _m.boat) _liveMarkByBoat[_m.boat] = _m.mark;
-            });
-            var _snapMarks = (_e.pred_snapshot.marks || pred.marks || []).map(function (_m) {
-              return Object.assign({}, _m, { mark: _m.mark || _liveMarkByBoat[_m.boat] || '' });
-            });
-            pred = {
-              marks: _snapMarks,
-              trifecta: _e.pred_snapshot.trifecta || pred.trifecta,
-              exacta: _e.pred_snapshot.exacta || pred.exacta,
-              raceType: _e.pred_snapshot.raceType || pred.raceType,
-              typeCls: _e.pred_snapshot.typeCls || pred.typeCls,
-              typeLabel: _e.pred_snapshot.typeLabel || pred.typeLabel,
-              confidence: _e.pred_snapshot.confidence != null ? _e.pred_snapshot.confidence : pred.confidence,
-              confStars: _e.pred_snapshot.confStars != null ? _e.pred_snapshot.confStars : pred.confStars,
-              scenarios: _e.pred_snapshot.scenarios || pred.scenarios,
-            };
-            break;
-          }
-        }
-      } catch (_) {}
+    // F19c + 2026-09-06: 終了済レースは締切時点の予想 (履歴 snapshot) を表示する。
+    //   _findLockedPred は rest (race_detail.js)。未 load なら従来どおり live 予想。
+    var _lockedPred = false;
+    if (hasResult && typeof _findLockedPred === 'function') {
+      var _lk = _findLockedPred(sid, rn, pred);
+      if (_lk) {
+        pred = _lk;
+        _lockedPred = true;
+      }
     }
 
     // 直前予想があるか判定
@@ -282,7 +261,8 @@ function openStadium(sid) {
     }
 
     // 表示用の予想（直前あれば直前、なければ番組）
-    var dispPred = hasRealPv && pred ? pred : null;
+    // 2026-09-06: 終了レースは展示の有無に関わらず、締切時点の予想を表示する
+    var dispPred = (hasRealPv || _lockedPred) && pred ? pred : null;
     var typeSource = dispPred || progPred;
     var typeIcon = typeSource
       ? typeSource.raceType === 'honmei'

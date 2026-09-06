@@ -72,7 +72,16 @@ function _renderRaceDetailPrediction(ctx) {
   predHtml +=
     '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">直前予想 <span style="font-size:11px;color:#666;font-weight:400">展示航走反映</span></div>';
 
-  if (hasRealPreview && pred) {
+  // 2026-09-06: 終了済レースは履歴の締切時点予想 (lockedPred) を、展示の有無に関わらず表示する。
+  //   旧実装は展示が無いと「展示データ未取得」を出して予想を消していた。
+  var lockedPred = !!ctx.lockedPred;
+  if ((hasRealPreview || lockedPred) && pred) {
+    if (lockedPred) {
+      predHtml +=
+        '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">🔒 締切時点の予想を表示しています' +
+        (pred.restored ? '（保存データから復元）' : '') +
+        '</div>';
+    }
     var diff = comparePredictions(progPred, pred);
     pred.marks.forEach(function (m, i) {
       if (i >= 4) return;
