@@ -1265,6 +1265,67 @@ export default {
       return jsonResponse({ refreshed: r, authorized });
     }
 
+    // 2026-09-13 旅食Navi (tabishoku-navi): ホットペッパーグルメ Web サービスの中継。
+    //   同 API はブラウザからの直接呼出 (CORS / JSONP) を受け付けないため、同じ
+    //   GitHub Pages origin (inotaka1979.github.io) で動く姉妹アプリの取り次ぎを
+    //   本 Worker に相乗りさせる。Origin 許可は出口の _applyCors が担う。
+    //   同一位置 (約 100m 単位) の結果は Cache API で 10 分まとめ、API の 1 日上限
+    //   (3,000 回目安) を節約する。KV は使わない (書込クォータに影響しない)。
+    if (url.pathname === '/hotpepper') {
+      const key = url.searchParams.get('key') || '';
+      const lat = parseFloat(url.searchParams.get('lat'));
+      const lng = parseFloat(url.searchParams.get('lng'));
+      let range = parseInt(url.searchParams.get('range') || '3', 10);
+      let count = parseInt(url.searchParams.get('count') || '100', 10);
+      if (!/^[0-9a-f]{16}$/i.test(key)) {
+        return jsonResponse({ error: 'bad key' }, { status: 400, cacheControl: 'no-store' });
+      }
+      if (!(lat >= 20 && lat <= 46 && lng >= 122 && lng <= 154)) {
+        return jsonResponse({ error: 'bad latlng' }, { status: 400, cacheControl: 'no-store' });
+      }
+      if (!(range >= 1 && range <= 5)) range = 3;
+      if (!(count >= 1 && count <= 100)) count = 100;
+      const cacheKey = new Request(
+        `https://hotpepper-cache.invalid/v1?k=${key}&lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&range=${range}&count=${count}`
+      );
+      const cache = caches.default;
+      try {
+        const hit = await cache.match(cacheKey);
+        if (hit) {
+          const h = new Headers(hit.headers);
+          h.set('x-cache', 'HIT');
+          return new Response(hit.body, { status: hit.status, headers: h });
+        }
+      } catch (_) { /* cache miss と同じ扱い */ }
+      const upstream =
+        `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?key=${encodeURIComponent(key)}` +
+        `&lat=${lat}&lng=${lng}&range=${range}&count=${count}&format=json`;
+      try {
+        const res = await fetch(upstream, {
+          headers: { 'User-Agent': 'tabishoku-navi-proxy/1.0 (+https://inotaka1979.github.io/tabishoku-navi/)' },
+        });
+        const text = await res.text();
+        const out = new Response(text, {
+          status: res.status,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'public, max-age=600',
+            'x-cache': 'MISS',
+            ...CORS,
+          },
+        });
+        if (res.ok && ctx && typeof ctx.waitUntil === 'function') {
+          try { ctx.waitUntil(cache.put(cacheKey, out.clone())); } catch (_) { /* cache は best effort */ }
+        }
+        return out;
+      } catch (e) {
+        return jsonResponse(
+          { error: 'upstream', message: String((e && e.message) || e).slice(0, 120) },
+          { status: 502, cacheControl: 'no-store' }
+        );
+      }
+    }
+
     if (url.pathname === '/odds-proxy') {
       const type = url.searchParams.get('type') || '';
       const sid  = url.searchParams.get('sid') || '';
