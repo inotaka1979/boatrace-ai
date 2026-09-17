@@ -1277,6 +1277,8 @@ export default {
       const lng = parseFloat(url.searchParams.get('lng'));
       let range = parseInt(url.searchParams.get('range') || '3', 10);
       let count = parseInt(url.searchParams.get('count') || '100', 10);
+      // 2026-09-17: キーワード検索（店名・住所・駅名・ジャンルキャッチ・紹介文が対象）を転送する
+      const keyword = (url.searchParams.get('keyword') || '').trim().slice(0, 100);
       if (!/^[0-9a-f]{16}$/i.test(key)) {
         return jsonResponse({ error: 'bad key' }, { status: 400, cacheControl: 'no-store' });
       }
@@ -1286,7 +1288,7 @@ export default {
       if (!(range >= 1 && range <= 5)) range = 3;
       if (!(count >= 1 && count <= 100)) count = 100;
       const cacheKey = new Request(
-        `https://hotpepper-cache.invalid/v1?k=${key}&lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&range=${range}&count=${count}`
+        `https://hotpepper-cache.invalid/v1?k=${key}&lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&range=${range}&count=${count}&kw=${encodeURIComponent(keyword)}`
       );
       const cache = caches.default;
       try {
@@ -1294,12 +1296,15 @@ export default {
         if (hit) {
           const h = new Headers(hit.headers);
           h.set('x-cache', 'HIT');
+          if (keyword) h.set('x-keyword', 'applied');
+          h.set('access-control-expose-headers', 'x-cache, x-keyword');
           return new Response(hit.body, { status: hit.status, headers: h });
         }
       } catch (_) { /* cache miss と同じ扱い */ }
       const upstream =
         `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?key=${encodeURIComponent(key)}` +
-        `&lat=${lat}&lng=${lng}&range=${range}&count=${count}&format=json`;
+        `&lat=${lat}&lng=${lng}&range=${range}&count=${count}&format=json` +
+        (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '');
       try {
         const res = await fetch(upstream, {
           headers: { 'User-Agent': 'tabishoku-navi-proxy/1.0 (+https://inotaka1979.github.io/tabishoku-navi/)' },
@@ -1311,6 +1316,8 @@ export default {
             'content-type': 'application/json; charset=utf-8',
             'cache-control': 'public, max-age=600',
             'x-cache': 'MISS',
+            ...(keyword ? { 'x-keyword': 'applied' } : {}),
+            'access-control-expose-headers': 'x-cache, x-keyword',
             ...CORS,
           },
         });
