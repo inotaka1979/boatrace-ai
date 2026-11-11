@@ -1106,3 +1106,24 @@ FA-5 の認証 / CORS は既に本番反映されている。手動 wrangler 操
   5 分 throttle 対象になるだけ）。登録すると worker-watchdog が stale 検知時に
   throttle を待たず即時再生成できる。Cloudflare dashboard の Secret と GitHub の
   Actions secret に同じ値を入れる（`wrangler deploy` は dashboard の secret を保持する）。
+
+## 記録 (2026-11-11: 初回実データ backtest — PR-11)
+
+archive_daily が 45 日分（9/27〜11/10、6,556 レース）蓄積したので `backtest_offline.mjs` を
+初めて実データで実行。詳細は `docs/BACKTEST.md` 「実行記録」、生出力は
+`docs/backtest_20260927-20261110.json`。
+
+| 戦略 | ROI | 的中率 |
+|---|---|---|
+| 現行 AI 確率順 三連単 top-10 | **0.688** | 35.8% |
+| 現行 AI EV モード | 0.818（CI 0.35〜1.42、点数 1,384） | 0.3% |
+| 1 号艇 単勝ベタ買い | **0.909** | 54.3% |
+| 単勝 1 番人気 | 0.833 | 13.2% |
+| 三連単 人気順 top-10 | 0.825 | 13.6% |
+
+- 判定 NO EDGE。`--leak` で 0.688 → 0.988 に跳ねることから forward-chain は健全。
+- **ただし評価できたのは「番組表だけの朝予想」**: アーカイブの展示被覆 15.2%、三連単オッズ
+  26.7%、previews は live スキーマで番組予想に fallback。締切前の実運用予想は未評価。
+- 次の一手は予測ロジックの変更ではなく**アーカイブ被覆の充足**: 確定レースの展示・オッズを
+  事後バックフィルする scraper パス（軽量化後の scrape-all の余剰予算で 1 run N レース）と、
+  `loadDay` の previews live スキーマ変換。揃ってから A-01 / B-01 を同一 harness で比較する。
