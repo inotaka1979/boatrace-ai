@@ -1106,3 +1106,27 @@ FA-5 の認証 / CORS は既に本番反映されている。手動 wrangler 操
   5 分 throttle 対象になるだけ）。登録すると worker-watchdog が stale 検知時に
   throttle を待たず即時再生成できる。Cloudflare dashboard の Secret と GitHub の
   Actions secret に同じ値を入れる（`wrangler deploy` は dashboard の secret を保持する）。
+
+## 修正履歴 (2026-11-11: リポジトリ衛生 + CI ノイズ対策)
+
+### 計測: data の orphan ブランチ分離（P2-9）は見送り
+全履歴を unshallow して計測した結果、**pack 123 MiB（6,744 commit、2026-03-31〜）**。
+blob 総量は約 1.9GB（programs 454MB / odds 421MB / previews 291MB / db 243MB）だが
+再生成 JSON は delta 圧縮が効き、月 16MB 程度の増加に留まる。GitHub 推奨上限 1GB まで余裕が
+あり、push 衝突も rt-fix P0-3 以降は実障害が出ていない（11/11 のログは全て attempt 1 で成功）。
+Pages 公開ソース変更という手作業を伴う分離は実害が無いため**実施しない**。
+
+### 実施
+- `data/_debug/`（診断用 HTML ダンプ 105 ファイル / 7.3MB）を追跡停止、.gitignore に追加。
+  probe-venue*.yml は確認用に `git add -f` で一時 commit する運用のまま。
+- `ios-simulator-smoke.yml`: `simctl openurl` が直近 6 夜で 4 回 "Operation timed out"(60) で
+  落ちていた runner 側フレークに `bootstatus -b` 待ち + 最大 3 回 retry。
+- `notification-drill.yml`: 新しい drill を立てる前に open の drill issue を自動クローズ
+  （6〜11 月の 6 件が放置されていた。次回 12/1 の run で一括クローズされる）。
+- `dependabot-automerge.yml`（新規）: Dependabot の patch / minor PR は Gate 等の全チェック
+  完了を待って squash merge。major は人の判断に残す。既存の #314（aiohttp 3.14.5）は
+  本 workflow の対象外（イベント発生前の PR）なので手動 merge。
+
+### 残（user 操作）
+- `TRIGGER_SECRET` の登録（任意、sentinel README 参照）
+- 既存 open issue の手動クローズ: fl-gradient-upload #9 / #39（5 月、処理済み）

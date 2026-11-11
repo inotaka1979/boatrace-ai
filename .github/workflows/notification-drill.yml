@@ -45,6 +45,23 @@ jobs:
             --description "Notification reachability drill" \
             --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true
 
+      # 2026-11-11: 前回以前のドリル issue が open のまま溜まっていた (6 月〜11 月の 6 件)。
+      #   ドリルの目的は「通知が届くか」の確認で、issue 自体に価値は無い。新しい drill を
+      #   立てる前に古い drill を自動クローズし、open なのは常に最新 1 件だけにする。
+      - name: Close previous drill issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          NUMS=$(gh issue list --label drill --state open --limit 50 --json number --jq '.[].number' \
+                   --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true)
+          for N in $NUMS; do
+            gh issue comment "$N" --repo "${GITHUB_REPOSITORY}" \
+              --body "🔁 次回ドリル起票のため自動クローズ（notification-drill.yml）。未確認なら新しい drill issue で確認してください。" >/dev/null 2>&1 || true
+            gh issue close "$N" --reason "not planned" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+              && echo "closed previous drill #$N" || echo "::warning::could not close #$N"
+          done
+
       - name: Create drill issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

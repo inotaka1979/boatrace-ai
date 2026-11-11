@@ -21,3 +21,7 @@ build/data/
 build/playwright-report/
 build/test-results/
 test-results/
+
+# 2026-11-11: 診断用 HTML ダンプ (probe-venue*.yml が書く)。7.3MB/105 ファイルが main に
+#   残っていたので追跡停止。probe workflow は確認用に git add -f で一時 commit する。
+data/_debug/
