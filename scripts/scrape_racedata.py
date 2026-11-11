@@ -26,6 +26,13 @@ BASE_URL = "https://www.boatrace.jp/owpc/pc/race"
 PHOTO_URL = "https://www.boatrace.jp/racerphoto/{}.jpg"
 HEADERS = DEFAULT_HEADERS  # PC-1: 共通 UA を再エクスポート（写真 DL の urlopen 用）
 INTERVAL = 3
+# 2026-11-11 (scrape-all 軽量化): 場単位の並列化。
+#   実測: 逐次 (1 レース = racelist + beforeinfo の 2 fetch + 3s × 2 sleep ≒ 30s) で
+#   1 run 28 分かけても +55 レース、全 156 レースが揃うのは 21 時台だった。
+#   日中「今節成績が出ない」のはこの構造が原因。各場を別ワーカーで回し、
+#   ワーカー内は従来どおり 3s 間隔を守る（per-worker の politeness は不変、
+#   合計レートは RACEDATA_WORKERS 倍 ≒ scrape_results と同水準）。
+RACEDATA_WORKERS = int(os.environ.get("RACEDATA_WORKERS", "4"))
 OUTPUT_RACEDATA = "data/racedata/today.json"
 PHOTO_DIR = "data/photos"
 
@@ -283,6 +290,51 @@ def download_photos_parallel(racer_numbers, max_workers: int = 8, max_per_run: i
     elapsed = time.monotonic() - started
     print(f"  Photos done: ok={ok_count} fail={fail_count} cancelled={timeouts} in {elapsed:.1f}s")
 
+def _scrape_stadium(sid: int, pending: list[int], date_str: str) -> list[dict]:
+    """1 場ぶんの未取得レースを逐次（INTERVAL 間隔）で取得して entry 配列を返す。
+
+    ワーカースレッドから呼ばれる。共有状態には触らない（merge は呼出側）。
+    """
+    jcd = f"{sid:02d}"
+    entries: list[dict] = []
+    for rn in pending:
+        boats, day_label = scrape_racelist(jcd, rn, date_str)
+        time.sleep(INTERVAL)
+
+        parts = scrape_beforeinfo(jcd, rn, date_str)
+        time.sleep(INTERVAL)
+
+        for b in boats:
+            b["parts_replaced"] = parts.get(b["boat_number"], [])
+
+        entry = {"stadium": sid, "race": rn, "boats": boats}
+        # rt-fix3: 出走表タブから取得した「◯日目」ラベル（初日 / N日目 / 最終日）。
+        if day_label:
+            entry["day_label"] = day_label
+        entries.append(entry)
+    return entries
+
+
+def _merge_entry(all_data: list[dict], entry: dict) -> None:
+    """entry を all_data に (stadium, race) 単位で置換マージする。
+
+    FIX (2026-08-11): 空 entry を再取得対象にしたので、同じ (sid, rn) が
+      all_data に既に居る。append すると重複するため置換する。
+      併せて単調性を守る: 既存が boats を持つのに新規が空なら採用しない
+      （上流が一時的に空を返しても表示中の今節成績を壊さない）。
+    """
+    sid, rn = entry.get("stadium"), entry.get("race")
+    boats = entry.get("boats")
+    idx = next((k for k, e in enumerate(all_data)
+                if e.get("stadium") == sid and e.get("race") == rn), None)
+    if idx is None:
+        all_data.append(entry)
+    elif boats or not all_data[idx].get("boats"):
+        if not entry.get("day_label") and all_data[idx].get("day_label"):
+            entry["day_label"] = all_data[idx]["day_label"]
+        all_data[idx] = entry
+
+
 def main() -> None:
     """エントリーポイント: 本日の出走表 / 直前情報 / 写真を取得し OUTPUT_RACEDATA に出力。"""
     os.makedirs(os.path.dirname(OUTPUT_RACEDATA), exist_ok=True)
@@ -363,54 +415,39 @@ def main() -> None:
         all_data = []
         existing_done_keys = set()
 
+    # 場ごとの未取得レースを決め、場単位で並列に取る。
+    jobs: list[tuple[int, list[int]]] = []
     for sid, race_nums in sorted(stadiums.items()):
-        jcd = f"{sid:02d}"
-
-        # 既に取得済 race をスキップ
         pending = [rn for rn in sorted(race_nums) if (sid, rn) not in existing_done_keys]
         if not pending:
             print(f"  Stadium {sid}: all {len(race_nums)} races already done, skip")
             continue
         print(f"  Stadium {sid}: scraping {len(pending)}/{len(race_nums)} races")
+        jobs.append((sid, pending))
 
-        for rn in pending:
-            boats, day_label = scrape_racelist(jcd, rn, date_str)
-            time.sleep(INTERVAL)
-
-            parts = scrape_beforeinfo(jcd, rn, date_str)
-            time.sleep(INTERVAL)
-
-            for b in boats:
-                b["parts_replaced"] = parts.get(b["boat_number"], [])
-
-            entry = {
-                "stadium": sid,
-                "race": rn,
-                "boats": boats
-            }
-            # rt-fix3: 出走表タブから取得した「◯日目」ラベル（初日 / N日目 / 最終日）。
-            if day_label:
-                entry["day_label"] = day_label
-            # FIX (2026-08-11): 空 entry を再取得対象にしたので、同じ (sid, rn) が
-            #   all_data に既に居る。append すると重複するため置換する。
-            #   併せて単調性を守る: 既存が boats を持つのに新規が空なら採用しない
-            #   （上流が一時的に空を返しても表示中の今節成績を壊さない）。
-            idx = next((k for k, e in enumerate(all_data)
-                        if e.get("stadium") == sid and e.get("race") == rn), None)
-            if idx is None:
-                all_data.append(entry)
-            elif boats or not all_data[idx].get("boats"):
-                if not day_label and all_data[idx].get("day_label"):
-                    entry["day_label"] = all_data[idx]["day_label"]
-                all_data[idx] = entry
-
-        # Stadium 完了ごとに partial として保存 (timeout / network 障害耐性)
-        atomic_write_json(OUTPUT_RACEDATA, {
-            "updated_at": utc_iso_seconds(),
-            "race_date": date_str,
-            "partial": True,
-            "racedata": all_data,
-        })
+    # 完了した場から順に all_data へ merge し partial 保存（timeout / network 障害耐性）。
+    #   merge と書込はメインスレッドだけが行うので lock 不要。
+    if jobs:
+        workers = max(1, min(RACEDATA_WORKERS, len(jobs)))
+        print(f"  racedata: {len(jobs)} stadiums in parallel x{workers} (per-worker interval {INTERVAL}s)")
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(_scrape_stadium, sid, pending, date_str): sid for sid, pending in jobs}
+            for fut in as_completed(futures):
+                sid = futures[fut]
+                try:
+                    entries = fut.result()
+                except Exception as e:  # noqa: BLE001
+                    print(f"  Stadium {sid}: worker exception: {e}")
+                    continue
+                for entry in entries:
+                    _merge_entry(all_data, entry)
+                atomic_write_json(OUTPUT_RACEDATA, {
+                    "updated_at": utc_iso_seconds(),
+                    "race_date": date_str,
+                    "partial": True,
+                    "racedata": all_data,
+                })
+                print(f"  Stadium {sid}: done ({len(entries)} races), partial saved")
 
     # rt-fix3 (2026-06-27): day_label backfill。
     #   再開ロジックで「全レース取得済み」の場は再 scrape されないため day_label が付かない。

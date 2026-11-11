@@ -11,10 +11,12 @@ name: Scrape All (unified - archive role)
 #   ユーザー体感の鮮度を律速しない設計になった。即時更新は workflow_dispatch を使う。
 #
 #   スクリプト構成 (scrape_all.py 内の JST 時刻分岐):
-#   - 常時 (8-22 JST):    odds + previews (アーカイブ)
-#   - 30 分境界:           results
-#   - 09:30, 12:00 JST:    racedata + schedule
+#   - 10-22 JST (results が 20 分以上古ければ): results（確定済・締切前は skip）
+#   - 常時 (8-22 JST):    previews → odds（odds は締切 60 分以内のみ、内部期限 240s）
+#   - 08:30-22 JST:        racedata（場単位 4 並列、未取得が残る限り毎 run 継続）
 #   - 08:00 JST:           tide + schedule
+#   2026-11-11 (軽量化): 旧構成は odds 全件が 300s timeout に毎回 kill され、racedata の
+#   逐次取得が残り 28 分を使い切っていた（1 run 42 分）。詳細は CLAUDE.md 同日項。
 
 on:
   workflow_dispatch:

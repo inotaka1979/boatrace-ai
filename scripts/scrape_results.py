@@ -33,6 +33,15 @@ FETCH_TIMEOUT = 25
 FETCH_RETRIES = 1
 PARALLEL_WORKERS = 4
 WALL_BUDGET_SEC = 1200
+# 2026-11-11 (scrape-all 軽量化): 取得対象を絞る。
+#   実測: 毎 run 144 レース全部を再取得して 336 秒。うち 114 レースは既に確定・払戻まで
+#   揃っており、7 レースは締切前で「not yet」が確定している。どちらも取る意味が無い。
+#   - 既存 today.json で _completeness が FULL 以上 (確定 + 着順 + 三連単払戻) → skip
+#   - 締切まで RESULT_GRACE_MIN 分以上あるレース → skip（結果が存在し得ない）
+#   環境変数 RESULTS_REFETCH_ALL=1 で旧挙動（全件再取得）に戻せる。
+COMPLETENESS_FULL = 7
+RESULT_GRACE_MIN = 0       # 締切「後」になるまで待つ（レース自体は締切後 ~3 分で終わる）
+JST = datetime.timezone(datetime.timedelta(hours=9))
 
 
 def fetch(url: str) -> str:
@@ -251,6 +260,70 @@ def _merge_with_existing(path: str, fresh: list[dict], date_str: str) -> list[di
     return [merged[k] for k in sorted(merged.keys())]
 
 
+def _load_complete_keys(path: str, date_str: str) -> set:
+    """既存 today.json のうち「これ以上取っても情報が増えない」レースの (stadium, race) 集合。"""
+    keys = set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            prev = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return keys
+    want = (date_str or "").replace("-", "")
+    for r in prev.get("results", []) or []:
+        sid, rno = r.get("race_stadium_number"), r.get("race_number")
+        if sid is None or rno is None:
+            continue
+        rdate = str(r.get("race_date") or "").replace("-", "")
+        if want and rdate and rdate != want:
+            continue
+        if _completeness(r) >= COMPLETENESS_FULL:
+            keys.add((sid, rno))
+    return keys
+
+
+def _parse_closing_map(programs: list[dict]) -> dict:
+    """programs → {(stadium, race): 締切 datetime(JST)}。race_closed_at 欠落は含めない。"""
+    closing = {}
+    for p in programs or []:
+        sid, rno = p.get("race_stadium_number"), p.get("race_number")
+        c = p.get("race_closed_at") or ""
+        if not (sid and rno and c):
+            continue
+        try:
+            closing[(sid, rno)] = datetime.datetime.strptime(c, "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
+        except ValueError:
+            continue
+    return closing
+
+
+def select_fetch_targets(races, complete_keys, closing_map, now, grace_min=RESULT_GRACE_MIN):
+    """取得すべきレースを選ぶ。
+
+    Args:
+        races: 本日の全 (stadium, race)
+        complete_keys: 既に完全な結果を持つレース（skip）
+        closing_map: 締切時刻。無いレースは「いつ終わるか不明」として取得対象に残す
+        now: JST 現在時刻
+        grace_min: 締切からこの分数経つまでは取得しない
+
+    Returns:
+        (targets, skipped_complete, skipped_not_closed)
+    """
+    targets = []
+    skipped_complete = 0
+    skipped_not_closed = 0
+    for key in sorted(races):
+        if key in complete_keys:
+            skipped_complete += 1
+            continue
+        close = closing_map.get(key)
+        if close is not None and (now - close).total_seconds() < grace_min * 60:
+            skipped_not_closed += 1
+            continue
+        targets.append(key)
+    return targets, skipped_complete, skipped_not_closed
+
+
 def _count_finished(path: str) -> int:
     """既存アーカイブの確定レース数（存在しなければ 0）。"""
     try:
@@ -324,13 +397,26 @@ def main() -> None:
     if not date_str:
         date_str = jst_now().strftime("%Y%m%d")  # FIX: GHA UTC 起動時に前日になるバグ回避
 
-    log.info("Date: %s, %d races (parallel x%d, budget %ds)", date_str, len(races), PARALLEL_WORKERS, WALL_BUDGET_SEC)
+    # 2026-11-11: 確定済み・締切前のレースは取らない（本ファイル冒頭のコメント参照）。
+    if os.environ.get("RESULTS_REFETCH_ALL") == "1":
+        fetch_keys, skipped_complete, skipped_not_closed = sorted(races), 0, 0
+        log.info("RESULTS_REFETCH_ALL=1 — 全件再取得")
+    else:
+        fetch_keys, skipped_complete, skipped_not_closed = select_fetch_targets(
+            races,
+            _load_complete_keys(OUTPUT, date_str),
+            _parse_closing_map(programs),
+            datetime.datetime.now(JST),
+        )
+    log.info("Date: %s, %d races → fetch %d (skip: %d complete, %d not closed yet) (parallel x%d, budget %ds)",
+             date_str, len(races), len(fetch_keys), skipped_complete, skipped_not_closed,
+             PARALLEL_WORKERS, WALL_BUDGET_SEC)
 
     # 2026-05-16: 全 run が 30m timeout で cancel される問題を解消するため並列化
     #   - workers=4 で per-worker rate を抑制し politeness 維持
     #   - WALL_BUDGET_SEC 経過で残タスク cancel → 部分結果を atomic_write_json
     #   - 旧 INTERVAL 3s sleep は廃止 (並列ワーカーが自然に分散)
-    work = [(sid, rn, date_str) for sid, rn in sorted(races)]
+    work = [(sid, rn, date_str) for sid, rn in fetch_keys]
     all_results: list[dict] = []
     fail_count = 0
     cancelled = 0
@@ -360,12 +446,13 @@ def main() -> None:
                 log.warning("  worker exception: %s", e)
     elapsed = time.monotonic() - started
     log.info("Fetched %d/%d races in %.1fs (fail=%d, cancelled=%d)",
-             len(all_results), len(races), elapsed, fail_count, cancelled)
+             len(all_results), len(fetch_keys), elapsed, fail_count, cancelled)
 
-    # P1-B4: 部分失敗を含めた信頼度スコア（finished/total）
-    finished_n = len([r for r in all_results if r.get('race_technique_number')])
-    requested_n = len(races) if races else 1
-    rel = finished_n / requested_n if requested_n > 0 else 1.0
+    # P1-B4: 部分失敗を含めた信頼度スコア。
+    #   2026-11-11: 対象を絞ったので「今回取りに行った中で取れた割合」にする
+    #   （旧: 全レース分母。skip 分が常に失敗扱いになり無意味な低値になる）。
+    requested_n = len(fetch_keys)
+    rel = (len(all_results) / requested_n) if requested_n > 0 else 1.0
     # FIX (2026-08-11): 単調マージ。旧実装は all_results を無条件に書いていたため、
     #   (a) 全 fetch 失敗（本ファイル冒頭に記録のある 168/168 read timeout 等）で
     #       {"results": []} が当日の確定結果を丸ごと消す、

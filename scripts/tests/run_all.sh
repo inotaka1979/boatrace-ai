@@ -55,6 +55,10 @@ step "Python unit tests (scraper data-loss guards)" \
 step "Python unit tests (scrape_all decide / freshness gate)" \
      "python3 -m unittest scripts.tests.test_scrape_all_decide -v"
 
+# 1d2) 2026-11-11: scrape-all 軽量化（odds 締切窓 / results skip / racedata 並列 / 順序）
+step "Python unit tests (scrape-all lightweight targets)" \
+     "python3 -m unittest scripts.tests.test_scrape_lightweight -v"
+
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
      "node scripts/tests/test_ana_tracking.js"

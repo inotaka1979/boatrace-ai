@@ -43,6 +43,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      # 2026-11-11: Gate は Python 依存 (bs4 / aiohttp / lxml) を入れておらず、
+      #   スクレイパ系の Python テスト 13+ 件が `skipped 'bs4 missing'` で常時 skip されていた
+      #   （test.yml には FA で pip install が入ったが Gate には無かった）。
+      #   「Gate 緑 = 全テスト PASS」を本当にする。依存を import するテストが CI で
+      #   ImportError になる（= skip ではなく fail する）ことで欠落に気付けるようにもなる。
+      - name: Install Python deps (scrapers' tests)
+        run: pip install -r scripts/requirements.txt
 
       - name: Install root deps (eslint + prettier)
         run: |
