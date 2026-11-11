@@ -1,9 +1,10 @@
 name: Probe Venue (diag)
+# 2026-11-11: push トリガーを撤去し workflow_dispatch のみに。
+#   旧設定は「この workflow ファイル自身 / probe スクリプトの変更」で発火したため、
+#   .gitignore 対応の編集 (#324) が merge された直後に自ら走り、削除したばかりの
+#   data/_debug/ サンプルを再コミットした (fbeefef2a)。診断は手動実行だけで十分。
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/probe-venue.yml','scripts/probe_venue.py']
 permissions:
   contents: read
 concurrency:
