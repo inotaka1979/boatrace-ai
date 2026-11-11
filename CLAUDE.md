@@ -1106,3 +1106,33 @@ FA-5 の認証 / CORS は既に本番反映されている。手動 wrangler 操
   5 分 throttle 対象になるだけ）。登録すると worker-watchdog が stale 検知時に
   throttle を待たず即時再生成できる。Cloudflare dashboard の Secret と GitHub の
   Actions secret に同じ値を入れる（`wrangler deploy` は dashboard の secret を保持する）。
+
+## 修正履歴 (2026-11-11: scrape-all 軽量化 — 1 run 42 分を毎回使い切る構造の解消)
+
+11/11 の実測（run 1417, 16:19 JST 開始）で、scrape-all の中身の大半が無駄だった:
+
+| タスク | 実測 | 原因 |
+|---|---|---|
+| odds | 300s で毎回 timeout (exit 124) | 全 active 111-144 レース × 3 ページを 2 req/s で回し kill される。kill は atomic write に到達しないため **その run のオッズは何も書かれない**（当日の odds は 11:57 の 1 回・144 中 24 レースのみ） |
+| results | 336s | 確定・払戻まで揃った 114 レースと締切前 7 レースを毎回再取得 |
+| racedata | 残り 28 分で打ち切り | 3s 間隔の逐次で +55 レース/run。全件揃うのは 21 時台 → 日中「今節成績」が出ない |
+
+GitHub schedule の間引き（6 アンカー → 実発火 2 回/日）で run 回数は増やせないため、
+1 run を短く・確実に完走させる方向で修正:
+
+- **odds** (`scrape_odds_fast.py`): 対象を「締切 60 分以内（締切後 5 分まで）の未確定レース、
+  締切の近い順に最大 36」に限定。内部期限 `ODDS_BUDGET_SEC`(240s) で新規着手を止め、
+  subprocess timeout (300s) より手前で必ず書き出す。確定判定は previews に加えて
+  `data/results/today.json` も参照。番組表はローカル公式 programs 優先（previews/results と統一）。
+- **results** (`scrape_results.py`): 既存 today.json で `_completeness >= 7`（確定 + 着順 +
+  三連単払戻）のレースと締切前のレースを skip（`RESULTS_REFETCH_ALL=1` で旧挙動）。
+  reliability は「取りに行った中で取れた割合」に。
+- **racedata** (`scrape_racedata.py`): 場単位で `RACEDATA_WORKERS`(4) 並列。ワーカー内は
+  従来どおり 3s 間隔（per-worker politeness 不変）。完了した場から partial 保存。
+  `_scrape_stadium` / `_merge_entry` に分離し単体テスト可能に。
+- **順序** (`scrape_all.py`): results → previews → odds（odds が results の確定を使える）。
+  racedata は従来どおり最後。
+- テスト: `scripts/tests/test_scrape_lightweight.py`（17 件）を run_all.sh に追加。
+
+期待効果: real-time 系 3 タスクが合計 2-4 分、racedata は 1 run で全場完走（~7 分）。
+間引かれた回の損失が小さくなり、今節成績が午前中に揃う。

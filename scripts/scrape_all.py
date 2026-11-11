@@ -64,6 +64,8 @@ def _run_subprocess(script: str, args: list[str] | None = None, timeout_sec: int
 
 
 def _scrape_odds() -> int:
+    # 2026-11-11: スクリプト側に内部期限 ODDS_BUDGET_SEC (既定 240s) があり、
+    #   この timeout に掛かる前に必ず書き出す。timeout は kill の最終保険。
     return _run_subprocess("scrape_odds_fast.py", timeout_sec=300)
 
 
@@ -281,9 +283,9 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
             ("programs", _scrape_programs),
             ("racedata", _scrape_racedata),
             ("tide", _scrape_tide),
-            ("odds", _scrape_odds),
-            ("previews", _scrape_previews),
             ("results", _scrape_results),
+            ("previews", _scrape_previews),
+            ("odds", _scrape_odds),
         ]
 
     # racedata stale 時の優先実行: GHA job timeout (25 min) と odds の timeout
@@ -331,19 +333,22 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     if racedata_window:
         tasks.append(("programs(sync)", _programs_if_venue_mismatch))
 
-    # 共通: race hours (JST 08-22) は odds + previews を毎 tick
-    if 8 <= h <= 22:
-        tasks.append(("odds", _scrape_odds))
-        tasks.append(("previews", _scrape_previews))
-
     # results: 鮮度ベース (2026-07-05)。
     # 旧条件は「実行時の分が 0-9 or 25-35」の分窓だったが、GHA の schedule 間引きで
     #   実行時刻が不定になると丸一日 skip し得る(実障害: 07-05 に 10:17 実行で
     #   results タスクが走らず、前日から results が空のまま)。
     #   updated_at が 20 分より古ければ毎 tick で取得する(冪等。並列は
     #   concurrency:scrape-all で防止されるため安全)。
+    # 2026-11-11: real-time 系の順序を results → previews → odds に変更。
+    #   results は確定済み・締切前を skip するので ~1 分で終わる。先に確定させると
+    #   odds (get_finished_from_results) が確定レースを対象から外せる。
     if 10 <= h <= 22 and _age_minutes("data/results/today.json") >= 20:
         tasks.append(("results", _scrape_results))
+
+    # 共通: race hours (JST 08-22) は previews + odds を毎 tick
+    if 8 <= h <= 22:
+        tasks.append(("previews", _scrape_previews))
+        tasks.append(("odds", _scrape_odds))
 
     # 2026-08-11 FIX: racedata は real-time 系 (odds/previews/results) の後に実行する。
     #   理由は上の racedata_stale ブロックのコメント参照。

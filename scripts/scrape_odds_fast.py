@@ -8,13 +8,14 @@
   - 全レース失敗時のみ exit 1 (workflow を red に)、部分成功は exit 0
 """
 
-import asyncio, json, os, sys, time, logging, random
+import asyncio, json, os, sys, time, logging, random, datetime
 import aiohttp
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
-from time_utils import utc_iso_seconds  # P2 D-02 / D-10
+from time_utils import utc_iso_seconds, JST  # P2 D-02 / D-10
+from programs_source import load_local_official_programs  # 公式移行 Phase 2
 
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
@@ -26,7 +27,19 @@ from http_utils import USER_AGENT  # noqa: E402
 USER_AGENTS = [USER_AGENT]
 OUTPUT = "data/odds/today.json"
 PREVIEWS = "data/previews/today.json"
+RESULTS = "data/results/today.json"
 CONCURRENCY = 5
+# 2026-11-11 (scrape-all 軽量化): 対象を「締切 ODDS_WINDOW_MIN 分以内の未確定レース」に絞る。
+#   実測: 全 active (111-144 レース × 3 ページ) を 2 req/s で回すと 300 秒の timeout に
+#   毎回かかり、kill されるため **何も書かれない** (今日の odds は 11:57 の 1 回だけ、
+#   144 中 24 レース)。買い目計算で価値があるのは直近レースのオッズだけで、
+#   ライブ経路は Worker の /odds-proxy が担うので、バルクは直近に限定して確実に完走させる。
+ODDS_WINDOW_MIN = 60        # 締切までこの分数以内のレースを対象
+ODDS_GRACE_MIN = 5          # 締切直後の数分も対象（締切オッズの確定値を拾う）
+ODDS_MAX_RACES = 36         # 1 run の上限 (× 3 ページ = 108 req ≒ 60 秒)
+# 内部期限。scrape_all の subprocess timeout (300s) より手前で必ず書き出す。
+#   kill されると atomic write に到達せず、その run のオッズが丸ごと消えるため。
+ODDS_BUDGET_SEC = int(os.environ.get("ODDS_BUDGET_SEC", "240"))
 # B-07: 3.3 req/s は公営競技サイトへのアクセスとしてやや強い → 2 req/s に緩和
 INTERVAL = 0.5
 # 2026-05-10: 指数バックオフ retry でレート制限への耐性を向上
@@ -214,6 +227,67 @@ def get_finished():
         log.warning("get_finished: load failed (%s) — fallback to empty set", e)
     return finished
 
+def get_finished_from_results(path: str = RESULTS, date_str: str = "") -> set:
+    """data/results/today.json の確定レース集合。previews より先に results が走る
+    前提で、previews 側の finished が遅れていても確定済みを対象から外せる。"""
+    finished = set()
+    if not os.path.exists(path):
+        return finished
+    try:
+        with open(path, encoding="utf-8") as f:
+            for r in json.load(f).get("results", []) or []:
+                rdate = str(r.get("race_date") or "").replace("-", "")
+                if date_str and rdate and rdate != date_str:
+                    continue
+                if r.get("race_technique_number"):
+                    finished.add((r.get("race_stadium_number"), r.get("race_number")))
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("get_finished_from_results: load failed (%s) — ignored", e)
+    return finished
+
+
+def parse_closing_map(programs: list[dict]) -> dict:
+    """programs → {(stadium, race): 締切 datetime(JST)}。race_closed_at 欠落は含めない。"""
+    closing = {}
+    for p in programs or []:
+        s, r = p.get("race_stadium_number"), p.get("race_number")
+        c = p.get("race_closed_at") or ""
+        if not (s and r and c):
+            continue
+        try:
+            closing[(s, r)] = datetime.datetime.strptime(c, "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
+        except ValueError:
+            continue
+    return closing
+
+
+def select_odds_targets(active, closing_map, now, window_min=ODDS_WINDOW_MIN,
+                        grace_min=ODDS_GRACE_MIN, max_races=ODDS_MAX_RACES):
+    """未確定レースから「締切が近い順に、締切 window_min 分以内（締切後 grace_min 分まで）」
+    を最大 max_races 件選ぶ。
+
+    締切時刻が分からないレース (closing_map に無い) は、全レースに締切が無い場合のみ
+    旧挙動 (全 active、締切不明は末尾) にフォールバックする。それ以外は除外する。
+
+    Returns:
+        list[(stadium, race)] 締切の近い順。
+    """
+    active = sorted(set(active))
+    if not active:
+        return []
+    known = [k for k in active if k in closing_map]
+    if not known:
+        # 締切情報が全く無い (openapi 仕様変更等) → 旧挙動で上限だけ掛ける
+        return active[:max_races]
+    picked = []
+    for k in known:
+        mins = (closing_map[k] - now).total_seconds() / 60.0
+        if -grace_min <= mins <= window_min:
+            picked.append((mins, k))
+    picked.sort()
+    return [k for _, k in picked[:max_races]]
+
+
 def _preserve_with_timestamp(reason: str) -> None:
     """2026-05-28: programs 取得失敗 / no-programs 時、既存 OUTPUT を保持しつつ
     updated_at だけ refresh する。freshness monitor 連続 stale alert 防止 +
@@ -235,15 +309,23 @@ def _preserve_with_timestamp(reason: str) -> None:
 
 async def async_main():
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
+    t_run = time.monotonic()
     log.info("Fetching programs...")
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(PROGRAMS_URL, headers={"User-Agent": USER_AGENTS[0]}, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                prog = await r.json()
-    except Exception as e:
-        log.error("Programs fetch failed: %s", e)
-        _preserve_with_timestamp("programs fetch failed: " + str(e)[:200])
-        return
+    # 公式移行 Phase 2 と同じ優先順: ローカル公式 programs (JST 当日・非空) → openapi。
+    #   race_closed_at で締切窓を切るため、previews / results と同じ番組表を使う。
+    prog = load_local_official_programs()
+    if prog:
+        log.info("using official local programs (boatrace.jp 由来, %d races)",
+                 len(prog.get("programs", [])))
+    else:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(PROGRAMS_URL, headers={"User-Agent": USER_AGENTS[0]}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    prog = await r.json()
+        except Exception as e:
+            log.error("Programs fetch failed: %s", e)
+            _preserve_with_timestamp("programs fetch failed: " + str(e)[:200])
+            return
     programs = prog.get("programs", [])
     if not programs:
         log.info("No programs")
@@ -254,8 +336,16 @@ async def async_main():
         s, r = p.get("race_stadium_number"), p.get("race_number")
         if s and r: races.add((s, r))
         if not date_str: date_str = p.get("race_date", "").replace("-", "")
-    finished = get_finished(); active = sorted(races - finished)
-    log.info("%d total, %d finished, %d active", len(races), len(finished), len(active))
+    finished = get_finished() | get_finished_from_results(RESULTS, date_str)
+    active = sorted(races - finished)
+    now = datetime.datetime.now(JST)
+    closing_map = parse_closing_map(programs)
+    targets = select_odds_targets(active, closing_map, now)
+    log.info("%d total, %d finished, %d active, %d targets (close within %d min, max %d)",
+             len(races), len(finished), len(active), len(targets), ODDS_WINDOW_MIN, ODDS_MAX_RACES)
+    for s, r in targets[:12]:
+        c = closing_map.get((s, r))
+        log.info("  %02d-%02dR close=%s", s, r, c.strftime("%H:%M") if c else "?")
     existing = {}
     if os.path.exists(OUTPUT):
         try:
@@ -282,11 +372,19 @@ async def async_main():
         if stale:
             log.warning("Dropped %d odds entries not in today's race list", len(stale))
     sem = asyncio.Semaphore(CONCURRENCY); limiter = RateLimiter(INTERVAL); results = {}
+    deadline = t_run + ODDS_BUDGET_SEC
+    skipped = 0
     # 2026-05-10: 1 task 失敗が gather を中断して全体を巻き込むのを防ぐ
     async with aiohttp.ClientSession() as session:
         async def task(s, r):
+            nonlocal skipped
             try:
                 async with sem:
+                    # 内部期限: 期限を過ぎたら新しいレースに着手しない（締切の近い順に
+                    #   並んでいるので、切られるのは最も遠いレースから）。
+                    if time.monotonic() >= deadline:
+                        skipped += 1
+                        return
                     results[(s, r)] = await scrape_race(session, limiter, s, r, date_str)
             except Exception as e:   # noqa: BLE001
                 # 単一レースの予期せぬ例外で gather 全体を死なせない
@@ -294,7 +392,8 @@ async def async_main():
                 results[(s, r)] = {"stadium": s, "race": r, "_error": str(e)}
         t0 = time.monotonic()
         # return_exceptions=True で 1 タスクの未捕捉例外が gather を破壊しない
-        await asyncio.gather(*[task(s, r) for s, r in active], return_exceptions=True)
+        #   list 順 = 締切の近い順で起動されるため、semaphore 待ちも近い順に解ける。
+        await asyncio.gather(*[task(s, r) for s, r in targets], return_exceptions=True)
         elapsed = time.monotonic() - t0
     # D-03: スクレイプ失敗（win も exacta も無し）の場合は既存値を保持し、
     #        プレースホルダ {stadium,race} で上書きしない
@@ -311,7 +410,8 @@ async def async_main():
         if (s, r) not in existing:
             existing[(s, r)] = {"stadium": s, "race": r}
     # 2026-05-10: reliability_score を出力 JSON に記録（PWA 側で stale 判定に活用可能）
-    reliability = (updated / len(active)) if active else 0.0
+    attempted = len(targets) - skipped
+    reliability = (updated / attempted) if attempted else 0.0
     # D-01: atomic write — 失敗 race も含めて updated_at を更新（PWA に "scrape は走った" を伝える）
     atomic_write_json(OUTPUT, {
         "updated_at": utc_iso_seconds(),
@@ -319,7 +419,11 @@ async def async_main():
         #   日跨ぎ判定ができず、前日のオッズを今日のものとして持ち越していた。
         "race_date": date_str,
         "scrape_stats": {
-            "total": len(active),
+            "total": attempted,
+            "active": len(active),
+            "targets": len(targets),
+            "skipped": skipped,
+            "window_min": ODDS_WINDOW_MIN,
             "updated": updated,
             "failed": failed,
             "reliability": round(reliability, 3),
@@ -327,10 +431,10 @@ async def async_main():
         },
         "odds": [existing[k] for k in sorted(existing.keys())],
     })
-    log.info("Done! %d/%d scraped (%d failed, reliability=%.1f%%) in %.1fs",
-             updated, len(active), failed, reliability * 100, elapsed)
+    log.info("Done! %d/%d scraped (%d failed, %d skipped by budget, reliability=%.1f%%) in %.1fs",
+             updated, attempted, failed, skipped, reliability * 100, elapsed)
     # 2026-05-10: 全レース失敗のときだけ workflow を red に (Actions 監視で気付ける)
-    if active and updated == 0:
+    if attempted and updated == 0:
         log.error("ALL races failed — likely rate limited / boatrace.jp issue")
         sys.exit(1)
 
