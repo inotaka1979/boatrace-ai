@@ -58,3 +58,39 @@ jobs:
             cat /tmp/health || true
             exit 1
           fi
+
+  # 2026-11-11: 本体の外形監視・自己復旧を担う第 2 Worker (boatrace-sentinel)。
+  #   GitHub schedule が間引かれて watchdog が 1-2 回/日しか動かないため、監視を
+  #   Cloudflare cron (5 分毎、間引きなし) に移した。cloudflare-worker/sentinel/README.md 参照。
+  #   secrets (GH_TOKEN / TRIGGER_SECRET) は dashboard 設定を保持する。
+  deploy-sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Deploy sentinel to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-worker/sentinel
+          command: deploy
+
+      - name: Verify sentinel
+        run: |
+          sleep 5
+          status=$(curl -sS -o /tmp/sentinel -w "%{http_code}" \
+            https://boatrace-sentinel.inotaka1979.workers.dev/status || echo "000")
+          cat /tmp/sentinel || true
+          echo ""
+          if [ "$status" != "200" ]; then
+            echo "❌ sentinel /status failed: HTTP $status"
+            exit 1
+          fi
+          echo "✅ sentinel is live"
+          if ! grep -q '"gh_token":true' /tmp/sentinel; then
+            echo "::warning::sentinel に GH_TOKEN が未設定です。監視と refresh-now は動きますが、再デプロイ dispatch と issue 起票は行われません（cloudflare-worker/sentinel/README.md）"
+          fi
