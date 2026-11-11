@@ -24,6 +24,11 @@
 
 KV は本体と同じ namespace を `sentinel:` prefix で共用。書込は状態遷移時のみ（正常時 0 回/日）。
 
+本体への呼び出しは **Service Binding**（`[[services]] binding = "MAIN"`）経由。Worker から
+同一アカウントの `*.workers.dev` を公開 URL で fetch すると Cloudflare が 404 を返すため
+（Worker→Worker の同一ゾーン fetch 非対応、error 1042。初回デプロイの `/status` で実測）。
+`/status` の `main_binding` が true であることを確認する。
+
 ## 初期設定（1 回、ユーザー手動）
 
 デプロイ自体は `.github/workflows/deploy-worker.yml` の `deploy-sentinel` job が

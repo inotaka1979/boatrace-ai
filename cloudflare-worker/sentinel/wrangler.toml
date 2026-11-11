@@ -40,3 +40,12 @@ ISSUE_COMMENT_INTERVAL_SEC = "3600"
 [[kv_namespaces]]
 binding = "BOATRACE_KV"
 id = "7834740f2f034a04a54b9bde4078d717"
+
+# 2026-11-11: 本体 Worker への Service Binding。
+#   Worker から同一アカウントの *.workers.dev を公開 URL で fetch すると Cloudflare が
+#   404 を返す (Worker→Worker の同一ゾーン fetch 非対応、error 1042)。初回デプロイの
+#   /status で main_probe.http=404 として実測。Service Binding なら直接呼べる (無料、
+#   サブリクエスト数にも乗らない)。MAIN_BASE は URL の path/query の組立てにだけ使う。
+[[services]]
+binding = "MAIN"
+service = "boatrace-scrape-trigger"

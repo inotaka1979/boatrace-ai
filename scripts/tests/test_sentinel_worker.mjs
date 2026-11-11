@@ -300,6 +300,45 @@ await t('一過性の失敗 (1 回) が回復しても issue は作られず、�
   );
 });
 
+await t('Service Binding: env.MAIN があれば本体は MAIN.fetch で呼び、公開 URL は fetch しない', async () => {
+  // 実測 (2026-11-11 初回デプロイ): Worker→同一アカウント workers.dev の公開 URL fetch は 404。
+  const seen = [];
+  const env = baseEnv({
+    MAIN: {
+      async fetch(req) {
+        seen.push({ url: req.url, secret: req.headers.get('x-trigger-secret') });
+        if (req.url.includes('/health')) {
+          return new Response(JSON.stringify(CRON_DEAD.body), { status: 500 });
+        }
+        return new Response('{}', { status: 200 });
+      },
+    },
+  });
+  const f = makeFetch({ health: () => OK }); // 公開 URL 側は正常を返すが使われないこと
+  const r = await runCheck(env, { now: T0, fetchImpl: f });
+  assert.strictEqual(r.ok, false, 'MAIN.fetch の 500 ではなく公開 URL の 200 を見ている');
+  assert.strictEqual(r.probe.reason, 'cron_heartbeat_stale');
+  assert.ok(
+    seen.some((s) => s.url.includes('/health?strict=1&max_age_sec=1200')),
+    JSON.stringify(seen)
+  );
+  assert.ok(
+    seen.some((s) => s.url.endsWith('/api/refresh-now') && s.secret === 's3cret'),
+    'refresh-now が MAIN 経由でない'
+  );
+  assert.strictEqual(
+    f.count((c) => c.url.startsWith('https://main.example.dev')),
+    0,
+    '公開 URL を fetch した'
+  );
+  // GitHub API は MAIN を通らない
+  for (let i = 0; i < 2; i++) await runCheck(env, { now: at((i + 1) * 5), fetchImpl: f });
+  assert.strictEqual(
+    f.count((c) => c.url.includes('/dispatches')),
+    1
+  );
+});
+
 await t('HTTP: /health は 200、/run は secret 必須、/status は本体 probe を含む', async () => {
   const env = baseEnv();
   const h = await worker.fetch(new Request('https://sentinel.example.dev/health'), env);
