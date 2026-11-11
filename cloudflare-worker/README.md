@@ -1,176 +1,97 @@
-# Cloudflare Worker — boatrace-scrape-trigger
+# Cloudflare Workers — BoatRace Oracle のリアルタイムデータ配信
 
-Cloudflare Workers Cron で GHA workflow_dispatch を 3 分間隔に叩き、Pi 不要かつ
-GHA cron 遅延 (5–30 min) を回避して 3 分鮮度を維持する。
+このディレクトリには Worker が 2 本ある。どちらも **main への push で自動デプロイ**され、
+**手動で設定する secret は無い**（下の「手動設定」を参照）。
 
-加えて、`/odds-proxy` エンドポイントで PWA から boatrace.jp への CORS プロキシ
-を提供 (cron 障害時の保険ルート)。
+| Worker | 役割 | cron |
+|---|---|---|
+| `boatrace-scrape-trigger`（`worker.js`） | 本体。openapi + boatrace.jp を取得して KV に保存し、PWA に `/api/*` で配信する | JST 8-22 時は 5 分毎、夜間は 30 分毎 |
+| `boatrace-sentinel`（`sentinel/sentinel.js`） | 本体の外形監視と予備 cron。詳細は [`sentinel/README.md`](sentinel/README.md) | 5 分毎（終日） |
 
-## デプロイ方法
+## 本体 Worker の動作
 
-**推奨**: GitHub Actions で `cloudflare-worker/` を編集して push すれば自動デプロイ
-(下記「自動デプロイ初期セットアップ」を 1 回だけ実施)。
+```
+Cloudflare Cron (*/5 23,0-13 UTC / */30 14-22 UTC)
+    ↓ scheduled() → refreshAll()
+  Phase 1: openapi の programs / previews / results を取得 → KV に書く → heartbeat を書く
+  Phase 2: boatrace.jp を直接スクレイプして展示・結果を補完（それぞれ 1 回 12 ページまで）
+  Phase 3: 補完できた分だけ KV を書き直す
+    ↓
+PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
+```
 
-代替: 下記「手動デプロイ」セクション参照。
+- KV（binding `BOATRACE_KV`）は内容が変わった時だけ書く（無料枠 1,000 writes/日の節約）。
+- cron が止まっても、`/api/*` へのアクセス自体が `refreshAll()` を起動する（serve-heal、5 分 throttle）。
+- さらに sentinel が 5 分毎に `/api/refresh-now` を叩く予備 cron として働く。
 
-## 自動デプロイ初期セットアップ (1 回のみ)
+## エンドポイント
 
-### Step 1: Cloudflare Account ID を取得
+| パス | 用途 |
+|---|---|
+| `GET /health` | 疎通と KV 各キーの鮮度。`?strict=1&max_age_sec=N` は cron heartbeat が N 秒より古いと HTTP 500 |
+| `GET /api/previews` `/api/programs` `/api/results` | PWA 用の本日データ（KV） |
+| `GET /api/refresh-now` | `refreshAll()` を 1 回実行。未認証は 5 分に 1 回まで（超過は 429）。`TRIGGER_SECRET` を提示すれば無制限 |
+| `GET /odds-proxy?type=&sid=&rno=&hd=` | boatrace.jp オッズの CORS プロキシ（表示中レースの実時間オッズ） |
+| `GET /result-proxy?jcd=&race=&hd=` | 結果 1 レースのオンデマンド取得 |
+| `GET /beforeinfo-proxy?jcd=&race=&hd=` | 直前情報 1 レースのオンデマンド取得 |
+| `GET /orig-exhibition-proxy` | 各場オリジナル展示のプロキシ（対応場のみ） |
+| `GET /hotpepper` | 姉妹アプリ（旅食Navi）用のホットペッパー API 中継。KV は使わない |
 
-1. https://dash.cloudflare.com/ にログイン
-2. 任意のドメイン or Workers & Pages を開く
-3. 右サイドバーの **Account ID** をコピー
-   (例: `1234567890abcdef1234567890abcdef`)
+CORS は Origin 許可リスト方式（`https://inotaka1979.github.io` と localhost:8000/8080）。
+追加したい場合だけ、環境変数 `ALLOWED_ORIGINS`（カンマ区切り）を設定する。
 
-### Step 2: Cloudflare API Token を生成
+## デプロイ
 
-1. https://dash.cloudflare.com/profile/api-tokens を開く
-2. **「Create Token」** をクリック
-3. テンプレ「**Edit Cloudflare Workers**」を選択 → **Use template**
-4. Account Resources: **Include → 該当アカウント**
-5. Zone Resources: **All zones** (default のままで OK)
-6. **Continue to summary** → **Create Token**
-7. 表示されたトークンをコピー (二度と見られないので注意)
+`cloudflare-worker/**` を変更して main に push すると `.github/workflows/deploy-worker.yml` が動く。
 
-### Step 3: GitHub repo に secrets を登録
+| job | 内容 |
+|---|---|
+| `deploy` | 本体をデプロイし `/health` が 200 であることを確認 |
+| `deploy-sentinel` | sentinel をデプロイし、`/status` が 200・Service Binding が有効であることを確認 |
+| `verify-sentinel-cron` | sentinel の cron が新バージョンで実際に発火したことを確認（最大 11 分待つ） |
 
-1. https://github.com/inotaka1979/boatrace-ai/settings/secrets/actions を開く
-2. **「New repository secret」** をクリックして 2 つ追加:
-   - `CLOUDFLARE_API_TOKEN` = (Step 2 のトークン)
-   - `CLOUDFLARE_ACCOUNT_ID` = (Step 1 の ID)
+Cloudflare ダッシュボードで「コードを編集」する必要は無い。
 
-### Step 4: 初回デプロイをトリガー
+## 手動設定
 
-以下のいずれかで OK:
-- Actions タブ → **「Deploy Cloudflare Worker」** → **Run workflow**
-- `cloudflare-worker/worker.js` を編集して main に push
+**必須の手動設定は、初回セットアップ時に登録済みの GitHub Actions secret 2 つだけ。**
 
-Actions が緑になれば成功。`curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health`
-で疎通確認。
+| 場所 | 名前 | 状態 |
+|---|---|---|
+| GitHub → Settings → Secrets → Actions | `CLOUDFLARE_API_TOKEN` | 登録済み（デプロイに使用） |
+| 同上 | `CLOUDFLARE_ACCOUNT_ID` | 登録済み |
 
-## 以降の運用
+以下は**任意**で、未設定でも全機能が動く。
 
-`cloudflare-worker/worker.js` を編集 → main に push するだけで自動デプロイ。
-Cloudflare ダッシュボードで「コードを編集する」する必要はもうありません。
+| 場所 | 名前 | 入れると変わること |
+|---|---|---|
+| Cloudflare → boatrace-sentinel → Settings → Variables and Secrets | `GH_TOKEN` | 本体 cron 停止時の再デプロイと issue 起票が「最大 1 日後（GitHub 側 watchdog）」から「15 分後（sentinel）」に早まる。データ更新は入れなくても sentinel の予備 cron で続く |
+| Cloudflare → 両 Worker の Secret + GitHub Actions secret | `TRIGGER_SECRET` | `/api/refresh-now` の 5 分 throttle を素通りできる。sentinel は throttle に当たっても短時間待って再試行するので、通常は不要 |
+
+> 旧設計（Worker が GitHub Actions を 3 分毎に dispatch する方式）で使っていた本体の
+> `GITHUB_TOKEN` secret は、現在のコードでは参照していない。ダッシュボードに残っていても害は無いが、
+> 不要なので削除してよい。
 
 ## 動作確認
 
 ```bash
-# ヘルスチェック
-curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health
+# 本体: KV 各キーの鮮度と cron heartbeat
+curl -s https://boatrace-scrape-trigger.inotaka1979.workers.dev/health | python3 -m json.tool
 
-# 手動 refresh（TRIGGER_SECRET があれば無条件、無ければ 5 分に 1 回まで → 429）
-curl -H "x-trigger-secret: YOUR_SECRET" \
-  "https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/refresh-now"
-
-# odds 実時間プロキシ (PWA から呼ばれるエンドポイント)
-curl "https://boatrace-scrape-trigger.inotaka1979.workers.dev/odds-proxy?type=trifecta&sid=22&rno=5&hd=20260510"
+# sentinel: 本体の監視結果・sentinel 自身の cron 記録・過去の失敗区間
+curl -s https://boatrace-sentinel.inotaka1979.workers.dev/status | python3 -m json.tool
 ```
 
-## 動作フロー
+障害時の手順は `docs/RUNBOOK.md` §8。
 
-```
-Cloudflare Cron (*/3 * * * *)
-    ↓ scheduled()
-JST 時刻判定
-    ├─ 08-22: odds + previews dispatch
-    ├─ 10-23 (6分毎): results dispatch
-    └─ 08:00 ちょうど: tide dispatch
-    ↓
-GHA workflow_dispatch API
-    ↓
-GitHub Actions runner (即時起動)
-    ↓
-既存 scrape_*.py 実行 → commit & push
+## 新しい Cloudflare アカウントで一から作る場合
 
-PWA (詳細画面 open)
-    ↓ /odds-proxy?type=...
-Cloudflare Worker
-    ↓ (CORS pass-through)
-boatrace.jp/owpc/pc/race/{oddstf|odds2tf|odds3t}
-```
-
-## 既存 GHA cron との関係
-
-Cloudflare Worker が dispatch する workflow ファイル (`scrape-*.yml`) には
-`schedule:` も残しており、Cloudflare 障害時の保険として 5 分間隔で動く。
-
-## 手動デプロイ (旧方式 / 緊急時用)
-
-GitHub Actions 自動デプロイが使えない時のみ:
-
-1. Workers & Pages → `boatrace-scrape-trigger` → 「コードを編集する」
-2. `cloudflare-worker/worker.js` の最新内容を貼り付け
-3. 「保存してデプロイ」
-
-## 初回 Worker 作成 (新規セットアップ時のみ)
-
-新しい Cloudflare アカウントで一から作る場合の手順は以下を順に実施:
-
-### 1. GitHub Fine-grained PAT 作成
-
-https://github.com/settings/personal-access-tokens/new
-
-- **Token name**: `boatrace-cloudflare-worker-dispatch`
-- **Expiration**: 1 year
-- **Repository access**: Only select repositories → `inotaka1979/boatrace-ai`
-- **Repository permissions** → **Actions**: Read and write
-- 「Generate token」→ コピー（あとで Cloudflare に貼る）
-
-### 2. Cloudflare Worker のシークレット登録
-
-Workers & Pages → `boatrace-scrape-trigger` → 設定 → 環境変数 → Secret 追加
-
-- `GITHUB_TOKEN` = (1) で生成した PAT
-- `TRIGGER_SECRET` = 任意のランダム文字列（`/api/refresh-now` の throttle バイパス用）
-  - 未設定でも Worker は動作する（全 refresh-now が 5 分 throttle 対象になるだけ）
-  - GitHub 側にも同名の Actions secret を登録すると worker-watchdog が即時再生成できる
-- `ALLOWED_ORIGINS`（任意）= CORS 許可オリジンの追加分をカンマ区切りで
-  （既定で `https://inotaka1979.github.io` と localhost:8000/8080 を許可）
-
-### 3. Cron トリガー追加
-
-設定 → トリガー → Cron トリガー → 追加
-
-- `*/3 * * * *` (3 分間隔、24/7。JST 時刻判定は Worker 内部で実施)
-
-### 4. コード差し替え
-
-「コードを編集する」→ `worker.js` の内容を貼り付けて 保存 + デプロイ。
-
-## 動作確認
-
-```bash
-# ヘルスチェック
-curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health
-
-# 手動 dispatch
-curl "https://boatrace-scrape-trigger.inotaka1979.workers.dev/trigger?secret=YOUR_SECRET&workflow=scrape-odds.yml"
-```
-
-GHA Actions タブで対応する workflow が `workflow_dispatch` で起動していれば成功。
-
-## 動作フロー
-
-```
-Cloudflare Cron (*/3 * * * *)
-    ↓ scheduled()
-JST 時刻判定
-    ├─ 08-22: odds + previews dispatch
-    ├─ 10-23 (6分毎): results dispatch
-    └─ 08:00 ちょうど: tide dispatch
-    ↓
-GHA workflow_dispatch API
-    ↓
-GitHub Actions runner (即時起動)
-    ↓
-既存 scrape_*.py 実行 → commit & push
-```
-
-## 既存 GHA cron との関係
-
-Cloudflare Worker が dispatch する workflow ファイル (`scrape-*.yml`) には
-`schedule:` が残っている。**Cloudflare 化後は schedule を削除しても良いし、
-低頻度のフォールバックとして残しても良い**（Cloudflare が落ちた時の保険）。
-
-推奨: 既存 schedule を低頻度（例 30 分間隔）に下げて保険化。
+1. Cloudflare で KV namespace を作成し、`wrangler.toml` と `sentinel/wrangler.toml` の
+   `[[kv_namespaces]] id` を書き換える。
+2. Cloudflare の API Token（テンプレート「Edit Cloudflare Workers」）と Account ID を、GitHub の
+   Actions secret `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` に登録する。
+3. Actions タブで「Deploy Cloudflare Worker」を実行する（cron trigger と Service Binding は
+   `wrangler.toml` から自動で登録される）。
+4. `src/discovery/openapi_client.js` の `WORKER_BASE`（変更後は build が必要）、`index.html` の
+   preconnect / CSP、`sentinel/wrangler.toml` の `MAIN_BASE`、各 workflow 内の `*.workers.dev` の
+   URL を新しいサブドメインに合わせる。

@@ -118,29 +118,50 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
 
 ### 8.2 Worker 死活監視（最重要・恒久対策の要）
 
-**(A) 外形監視 + 自己復旧 — sentinel Worker（2026-11-11、主系）**
+**(A) 外形監視 + 予備 cron — sentinel Worker（2026-11-11、主系）**
 - `cloudflare-worker/sentinel/` の第 2 Worker **boatrace-sentinel** が Cloudflare cron（5 分毎、
-  GitHub schedule のように間引かれない）で本体の `/health?strict=1` を監視する。閾値は JST 8-22 時
-  1200s / 夜間 2700s。
-- 失敗のたびに `/api/refresh-now` でデータを自己修復。**連続 3 回（15 分）**で障害扱い:
-  reason が `cron_heartbeat_stale/_missing` かつ本体が応答していれば `deploy-worker.yml` を
-  dispatch して cron trigger を再登録（3 時間に 1 回まで）、issue（label `worker-cron-dead`）を起票。
-  継続中は 1 時間毎に経過コメント、復旧で自動クローズ。
-- 状態は `https://boatrace-sentinel.inotaka1979.workers.dev/status` で確認できる
-  （`gh_token` が false なら再デプロイ / issue が止まっている → secret `GH_TOKEN` を設定）。
-- **初期設定（ユーザー手動・1 回）**: `cloudflare-worker/sentinel/README.md` の手順で
-  Cloudflare dashboard → boatrace-sentinel → Settings → Variables に `GH_TOKEN`
-  （fine-grained PAT: このリポジトリの Actions / Issues を Read and write）と、任意で
-  本体と同じ `TRIGGER_SECRET` を登録する。デプロイ自体は `deploy-worker.yml` が自動で行う。
-- 旧 (A) の healthchecks.io / UptimeRobot 監視は任意。やるなら
-  `https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1&max_age_sec=2400` を 5 分間隔で。
-- HTTP 200 = 正常。**HTTP 500 = cron ハートビートが閾値以上途絶（cron 死亡の兆候）**。
-- rt-fix3: strict は **cron 専用ハートビート(`cron_age_sec`)** で判定する。以前はデータキー
-  (とくに `programs` は朝1回しか更新されない) の `wrote_at` で判定していたため、Worker が
-  正常でも午後には必ず 500 を返す誤検知があった。`max_age_sec` は夜間 cron 30分間隔 + jitter を
-  見込み **2400(40分)** 推奨。
-- これが Worker cron の静かな死を「分単位」で検知する唯一確実な手段。アプリ内検知・GHA watchdog は
-  間引き/タイミングで遅れるため、外部監視が最後の砦。
+  GitHub schedule のように間引かれない）で本体の `/health?strict=1` を監視する。閾値は JST 08:20〜22:59 が
+  1200s、それ以外は 2700s（朝 08:00〜08:19 は最後の heartbeat が 07:30 のものなので夜間扱い）。
+- **手動設定（secret）は不要。** デプロイと検証は `deploy-worker.yml` が自動で行う。
+- 失敗のたびに本体の `/api/refresh-now` を呼ぶ = 本体 cron が止まっている間の**予備の cron**。
+  429（本体の 5 分 throttle）で残り 30 秒以内なら待って 1 回だけ再試行する。
+- **連続 3 回（15 分）**で障害として記録する。本体 cron の再登録（再デプロイ）と issue 起票は次のどちらかが行う。
+  どちらの場合も、データは sentinel の refresh-now で更新され続ける。
+  - secret `GH_TOKEN` 未設定（既定）: (C) の `worker-watchdog.yml` が組込みトークンで行う（schedule 間引きのため最大 1 日程度）。
+  - `GH_TOKEN` 設定時: sentinel が `deploy-worker.yml` を dispatch（3 時間に 1 回まで）し、issue
+    （label `worker-cron-dead`）を起票、1 時間毎に経過コメント、復旧で自動クローズ（15 分で動く）。
+- 状態の確認（誰でも読める。書込はしない）:
+  `curl -s https://boatrace-sentinel.inotaka1979.workers.dev/status | python3 -m json.tool`
+
+  | フィールド | 見方 |
+  |---|---|
+  | `main_binding` | `true` であること（`false` だと本体を呼べず監視が盲目になる） |
+  | `main_probe` | 本体 strict health の現在値。`ok:false` + `reason:cron_heartbeat_stale` = 本体 cron 停止中 |
+  | `sentinel_cron.age_sec` | sentinel 自身の cron の最終記録からの秒数。記録は 1 時間に 1 回なので 3600 前後までは正常。**10800 超 = sentinel の cron が停止** |
+  | `sentinel_cron.build_recorded` | `build` と一致 = 現行版の cron が 1 回以上走った |
+  | `state.streak` | 進行中の失敗区間（開始時刻、理由、refresh-now の成否） |
+  | `state.history` | 終了した失敗区間（直近 10 件）。開始 / 終了、理由、開始時の heartbeat 経過秒とデータ鮮度、refresh-now の成否、再デプロイの有無 |
+  | `state.writes` | sentinel のその日（UTC）の KV 書込回数。平常時 24 以下。失敗が長引いても 120 回 + 必須の保存に抑える |
+
+- sentinel 自身の監視（自動）:
+  - `deploy-worker.yml` の `verify-sentinel-cron` job が、デプロイ後に新バージョンの cron 発火を確認する（最大 11 分待つ）。
+  - `worker-watchdog.yml` の「Check sentinel liveness」が、`sentinel_cron.age_sec` が 3 時間を超えていたら再デプロイを
+    dispatch して issue（label `sentinel-down`）を起票、復旧で自動クローズする。`state.history` もログに出す。
+- `sentinel-down` の issue が 1 日以上開いたままの場合: Cloudflare ダッシュボード → Workers & Pages →
+  boatrace-sentinel → Settings → Triggers で Cron Trigger（`*/5 * * * *`）が有効か確認する。
+  Actions タブから「Deploy Cloudflare Worker」を手動実行すると cron trigger は再登録される。
+- 任意設定（`GH_TOKEN` / `TRIGGER_SECRET`）の入れ方と効果は `cloudflare-worker/sentinel/README.md`。
+- strict health の意味（sentinel・watchdog・外部監視に共通）:
+  - `/health?strict=1&max_age_sec=N` は HTTP 200 = 正常、**HTTP 500 = cron ハートビートが N 秒以上途絶
+    （cron 死亡の兆候）**。
+  - rt-fix3: strict は **cron 専用ハートビート(`cron_age_sec`)** で判定する。以前はデータキー
+    (とくに `programs` は朝1回しか更新されない) の `wrote_at` で判定していたため、Worker が
+    正常でも午後には必ず 500 を返す誤検知があった。
+  - 分単位の検知は sentinel（Cloudflare cron）が担う。アプリ内検知 (B) と GHA watchdog (C) は
+    間引き / タイミングで遅れる。
+- healthchecks.io / UptimeRobot などの追加の外部監視は任意。やるなら
+  `https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1&max_age_sec=2400` を 5 分間隔で
+  （夜間 cron は 30 分間隔のため、jitter を見込んで 2400 秒）。
 
 **(B) アプリ内自動検知 — 実装済（コード）**
 - PWA は 5分毎に `/health`（**非 strict**）を叩き、Worker が到達不能/エラーの時のみ画面上部へ
@@ -149,9 +170,13 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
   古さは鮮度バッジ「🕒 N分前」が `updated_at` 基準で正直に表示する（緑<15分/黄<40分/赤≥40分）。
 
 **(C) GHA watchdog — 実装済（backstop）**
-- `.github/workflows/worker-watchdog.yml` が `/health?strict=1` を叩き、500 なら
-  `/api/refresh-now` を呼んで KV 再生成を促す。schedule 間引きの影響を受けるため backstop 扱い。
-  2026-11-11 実測で 1-2 回/日しか動いていない。sentinel (A) が止まった時の最後の保険。
+- `.github/workflows/worker-watchdog.yml` が `/health?strict=1` を叩き、500 なら `/api/refresh-now` を呼ぶ。
+  cron 死亡（reason=`cron_heartbeat_stale` / `_missing`）なら `deploy-worker.yml` を dispatch して cron trigger を
+  再登録し、issue（label `worker-cron-dead`）で検知と復旧を記録する。
+- schedule 間引きの影響を受ける（2026-11-11 実測で 1-2 回/日）ため遅いが、組込みトークンで動くので手動設定が
+  要らない。sentinel (A) に `GH_TOKEN` を入れていない構成では、これが本体 cron の再登録役になる
+  （それまでの間のデータ更新は sentinel の refresh-now が担う）。
+- 同じ run で sentinel 自身の死活（`sentinel_cron.age_sec`）を確認し、sentinel が記録した失敗履歴をログに出す。
 
 ### 8.3 Worker が完全停止した時の復旧手順
 

@@ -6,15 +6,24 @@
 #   15 回発生しており、検知の空白は数時間〜半日になる。
 #   → 監視そのものを Cloudflare の cron に載せる。Cloudflare の Cron Triggers は間引かれない。
 #
-# 本体 (boatrace-scrape-trigger) と同じ KV namespace を共用する（prefix `sentinel:`）。
+# 本体 (boatrace-scrape-trigger) と同じ KV namespace を共用する（キー `sentinel:state`）。
 #   KV namespace は複数 Worker にバインドでき、新規作成の手作業が要らない。
-#   書込は状態が変わった時だけ（通常 0-2 回/日）で無料枠に影響しない。
+#   書込は平常時 24 回/日（sentinel 自身の cron の生存記録、1 時間に 1 回）。失敗区間がある日でも
+#   1 日 120 回 + 必須の保存に抑える（sentinel.js の DAILY_WRITE_BUDGET）。
 #
-# 必要な secret（Cloudflare dashboard → Workers → boatrace-sentinel → Settings → Variables）:
+# 手動設定（secret）は不要。デプロイと検証は .github/workflows/deploy-worker.yml が行う。
+#   BUILD_ID はデプロイ時に `--var BUILD_ID:<sha>.<run_id>.<attempt>` で注入される（ここには書かない）。
+#   sentinel は BUILD_ID が変わった最初の cron tick を即 KV に記録するので、deploy-worker.yml の
+#   verify-sentinel-cron job が「新バージョンの cron が実際に発火した」ことを確認できる。
+#
+# 任意の secret（Cloudflare dashboard → Workers & Pages → boatrace-sentinel → Settings →
+#   Variables and Secrets。`wrangler deploy` しても保持される）:
 #   GH_TOKEN        — GitHub fine-grained PAT（このリポジトリに Actions: Read and write,
-#                     Issues: Read and write）。無くても監視と refresh-now による自己修復は動く。
-#                     再デプロイ dispatch と issue 起票だけが止まる（/status に gh_token:false）。
-#   TRIGGER_SECRET  — 本体と同じ値（任意）。提示すると refresh-now の 5 分 throttle を素通りする。
+#                     Issues: Read and write）。入れると本体 cron 停止時の再デプロイと issue 起票を
+#                     sentinel が 15 分で行う。無い場合は worker-watchdog.yml（組込みトークン）が
+#                     代行する（最大 1 日程度）。どちらの場合もデータは refresh-now で更新され続ける。
+#   TRIGGER_SECRET  — 本体と同じ値。提示すると refresh-now の 5 分 throttle を素通りする。
+#                     無い場合、sentinel は 429 の残りが 30 秒以内なら待って 1 回再試行する。
 
 name = "boatrace-sentinel"
 main = "sentinel.js"

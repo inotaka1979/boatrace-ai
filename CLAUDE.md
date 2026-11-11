@@ -1205,3 +1205,60 @@ archive_daily が 45 日分（9/27〜11/10、6,556 レース）蓄積したの�
 - 次の一手は予測ロジックの変更ではなく**アーカイブ被覆の充足**: 確定レースの展示・オッズを
   事後バックフィルする scraper パス（軽量化後の scrape-all の余剰予算で 1 run N レース）と、
   `loadDay` の previews live スキーマ変換。揃ってから A-01 / B-01 を同一 harness で比較する。
+
+## 修正履歴 (2026-11-11: sentinel を手動設定なしで完結 + 監視役の自己観測)
+
+「ユーザー側作業」として残していた 3 件（sentinel への `GH_TOKEN` / `TRIGGER_SECRET` 登録、
+1 日後の cron 発火の目視確認、古い issue のクローズ）を、設定不要化・自動化・直接実施で解消した。
+
+### 直接実施
+- open issue 8 件をクローズ（open = 0）: DRILL 6 件と fl-gradient-upload #9 / #39。
+- **訂正**: 上の「リポジトリ衛生」の記録で #9 / #39 を「処理済み」と書いたのは誤り。実際は未処理のまま
+  残っていた（label 無しで集計対象外、かつ `feature_dim: 12` で現行 24 次元の集計が受け付けない）。
+  処理不能として not planned でクローズした。
+
+### sentinel（`cloudflare-worker/sentinel/sentinel.js`）
+- **secret 無しで完結**: 本体 cron 停止中は 5 分毎の refresh-now が予備 cron になる。429（本体の throttle と
+  同じ 5 分周期のため数秒差で起きる）は残り 30 秒以内なら待って 1 回だけ再試行。再デプロイと issue 起票は
+  `worker-watchdog.yml`（組込みトークン）が代行する（最大 1 日程度、その間もデータは更新される）。
+  `GH_TOKEN` を入れるとそれが 15 分に短縮されるだけ = 任意。
+- **毎朝の誤検知を修正**: 日中閾値 (1200s) を 08:00 JST から適用すると、最後の heartbeat が 07:30 のまま
+  （本体の 08:00 tick が heartbeat を書くのは発火の約 10 秒後）で毎朝 1 回必ず失敗になる。08:20 からに変更。
+- **生存記録**: `cron_last_at` / `build` を 1 時間に 1 回 + デプロイ直後の初回 tick（BUILD_ID 変化）で KV に記録。
+  `/status` の `sentinel_cron` で読める。
+- **失敗履歴**: 失敗区間 (streak) を復旧時に `history`（直近 10 件）へ確定。理由、開始時の heartbeat 経過秒と
+  previews / results の鮮度、refresh-now の成否、再デプロイの有無。「cron だけ止まったのか、データ更新ごと
+  止まったのか」を後から判別できる。
+- **KV 書込予算**: 失敗中に毎 tick 保存すると本体 cron が 1 日止まった日に 288 回書く。KV 無料枠 1,000/日は
+  本体（約 700 回/日）と共用なので、1 UTC 日 120 回を超えたら必須の保存（生存記録・復旧・GitHub 側の
+  副作用）だけに絞る。refresh-now は毎 tick 続く。記録できなかった tick は `unrecorded_ticks` に残る。
+
+### 自動検証（人手の確認を置換）
+- `deploy-worker.yml`: sentinel に `--var BUILD_ID:<sha>.<run_id>.<attempt>` を注入。Verify sentinel は
+  Service Binding と「sentinel → 本体の疎通（`main_probe.http` が 200 / 500）」を必須にした。新 job
+  `verify-sentinel-cron` が新バージョンの cron 発火（`sentinel_cron.build_recorded == BUILD_ID`）を
+  最大 11 分待って確認する。
+- `worker-watchdog.yml`: 新 step「Check sentinel liveness」。`sentinel_cron.age_sec` が 3 時間を超えたら
+  再デプロイを dispatch して issue（label `sentinel-down`）を起票、復旧で自動クローズ。履歴もログに出す。
+  既存バグ修正: issue タイトルの `date` 書式が未クォートで「Worker cron 停止を検知 ()」になっていた。
+
+### ドキュメント
+- `cloudflare-worker/README.md` を全面更新（旧「Worker が Actions を 3 分毎に dispatch」設計、`/trigger`、
+  本体への `GITHUB_TOKEN` 登録手順が残っていた）。`sentinel/README.md`、`sentinel/wrangler.toml`、
+  RUNBOOK §8.2 も現状に合わせた。
+- 必須の手動設定は、登録済みの GitHub Actions secret `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` だけ。
+
+### 検証
+- `test_sentinel_worker.mjs` 12 → 31 件（閾値の境界、生存記録の書込頻度、履歴、429 再試行、書込予算と
+  予算超過中の必須保存、KV 書込失敗時の挙動）。必須保存の各フラグは mutation で検出されることを確認。
+- workflow の run ブロックは `curl` / `gh` を stub して全分岐を実行確認。
+- wrangler 4.160.0 のソースで、`--var` が wrangler.toml の `[vars]` を消さずに追加されることを確認。
+
+### 残（任意・user 操作）
+- sentinel の `GH_TOKEN`（再デプロイ / issue を 15 分に短縮）と `TRIGGER_SECRET`。未設定で全機能が動く。
+
+### フォローアップ候補（未着手）
+- 本体 Worker の previews は毎 run 2 回 KV に書かれる（base 書込 → スクレイプ補完で書き直し）。base 書込前に
+  KV の展示を carry すれば、書込 100〜150 回/日（推定）と展示の再スクレイプを削減できる。
+- 夜間（30 分 cron）の閾値 2700 秒は 1 tick の欠落（3600 秒）で失敗区間になる。`GH_TOKEN` 未設定なら
+  実害は無い（refresh-now が数回走るだけ）ので、`history` に夜間の短い区間が出る頻度を見てから決める。

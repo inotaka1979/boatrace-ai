@@ -1,16 +1,17 @@
 name: Deploy Cloudflare Worker
 
 # cloudflare-worker/ 配下が変更されたら、wrangler-action 経由で
-# Cloudflare Workers (boatrace-scrape-trigger) を自動デプロイする。
+# Cloudflare Workers 2 本 (本体 boatrace-scrape-trigger / 監視 boatrace-sentinel) を
+# 自動デプロイし、動作まで確認する。
 #
-# 必要な repo secrets:
+# 必要な repo secrets (登録済み。これ以外の手動設定は不要):
 #   CLOUDFLARE_API_TOKEN  — User API Token (Account > Workers Scripts: Edit)
 #   CLOUDFLARE_ACCOUNT_ID — Cloudflare Account ID (ダッシュボード右下に表示)
 #
-# 動作確認:
-#   1. cloudflare-worker/worker.js を編集して push
-#   2. Actions タブで "Deploy Cloudflare Worker" が緑になる
-#   3. curl https://boatrace-scrape-trigger.inotaka1979.workers.dev/health で確認
+# 確認内容:
+#   deploy               — 本体 /health が 200
+#   deploy-sentinel      — sentinel /status が 200、Service Binding が有効、本体 probe の結果を表示
+#   verify-sentinel-cron — sentinel の cron が新バージョンで実際に発火したこと (最大 11 分待つ)
 on:
   push:
     branches: [main]
@@ -41,7 +42,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker
-          # secrets (GITHUB_TOKEN / TRIGGER_SECRET) は dashboard 設定を保持
+          # dashboard で設定した secret (任意の TRIGGER_SECRET 等) は deploy しても保持される
           command: deploy
 
       - name: Verify deploy
@@ -62,7 +63,7 @@ jobs:
   # 2026-11-11: 本体の外形監視・自己復旧を担う第 2 Worker (boatrace-sentinel)。
   #   GitHub schedule が間引かれて watchdog が 1-2 回/日しか動かないため、監視を
   #   Cloudflare cron (5 分毎、間引きなし) に移した。cloudflare-worker/sentinel/README.md 参照。
-  #   secrets (GH_TOKEN / TRIGGER_SECRET) は dashboard 設定を保持する。
+  #   secret (GH_TOKEN / TRIGGER_SECRET) は任意。設定してあれば deploy しても保持される。
   deploy-sentinel:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -77,7 +78,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker/sentinel
-          command: deploy
+          # BUILD_ID はデプロイ毎に一意。sentinel は「BUILD_ID が変わった最初の cron tick」で
+          #   生存記録を即 KV に書くので、verify-sentinel-cron がそれを待てば cron の発火を確認できる。
+          command: deploy --var BUILD_ID:${{ github.sha }}.${{ github.run_id }}.${{ github.run_attempt }}
 
       - name: Verify sentinel
         run: |
@@ -91,6 +94,60 @@ jobs:
             exit 1
           fi
           echo "✅ sentinel is live"
-          if ! grep -q '"gh_token":true' /tmp/sentinel; then
-            echo "::warning::sentinel に GH_TOKEN が未設定です。監視と refresh-now は動きますが、再デプロイ dispatch と issue 起票は行われません（cloudflare-worker/sentinel/README.md）"
+          # Service Binding が無いと本体を呼べず (公開 URL は同一アカウント内で 404)、監視が盲目になる。
+          if ! grep -q '"main_binding":true' /tmp/sentinel; then
+            echo "❌ sentinel の Service Binding (MAIN) が無効です。cloudflare-worker/sentinel/wrangler.toml の [[services]] を確認してください"
+            exit 1
           fi
+          # sentinel から本体 /health が実際に呼べていること。strict health は 200 (正常) か
+          #   500 (cron heartbeat stale) を返す。それ以外 (初回デプロイ時の 404、0 = 到達不能) は
+          #   「監視しているつもりで何も見えていない」状態なので失敗にする。
+          probe_http=$(jq -r '.main_probe.http // "?"' /tmp/sentinel 2>/dev/null || echo "?")
+          if [ "$probe_http" != "200" ] && [ "$probe_http" != "500" ]; then
+            echo "❌ sentinel が本体 /health を呼べていません (main_probe.http=$probe_http)。Service Binding と [vars] MAIN_BASE を確認してください"
+            exit 1
+          fi
+          echo "✅ sentinel → 本体の疎通 OK (main_probe.http=$probe_http)"
+          if ! grep -q '"gh_token":true' /tmp/sentinel; then
+            # 任意設定なので warning にはしない (毎回の deploy で黄色い警告が出続けるのを避ける)。
+            echo "::notice::sentinel の GH_TOKEN は未設定です（任意）。監視・予備 cron (refresh-now) は動作します。主 cron の再登録と issue 起票は worker-watchdog.yml が代行します。"
+          fi
+
+  # 2026-11-11: sentinel の cron が新バージョンで実際に発火したことを確認する。
+  #   これまでは「1 日後に Cloudflare ダッシュボードの Cron Events を目視」という人手の確認だった。
+  #   sentinel はデプロイ直後の初回 tick で BUILD_ID を KV に記録するので、/status の
+  #   sentinel_cron.build_recorded がこの run の BUILD_ID になれば「cron が生きている」と言える。
+  #   cron は 5 分毎。Cloudflare 側の trigger 反映が遅れることがあるため最大 11 分待つ。
+  #   観測できなくても失敗にはしない (warning)。継続的な確認は worker-watchdog.yml が行う。
+  verify-sentinel-cron:
+    needs: deploy-sentinel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait for the first sentinel cron tick on this build
+        env:
+          WANT: ${{ github.sha }}.${{ github.run_id }}.${{ github.run_attempt }}
+        run: |
+          set -uo pipefail
+          URL="https://boatrace-sentinel.inotaka1979.workers.dev/status"
+          deadline=$(( $(date +%s) + 660 ))
+          n=0
+          rec=""; run=""; age="?"
+          while :; do
+            n=$((n+1))
+            code=$(curl -sS -m 20 -o /tmp/s.json -w "%{http_code}" "$URL" || echo "000")
+            rec=$(jq -r '.sentinel_cron.build_recorded // ""' /tmp/s.json 2>/dev/null || echo "")
+            run=$(jq -r '.build // ""' /tmp/s.json 2>/dev/null || echo "")
+            age=$(jq -r '.sentinel_cron.age_sec // "null"' /tmp/s.json 2>/dev/null || echo "?")
+            echo "[$n] HTTP $code running=${run:0:8} recorded_by_cron=${rec:0:8} cron_age_sec=$age"
+            if [ "$code" = "200" ] && [ -n "$rec" ] && [ "$rec" = "$WANT" ]; then
+              echo "✅ sentinel の cron が新バージョンで発火しました (cron_age_sec=$age)"
+              jq '{sentinel_cron, main_probe, history: .state.history}' /tmp/s.json || true
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then break; fi
+            sleep 30
+          done
+          echo "::warning::sentinel の cron tick を 11 分以内に観測できませんでした (running=${run:0:8} recorded=${rec:0:8})。Cloudflare 側の cron 反映遅延の可能性があります。worker-watchdog.yml が継続確認し、記録が 3 時間以上途絶えたら issue (sentinel-down) を起票します。"
+          cat /tmp/s.json || true
+          exit 0
