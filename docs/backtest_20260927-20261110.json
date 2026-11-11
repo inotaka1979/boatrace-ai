@@ -1,0 +1,80 @@
+{
+  "range": {
+    "from": "20260927",
+    "to": "20261110"
+  },
+  "daysUsed": 45,
+  "racesScored": 6556,
+  "leak": false,
+  "strategies": {
+    "model_prob": {
+      "races": 6556,
+      "bets": 65560,
+      "stake": 6556000,
+      "payout": 4512000,
+      "roi": 0.6882,
+      "hitRate": 0.3575,
+      "roiCI": {
+        "lo": 0.6492,
+        "hi": 0.7285
+      }
+    },
+    "model_ev": {
+      "races": 6556,
+      "bets": 1384,
+      "stake": 138400,
+      "payout": 113150,
+      "roi": 0.8176,
+      "hitRate": 0.0026,
+      "roiCI": {
+        "lo": 0.35,
+        "hi": 1.4173
+      }
+    },
+    "baseline_inner": {
+      "races": 6556,
+      "bets": 6556,
+      "stake": 655600,
+      "payout": 595840,
+      "roi": 0.9088,
+      "hitRate": 0.5432,
+      "roiCI": {
+        "lo": 0.8772,
+        "hi": 0.9446
+      }
+    },
+    "baseline_fav": {
+      "races": 6556,
+      "bets": 1619,
+      "stake": 161900,
+      "payout": 134890,
+      "roi": 0.8332,
+      "hitRate": 0.1324,
+      "roiCI": {
+        "lo": 0.7804,
+        "hi": 0.8923
+      }
+    },
+    "baseline_pop3": {
+      "races": 6556,
+      "bets": 16610,
+      "stake": 1661000,
+      "payout": 1370830,
+      "roi": 0.8253,
+      "hitRate": 0.1362,
+      "roiCI": {
+        "lo": 0.7498,
+        "hi": 0.926
+      }
+    }
+  },
+  "modelCalibration": {
+    "logLoss": 1.3811,
+    "brier": 0.6597,
+    "ece": 0.0368,
+    "n": 6556
+  },
+  "leakageNote": "racerDB/stadiumDB は前日以前の結果のみで構築 (forward-chain)。L2 オンライン学習は未再現 (l2trainStep=0, alpha≈1 = L1 単独)。",
+  "oddsNote": "締切直前の最終オッズを使用。実際にはこの価格で買えないため ROI は楽観側にバイアスする。",
+  "verdict": "NO EDGE: model_ev roiCI.lo 0.35 <= baseline_fav roi 0.8332 (控除率 ~25% の競技で当然の初期結果)"
+}
