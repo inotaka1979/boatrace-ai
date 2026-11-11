@@ -3,13 +3,12 @@ name: Probe Venue Format (diag)
 # 診断専用: ajax_yosou 非対応各場のサイト形式を分類してログ出力する。形式別パーサ設計用。
 # サンプル HTML を data/_debug に保存。確認後に撤去。
 
+# 2026-11-11: push トリガーを撤去し workflow_dispatch のみに。
+#   旧設定は「この workflow ファイル自身 / probe スクリプトの変更」で発火したため、
+#   .gitignore 対応の編集 (#324) が merge された直後に自ら走り、削除したばかりの
+#   data/_debug/ サンプルを再コミットした (fbeefef2a)。診断は手動実行だけで十分。
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/probe-venue-format.yml'
-      - 'scripts/probe_venue_format.py'
 
 permissions:
   contents: read
