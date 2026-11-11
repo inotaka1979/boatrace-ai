@@ -83,8 +83,24 @@ jobs:
           sleep 2
 
       - name: Open URL in Simulator Safari
+        # 2026-11-11: 直近 6 夜で 4 回 `simctl openurl` が "Operation timed out" (code 60) で
+        #   落ちていた。boot 直後の SpringBoard 未準備が原因の runner 側フレークで、
+        #   アプリの退行ではない。bootstatus で起動完了を待ち、openurl を最大 3 回試す。
         run: |
-          xcrun simctl openurl "$BR_SIM_UDID" 'http://127.0.0.1:8181/index.html'
+          set -uo pipefail
+          xcrun simctl bootstatus "$BR_SIM_UDID" -b || true
+          ok=0
+          for attempt in 1 2 3; do
+            if xcrun simctl openurl "$BR_SIM_UDID" 'http://127.0.0.1:8181/index.html'; then
+              ok=1; break
+            fi
+            echo "::warning::simctl openurl failed (attempt $attempt/3) — retrying in 15s"
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::simctl openurl failed 3 times (runner-side simulator flake の可能性が高い)"
+            exit 1
+          fi
           sleep 8
 
       - name: Capture screenshot

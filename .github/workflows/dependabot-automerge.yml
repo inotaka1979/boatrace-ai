@@ -1,0 +1,57 @@
+name: Dependabot auto-merge
+
+# 2026-11-11: Dependabot の patch / minor 更新 PR が Gate 緑のまま数週間 open で放置されていた
+#   (#314 aiohttp 3.14.5 は 10/19 から)。Gate (lint / format / build:check / 全テスト) が
+#   通った patch / minor は人手を待たずに squash merge する。major は人の判断に残す。
+#
+#   仕組み: Dependabot PR の pull_request イベントで起動し、同じ commit に対する Gate の
+#   完了を `gh pr checks --watch` で待ってから merge する。リポジトリの "Allow auto-merge"
+#   設定に依存しない（`gh pr merge --auto` は使わない）。
+#
+#   注意: GITHUB_TOKEN による merge は main への push イベントとして他の workflow を
+#   起動しない（GitHub の仕様）。deps 更新で main 側の再検証は不要なので問題ない。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    if: github.actor == 'dependabot[bot]' && github.repository == 'inotaka1979/boatrace-ai'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip major updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "::notice::major update (${{ steps.meta.outputs.dependency-names }}) — 人の判断に残します"
+
+      - name: Wait for Gate and merge
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          # 同じ head SHA に対する全チェック (Gate / Test / E2E / Lighthouse) の完了を待つ。
+          #   --fail-fast: どれか 1 つ失敗した時点で非ゼロ終了 → merge しない。
+          if ! gh pr checks "$PR" --repo "$GITHUB_REPOSITORY" --watch --fail-fast --interval 30; then
+            echo "::warning::checks failed or timed out — not merging #$PR"
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
+            --subject "$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json title --jq .title)" \
+            && echo "::notice::merged #$PR (${{ steps.meta.outputs.update-type }})" \
+            || echo "::warning::merge failed for #$PR (branch protection / conflict を確認)"
