@@ -17,6 +17,11 @@ name: Worker Watchdog (self-heal)
 #   分単位の監視・自己復旧は Cloudflare 側の第 2 Worker **boatrace-sentinel**
 #   (cloudflare-worker/sentinel/, 5 分 cron, 間引きなし) に移した。本 workflow は
 #   sentinel 自身が止まった場合の最後の保険として残す (docs/RUNBOOK.md §8.2)。
+#
+#   役割分担 (手動設定の secret は不要):
+#     sentinel (5 分毎)  … 本体 cron 停止を検知し、refresh-now を 5 分毎に叩く「予備の cron」になる
+#     本 workflow (≦1 日) … 組込み GITHUB_TOKEN で (a) 本体 cron の再登録 = 再デプロイ、
+#                          (b) issue による記録、(c) sentinel 自身の死活確認 (監視役の監視)
 
 on:
   workflow_dispatch:
@@ -166,10 +171,114 @@ jobs:
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null 2>&1 && echo "commented on issue #$existing" || echo "::warning::issue comment failed"
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
-              --title "Worker cron 停止を検知 ($(date -u +%Y-%m-%d %H:%MZ))" --body "$body" >/dev/null 2>&1 \
+              --title "Worker cron 停止を検知 ($(date -u '+%Y-%m-%d %H:%MZ'))" --body "$body" >/dev/null 2>&1 \
               && echo "opened issue" || echo "::warning::issue create failed"
           fi
 
           # 復旧しない場合は非ゼロ終了で Actions に可視化。
           echo "::error::Worker still stale after refresh-now (HTTP $status2, reason=${reason:-?}). 対処: $action — docs/RUNBOOK.md §8.3"
+          exit 1
+
+      # 2026-11-11: 監視役 (sentinel) 自身の死活確認。
+      #   sentinel は自分の cron が走った時刻を 1 時間に 1 回だけ KV に記録する (/status の
+      #   sentinel_cron)。記録が 3 時間以上途絶えていれば sentinel の cron が止まっている。
+      #   併せて sentinel が記録した「本体 strict health が失敗していた区間」の履歴をログに残す
+      #   (本 workflow が走っていない時間帯の障害を後から追えるようにする)。
+      - name: Check sentinel liveness (watch the watcher)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          S="https://boatrace-sentinel.inotaka1979.workers.dev/status"
+          LABEL="sentinel-down"
+          MAX_AGE=10800   # 3 時間 (生存記録の書込間隔 1 時間の 3 倍)
+
+          code=$(curl -sS -m 20 -o /tmp/sentinel.json -w "%{http_code}" "$S" || echo "000")
+          echo "sentinel /status: HTTP $code"
+          jq '{build, sentinel_cron, main_probe, gh_token, consecutive_failures: .state.consecutive_failures, streak: .state.streak}' \
+            /tmp/sentinel.json 2>/dev/null || cat /tmp/sentinel.json 2>/dev/null || true
+
+          echo "--- 本体 strict health の失敗区間 (sentinel 記録、直近 10 件) ---"
+          jq -r '(.state.history // [])[] | "\(.started_at) → \(.ended_at)  \(.duration_sec)s failures=\(.failures) reason=\(.reason) hb_age=\(.cron_age_sec)s refresh=\(.refresh|tojson) escalated=\(.escalated) redeploy=\(.redeploy) data=\(.data|tojson)"' \
+            /tmp/sentinel.json 2>/dev/null || true
+          echo "--- (以上) ---"
+
+          verdict="ok"; detail=""
+          if [ "$code" != "200" ]; then
+            verdict="down"; detail="/status が HTTP $code"
+          elif ! jq -e 'has("sentinel_cron")' /tmp/sentinel.json >/dev/null 2>&1; then
+            verdict="unknown"; detail="sentinel が生存記録に未対応の旧バージョン"
+          else
+            age=$(jq -r '.sentinel_cron.age_sec // ""' /tmp/sentinel.json 2>/dev/null || echo "")
+            if [ -z "$age" ]; then
+              verdict="stale"; detail="cron tick が一度も記録されていない"
+            elif [ "$age" -gt "$MAX_AGE" ]; then
+              verdict="stale"; detail="最後の cron tick 記録から ${age} 秒 (閾値 ${MAX_AGE} 秒)"
+            fi
+          fi
+          echo "sentinel verdict: $verdict $detail"
+
+          existing=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+
+          if [ "$verdict" = "ok" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+                --body "✅ $(date -u '+%Y-%m-%dT%H:%MZ') watchdog: sentinel の cron 記録が復旧しました。自動クローズします。" >/dev/null 2>&1 || true
+              gh issue close "$existing" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+              echo "closed issue #$existing"
+            fi
+            echo "✅ sentinel is alive"
+            exit 0
+          fi
+          if [ "$verdict" = "unknown" ]; then
+            echo "::notice::$detail (次回デプロイで有効になります)"
+            exit 0
+          fi
+
+          # --- down / stale ---
+          last=$(gh run list --workflow deploy-worker.yml --limit 1 --json createdAt --jq '.[0].createdAt' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+          deploy_age=999999
+          if [ -n "$last" ]; then
+            deploy_age=$(( $(date +%s) - $(date -d "$last" +%s 2>/dev/null || echo 0) ))
+          fi
+          if [ "$deploy_age" -lt 1800 ]; then
+            # デプロイ直後は cron trigger の反映待ちで未記録になり得る。誤検知を避けて様子見。
+            echo "::notice::sentinel: $detail — 直近 30 分以内にデプロイ済み ($last) のため様子見"
+            exit 0
+          fi
+          if [ "$deploy_age" -lt 10800 ]; then
+            action="再デプロイ見送り (deploy-worker が 3 時間以内に実行済: $last)"
+          elif gh workflow run deploy-worker.yml --ref main --repo "$GITHUB_REPOSITORY"; then
+            action="deploy-worker.yml を dispatch (sentinel を再デプロイして cron trigger を再登録)"
+          else
+            action="deploy-worker.yml の dispatch に失敗 (Actions 権限 / 同時実行を確認)"
+          fi
+
+          gh label create "$LABEL" --color b60205 --description "監視 Worker (sentinel) の cron が停止" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+          body="$(cat <<EOF
+          ## sentinel (監視 Worker) の停止を検知
+
+          - 検知時刻: $(date -u '+%Y-%m-%dT%H:%MZ') UTC
+          - 状態: \`$verdict\` — $detail
+          - 自動対処: $action
+
+          ### 意味
+          本体 Worker (boatrace-scrape-trigger) を 5 分毎に監視する第 2 Worker **boatrace-sentinel** の
+          cron が動いていません。本体が正常ならアプリへの影響はありませんが、本体 cron が止まった時の
+          検知と予備 cron (refresh-now) が働かなくなります。
+
+          ### 自動復旧しない場合 (この issue が 1 日以上開いたまま)
+          Cloudflare ダッシュボード → Workers & Pages → boatrace-sentinel → Settings → Triggers で
+          Cron Trigger (\`*/5 * * * *\`) が有効か確認してください。手順: docs/RUNBOOK.md §8.2
+          EOF
+          )"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null 2>&1 && echo "commented on issue #$existing" || echo "::warning::issue comment failed"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+              --title "sentinel 停止を検知 ($(date -u '+%Y-%m-%d %H:%MZ'))" --body "$body" >/dev/null 2>&1 \
+              && echo "opened issue" || echo "::warning::issue create failed"
+          fi
+          echo "::error::sentinel $verdict: $detail / 対処: $action — docs/RUNBOOK.md §8.2"
           exit 1

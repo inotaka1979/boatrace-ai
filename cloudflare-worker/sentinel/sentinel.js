@@ -16,28 +16,70 @@
 //        - issue (label ISSUE_LABEL) を起票。継続中は ISSUE_COMMENT_INTERVAL_SEC 毎に経過を追記
 //   GitHub 操作は secret GH_TOKEN がある時だけ。無くても監視 + refresh-now は動く。
 //
-// KV 書込は状態遷移時のみ (正常時 0 回/日)。本体と namespace を共用するため枯渇させない。
+// 手動設定 (secret) は不要 (2026-11-11 追記):
+//   GH_TOKEN / TRIGGER_SECRET が無くても、本体 cron が止まった時は sentinel が 5 分毎に
+//   refresh-now を叩く「予備の cron」として働き、データ鮮度を保つ。主 cron の再登録
+//   (再デプロイ) と issue 起票は GitHub 側 worker-watchdog.yml が組込みトークンで行う
+//   (schedule 間引きのため最大 1 日程度遅れるが、その間もデータは更新され続ける)。
+//   GH_TOKEN を入れると再デプロイ / issue が 15 分に短縮されるだけ = 任意。
+//
+// 自己観測:
+//   - cron_last_at: sentinel 自身の cron が走った時刻。KV 書込は 1 時間に 1 回 + デプロイ直後の
+//     初回 tick だけ (BUILD_ID が変わったら即記録)。worker-watchdog.yml と deploy-worker.yml が
+//     /status 経由で「監視役が生きているか」を確認する。
+//   - history: 本体 strict health が失敗していた区間 (streak) を直近 10 件まで記録する。
+//     開始時の heartbeat 経過秒・データキーの鮮度・refresh-now の成否を残し、
+//     「cron だけ止まったのか、データ更新ごと止まったのか」を後から判別できるようにする。
+//
+// KV 書込 (本体と namespace 共用、無料枠 1,000 writes/日):
+//   正常時は生存記録の 24 回/日だけ。失敗区間中は tick 毎に状態を保存するが、1 UTC 日あたり
+//   DAILY_WRITE_BUDGET 回を超えたら「必須の保存」(状態遷移・GitHub 側の副作用・生存記録) だけに
+//   絞る。refresh-now (予備 cron) は KV に依らず毎 tick 続く。
 //
 // エンドポイント:
 //   GET /health   — sentinel 自身の疎通
-//   GET /status   — 保存状態 + 本体 /health の生 probe (書込なし)
+//   GET /status   — 保存状態 + sentinel_cron + 本体 /health の probe (書込なし、probe は 30 秒メモ)
 //   GET /run?secret=<TRIGGER_SECRET> — cron を待たず 1 回検査 (secret 設定時のみ)
 
 const STATE_KEY = 'sentinel:state';
 const UA = 'boatrace-sentinel (+https://github.com/inotaka1979/boatrace-ai)';
 
-// JST 8-22 時: 本体 cron 5 分間隔 → 4 tick 欠落 (20 分) で stale。夜間 (30 分間隔) は 45 分。
+// 失敗区間 (streak) の履歴保持数。
+const HISTORY_MAX = 10;
+// sentinel 自身の cron 生存記録 (cron_last_at) を KV に書く最小間隔。
+//   毎 tick 書くと 288 回/日で、本体と共用の無料枠 (1000 writes/日) を圧迫するため 1 時間に 1 回。
+export const LIVENESS_WRITE_INTERVAL_SEC = 3600;
+// sentinel の cron 周期 (wrangler.toml の crons = "*/5 * * * *" と一致させる)。
+const TICK_SEC = 300;
+// 1 UTC 日 (= KV 無料枠の集計単位) あたりの KV 書込予算。
+//   失敗区間中は tick 毎に状態 (連続失敗数 / refresh-now の成否) を保存するので、本体 cron が
+//   丸 1 日止まると 288 回書くことになる。KV 無料枠 (1,000 writes/日) は本体と共用で、本体は
+//   平常時に約 700 回/日使う。障害日に sentinel が枠を押し上げて本体の書込を失敗させたら
+//   本末転倒なので、予算を超えたら必須の保存だけに絞る (120 = 10 時間分の tick)。
+//   絞っている間に記録できなかった tick は streak.unrecorded_ticks に数える。
+export const DAILY_WRITE_BUDGET = 120;
+// refresh-now が 429 (未認証 throttle) の時、残りがこの秒数以内なら待って 1 回だけ再試行する。
+//   本体の throttle (5 分) と sentinel の周期 (5 分) が同値のため、数秒の揺らぎで 429 になり得る。
+const REFRESH_RETRY_MAX_WAIT_SEC = 30;
+// /status の本体 probe を isolate 内でメモする時間。公開エンドポイントの連打で本体 /health
+//   (KV read 4 回) を増幅させない。
+const STATUS_PROBE_TTL_MS = 30000;
+
+// 本体 cron: JST 08:00-22:55 は 5 分毎、23:00-07:30 は 30 分毎。
+//   日中は 4 tick 欠落 (20 分) で stale、夜間は 45 分。
 const MAX_AGE_DAY_SEC = 1200;
 const MAX_AGE_NIGHT_SEC = 2700;
+// 朝の切替直後は日中閾値を使わない。08:00 の時点で最後の heartbeat は 07:30 の夜間 tick
+//   (30 分前) のままなのが正常で、本体の 08:00 tick が heartbeat を書くのは発火の約 10 秒後。
+//   同じ分境界で走る sentinel の probe はそれに間に合わないため、08:00 から日中閾値にすると
+//   毎朝 1 回、必ず誤検知する。08:20 までは夜間閾値で見る (07:30 から 45 分 = 08:15 に検知できる)。
+const DAY_THRESHOLD_FROM_MIN = 8 * 60 + 20;
+const DAY_THRESHOLD_UNTIL_MIN = 23 * 60;
 const CRON_DEAD_REASONS = new Set(['cron_heartbeat_stale', 'cron_heartbeat_missing']);
 
-function jstHour(now) {
-  return (now.getUTCHours() + 9) % 24;
-}
-
 export function maxAgeSecFor(now) {
-  const h = jstHour(now);
-  return h >= 8 && h <= 22 ? MAX_AGE_DAY_SEC : MAX_AGE_NIGHT_SEC;
+  const m = ((now.getUTCHours() + 9) % 24) * 60 + now.getUTCMinutes();
+  return m >= DAY_THRESHOLD_FROM_MIN && m < DAY_THRESHOLD_UNTIL_MIN ? MAX_AGE_DAY_SEC : MAX_AGE_NIGHT_SEC;
 }
 
 function intVar(env, name, dflt) {
@@ -52,6 +94,13 @@ function emptyState() {
     last_redeploy_at: null,
     last_transition_at: null,
     last_action: null,
+    cron_last_at: null, // sentinel の cron が最後に走った時刻 (KV 書込は ≤1 回/時 + デプロイ直後)
+    build: null, // cron_last_at を記録した時の BUILD_ID
+    // 進行中の失敗区間
+    //   { started_at, last_tick_at, reason, cron_age_sec, data, refresh:{ok,throttled,failed}, unrecorded_ticks }
+    streak: null,
+    history: [], // 直近 HISTORY_MAX 件の失敗区間 (復旧時に確定)
+    writes: null, // { day: 'YYYY-MM-DD' (UTC), n } — sentinel がその日に行った KV 書込回数
   };
 }
 
@@ -59,8 +108,9 @@ async function loadState(env) {
   try {
     const raw = await env.BOATRACE_KV.get(STATE_KEY);
     if (!raw) return emptyState();
-    const s = JSON.parse(raw);
-    return Object.assign(emptyState(), s);
+    const s = Object.assign(emptyState(), JSON.parse(raw));
+    if (!Array.isArray(s.history)) s.history = [];
+    return s;
   } catch (_) {
     return emptyState();
   }
@@ -69,9 +119,34 @@ async function loadState(env) {
 async function saveState(env, state) {
   try {
     await env.BOATRACE_KV.put(STATE_KEY, JSON.stringify(state));
+    return true;
   } catch (_) {
-    /* KV 障害時も監視自体は続ける */
+    /* KV 障害 (無料枠の枯渇を含む) 時も監視と refresh-now は続ける */
+    return false;
   }
+}
+
+// その日 (UTC) の書込カウンタ。日付が変わっていたら 0 に戻す。
+function writeBudget(state, now) {
+  const day = now.toISOString().slice(0, 10);
+  if (!state.writes || state.writes.day !== day) state.writes = { day, n: 0 };
+  return state.writes;
+}
+
+// 状態を保存する。essential でない保存 (失敗 tick のカウンタ更新) は 1 日の予算内でだけ行う。
+async function persist(env, state, now, essential) {
+  const w = writeBudget(state, now);
+  if (!essential && w.n >= DAILY_WRITE_BUDGET) return false;
+  w.n += 1;
+  return saveState(env, state);
+}
+
+// 前回記録した tick から今回までに、記録できなかった tick が何回あったか。
+//   原因は書込予算の超過・KV 書込の失敗・sentinel 自身の cron 欠落のいずれか。
+function missedTicks(streak, now) {
+  const last = Date.parse(streak && streak.last_tick_at);
+  if (!Number.isFinite(last)) return 0;
+  return Math.max(0, Math.round((now.getTime() - last) / (TICK_SEC * 1000)) - 1);
 }
 
 // --- 本体への fetch ----------------------------------------------------------
@@ -86,6 +161,20 @@ function mainFetch(env, fetchImpl, url, init) {
     return env.MAIN.fetch(new Request(url, init));
   }
   return fetchImpl(url, init);
+}
+
+// 本体 /health の keys から、頻繁に更新される 2 キーの鮮度だけを抜き出す (履歴用)。
+function summarizeKeys(body) {
+  const keys = body && body.keys;
+  if (!keys || typeof keys !== 'object') return null;
+  const out = {};
+  for (const k of ['previews', 'results']) {
+    const v = keys[k];
+    if (v && typeof v === 'object') {
+      out[k] = { age_sec: typeof v.age_sec === 'number' ? v.age_sec : null, src: v.src || null };
+    }
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 // --- 本体 probe ------------------------------------------------------------
@@ -108,24 +197,65 @@ export async function probeHealth(env, now, fetchImpl) {
       http: r.status,
       reason: body && body.reason ? String(body.reason) : r.status === 200 ? null : `http_${r.status}`,
       cron_age_sec: body && typeof body.cron_age_sec === 'number' ? body.cron_age_sec : null,
+      data: summarizeKeys(body),
       worker_alive: true,
     };
   } catch (e) {
-    return { ok: false, http: 0, reason: 'unreachable', cron_age_sec: null, worker_alive: false, error: String(e && e.message || e) };
+    return {
+      ok: false,
+      http: 0,
+      reason: 'unreachable',
+      cron_age_sec: null,
+      data: null,
+      worker_alive: false,
+      error: String((e && e.message) || e),
+    };
   }
 }
 
-async function refreshNow(env, fetchImpl) {
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function discardBody(r) {
+  try {
+    if (r && r.body && !r.bodyUsed) await r.body.cancel();
+  } catch (_) {
+    /* best effort */
+  }
+}
+
+// 本体に refreshAll を 1 回走らせる。本体 cron が止まっている間は、これが「予備の cron」になる。
+//   未認証 (TRIGGER_SECRET 無し) だと本体の 5 分 throttle に掛かり得る。sentinel も 5 分周期なので
+//   数秒差で 429 になることがあり、その場合は残り時間だけ待って 1 回だけ再試行する
+//   (残りが長い = 直近に別経路で refresh 済み = データは新しいので、そのまま諦めてよい)。
+async function refreshNow(env, fetchImpl, sleep) {
   const headers = { 'user-agent': UA };
   if (env.TRIGGER_SECRET) headers['x-trigger-secret'] = env.TRIGGER_SECRET;
-  try {
-    const r = await mainFetch(env, fetchImpl, `${env.MAIN_BASE}/api/refresh-now`, {
+  const call = () =>
+    mainFetch(env, fetchImpl, `${env.MAIN_BASE}/api/refresh-now`, {
       headers,
       signal: AbortSignal.timeout ? AbortSignal.timeout(60000) : undefined,
     });
-    return { http: r.status, alive: r.status === 200 || r.status === 429 };
+  try {
+    let r = await call();
+    let retried = false;
+    if (r.status === 429) {
+      let wait = null;
+      try {
+        const j = await r.json();
+        if (j && typeof j.retry_after_sec === 'number') wait = j.retry_after_sec;
+      } catch (_) {
+        wait = null;
+      }
+      if (wait != null && wait >= 0 && wait <= REFRESH_RETRY_MAX_WAIT_SEC) {
+        await (sleep || defaultSleep)((wait + 1) * 1000);
+        r = await call();
+        retried = true;
+      }
+    }
+    await discardBody(r);
+    return { http: r.status, alive: r.status === 200 || r.status === 429, retried };
   } catch (e) {
-    return { http: 0, alive: false, error: String(e && e.message || e) };
+    return { http: 0, alive: false, retried: false, error: String((e && e.message) || e) };
   }
 }
 
@@ -194,21 +324,64 @@ function incidentBody(env, now, probe, rn, state, action) {
 }
 
 // --- 1 回の検査 ------------------------------------------------------------
+// 失敗区間を履歴 1 件に確定する (復旧時に呼ぶ)。
+function closeStreak(state, now) {
+  const s = state.streak;
+  const started = Date.parse(s.started_at);
+  return {
+    started_at: s.started_at,
+    ended_at: now.toISOString(),
+    // 「最初に失敗を観測してから最初に成功を観測するまで」。実際の停止はこれより
+    //   cron_age_sec (最初の失敗時点の heartbeat 経過秒) だけ前から始まっている。
+    duration_sec: Number.isFinite(started) ? Math.max(0, Math.round((now.getTime() - started) / 1000)) : null,
+    // failures / refresh は「記録できた tick」の数。記録できなかった tick は unrecorded_ticks。
+    failures: state.consecutive_failures,
+    unrecorded_ticks: (s.unrecorded_ticks || 0) + missedTicks(s, now),
+    reason: s.reason || null,
+    cron_age_sec: s.cron_age_sec == null ? null : s.cron_age_sec,
+    data: s.data || null,
+    refresh: s.refresh || null,
+    escalated: !!state.incident,
+    redeploy: !!(state.incident && state.incident.redeploy_at),
+  };
+}
+
 export async function runCheck(env, opts = {}) {
   const now = opts.now || new Date();
   const fetchImpl = opts.fetchImpl || fetch;
+  const sleep = opts.sleep || defaultSleep;
+  const source = opts.source || 'manual'; // 'cron' = scheduled() から。生存記録は cron の時だけ
   const threshold = intVar(env, 'FAIL_THRESHOLD', 3);
   const cooldownSec = intVar(env, 'REDEPLOY_COOLDOWN_SEC', 3 * 3600);
   const commentIntervalSec = intVar(env, 'ISSUE_COMMENT_INTERVAL_SEC', 3600);
 
   const state = await loadState(env);
+  let dirty = false;
+  // essential: 1 日の書込予算を超えていても保存する変更 (状態遷移・GitHub 側の副作用・生存記録)。
+  //   それ以外 (失敗 tick のカウンタ更新) は予算内でだけ保存する。
+  let essential = false;
+
+  // --- sentinel 自身の cron 生存記録 ---
+  //   KV へ書くのは「前回記録から LIVENESS_WRITE_INTERVAL_SEC 経過」または「BUILD_ID が変わった
+  //   (= デプロイ直後の初回 tick)」時だけ。他の理由で保存される tick では最新時刻が相乗りする。
+  if (source === 'cron') {
+    const build = env.BUILD_ID || null;
+    const lastAt = state.cron_last_at ? Date.parse(state.cron_last_at) : NaN;
+    const elapsed = Number.isFinite(lastAt) ? now.getTime() - lastAt : Infinity;
+    if (elapsed >= LIVENESS_WRITE_INTERVAL_SEC * 1000 || (state.build || null) !== build) {
+      dirty = true;
+      essential = true;
+    }
+    state.cron_last_at = now.toISOString();
+    state.build = build;
+  }
+
   const probe = await probeHealth(env, now, fetchImpl);
   const actions = [];
   const api = gh(env, fetchImpl);
-  let dirty = false;
 
   if (probe.ok) {
-    if (state.consecutive_failures > 0 || state.incident) {
+    if (state.consecutive_failures > 0 || state.incident || state.streak) {
       if (state.incident && state.incident.issue_number && api) {
         try {
           await api.comment(
@@ -221,21 +394,45 @@ export async function runCheck(env, opts = {}) {
           actions.push(`issue close failed: ${e && e.message}`);
         }
       }
+      if (state.streak) {
+        const prev = Array.isArray(state.history) ? state.history : [];
+        state.history = prev.concat([closeStreak(state, now)]).slice(-HISTORY_MAX);
+      }
       state.consecutive_failures = 0;
       state.incident = null;
+      state.streak = null;
       state.last_transition_at = now.toISOString();
       state.last_action = actions.join('; ') || 'recovered';
       dirty = true;
+      essential = true;
     }
-    if (dirty) await saveState(env, state);
+    if (dirty) await persist(env, state, now, essential);
     return { ok: true, probe, actions, state };
   }
 
   // --- 失敗 ---
   state.consecutive_failures += 1;
   dirty = true;
-  const rn = await refreshNow(env, fetchImpl);
-  actions.push(`refresh-now http=${rn.http}`);
+  if (!state.streak) {
+    state.streak = {
+      started_at: now.toISOString(),
+      last_tick_at: now.toISOString(),
+      reason: probe.reason,
+      cron_age_sec: probe.cron_age_sec,
+      data: probe.data || null,
+      refresh: { ok: 0, throttled: 0, failed: 0 },
+      unrecorded_ticks: 0,
+    };
+  } else {
+    state.streak.unrecorded_ticks = (state.streak.unrecorded_ticks || 0) + missedTicks(state.streak, now);
+    state.streak.last_tick_at = now.toISOString();
+  }
+  const rn = await refreshNow(env, fetchImpl, sleep);
+  if (!state.streak.refresh) state.streak.refresh = { ok: 0, throttled: 0, failed: 0 };
+  if (rn.http === 200) state.streak.refresh.ok += 1;
+  else if (rn.http === 429) state.streak.refresh.throttled += 1;
+  else state.streak.refresh.failed += 1;
+  actions.push(`refresh-now http=${rn.http}${rn.retried ? ' (retried)' : ''}`);
 
   if (state.consecutive_failures >= threshold) {
     if (!state.incident) {
@@ -249,13 +446,17 @@ export async function runCheck(env, opts = {}) {
     let action = 'なし';
     if (cronDead && workerAlive) {
       if (!api) {
-        action = '再デプロイ不可（GH_TOKEN 未設定）。Actions タブから "Deploy Cloudflare Worker" を手動実行してください';
+        // GH_TOKEN は任意。無い場合の主 cron 再登録は GitHub 側 worker-watchdog.yml (組込みトークン) が行う。
+        //   それまでの間も、上の refresh-now が 5 分毎に本体を更新し続ける。
+        action = 'GH_TOKEN 未設定のため再デプロイは worker-watchdog.yml に委任（データは refresh-now で更新継続）';
       } else if (!cooldownOk) {
         action = `再デプロイ見送り（直近 ${Math.round(cooldownSec / 3600)} 時間以内に dispatch 済: ${state.last_redeploy_at}）`;
       } else {
         const r = await api.dispatchDeploy();
         if (r.status === 204) {
           state.last_redeploy_at = now.toISOString();
+          state.incident.redeploy_at = now.toISOString();
+          essential = true; // 保存し損ねると次の tick でまた dispatch してしまう
           action = `${env.DEPLOY_WORKFLOW} を dispatch（cron trigger 再登録）`;
         } else {
           action = `${env.DEPLOY_WORKFLOW} の dispatch 失敗 (HTTP ${r.status})`;
@@ -284,11 +485,13 @@ export async function runCheck(env, opts = {}) {
           }
           state.incident.issue_number = n;
           state.incident.last_comment_at = now.toISOString();
+          essential = true;
         } else {
           const last = state.incident.last_comment_at ? Date.parse(state.incident.last_comment_at) : 0;
           if (now.getTime() - last >= commentIntervalSec * 1000) {
             await api.comment(state.incident.issue_number, incidentBody(env, now, probe, rn, state, action));
             state.incident.last_comment_at = now.toISOString();
+            essential = true;
             actions.push(`commented issue #${state.incident.issue_number}`);
           }
         }
@@ -299,11 +502,13 @@ export async function runCheck(env, opts = {}) {
   }
 
   state.last_action = actions.join('; ');
-  if (dirty) await saveState(env, state);
+  if (dirty) await persist(env, state, now, essential);
   return { ok: false, probe, actions, state };
 }
 
 // --- Worker entry ------------------------------------------------------------
+let _statusProbe = { at: 0, value: null }; // /status 用の本体 probe メモ (isolate ローカル)
+
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -314,7 +519,7 @@ function json(obj, status = 200) {
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
-      runCheck(env).then(
+      runCheck(env, { source: 'cron' }).then(
         (r) => console.log(`sentinel: ok=${r.ok} http=${r.probe.http} reason=${r.probe.reason} actions=[${r.actions.join('; ')}]`),
         (e) => console.log('sentinel: runCheck failed', e && e.message)
       )
@@ -328,14 +533,27 @@ export default {
     }
     if (url.pathname === '/status') {
       const state = await loadState(env);
-      const probe = await probeHealth(env, new Date(), fetch);
+      const nowMs = Date.now();
+      if (!_statusProbe.value || nowMs - _statusProbe.at >= STATUS_PROBE_TTL_MS) {
+        _statusProbe = { at: nowMs, value: await probeHealth(env, new Date(nowMs), fetch) };
+      }
+      const lastAt = state.cron_last_at ? Date.parse(state.cron_last_at) : NaN;
       return json({
         ok: true,
-        time: new Date().toISOString(),
+        time: new Date(nowMs).toISOString(),
         gh_token: !!env.GH_TOKEN,
         trigger_secret: !!env.TRIGGER_SECRET,
         main_binding: !!(env.MAIN && typeof env.MAIN.fetch === 'function'),
-        main_probe: probe,
+        build: env.BUILD_ID || null,
+        // sentinel 自身の cron の生存記録。age_sec は書込間隔 (write_interval_sec) の分だけ
+        //   古く見えるのが正常。build_recorded === build なら「現行版の cron が 1 回以上走った」。
+        sentinel_cron: {
+          last_at: state.cron_last_at || null,
+          age_sec: Number.isFinite(lastAt) ? Math.max(0, Math.round((nowMs - lastAt) / 1000)) : null,
+          write_interval_sec: LIVENESS_WRITE_INTERVAL_SEC,
+          build_recorded: state.build || null,
+        },
+        main_probe: _statusProbe.value,
         state,
       });
     }
@@ -344,7 +562,7 @@ export default {
       if (!env.TRIGGER_SECRET || secret !== env.TRIGGER_SECRET) {
         return json({ ok: false, error: 'unauthorized' }, 401);
       }
-      const r = await runCheck(env);
+      const r = await runCheck(env, { source: 'manual' });
       return json({ ok: r.ok, probe: r.probe, actions: r.actions, state: r.state });
     }
     return json({ ok: false, error: 'not found' }, 404);
