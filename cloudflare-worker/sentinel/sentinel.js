@@ -74,12 +74,26 @@ async function saveState(env, state) {
   }
 }
 
+// --- 本体への fetch ----------------------------------------------------------
+// 2026-11-11 初回デプロイで判明: Worker から同一アカウントの *.workers.dev を公開 URL で fetch
+//   すると Cloudflare が 404 を返す (Worker→Worker の同一ゾーン fetch は非対応、error 1042)。
+//   /status の main_probe が http=404 / worker_alive=true になっていた。
+//   → wrangler.toml の [[services]] で本体を MAIN にバインドし、env.MAIN.fetch() で呼ぶ。
+//   URL は path / query だけが使われる (host は無視)。バインドが無い環境 (テスト) では
+//   fetchImpl にフォールバックする。
+function mainFetch(env, fetchImpl, url, init) {
+  if (env.MAIN && typeof env.MAIN.fetch === 'function') {
+    return env.MAIN.fetch(new Request(url, init));
+  }
+  return fetchImpl(url, init);
+}
+
 // --- 本体 probe ------------------------------------------------------------
 export async function probeHealth(env, now, fetchImpl) {
   const base = env.MAIN_BASE;
   const url = `${base}/health?strict=1&max_age_sec=${maxAgeSecFor(now)}`;
   try {
-    const r = await fetchImpl(url, {
+    const r = await mainFetch(env, fetchImpl, url, {
       headers: { 'user-agent': UA, accept: 'application/json' },
       signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined,
     });
@@ -105,7 +119,7 @@ async function refreshNow(env, fetchImpl) {
   const headers = { 'user-agent': UA };
   if (env.TRIGGER_SECRET) headers['x-trigger-secret'] = env.TRIGGER_SECRET;
   try {
-    const r = await fetchImpl(`${env.MAIN_BASE}/api/refresh-now`, {
+    const r = await mainFetch(env, fetchImpl, `${env.MAIN_BASE}/api/refresh-now`, {
       headers,
       signal: AbortSignal.timeout ? AbortSignal.timeout(60000) : undefined,
     });
@@ -320,6 +334,7 @@ export default {
         time: new Date().toISOString(),
         gh_token: !!env.GH_TOKEN,
         trigger_secret: !!env.TRIGGER_SECRET,
+        main_binding: !!(env.MAIN && typeof env.MAIN.fetch === 'function'),
         main_probe: probe,
         state,
       });
