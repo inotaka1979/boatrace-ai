@@ -201,6 +201,10 @@ step "critical→rest reachability lint (AST)" \
 step "Cloudflare Worker endpoint (auth / CORS)" \
      "node scripts/tests/test_worker_cf_endpoint.mjs"
 
+# 9g2b2) 2026-11-11: sentinel Worker（本体の外形監視・自己復旧の状態遷移）
+step "Cloudflare sentinel Worker (monitor / self-heal)" \
+     "node scripts/tests/test_sentinel_worker.mjs"
+
 # 9g3) look-ahead leakage 回帰（締切前予想の lock-in）
 step "Prediction lock-in (leakage guard)" \
      "node scripts/tests/test_prediction_lockin.js"

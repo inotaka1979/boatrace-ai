@@ -1106,3 +1106,28 @@ FA-5 の認証 / CORS は既に本番反映されている。手動 wrangler 操
   5 分 throttle 対象になるだけ）。登録すると worker-watchdog が stale 検知時に
   throttle を待たず即時再生成できる。Cloudflare dashboard の Secret と GitHub の
   Actions secret に同じ値を入れる（`wrangler deploy` は dashboard の secret を保持する）。
+
+## 修正履歴 (2026-11-11: sentinel — 外形監視・自己復旧を GitHub schedule から Cloudflare cron へ)
+
+実測（11/8-11/11）で GitHub schedule の間引きが従来の想定（4-6 回/日）より進み、
+worker-watchdog.yml（毎時宣言）は 1-2 回/日、data-freshness-monitor.yml（5 分宣言）も 2 回/日
+しか発火していなかった。本体 Worker の cron 停止は 9/21-10/17 に 15 回起きており、
+この頻度では検知の空白が数時間〜半日になる。
+
+- `cloudflare-worker/sentinel/`（新規）: 第 2 Worker **boatrace-sentinel**。Cloudflare cron
+  5 分毎（間引きなし）で本体 `/health?strict=1` を監視（閾値 JST 8-22 時 1200s / 夜間 2700s）。
+  - 失敗毎に `/api/refresh-now`（TRIGGER_SECRET 提示）でデータ自己修復
+  - 連続 3 回で障害: cron 死亡 + 本体応答なら `deploy-worker.yml` を GitHub API で dispatch
+    （3 時間に 1 回まで）、issue（`worker-cron-dead`）起票、1 時間毎に経過コメント、復旧で自動クローズ
+  - 到達不能（Worker 全体停止）は再デプロイ対象外として issue のみ
+  - KV は本体と namespace 共用（`sentinel:state`）、書込は状態遷移時のみ（正常時 0 回/日）
+  - `/status`（状態 + 本体 probe）、`/run?secret=`（手動検査）
+- `deploy-worker.yml` に `deploy-sentinel` job 追加（`cloudflare-worker/**` push で自動デプロイ、
+  `/status` で検証、GH_TOKEN 未設定なら warning）。
+- `scripts/tests/test_sentinel_worker.mjs`（11 件）: fetch/KV/時刻を stub して状態遷移を固定。
+- RUNBOOK §8.2 (A) を sentinel に置換、worker-watchdog.yml は「最後の保険」に格下げ。
+
+**user 手動（1 回）**: Cloudflare dashboard → boatrace-sentinel → Settings → Variables に
+`GH_TOKEN`（fine-grained PAT: boatrace-ai の Actions / Issues を Read and write）と任意で
+`TRIGGER_SECRET` を登録。手順は `cloudflare-worker/sentinel/README.md`。未登録でも監視と
+refresh-now は動く（再デプロイ dispatch と issue 起票だけ止まる）。

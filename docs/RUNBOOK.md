@@ -118,12 +118,23 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
 
 ### 8.2 Worker 死活監視（最重要・恒久対策の要）
 
-**(A) 外部死活監視 — 必須・ユーザー手動（5分）**
-- https://healthchecks.io か UptimeRobot（無料）に登録し、以下を **5分間隔**で監視:
-  ```
-  https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1&max_age_sec=2400
-  ```
-- HTTP 200 = 正常。**HTTP 500 = cron ハートビートが 40分以上途絶（cron 死亡の兆候）→ メール通知**。
+**(A) 外形監視 + 自己復旧 — sentinel Worker（2026-11-11、主系）**
+- `cloudflare-worker/sentinel/` の第 2 Worker **boatrace-sentinel** が Cloudflare cron（5 分毎、
+  GitHub schedule のように間引かれない）で本体の `/health?strict=1` を監視する。閾値は JST 8-22 時
+  1200s / 夜間 2700s。
+- 失敗のたびに `/api/refresh-now` でデータを自己修復。**連続 3 回（15 分）**で障害扱い:
+  reason が `cron_heartbeat_stale/_missing` かつ本体が応答していれば `deploy-worker.yml` を
+  dispatch して cron trigger を再登録（3 時間に 1 回まで）、issue（label `worker-cron-dead`）を起票。
+  継続中は 1 時間毎に経過コメント、復旧で自動クローズ。
+- 状態は `https://boatrace-sentinel.inotaka1979.workers.dev/status` で確認できる
+  （`gh_token` が false なら再デプロイ / issue が止まっている → secret `GH_TOKEN` を設定）。
+- **初期設定（ユーザー手動・1 回）**: `cloudflare-worker/sentinel/README.md` の手順で
+  Cloudflare dashboard → boatrace-sentinel → Settings → Variables に `GH_TOKEN`
+  （fine-grained PAT: このリポジトリの Actions / Issues を Read and write）と、任意で
+  本体と同じ `TRIGGER_SECRET` を登録する。デプロイ自体は `deploy-worker.yml` が自動で行う。
+- 旧 (A) の healthchecks.io / UptimeRobot 監視は任意。やるなら
+  `https://boatrace-scrape-trigger.inotaka1979.workers.dev/health?strict=1&max_age_sec=2400` を 5 分間隔で。
+- HTTP 200 = 正常。**HTTP 500 = cron ハートビートが閾値以上途絶（cron 死亡の兆候）**。
 - rt-fix3: strict は **cron 専用ハートビート(`cron_age_sec`)** で判定する。以前はデータキー
   (とくに `programs` は朝1回しか更新されない) の `wrote_at` で判定していたため、Worker が
   正常でも午後には必ず 500 を返す誤検知があった。`max_age_sec` は夜間 cron 30分間隔 + jitter を
@@ -140,6 +151,7 @@ PWA が画面に表示するデータの鮮度は **以下だけ**で決まる�
 **(C) GHA watchdog — 実装済（backstop）**
 - `.github/workflows/worker-watchdog.yml` が `/health?strict=1` を叩き、500 なら
   `/api/refresh-now` を呼んで KV 再生成を促す。schedule 間引きの影響を受けるため backstop 扱い。
+  2026-11-11 実測で 1-2 回/日しか動いていない。sentinel (A) が止まった時の最後の保険。
 
 ### 8.3 Worker が完全停止した時の復旧手順
 
