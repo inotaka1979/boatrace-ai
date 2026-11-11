@@ -1136,3 +1136,72 @@ GitHub schedule の間引き（6 アンカー → 実発火 2 回/日）で run 
 
 期待効果: real-time 系 3 タスクが合計 2-4 分、racedata は 1 run で全場完走（~7 分）。
 間引かれた回の損失が小さくなり、今節成績が午前中に揃う。
+
+## 修正履歴 (2026-11-11: sentinel — 外形監視・自己復旧を GitHub schedule から Cloudflare cron へ)
+
+実測（11/8-11/11）で GitHub schedule の間引きが従来の想定（4-6 回/日）より進み、
+worker-watchdog.yml（毎時宣言）は 1-2 回/日、data-freshness-monitor.yml（5 分宣言）も 2 回/日
+しか発火していなかった。本体 Worker の cron 停止は 9/21-10/17 に 15 回起きており、
+この頻度では検知の空白が数時間〜半日になる。
+
+- `cloudflare-worker/sentinel/`（新規）: 第 2 Worker **boatrace-sentinel**。Cloudflare cron
+  5 分毎（間引きなし）で本体 `/health?strict=1` を監視（閾値 JST 8-22 時 1200s / 夜間 2700s）。
+  - 失敗毎に `/api/refresh-now`（TRIGGER_SECRET 提示）でデータ自己修復
+  - 連続 3 回で障害: cron 死亡 + 本体応答なら `deploy-worker.yml` を GitHub API で dispatch
+    （3 時間に 1 回まで）、issue（`worker-cron-dead`）起票、1 時間毎に経過コメント、復旧で自動クローズ
+  - 到達不能（Worker 全体停止）は再デプロイ対象外として issue のみ
+  - KV は本体と namespace 共用（`sentinel:state`）、書込は状態遷移時のみ（正常時 0 回/日）
+  - `/status`（状態 + 本体 probe）、`/run?secret=`（手動検査）
+- `deploy-worker.yml` に `deploy-sentinel` job 追加（`cloudflare-worker/**` push で自動デプロイ、
+  `/status` で検証、GH_TOKEN 未設定なら warning）。
+- `scripts/tests/test_sentinel_worker.mjs`（11 件）: fetch/KV/時刻を stub して状態遷移を固定。
+- RUNBOOK §8.2 (A) を sentinel に置換、worker-watchdog.yml は「最後の保険」に格下げ。
+
+**user 手動（1 回）**: Cloudflare dashboard → boatrace-sentinel → Settings → Variables に
+`GH_TOKEN`（fine-grained PAT: boatrace-ai の Actions / Issues を Read and write）と任意で
+`TRIGGER_SECRET` を登録。手順は `cloudflare-worker/sentinel/README.md`。未登録でも監視と
+refresh-now は動く（再デプロイ dispatch と issue 起票だけ止まる）。
+
+## 修正履歴 (2026-11-11: リポジトリ衛生 + CI ノイズ対策)
+
+### 計測: data の orphan ブランチ分離（P2-9）は見送り
+全履歴を unshallow して計測した結果、**pack 123 MiB（6,744 commit、2026-03-31〜）**。
+blob 総量は約 1.9GB（programs 454MB / odds 421MB / previews 291MB / db 243MB）だが
+再生成 JSON は delta 圧縮が効き、月 16MB 程度の増加に留まる。GitHub 推奨上限 1GB まで余裕が
+あり、push 衝突も rt-fix P0-3 以降は実障害が出ていない（11/11 のログは全て attempt 1 で成功）。
+Pages 公開ソース変更という手作業を伴う分離は実害が無いため**実施しない**。
+
+### 実施（別 PR、CLAUDE.md の記録はここに集約）
+- `data/_debug/`（診断用 HTML ダンプ 105 ファイル / 7.3MB）を追跡停止、.gitignore に追加。
+  probe-venue*.yml は確認用に `git add -f` で一時 commit する運用のまま。
+- `ios-simulator-smoke.yml`: `simctl openurl` が直近 6 夜で 4 回 "Operation timed out"(60) で
+  落ちていた runner 側フレークに `bootstatus -b` 待ち + 最大 3 回 retry。
+- `notification-drill.yml`: 新しい drill を立てる前に open の drill issue を自動クローズ
+  （6〜11 月の 6 件が放置されていた。次回 12/1 の run で一括クローズされる）。
+- `dependabot-automerge.yml`（新規）: Dependabot の patch / minor PR は全チェック完了を待って
+  squash merge。major は人の判断に残す。既存の #314（aiohttp 3.14.5）は対象外なので手動 merge。
+
+### 残（user 操作）
+- `TRIGGER_SECRET` の登録（任意、sentinel README 参照）
+- 既存 open issue の手動クローズ: fl-gradient-upload #9 / #39（5 月、処理済み）
+
+## 記録 (2026-11-11: 初回実データ backtest — PR-11)
+
+archive_daily が 45 日分（9/27〜11/10、6,556 レース）蓄積したので `backtest_offline.mjs` を
+初めて実データで実行。詳細は `docs/BACKTEST.md` 「実行記録」、生出力は
+`docs/backtest_20260927-20261110.json`（別 PR）。
+
+| 戦略 | ROI | 的中率 |
+|---|---|---|
+| 現行 AI 確率順 三連単 top-10 | **0.688** | 35.8% |
+| 現行 AI EV モード | 0.818（CI 0.35〜1.42、点数 1,384） | 0.3% |
+| 1 号艇 単勝ベタ買い | **0.909** | 54.3% |
+| 単勝 1 番人気 | 0.833 | 13.2% |
+| 三連単 人気順 top-10 | 0.825 | 13.6% |
+
+- 判定 NO EDGE。`--leak` で 0.688 → 0.988 に跳ねることから forward-chain は健全。
+- **ただし評価できたのは「番組表だけの朝予想」**: アーカイブの展示被覆 15.2%、三連単オッズ
+  26.7%、previews は live スキーマで番組予想に fallback。締切前の実運用予想は未評価。
+- 次の一手は予測ロジックの変更ではなく**アーカイブ被覆の充足**: 確定レースの展示・オッズを
+  事後バックフィルする scraper パス（軽量化後の scrape-all の余剰予算で 1 run N レース）と、
+  `loadDay` の previews live スキーマ変換。揃ってから A-01 / B-01 を同一 harness で比較する。

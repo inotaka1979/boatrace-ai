@@ -12,8 +12,11 @@ name: Worker Watchdog (self-heal)
 #   注意: GitHub schedule は本リポジトリで 1 workflow あたり 4-6 回/日に間引かれるため、
 #   これは「保険」であり主系ではない。Worker 側は /api/* サーブ時に heartbeat stale を
 #   検知すると自前で refreshAll を回す (serve-heal) ので、cron 死亡中もデータ鮮度は保たれる。
-#   分単位の外形監視は healthchecks.io / UptimeRobot で /health?strict=1 を 5 分監視
-#   (docs/RUNBOOK.md §8.2)。
+#
+# 2026-11-11: 実測で本 workflow は 1-2 回/日しか発火していなかった（11/8-11/11）。
+#   分単位の監視・自己復旧は Cloudflare 側の第 2 Worker **boatrace-sentinel**
+#   (cloudflare-worker/sentinel/, 5 分 cron, 間引きなし) に移した。本 workflow は
+#   sentinel 自身が止まった場合の最後の保険として残す (docs/RUNBOOK.md §8.2)。
 
 on:
   workflow_dispatch:
