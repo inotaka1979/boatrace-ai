@@ -4,37 +4,50 @@
 // (openStadium) の DOM rendering。起動経路で呼ばれるため critical bundle 同居。
 // 注: showPage は src/reporting/page_router.js に別出 (400 行制限遵守)。
 //
-// Public: renderStadiums / openStadium
+// Public: renderStadiums / openStadium / _renderTopSummary
 
 'use strict';
 
+// TOP の成績サマリー (判定済 / 3連単的中 / 的中率 / 選手DB)。
+//   2026-11-14: renderStadiums から分離。従来は場一覧と一緒にしか描かれず、起動後に
+//   backfill が履歴を埋めても、次に renderStadiums が走る (= TOP 表示中に 90 秒 poll が
+//   データ世代の変化を検知する) まで「0 判定済 / 0 的中」のままだった。履歴が変わった時と
+//   TOP に戻った時に、これだけを描き直す。
+//   その日の集計がまだ終わっていない間 (_histReady が立つ前) に 0 件なら「…」を出す
+//   （未集計を「的中 0」と読ませない）。
+function _renderTopSummary() {
+  var sumDiv = document.getElementById('topSummary');
+  if (!sumDiv) return;
+  var acc = getAccuracy();
+  var wait = !acc.total && !globalThis._histReady;
+  // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は集計数値のみ
+  sumDiv.innerHTML =
+    '<div class="summary-bar">' +
+    '<div class="summary-item"><div class="s-num" style="color:var(--accent)">' +
+    (wait ? '…' : acc.total) +
+    '</div><div class="s-label">判定済</div></div>' +
+    '<div class="summary-item"><div class="s-num" style="color:var(--gold)">' +
+    (wait ? '…' : acc.trifectaHit) +
+    '</div><div class="s-label">3連単的中</div></div>' +
+    '<div class="summary-item"><div class="s-num c-success">' +
+    (wait ? '…' : acc.trifectaRate + '%') +
+    '</div><div class="s-label">的中率</div></div>' +
+    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
+    Object.keys(racerDB).length +
+    '</div><div class="s-label">選手DB</div></div>' +
+    '</div>';
+}
+
 function renderStadiums() {
   document.getElementById('topLoading').style.display = 'none';
-  var sumDiv = document.getElementById('topSummary');
   var list = document.getElementById('stadiumList');
-  // PH-5d: sumDiv は HTML で min-height で初期スペース確保済 → display 設定不要
+  // PH-5d: #topSummary は HTML で min-height で初期スペース確保済 → display 設定不要
   //   旧: sumDiv.style.display='block' は CLS の主要因 (60px 押下げ)
   list.style.display = 'grid';
   // PH-5c: list.innerHTML='' を撤去 (CLS 抑制)
   //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない
 
-  var acc = getAccuracy();
-  // eslint-disable-next-line no-restricted-syntax -- B-05: 補間は集計数値のみ
-  sumDiv.innerHTML =
-    '<div class="summary-bar">' +
-    '<div class="summary-item"><div class="s-num" style="color:var(--accent)">' +
-    acc.total +
-    '</div><div class="s-label">判定済</div></div>' +
-    '<div class="summary-item"><div class="s-num" style="color:var(--gold)">' +
-    acc.trifectaHit +
-    '</div><div class="s-label">3連単的中</div></div>' +
-    '<div class="summary-item"><div class="s-num" class="c-success">' +
-    acc.trifectaRate +
-    '%</div><div class="s-label">的中率</div></div>' +
-    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
-    Object.keys(racerDB).length +
-    '</div><div class="s-label">選手DB</div></div>' +
-    '</div>';
+  _renderTopSummary();
 
   var activeIds = {};
   if (programData) {
@@ -452,4 +465,5 @@ function _prefetchLiveOddsForUpcoming(sid) {
 
 // globalThis export
 globalThis.renderStadiums = renderStadiums;
+globalThis._renderTopSummary = _renderTopSummary;
 globalThis.openStadium = openStadium;

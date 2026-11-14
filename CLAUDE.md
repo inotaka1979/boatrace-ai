@@ -1262,3 +1262,57 @@ archive_daily が 45 日分（9/27〜11/10、6,556 レース）蓄積したの�
   KV の展示を carry すれば、書込 100〜150 回/日（推定）と展示の再スクレイプを削減できる。
 - 夜間（30 分 cron）の閾値 2700 秒は 1 tick の欠落（3600 秒）で失敗区間になる。`GH_TOKEN` 未設定なら
   実害は無い（refresh-now が数回走るだけ）ので、`history` に夜間の短い区間が出る頻度を見てから決める。
+
+## 修正履歴 (2026-11-14: TOP の成績サマリーが「0 判定済 / 0 的中」のまま更新されない)
+
+ユーザー報告「TOP の的中数等が表示されていない」。当日データを差し込んだ実ブラウザ (Chromium) で再現した。
+
+### 計測（修正前）
+| 経過 | TOP の表示 | 履歴 (localStorage) |
+|---|---|---|
+| 起動〜60 秒 | 0 判定済 / 0 的中 / 0.0% | 本日分 0 件 |
+| 60〜66 秒 | 0 / 0 / 0.0% のまま | backfill が 49 件保存（getAccuracy は 49 / 25 を返す状態） |
+| 約 100 秒 | 49 判定済 / 25 的中 / 51.0% | — |
+
+数字が入るのは 90 秒 poll の再描画時で、しかも**その瞬間に TOP を表示している場合だけ**。別ページから
+TOP に戻っても描き直されず、夜（データ世代が変わらない時間帯）は古い表示のまま残る。
+
+### 原因
+1. 履歴を埋める `_backfillTodayPredictions` が起動 60 秒後まで走らない（PF-3 の遅延）。
+2. backfill や結果到着で履歴が変わっても、TOP のサマリーを描き直す処理が無い（場一覧と一緒に
+   `renderStadiums` で描くだけ）。
+3. `showPage('top')` がサマリーを描き直さない。
+4. 起動時の結果は同一 origin の `data/results/today.json` を優先するが、GitHub Actions の更新が
+   1 日数回のため数時間古い（16 時に開いて 12:29 時点）。最新は 90 秒後の初回 poll まで入らない。
+
+### 修正
+- `src/reporting/stadium_pages.js`: サマリー描画を `_renderTopSummary()` に分離。その日の集計が済む前
+  （`_histReady` が立つ前）に 0 件なら「…」を出す（未集計を「的中 0」と読ませない）。
+  的中率の `class` 属性が二重で色が落ちていたのも修正。
+- `src/reporting/page_router.js`: `showPage('top')` でサマリーを描き直す。
+- `assets/app.js`:
+  - `_backfillTodayPredictions`: 終了時に `_histReady` を立てて TOP を描き直す。結果付きで保存済みの
+    レースは再計算しない（従来は 90 秒 poll 毎に全確定レースを再計算し、1 レース毎に履歴全体を parse）。
+    履歴の読み書きは最後に 1 回（`savePrediction` に batch 引数を追加、lock-in の意味は不変）。
+  - `updateHistoryWithResults`: 結果が付いたら TOP を描き直す。
+  - 起動後の backfill 待ちを 60 秒 → 1.5 秒（`BACKFILL_DELAY_MS`）。
+  - `loadDeferredData`: 最新の結果を Worker から取り込んでから学習・backfill する。
+- `src/analysis/predict_race.js`: `predictRaceAsync` に遮断器。worker が連続 3 回失敗するか 1 回 timeout
+  したら、以後そのページでは main thread で計算する（無応答だと 1 レース 8 秒待ちで backfill が終わらない）。
+
+### 検証
+- 実ブラウザ: 新規プロファイル / ローカル結果が古い場合 / 履歴 1000 件の長期利用プロファイルの
+  いずれも起動 3 秒以内に実数を表示。TOP に戻った時の再描画、結果増加への追従（90 秒 poll）も確認。
+- `scripts/tests/test_top_summary.js`（14 件）。修正の各部分を外す mutation 9 通りで対応するテストが落ちる
+  ことを確認。gate EXIT=0、critical 99,488B / 100,000B。
+
+### 見つかった別件（未修正・要フォローアップ）
+- **予測用 Web Worker が全く機能していない**: `assets/worker_predictor.js` に定数が無く、展示ありは
+  `CLASS_COURSE_MULT is not defined`、展示なしは `DEFAULT_ENTRY_BY_STADIUM is not defined` で毎回失敗し、
+  main thread に落ちている。ESLint `no-undef` で洗うと未定義参照は 22 種 53 箇所（定数 7 種のほか
+  `settings` / `_isotonicCoeffs` / `_plattCoeffsByStadium` / `_calibrationMethod` などの state）。
+  `test_worker_protocol.js` が「結果かエラーのどちらか」を許容しているため検出できていなかった。
+  直すには定数の同期に加えて state 同期の網羅と main との一致テストが要るので別 PR にする。
+- localStorage の実容量は Chromium で約 524 万文字。履歴 1 件は約 2,140 文字（うち `pred_snapshot` 1,214）。
+  起動時の auto-trim が効くので書込失敗には至らないが、過去日の `pred_snapshot` は表示に使わないので
+  落とせば履歴を半分以下にできる。

@@ -21,8 +21,17 @@
 
 'use strict';
 
+// 2026-11-14: Worker 経路の遮断器。
+//   worker が予想に失敗し続ける間、1 レース毎に往復と警告を払ったうえで結局 main で計算
+//   していた。無応答なら 1 レース 8 秒待ちになり、全確定レースを順に回す backfill が
+//   数十分終わらない (= その間 TOP の的中数が出ない)。連続 3 回失敗するか 1 回でも
+//   timeout したら、以後このページでは worker を使わず main で計算する。
+var WORKER_PREDICT_MAX_FAILS = 3;
+var _workerPredictFails = 0;
+var _workerPredictOff = false;
+
 function predictRaceAsync(sid, raceNum) {
-  var w = _getAppWorker();
+  var w = _workerPredictOff ? null : _getAppWorker();
   if (!w) {
     // Worker 不可時は main thread fallback
     return Promise.resolve(predictRace(sid, raceNum));
@@ -34,6 +43,10 @@ function predictRaceAsync(sid, raceNum) {
       if (_settled) return;
       _settled = true;
       _appWorkerCallbacks.delete(reqId);
+      if (!_workerPredictOff && (why === 'timeout' || ++_workerPredictFails >= WORKER_PREDICT_MAX_FAILS)) {
+        _workerPredictOff = true;
+        console.warn('[worker] predict を無効化しました (以後 main thread で計算):', why);
+      }
       console.warn('[worker] falling back to main thread:', why);
       try {
         resolve(predictRace(sid, raceNum));
@@ -60,6 +73,7 @@ function predictRaceAsync(sid, raceNum) {
           return;
         }
         _settled = true;
+        _workerPredictFails = 0;
         resolve(msg.result);
       } else if (msg.type === 'error') {
         console.warn('[PG-4] worker predict error:', msg.error, msg.stack);

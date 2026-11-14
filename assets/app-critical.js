@@ -3383,7 +3383,16 @@ var _workerHeavyLoaded = false;
 // 保存してしまった garbage を一掃）。resultData ロード後のみ実行。
 /* MOVED: function _cleanStaleHistoryToday */
 
+// TOP を表示中なら成績サマリー (判定済 / 的中 / 的中率) だけを描き直す (2026-11-14)。
+//   他ページにいる間の変化は showPage('top') が戻った時に反映する。
+/* MOVED: function _refreshTopSummary */
+
+// 全場の確定レースを予想 → 履歴へ。保存できた件数を返す。
+//   2026-11-14: 終わったら (成否・早期 return を問わず) その日の集計が 1 回済んだ印
+//   (_histReady) を立て、TOP のサマリーを描き直す。従来は履歴を埋めても TOP を誰も
+//   描き直さず、起動後ずっと「0 判定済 / 0 的中」に見えていた。
 /* MOVED: function _backfillTodayPredictions */
+/* MOVED: function _backfillTodayPredictionsImpl */
 
 // 2026-09-06: 締切判定。programData の race_closed_at (JST 文字列) を使う。
 //   不明なら「未締切」扱い（結果が無い段階では予想更新を許す = 実運用の締切前と同じ）。
@@ -3396,6 +3405,8 @@ var _workerHeavyLoaded = false;
 //   買い目の確率は保存していないので trifecta/exacta は付けず、表示側の live フォールバックに任せる。
 /* MOVED: function _snapshotFromEntry */
 /* MOVED: function _predFields */
+// batch (任意): {history: 配列, dirty: bool}。渡すと localStorage を読み書きせず、その配列を
+//   直接更新して dirty を立てる (呼出側がまとめて 1 回保存する。_backfillTodayPredictions 用)。
 /* MOVED: function savePrediction */
 
 /* MOVED: function checkHit */
@@ -3447,7 +3458,12 @@ var _workerHeavyLoaded = false;
 //   引数: Phase 1 で取得済の raw データ（学習関数用）
 /* MOVED: function loadDeferredData */
 
-// PF-3: backfill を lazy 起動（成績タブ open or 60 秒 idle）
+// PF-3: backfill を lazy 起動（成績タブ open or 起動処理が落ち着いた直後）
+// 2026-11-14: 60 秒 → 1.5 秒。60 秒待つと、その日最初に開いた時の TOP は 1 分以上
+//   「0 判定済 / 0 的中」のままで、1 分以内に閉じる使い方では履歴が永久に埋まらなかった。
+//   PF-3 が 60 秒にしたのは、当時の backfill が yield 無しの同期ループ (~1.5s の long task)
+//   だったため。現在は 4 レース毎に yield し、履歴の読み書きも 1 回にまとめてある。
+var BACKFILL_DELAY_MS = 1500;
 var _backfillDone = false;
 var _backfillTimer = null;
 /* MOVED: function _runLazyBackfillOnce */
@@ -3579,6 +3595,7 @@ var _backfillTimer = null;
     if (page === "top") {
       document.getElementById("pageTop").classList.add("active");
       _setActive("navTop");
+      if (typeof _renderTopSummary === "function") _renderTopSummary();
     } else if (page === "races") {
       document.getElementById("pageRaces").classList.add("active");
       _setActive("navTop");
@@ -3623,13 +3640,18 @@ var _backfillTimer = null;
 "use strict";
 (() => {
   // ../src/reporting/stadium_pages.js
+  function _renderTopSummary() {
+    var sumDiv = document.getElementById("topSummary");
+    if (!sumDiv) return;
+    var acc = getAccuracy();
+    var wait = !acc.total && !globalThis._histReady;
+    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + (wait ? "\u2026" : acc.total) + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + (wait ? "\u2026" : acc.trifectaHit) + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num c-success">' + (wait ? "\u2026" : acc.trifectaRate + "%") + '</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + Object.keys(racerDB).length + '</div><div class="s-label">\u9078\u624BDB</div></div></div>';
+  }
   function renderStadiums() {
     document.getElementById("topLoading").style.display = "none";
-    var sumDiv = document.getElementById("topSummary");
     var list = document.getElementById("stadiumList");
     list.style.display = "grid";
-    var acc = getAccuracy();
-    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + acc.total + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + acc.trifectaHit + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num" class="c-success">' + acc.trifectaRate + '%</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + Object.keys(racerDB).length + '</div><div class="s-label">\u9078\u624BDB</div></div></div>';
+    _renderTopSummary();
     var activeIds = {};
     if (programData) {
       for (var sid in programData) activeIds[sid] = true;
@@ -3902,6 +3924,7 @@ var _backfillTimer = null;
     }
   }
   globalThis.renderStadiums = renderStadiums;
+  globalThis._renderTopSummary = _renderTopSummary;
   globalThis.openStadium = openStadium;
 })();
 

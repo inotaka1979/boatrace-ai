@@ -213,6 +213,10 @@ step "Cloudflare sentinel Worker (monitor / self-heal)" \
 step "Prediction lock-in (leakage guard)" \
      "node scripts/tests/test_prediction_lockin.js"
 
+# 9g3b) 2026-11-14: TOP の成績サマリーが「0 判定済 / 0 的中」のまま更新されない不具合の回帰
+step "TOP summary / backfill (hit counts shown promptly)" \
+     "node scripts/tests/test_top_summary.js"
+
 # 9g4) L2 コース主効果の二重計上 回帰
 step "L2 course prior (double-count guard)" \
      "node scripts/tests/test_course_prior.js"
