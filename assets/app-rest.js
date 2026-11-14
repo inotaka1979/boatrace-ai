@@ -1100,8 +1100,11 @@
 "use strict";
 (() => {
   // ../src/analysis/predict_race.js
+  var WORKER_PREDICT_MAX_FAILS = 3;
+  var _workerPredictFails = 0;
+  var _workerPredictOff = false;
   function predictRaceAsync(sid, raceNum) {
-    var w = _getAppWorker();
+    var w = _workerPredictOff ? null : _getAppWorker();
     if (!w) {
       return Promise.resolve(predictRace(sid, raceNum));
     }
@@ -1112,6 +1115,10 @@
         if (_settled) return;
         _settled = true;
         _appWorkerCallbacks.delete(reqId);
+        if (!_workerPredictOff && (why === "timeout" || ++_workerPredictFails >= WORKER_PREDICT_MAX_FAILS)) {
+          _workerPredictOff = true;
+          console.warn("[worker] predict \u3092\u7121\u52B9\u5316\u3057\u307E\u3057\u305F (\u4EE5\u5F8C main thread \u3067\u8A08\u7B97):", why);
+        }
         console.warn("[worker] falling back to main thread:", why);
         try {
           resolve(predictRace(sid, raceNum));
@@ -1131,6 +1138,7 @@
             return;
           }
           _settled = true;
+          _workerPredictFails = 0;
           resolve(msg.result);
         } else if (msg.type === "error") {
           console.warn("[PG-4] worker predict error:", msg.error, msg.stack);
@@ -3589,15 +3597,39 @@ function _dedupHistory(){
   console.warn('[history] deduped '+before+' -> '+out.length+' entries (型不一致の二重登録を解消)');
 }
 
+function _refreshTopSummary(){
+  try{
+    var pg = document.querySelector('.page.active');
+    if(pg && pg.id === 'pageTop' && typeof _renderTopSummary === 'function') _renderTopSummary();
+  }catch(e){}
+}
+
 async function _backfillTodayPredictions(){
-  if(!programData || !resultData) return;
+  try{
+    return await _backfillTodayPredictionsImpl();
+  } finally {
+    globalThis._histReady = true;
+    _refreshTopSummary();
+  }
+}
+
+async function _backfillTodayPredictionsImpl(){
+  if(!programData || !resultData) return 0;
   _cleanStaleHistoryToday();   // 古いゴミを掃除してから backfill
   var today = todayStr();
-  var saved = 0;
   var iter = 0;
+  // 2026-11-14: 既に結果付きで保存済みのレースは飛ばす。従来は 90 秒 poll のたびに全確定
+  //   レースの予想を再計算し、savePrediction が毎回履歴全体 (数百 KB〜MB) を parse しては
+  //   「確定済みなので何もしない」を繰り返していた。結果が付いたエントリは不変 (lock-in) なので、
+  //   飛ばしても結果は同じ。払戻の遡及補完は updateHistoryWithResults が担う。
+  var done = {};
+  safeParse('boatrace_history', []).forEach(function(h){
+    if(h && h.date === today && h.actual && h.actual.length > 0) done[parseInt(h.stadium)+'-'+parseInt(h.race)] = 1;
+  });
   // PG-4: Worker 利用可能なら state を同期、predictRaceAsync で並列度を上げる
   var useWorker = !!_getAppWorker();
-  if(useWorker) _syncWorkerState();
+  var synced = false;
+  var pending = [];
 
   for(var sid in programData){
     var stadium = programData[sid];
@@ -3609,24 +3641,33 @@ async function _backfillTodayPredictions(){
       // （API が前日結果を返すケースで「entry.date=今日 / 中身=昨日」を防ぐ）
       var rdate = (res.race_date || '').replace(/-/g,'');
       if(rdate && rdate !== today) continue;
+      if(done[parseInt(sid)+'-'+parseInt(rn)]) continue;
+      // worker への state 同期 (構造化複製) は、計算するレースが 1 件でもある時だけ
+      if(useWorker && !synced){ synced = true; _syncWorkerState(); }
       try {
         // PG-4: Worker 経由（並列で main thread 解放）or 同期 fallback
         var pred = useWorker
           ? await predictRaceAsync(sid, parseInt(rn))
           : predictRace(sid, parseInt(rn));
-        if(pred){
-          savePrediction(today, sid, rn, pred, res);
-          saved++;
-        }
+        if(pred) pending.push([sid, rn, pred, res]);
       } catch(e){
         // 予想計算エラーは黙殺（特定レースのデータ欠損で続行）
       }
-      // PE-9: yield (Worker 利用時は不要だが念のため、4 反復毎)
+      // PE-9: 2 反復毎に main thread を譲る。worker が使えず predictRaceAsync が main で
+      //   計算している場合 (await が microtask でしか戻らない) も long task にしない。
+      //   起動数秒後に走るようになったので、1 タスクを短く保つ (従来は 4 反復毎)。
       iter++;
-      if(!useWorker && iter % 4 === 0) await _yieldToMain();
+      if(iter % 2 === 0) await _yieldToMain();
     }
   }
-  if(saved > 0) console.log('[backfill] saved predictions for', saved, 'finished races (worker=' + useWorker + ')');
+  if(!pending.length) return 0;
+  // 履歴の読み書きは最後に 1 回だけ (従来は 1 レース毎に全体を parse + stringify)。
+  //   読んでから書くまで await を挟まないので、他の savePrediction と競合しない。
+  var batch = {history: safeParse('boatrace_history', []), dirty: false};
+  pending.forEach(function(x){ savePrediction(today, x[0], x[1], x[2], x[3], batch); });
+  if(batch.dirty) safeSet('boatrace_history', batch.history);
+  console.log('[backfill] saved predictions for', pending.length, 'finished races (worker=' + useWorker + ')');
+  return pending.length;
 }
 
 function _isRaceClosedNow(sid, rn){
@@ -3693,13 +3734,14 @@ function _predFields(pred){
   };
 }
 
-function savePrediction(date,sid,rn,pred,result){
+function savePrediction(date,sid,rn,pred,result,batch){
   try{
     // 2026-06-29 FIX: sid/rn を数値に正規化（型混在で二重登録されていた）。
     sid = parseInt(sid); rn = parseInt(rn);
     if(!(sid>=1) || !(rn>=1)) return;
     var key='boatrace_history';
-    var history=safeParse(key, []);   // PA-5: 検証付き parse
+    var history=batch ? batch.history : safeParse(key, []);   // PA-5: 検証付き parse
+    var _commit=function(){ if(batch) batch.dirty=true; else safeSet(key, history); };
     var existIdx = -1;
     for(var i=0;i<history.length;i++){
       if(history[i].date===date && parseInt(history[i].stadium)===sid && parseInt(history[i].race)===rn){ existIdx = i; break; }
@@ -3742,14 +3784,14 @@ function savePrediction(date,sid,rn,pred,result){
       if(hasRes){
         if(!existing.pred_snapshot) existing.pred_snapshot = _snapshotFromEntry(existing);
         _attachResult(existing);
-        safeSet(key, history);
+        _commit();
         return;
       }
       if(_isRaceClosedNow(sid, rn)) return;
       var nf = _predFields(pred);
       if(existing.pred_snapshot && JSON.stringify(existing.pred_snapshot)===JSON.stringify(nf.pred_snapshot)) return; // 無変化
       for(var k in nf) existing[k] = nf[k];
-      safeSet(key, history);
+      _commit();
       return;
     }
     var entry = _predFields(pred);
@@ -3760,7 +3802,7 @@ function savePrediction(date,sid,rn,pred,result){
     _attachResult(entry);
     history.push(entry);
     if(history.length>2000) history.splice(0, history.length-2000);   // P3 L-15
-    safeSet(key, history);   // P3 L-05
+    _commit();   // P3 L-05
   }catch(e){console.warn('savePrediction error:',e)}
 }
 
@@ -3812,7 +3854,10 @@ function updateHistoryWithResults(){
         }
       }
     });
-    if(updated) safeSet('boatrace_history', history);   // P3 L-05
+    if(updated){
+      safeSet('boatrace_history', history);   // P3 L-05
+      _refreshTopSummary();   // 2026-11-14: 結果が付いた = 判定済 / 的中が変わった
+    }
   }catch(e){console.warn('history update error:', e)}   // R2-07: silent pass を解消
 }
 
@@ -3840,6 +3885,22 @@ async function loadDeferredData(rawPrograms, rawPreviews){
 
   // 非クリティカル fetch を並列化
   var tasks = [];
+
+  // 2026-11-14: 最新の確定結果を取り込む。起動時 (loadAllData) の結果は同一 origin の
+  //   data/results/today.json を優先するが、GitHub Actions の更新は 1 日数回のため数時間
+  //   古いことがある (例: 16 時に開いても 12:29 時点の結果)。Worker の結果をここで単調マージし、
+  //   下の学習と backfill (TOP の判定済 / 的中) を最新の確定レースまで進める。
+  //   従来は 90 秒後の初回 poll まで古い結果のままだった。
+  tasks.push((async function(){
+    try{
+      var rawR = await fetchWithFallback(API_BASE+'/results/v2/today.json');
+      if(rawR){
+        resultData = _mergeResultIndex(resultData, indexResults(rawR));
+        _noteUpdatedAt(rawR.updated_at);
+        _noteTodayDataFromRaw(rawR,'results');
+      }
+    }catch(e){ console.warn('[PE-8] latest results fetch failed:', e); }
+  })());
 
   // Tier 3 (2026-05-24): GBDT model 読込 (n_trees=0 placeholder の間は no-op)
   //   _gbdtModel global を初期化。失敗しても予測は L1+L2 で続行 (safety)。
@@ -3976,7 +4037,7 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   if(typeof _renderDegradedBanner === 'function') _renderDegradedBanner();
 
   // PE-8 + PE-9: 軽量な学習を deferred で実行
-  //   PF-3: _backfillTodayPredictions は重いので「成績タブ open 時 / 60秒 idle」まで遅延
+  //   PF-3: _backfillTodayPredictions は起動 critical path に入れず、この後 lazy に実行する
   try {
     if(resultData) updateDBFromResults(resultData, programData);
     if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
@@ -3990,9 +4051,8 @@ async function loadDeferredData(rawPrograms, rawPreviews){
     console.warn('[PE-8] learning step failed:', e);
   }
 
-  // PF-3: backfill は 60 秒後（または成績タブ open 時）に lazy 実行
-  //   _backfillTodayPredictions は predictRace × 全レース で重い (~1.5s TBT)
-  //   起動 critical path から外し、ユーザーが成績タブを開く / 60秒経過まで待つ
+  // PF-3: backfill は起動 critical path から外し、DB と学習が揃ったこの時点から少し置いて実行
+  //   (成績タブを開けば即時)。2026-11-14: 待ち時間を 60 秒 → BACKFILL_DELAY_MS に短縮。
   _scheduleLazyBackfill();
 
   // バックグラウンド DB 構築（公式 DB が薄い場合）
@@ -4019,10 +4079,10 @@ async function _runLazyBackfillOnce(reason){
 
 function _scheduleLazyBackfill(){
   if(_backfillDone || _backfillTimer) return;
-  // 60 秒後に自動実行（ユーザーがその間に成績タブを開けば早期実行）
+  // 少し置いて自動実行（ユーザーがその間に成績タブを開けば早期実行）
   _backfillTimer = setTimeout(function(){
-    _runLazyBackfillOnce('60s timeout');
-  }, 60000);
+    _runLazyBackfillOnce('after deferred load');
+  }, BACKFILL_DELAY_MS);
 }
 
 function getOddsForRace(sid,rn){

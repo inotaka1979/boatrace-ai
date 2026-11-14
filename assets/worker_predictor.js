@@ -1594,8 +1594,11 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
   globalThis.buildExactaProbDist = buildExactaProbDist;
   globalThis._pickAnaCandidates = _pickAnaCandidates;
   globalThis.generateBetsV2 = generateBetsV2;
+  var WORKER_PREDICT_MAX_FAILS = 3;
+  var _workerPredictFails = 0;
+  var _workerPredictOff = false;
   function predictRaceAsync(sid, raceNum) {
-    var w = _getAppWorker();
+    var w = _workerPredictOff ? null : _getAppWorker();
     if (!w) {
       return Promise.resolve(predictRace(sid, raceNum));
     }
@@ -1606,6 +1609,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
         if (_settled) return;
         _settled = true;
         _appWorkerCallbacks.delete(reqId);
+        if (!_workerPredictOff && (why === "timeout" || ++_workerPredictFails >= WORKER_PREDICT_MAX_FAILS)) {
+          _workerPredictOff = true;
+          console.warn("[worker] predict \u3092\u7121\u52B9\u5316\u3057\u307E\u3057\u305F (\u4EE5\u5F8C main thread \u3067\u8A08\u7B97):", why);
+        }
         console.warn("[worker] falling back to main thread:", why);
         try {
           resolve(predictRace(sid, raceNum));
@@ -1625,6 +1632,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
             return;
           }
           _settled = true;
+          _workerPredictFails = 0;
           resolve(msg.result);
         } else if (msg.type === "error") {
           console.warn("[PG-4] worker predict error:", msg.error, msg.stack);

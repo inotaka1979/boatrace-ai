@@ -105,6 +105,8 @@ function showPage(page) {
   if (page === 'top') {
     document.getElementById('pageTop').classList.add('active');
     _setActive('navTop');
+    // 2026-11-14: 他ページにいる間に履歴 (判定済 / 的中) が進んでいるので描き直す。
+    if (typeof _renderTopSummary === 'function') _renderTopSummary();
   } else if (page === 'races') {
     document.getElementById('pageRaces').classList.add('active');
     _setActive('navTop');
