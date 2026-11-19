@@ -126,7 +126,7 @@ function renderStats() {
     var anaR = s.ana.invest > 0 ? Math.round((s.ana.payout / s.ana.invest) * 100) : 0;
     var anaHitRate = s.ana.races > 0 ? ((s.ana.hits / s.ana.races) * 100).toFixed(0) : '-';
     recHtml +=
-      '<tr><td><b style="color:#FF5722">🔥穴予想</b><br><span style="font-size:9px;color:var(--text-dim)">対象 ' +
+      '<tr><td><b style="color:#FF5722">🔥穴予想</b><br><span style="font-size:11px;color:var(--text-dim)">対象 ' +
       s.ana.races +
       'R</span></td><td>' +
       s.ana.hits +
@@ -158,7 +158,7 @@ function renderStats() {
     totInv.toLocaleString() +
     '</td><td>¥' +
     totPay.toLocaleString() +
-    '<br><span style="font-size:9px;color:' +
+    '<br><span style="font-size:11px;color:' +
     (net >= 0 ? 'var(--success)' : 'var(--danger)') +
     '">(' +
     (net >= 0 ? '+' : '') +
@@ -250,17 +250,17 @@ function renderStats() {
         '<div style="font-size:11px;margin-bottom:4px">3連単的中だが払戻未取得: <b>' +
         w.tri_zero.length +
         '件</b></div>';
-      recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.tri_zero.join(', ')) + '</div>';
+      recHtml += '<div style="font-size:11px;color:var(--text-sub)">' + escText(w.tri_zero.join(', ')) + '</div>';
     }
     if (w.exa_zero.length > 0) {
       recHtml +=
         '<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2連単的中だが払戻未取得: <b>' +
         w.exa_zero.length +
         '件</b></div>';
-      recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.exa_zero.join(', ')) + '</div>';
+      recHtml += '<div style="font-size:11px;color:var(--text-sub)">' + escText(w.exa_zero.join(', ')) + '</div>';
     }
     recHtml +=
-      '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">※ 該当レースの結果データが Open API / 自前スクレイパーにまだ反映されていない可能性。「更新」を押すと再取得・再補完されます。</div>';
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">※ 該当レースの結果データが Open API / 自前スクレイパーにまだ反映されていない可能性。「更新」を押すと再取得・再補完されます。</div>';
     recHtml += '</div>';
   }
 

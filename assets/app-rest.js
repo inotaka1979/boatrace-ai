@@ -2287,6 +2287,85 @@
 /* BUILD:REPORTING_DEGRADED_BANNER:END */
 
 
+/* BUILD:REPORTING_SOON_STRIP:START */
+"use strict";
+(() => {
+  // ../src/reporting/soon_strip.js
+  var SOON_STRIP_MAX = 5;
+  var SOON_STRIP_WINDOW_MIN = 120;
+  function _soonClosedMs(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || "");
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
+  }
+  function _soonRaces(now) {
+    var t = now || Date.now();
+    var out = [];
+    if (typeof programData === "undefined" || !programData) return out;
+    for (var sid in programData) {
+      var st = programData[sid];
+      for (var rno in st) {
+        var r = st[rno];
+        var ms = _soonClosedMs(r && r.race_closed_at);
+        if (ms == null) continue;
+        var mins = Math.floor((ms - t) / 6e4);
+        if (mins < 0 || mins > SOON_STRIP_WINDOW_MIN) continue;
+        var res = typeof resultData !== "undefined" && resultData && resultData[sid] && resultData[sid][rno];
+        if (res && res.isFinished) continue;
+        out.push({ sid: parseInt(sid, 10), rno: parseInt(rno, 10), mins, closedMs: ms });
+      }
+    }
+    out.sort(function(a, b) {
+      return a.closedMs - b.closedMs || a.sid - b.sid;
+    });
+    return out.slice(0, SOON_STRIP_MAX);
+  }
+  function _soonTopMark(sid, rno) {
+    try {
+      var p = typeof predictRace === "function" ? predictRace(sid, rno) : null;
+      return p && p.marks && p.marks[0] ? p.marks[0].boat : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function _renderSoonStrip(now) {
+    var el = typeof document !== "undefined" && document.getElementById("soonStrip");
+    if (!el) return;
+    var list = _soonRaces(now);
+    if (!list.length) {
+      el.innerHTML = "";
+      el.style.minHeight = "";
+      return;
+    }
+    var html = '<div class="soon-strip" role="region" aria-label="\u307E\u3082\u306A\u304F\u7DE0\u5207"><div class="soon-title">\u23F1 \u307E\u3082\u306A\u304F\u7DE0\u5207</div>';
+    list.forEach(function(r) {
+      var name = typeof STADIUMS !== "undefined" && STADIUMS[r.sid] || "\u5834" + r.sid;
+      var mark = _soonTopMark(r.sid, r.rno);
+      var urgent = r.mins <= 5;
+      html += '<div class="soon-row" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + r.sid + '" data-arg-rn="' + r.rno + '"><span class="soon-name">' + escText(name) + " " + r.rno + 'R</span><span class="soon-mins' + (urgent ? " soon-urgent" : "") + '">\u3042\u3068 ' + r.mins + ' \u5206</span><span class="soon-mark">' + (mark ? "\u25CE" + mark : "") + "</span></div>";
+    });
+    html += "</div>";
+    el.innerHTML = html;
+  }
+  if (typeof setInterval === "function" && typeof document !== "undefined") {
+    setInterval(function() {
+      try {
+        var top = document.getElementById("pageTop");
+        if (top && top.classList && top.classList.contains("active") && !document.hidden) _renderSoonStrip();
+      } catch (_) {
+      }
+    }, 3e4);
+  }
+  globalThis._renderSoonStrip = _renderSoonStrip;
+  try {
+    if (typeof programData !== "undefined" && programData) _renderSoonStrip();
+  } catch (_) {
+  }
+  globalThis._soonRaces = _soonRaces;
+})();
+
+/* BUILD:REPORTING_SOON_STRIP:END */
+
+
 /* BUILD:REPORTING_STADIUM_RESULTS:START */
 "use strict";
 (() => {
@@ -4571,7 +4650,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
     // Header: 左端「2着」ラベル + 6 columns(1着)（右端の冗長ラベル列は撤去）
     html+='<thead><tr>';
-    html+='<th class="left-col" style="font-size:10px;color:#999">2着</th>';
+    html+='<th class="left-col" style="font-size:11px;color:#999">2着</th>';
     for(var first=1;first<=6;first++){
       var hName=boatNames[first]||first;
       html+='<th style="background:'+BOAT_COLORS[first]+';color:'+BOAT_TEXT[first]+';border:1px solid '+(first===1?'#ccc':'transparent')+'">'+first+'.'+escText(hName)+'</th>';
@@ -4622,7 +4701,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
             else if(oddsVal>=100) oddsClass='odds-high';
           }
 
-          var badge='<span class="badge" style="display:inline-block;width:12px;height:12px;line-height:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
+          var badge='<span class="badge" style="display:inline-block;width:12px;height:12px;line-height:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:11px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
           var oddsStr=oddsVal?oddsVal.toFixed(1):'-';
           html+='<td class="'+cellClass+'"><div class="cell-flex">'+badge+'<span class="odds '+oddsClass+'">'+oddsStr+'</span></div></td>';
@@ -4694,7 +4773,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   if(staleStr){
     html+=' <span style="font-size:11px;color:'+staleColor+';font-weight:'+(staleColor==='#D32F2F'?'700':'400')+';display:block;margin-top:4px">'+staleStr+'</span>';
   }
-  html+='<div style="font-size:9px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
+  html+='<div style="font-size:11px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
   html+='</div>';
 
   return html;
@@ -4886,7 +4965,7 @@ function loadSettings(){
     + (withProbs.length >= TUNING.PREDICTION.PLATT_MIN_SAMPLES
         ? '<span class="c-success">✓ 自動再校正条件を満たしています</span>'
         : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>')
-    + '<br><br><b>📡 データソース</b> <span style="font-size:10px;color:var(--text-dim)">(各経路の鮮度を診断)</span>'
+    + '<br><br><b>📡 データソース</b> <span style="font-size:11px;color:var(--text-dim)">(各経路の鮮度を診断)</span>'
     + '<div id="dataSourcesPanel" style="font-size:11px;margin-top:6px">読込中...</div>';
 
   // D2a (2026-05-17): 各データソースの updated_at を並列 fetch し鮮度可視化
@@ -4958,7 +5037,7 @@ function _renderDataSourcesPanel(){
       html += '<div>'+ageStr(r.ts, s.warn, s.bad, s.fallback)+'</div>';
     });
     html += '</div>';
-    html += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">'
          + 'previews/results は 🟢≤10分/🟠≤30分/🔴>30分。programs(出走表)は日次データのため'
          + ' 🟢≤6時間。※予備 は Worker が緑なら ⚪(停止中)でも動作に影響なし。'
          + '</div>';

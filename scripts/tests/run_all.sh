@@ -201,6 +201,10 @@ step "L1 fit / calibration scope / backtest probability baselines" \
 step "Odds staleness / wind ana / recommendation ROI note" \
      "node scripts/tests/test_odds_staleness_wind.js"
 
+# 2026-11-20: TOP まもなく締切 / 詳細で直前予想を先頭に / ヘッダの接続表示 / 文字サイズ
+step "UX: soon strip / live prediction first / header state" \
+     "node scripts/tests/test_ux_soon_strip.js"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"

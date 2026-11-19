@@ -57,6 +57,8 @@ function renderStadiums() {
   //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない
 
   _renderTopSummary();
+  // 2026-11-20: まもなく締切（rest bundle。未 load なら次の描画で出る）
+  if (typeof _renderSoonStrip === 'function') _renderSoonStrip();
 
   var activeIds = {};
   if (programData) {
@@ -300,7 +302,7 @@ function openStadium(sid) {
     if (dispPred && progPred) {
       var diff = comparePredictions(progPred, dispPred);
       if (diff && diff.biggestRiser)
-        riserStr = ' <span style="color:#43A047;font-size:9px">↑' + diff.biggestRiser.boat + '</span>';
+        riserStr = ' <span style="color:#43A047;font-size:11px">↑' + diff.biggestRiser.boat + '</span>';
     }
 
     html += '<tr data-action="openRace" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">';
@@ -313,7 +315,7 @@ function openStadium(sid) {
     html +=
       '<td class="race-num-cell">' +
       rn +
-      '<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">' +
+      '<br><span style="font-size:11px;color:var(--text-dim);font-weight:400">' +
       closedTime +
       '</span><span class="race-type-icon"><span class="type-badge ' +
       typeCls +

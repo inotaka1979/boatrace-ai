@@ -138,6 +138,7 @@ async function main() {
     { marker: 'ANALYSIS_LEARNING', src: 'analysis/learning.js' },             // Phase 2 完遂続編 (learnFromResults)
     { marker: 'REPORTING_PAGE_ROUTER', src: 'reporting/page_router.js' },     // Phase 2 完遂続編 (showPage)
     { marker: 'REPORTING_STADIUM_PAGES', src: 'reporting/stadium_pages.js' }, // Phase 2 完遂続編 (renderStadiums + openStadium)
+    { marker: 'REPORTING_SOON_STRIP', src: 'reporting/soon_strip.js' }, // 2026-11-20: TOP まもなく締切 (rest bundle)
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
     { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
     { marker: 'REPORTING_RACE_DETAIL_BOATS', src: 'reporting/race_detail_boats.js' },           // Phase 2 完遂続編 (boats card)

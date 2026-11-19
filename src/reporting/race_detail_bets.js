@@ -28,7 +28,7 @@ function _renderRaceDetailBets(ctx) {
     predHtml +=
       '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
     predHtml +=
-      '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">推奨買い目 <span style="font-size:10px;color:var(--text-dim);font-weight:400">★' +
+      '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">推奨買い目 <span style="font-size:11px;color:var(--text-dim);font-weight:400">★' +
       activePredLabel +
       'ベース</span></div>';
 
@@ -83,7 +83,7 @@ function _renderRaceDetailBets(ctx) {
         //   EV / オッズ乖離の「情報」表示に留める（未検証の確率で賭け金を推奨しない）。
         var stakeStr =
           t.stakeYen && !t.stakeSuppressed
-            ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
+            ? '<span style="font-size:11px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
               t.stakeYen.toLocaleString() +
               '</span>'
             : '';
@@ -109,13 +109,13 @@ function _renderRaceDetailBets(ctx) {
           return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
         }, 0);
         predHtml +=
-          '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥' +
+          '<div style="font-size:11px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥' +
           totalStake.toLocaleString() +
           '</div>';
       }
       if (!raceOdds)
         predHtml +=
-          '<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
+          '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
       predHtml += '<div class="bet-label">2連単推奨</div><div class="bet-combos">';
       activePred.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
@@ -151,7 +151,7 @@ function _renderRaceDetailBets(ctx) {
       predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
       predHtml += '</div>';
       predHtml +=
-        '<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
+        '<div style="font-size:11px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
     }
 
     // 🔥 穴予想: レースタイプ非依存、常に表示
@@ -207,7 +207,7 @@ function _renderRaceDetailBets(ctx) {
           anaHtmlBlock =
             '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
           anaHtmlBlock +=
-            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' +
+            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:11px;color:var(--text-dim);font-weight:400">' +
             subTitle +
             '</span></div>';
           anaHtmlBlock += '<div class="bet-combos">';
@@ -222,7 +222,7 @@ function _renderRaceDetailBets(ctx) {
               '<span class="odds-val"> ' +
               p.odds.toFixed(1) +
               '倍</span>' +
-              '<span style="font-size:9px;color:' +
+              '<span style="font-size:11px;color:' +
               evColor +
               ';font-weight:700;margin-left:4px">EV ' +
               p.ev.toFixed(2) +
@@ -255,7 +255,7 @@ function _renderRaceDetailBets(ctx) {
           anaHtmlBlock =
             '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
           anaHtmlBlock +=
-            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ未取得 — AI 穴コンビ候補</span></div>';
+            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:11px;color:var(--text-dim);font-weight:400">オッズ未取得 — AI 穴コンビ候補</span></div>';
           anaHtmlBlock += '<div class="bet-combos">';
           anaCands.forEach(function (p) {
             anaHtmlBlock +=
@@ -268,7 +268,7 @@ function _renderRaceDetailBets(ctx) {
           });
           anaHtmlBlock += '</div>';
           anaHtmlBlock +=
-            '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※オッズ取得後に EV 評価へ自動更新</div>';
+            '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">※オッズ取得後に EV 評価へ自動更新</div>';
           anaHtmlBlock += '</div>';
         }
       }

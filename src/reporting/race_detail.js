@@ -363,12 +363,12 @@ function openRace(sid, rn) {
       var maintDisp = '';
       if (propVal)
         maintDisp +=
-          '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' +
+          '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:11px">P' +
           escText(propVal) +
           '</span> ';
       if (partsVal)
         maintDisp +=
-          '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">⚙' +
+          '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:11px;font-weight:700">⚙' +
           escText(partsVal) +
           '</span>';
       if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
@@ -423,12 +423,12 @@ function openRace(sid, rn) {
     // オリジナル展示(各場サイトの実測 一周/まわり足/直線)が取れた場はその旨、未対応場は注記。
     if (_hasOe) {
       exhHtml +=
-        '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">' +
+        '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">' +
         _lapLabel +
         '・まわり足・直線は当該場オフィシャルサイトのオリジナル展示（実測）</div>';
     } else {
       exhHtml +=
-        '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※ この場は一周・まわり足・直線のオリジナル展示に未対応（boatrace.jp 公式には非掲載）</div>';
+        '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">※ この場は一周・まわり足・直線のオリジナル展示に未対応（boatrace.jp 公式には非掲載）</div>';
     }
 
     // Course entry grid (preview 無しで OE のみの場合は null ガード)

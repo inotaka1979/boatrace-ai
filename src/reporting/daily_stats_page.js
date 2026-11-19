@@ -177,7 +177,7 @@ function renderDailyStats() {
         });
       html += '</tbody></table>';
       html +=
-        '<div style="font-size:9px;color:var(--text-dim);padding:6px 10px">' +
+        '<div style="font-size:11px;color:var(--text-dim);padding:6px 10px">' +
         '※ 投資額は現在の設定点数 (3連単' +
         b3 +
         '点+2連単' +

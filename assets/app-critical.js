@@ -2914,10 +2914,12 @@ window.addEventListener('unhandledrejection', function(e){
       color = "#BDBDBD";
     }
     let conn = "";
+    const health = _g._apiHealth || {};
+    const degraded = _g._workerHealthy === false || Object.keys(health).some((k) => health[k] === "fail");
     if (fetchAt) {
       const fsec = Math.floor((now - fetchAt) / 1e3);
       const fetchAgo = fsec < 5 ? "\u305F\u3063\u305F\u4ECA" : _ago(now - fetchAt);
-      conn = fsec < 300 ? '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK(\u53D6\u5F97 ' + fetchAgo + ")</span>" : '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>";
+      conn = fsec >= 300 ? '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>" : degraded ? '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u4E00\u90E8\u53D6\u5F97\u5931\u6557(\u53D6\u5F97 ' + fetchAgo + ")</span>" : '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK(\u53D6\u5F97 ' + fetchAgo + ")</span>";
     } else {
       conn = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u672A\u63A5\u7D9A</span>';
     }
@@ -3534,6 +3536,7 @@ var _backfillTimer = null;
     var list = document.getElementById("stadiumList");
     list.style.display = "grid";
     _renderTopSummary();
+    if (typeof _renderSoonStrip === "function") _renderSoonStrip();
     var activeIds = {};
     if (programData) {
       for (var sid in programData) activeIds[sid] = true;
@@ -3691,14 +3694,14 @@ var _backfillTimer = null;
       if (dispPred && progPred) {
         var diff = comparePredictions(progPred, dispPred);
         if (diff && diff.biggestRiser)
-          riserStr = ' <span style="color:#43A047;font-size:9px">\u2191' + diff.biggestRiser.boat + "</span>";
+          riserStr = ' <span style="color:#43A047;font-size:11px">\u2191' + diff.biggestRiser.boat + "</span>";
       }
       html += '<tr data-action="openRace" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">';
       var closedAt = race.race_closed_at || "";
       var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
       if (closedTime) closedTime = closedTime.slice(0, 5);
       var stageLabel = hasRealPv ? '<span style="font-size:8px;color:#E65100">\u76F4\u524D</span>' : '<span style="font-size:8px;color:#1A237E">\u756A\u7D44</span>';
-      html += '<td class="race-num-cell">' + rn + '<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">' + closedTime + '</span><span class="race-type-icon"><span class="type-badge ' + typeCls + '">' + typeIcon + "</span></span><br>" + stageLabel + riserStr + "</td>";
+      html += '<td class="race-num-cell">' + rn + '<br><span style="font-size:11px;color:var(--text-dim);font-weight:400">' + closedTime + '</span><span class="race-type-icon"><span class="type-badge ' + typeCls + '">' + typeIcon + "</span></span><br>" + stageLabel + riserStr + "</td>";
       if (race.boats && Array.isArray(race.boats)) {
         var boatMap = {};
         race.boats.forEach(function(bt2) {

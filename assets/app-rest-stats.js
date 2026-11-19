@@ -375,7 +375,7 @@
           html += "<tr><td><b>" + _fmtDate(d.date) + "</b></td><td>" + d.total + "</td><td>" + d.hit3 + " (" + d.rate3.toFixed(0) + "%)</td><td>" + d.hit2 + " (" + d.rate2.toFixed(0) + '%)</td><td style="color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + '</td><td class="' + _g._rateColor(rec) + '">' + rec + "%</td></tr>";
         });
         html += "</tbody></table>";
-        html += '<div style="font-size:9px;color:var(--text-dim);padding:6px 10px">\u203B \u6295\u8CC7\u984D\u306F\u73FE\u5728\u306E\u8A2D\u5B9A\u70B9\u6570 (3\u9023\u5358' + b3 + "\u70B9+2\u9023\u5358" + b2 + "\u70B9+\u7A74\u8CB7\u3044\u76EE\u3001\u5404\xA5100) \u3067\u7B97\u51FA</div>";
+        html += '<div style="font-size:11px;color:var(--text-dim);padding:6px 10px">\u203B \u6295\u8CC7\u984D\u306F\u73FE\u5728\u306E\u8A2D\u5B9A\u70B9\u6570 (3\u9023\u5358' + b3 + "\u70B9+2\u9023\u5358" + b2 + "\u70B9+\u7A74\u8CB7\u3044\u76EE\u3001\u5404\xA5100) \u3067\u7B97\u51FA</div>";
         html += "</div>";
         el.innerHTML = html;
       }
@@ -524,7 +524,7 @@
     if (s.ana && s.ana.races > 0) {
       var anaR = s.ana.invest > 0 ? Math.round(s.ana.payout / s.ana.invest * 100) : 0;
       var anaHitRate = s.ana.races > 0 ? (s.ana.hits / s.ana.races * 100).toFixed(0) : "-";
-      recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:9px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
+      recHtml += '<tr><td><b style="color:#FF5722">\u{1F525}\u7A74\u4E88\u60F3</b><br><span style="font-size:11px;color:var(--text-dim)">\u5BFE\u8C61 ' + s.ana.races + "R</span></td><td>" + s.ana.hits + " (" + anaHitRate + "%)</td><td>\xA5" + s.ana.invest.toLocaleString() + "</td><td>\xA5" + s.ana.payout.toLocaleString() + '</td><td class="' + _rateColor(anaR) + '">' + anaR + "%</td></tr>";
     }
     var anaInv = s.ana ? s.ana.invest : 0;
     var anaPay = s.ana ? s.ana.payout : 0;
@@ -533,7 +533,7 @@
     var totPay = s.tri.payout + s.exa.payout + anaPay;
     var totRate = totInv > 0 ? Math.round(totPay / totInv * 100) : 0;
     var net = totPay - totInv;
-    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits + anaHits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:9px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
+    recHtml += '<tr style="background:#F8F8F8;font-weight:700"><td>\u5408\u8A08</td><td>' + (s.tri.hits + s.exa.hits + anaHits) + "</td><td>\xA5" + totInv.toLocaleString() + "</td><td>\xA5" + totPay.toLocaleString() + '<br><span style="font-size:11px;color:' + (net >= 0 ? "var(--success)" : "var(--danger)") + '">(' + (net >= 0 ? "+" : "") + "\xA5" + net.toLocaleString() + ')</span></td><td class="' + _rateColor(totRate) + '">' + totRate + "%</td></tr>";
     recHtml += "</tbody></table></div>";
     recHtml += '<div class="card" class="p-overflow-hidden">';
     recHtml += '<div class="card-header-row">\u672C\u65E5 \u30EC\u30FC\u30B9\u30BF\u30A4\u30D7\u5225 (3\u9023\u5358)</div>';
@@ -573,13 +573,13 @@
       recHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:6px">\u26A0 \u30C7\u30FC\u30BF\u6574\u5408\u6027\u306E\u8B66\u544A</div>';
       if (w.tri_zero.length > 0) {
         recHtml += '<div style="font-size:11px;margin-bottom:4px">3\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.tri_zero.length + "\u4EF6</b></div>";
-        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.tri_zero.join(", ")) + "</div>";
+        recHtml += '<div style="font-size:11px;color:var(--text-sub)">' + escText(w.tri_zero.join(", ")) + "</div>";
       }
       if (w.exa_zero.length > 0) {
         recHtml += '<div style="font-size:11px;margin-top:6px;margin-bottom:4px">2\u9023\u5358\u7684\u4E2D\u3060\u304C\u6255\u623B\u672A\u53D6\u5F97: <b>' + w.exa_zero.length + "\u4EF6</b></div>";
-        recHtml += '<div style="font-size:10px;color:var(--text-sub)">' + escText(w.exa_zero.join(", ")) + "</div>";
+        recHtml += '<div style="font-size:11px;color:var(--text-sub)">' + escText(w.exa_zero.join(", ")) + "</div>";
       }
-      recHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">\u203B \u8A72\u5F53\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u30C7\u30FC\u30BF\u304C Open API / \u81EA\u524D\u30B9\u30AF\u30EC\u30A4\u30D1\u30FC\u306B\u307E\u3060\u53CD\u6620\u3055\u308C\u3066\u3044\u306A\u3044\u53EF\u80FD\u6027\u3002\u300C\u66F4\u65B0\u300D\u3092\u62BC\u3059\u3068\u518D\u53D6\u5F97\u30FB\u518D\u88DC\u5B8C\u3055\u308C\u307E\u3059\u3002</div>';
+      recHtml += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">\u203B \u8A72\u5F53\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u30C7\u30FC\u30BF\u304C Open API / \u81EA\u524D\u30B9\u30AF\u30EC\u30A4\u30D1\u30FC\u306B\u307E\u3060\u53CD\u6620\u3055\u308C\u3066\u3044\u306A\u3044\u53EF\u80FD\u6027\u3002\u300C\u66F4\u65B0\u300D\u3092\u62BC\u3059\u3068\u518D\u53D6\u5F97\u30FB\u518D\u88DC\u5B8C\u3055\u308C\u307E\u3059\u3002</div>';
       recHtml += "</div>";
     }
     document.getElementById("statRecovery").innerHTML = recHtml;
@@ -712,7 +712,7 @@ function runBacktest(){
          +'<td class="ta-r">¥'+tt.payout.toLocaleString()+'</td></tr>';
     });
     dh += '</tbody></table>';
-    dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:8px">'
+    dh += '<div style="font-size:11px;color:var(--text-dim);margin-top:8px">'
        + '※ 簡易バックテスト: 各推奨買い目を ¥'+opt.stakePerBet+' ずつ均等購入したと仮定。'
        + '<br>※ EV/Kelly モードの精密再現には当時オッズの履歴アーカイブが必要（X7+α で実装予定）。'
        + '</div>';
@@ -752,11 +752,11 @@ function runBacktest(){
             + '<td class="ta-r">'+ss.n+'</td>'
             + '<td class="ta-r">'+ss.hits3+' ('+(ss.hitRate3*100).toFixed(0)+'%)</td>'
             + '<td class="ta-r '+roiClass+'">'+roiPct+'%</td>'
-            + '<td class="ta-r" style="font-size:10px">'+ciStr+'</td>'
+            + '<td class="ta-r" style="font-size:11px">'+ciStr+'</td>'
             + '<td class="ta-r">'+verdict+'</td></tr>';
       });
       dh += '</tbody></table>';
-      dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+      dh += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">'
          + '※ 95% CI は Bootstrap (1000 リサンプリング) で算出。<b>🚫 avoid</b>= CI 全域が 100% 未満 (統計的に負け)。<b>⭐ favor</b>= CI 全域が 100% 超 (公営競技の控除率 25% を超える勝ち、ほぼ起きない)。N&lt;10 件は CI 算出不能。</div>';
       dh += '</div></div>';
     }
@@ -797,7 +797,7 @@ function runBacktest(){
               + '<td style="min-width:120px">'+bar+'</td></tr>';
         });
         dh += '</tbody></table>';
-        dh += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+        dh += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">'
            + '※ 黒い縦線=完全校正点、青緑バー=実 1 着率。差分が ±5% 以内なら校正良好、±15% 超は要再校正。<br>'
            + '※ 「設定→確率校正 (Platt) 再校正」で改善可能。'
            + '</div>';
