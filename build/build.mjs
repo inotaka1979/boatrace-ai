@@ -141,6 +141,7 @@ async function main() {
     { marker: 'REPORTING_SOON_STRIP', src: 'reporting/soon_strip.js' }, // 2026-11-20: TOP まもなく締切 (rest bundle)
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
     { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
+    { marker: 'DISCOVERY_RACER_STATS', src: 'discovery/racer_stats_loader.js' }, // 2026-11-20: 長期集計の取得 (rest-detail)
     { marker: 'REPORTING_RACE_DETAIL_BOATS', src: 'reporting/race_detail_boats.js' },           // Phase 2 完遂続編 (boats card)
     { marker: 'REPORTING_RACE_DETAIL_PREDICTION', src: 'reporting/race_detail_prediction.js' }, // Phase 2 完遂続編 (番組 + 直前予想)
     { marker: 'REPORTING_RACE_DETAIL_BETS', src: 'reporting/race_detail_bets.js' },             // Phase 2 完遂続編 (買い目 + 穴予想)

@@ -502,6 +502,43 @@ function toHalfWidthInt(s) {
 //   着順構造: 各順位が独立 <tbody> (1 tbody=1 tr)、tds[0]=着順 (全角数字),
 //             tds[1]=艇番, tds[2]=選手名, tds[3]=タイム
 //   払戻構造: <tbody> 内に複数 <tr>、ヘッダ <th> でジャンル ("3連単" 等)、tds[0]=combo, tds[1]=金額
+// 2026-11-20: 決まり手・進入コース・ST・登録番号を読む（scripts/scrape_results.py と同じ）。
+//   従来は決まり手を常に 1 (逃げ)、進入 = 枠番、登録番号と ST は null にしており、アプリの結果表示と
+//   決まり手の集計がすべて「逃げ」になっていた。
+const TECHNIQUE_NUM = { '逃げ': 1, '差し': 2, 'まくり': 3, 'まくり差し': 4, '抜き': 5, '恵まれ': 6 };
+function parseStTiming(text) {
+  const t = String(text || '').replace(/\s+/g, '');
+  const m = /^([FL]?)(\d?\.\d+)/.exec(t);
+  if (m) return { st: m[1] === 'F' ? -parseFloat(m[2]) : parseFloat(m[2]), kind: m[1] || null };
+  if (t[0] === 'L' || t[0] === 'F') return { st: null, kind: t[0] };
+  return { st: null, kind: null };
+}
+function applyStartInfoAndTechnique(html, out) {
+  const i = html.indexOf('スタート情報');
+  if (i >= 0) {
+    const sec = html.slice(i, html.indexOf('</table>', i) + 1 || undefined);
+    const re = /table1_boatImage1Number[^>]*>\s*(\d)\s*<[\s\S]*?table1_boatImage1TimeInner[^>]*>([\s\S]*?)<\/span>/g;
+    const byBoat = {};
+    for (const b of out.boats) byBoat[b.racer_boat_number] = b;
+    let m;
+    let course = 0;
+    while ((m = re.exec(sec)) !== null) {
+      course++;
+      const b = byBoat[parseInt(m[1], 10)];
+      if (!b) continue;
+      const { st, kind } = parseStTiming(stripTags(m[2]));
+      b.racer_course_number = course;
+      b.racer_start_timing = st;
+      if (kind) b.racer_start_kind = kind;
+    }
+  }
+  const k = /決まり手[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/.exec(html);
+  if (k) {
+    const name = stripTags(k[1]).replace(/\s+/g, '');
+    if (name) out.race_technique_name = name;
+  }
+}
+
 function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
   const out = {
     race_stadium_number: stadium,
@@ -538,15 +575,16 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
     placesSeen.add(place);
     boatsSeen.add(boatNum);
     let name = tds.length > 2 ? tds[2] : '';
-    // selOr 内 span にレーサー番号 "4199" 等が含まれる場合があるので除去
+    // selOr 内 span にレーサー番号 "4199" 等が含まれる。2026-11-20: 番号は捨てずに登録番号として使う
+    const rid = /\d{4,5}/.exec(name);
     name = name.replace(/\s*\d{4,5}\s*/, '').trim();
     out.boats.push({
       racer_boat_number: boatNum,
       racer_place_number: place,
-      racer_course_number: boatNum,   // course は raceresult からは取得困難
+      racer_course_number: boatNum,   // スタート情報で上書き (applyStartInfoAndTechnique)
       racer_name: name,
       racer_start_timing: null,
-      racer_number: null,
+      racer_number: rid ? parseInt(rid[0], 10) : null,
     });
     if (placesSeen.size >= 6) break;
   }
@@ -561,7 +599,11 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
   //   garbage data が KV に居座る事故を防止。
   const hasFirstPlace = out.boats.some(b => b.racer_place_number === 1);
   if (out.boats.length >= 3 && hasFirstPlace) {
-    out.race_technique_number = 1;
+    applyStartInfoAndTechnique(html, out);
+    // race_technique_number は「確定」の目印も兼ねる。決まり手が読めない確定レースは 1 + technique_unknown
+    const tech = TECHNIQUE_NUM[out.race_technique_name || ''];
+    out.race_technique_number = tech || 1;
+    if (!tech) out.technique_unknown = true;
   } else {
     // parse 不完全 → 結果未確定扱い、書き込まない
     out.race_technique_number = null;

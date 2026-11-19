@@ -35,6 +35,7 @@ from http_utils import SourceBlockDetector, fetch_once, write_source_status  # n
 from io_utils import atomic_write_json  # noqa: E402
 import scrape_odds_fast as odds_mod  # noqa: E402
 import scrape_previews as prev_mod  # noqa: E402
+import scrape_results as res_mod  # noqa: E402
 
 BASE = "https://www.boatrace.jp/owpc/pc/race"
 DATA = os.environ.get("BACKFILL_DATA_DIR", "data")
@@ -85,7 +86,41 @@ def plan(date: str, data_dir: str = DATA) -> dict:
             need_odds.append(k)
         if not _has_exhibition(prev_idx.get(k)):
             need_prev.append(k)
-    return {"odds": need_odds, "previews": need_prev}
+    # 2026-11-20: 結果の解析版が古い（決まり手が常に逃げ・進入 = 枠番・登録番号 / ST なし）レースは取り直す。
+    #   aggregate_racer_stats は解析版 2 の結果だけを集計する。
+    need_res = sorted(
+        (int(r["race_stadium_number"]), int(r["race_number"]))
+        for r in (results or {}).get("results") or []
+        if r.get("race_technique_number") and (r.get("_parse_v") or 0) < 2
+        and r.get("race_stadium_number") and r.get("race_number"))
+    return {"odds": need_odds, "previews": need_prev, "results": need_res}
+
+
+def merge_results(date: str, fetched: dict, data_dir: str = DATA) -> int:
+    """取り直した結果 (解析版 2) で同じレースの旧版を置き換える。確定していない取得結果は捨てる。"""
+    path = os.path.join(data_dir, "results", date + ".json")
+    cur = _load(path)
+    if not cur:
+        return 0
+    n = 0
+    out = []
+    for r in cur.get("results") or []:
+        k = (r.get("race_stadium_number"), r.get("race_number"))
+        new = fetched.get(k)
+        if new and new.get("race_technique_number") and (new.get("_parse_v") or 0) >= 2 \
+                and (r.get("_parse_v") or 0) < 2:
+            # 旧版にしか無い項目（払戻など）は残す
+            merged = dict(r)
+            merged.update({kk: vv for kk, vv in new.items() if vv not in (None, [], {})})
+            merged["_backfilled"] = True
+            out.append(merged)
+            n += 1
+        else:
+            out.append(r)
+    if n:
+        cur["results"] = out
+        atomic_write_json(path, cur)
+    return n
 
 
 def merge_odds(date: str, fetched: dict, data_dir: str = DATA) -> int:
@@ -194,8 +229,17 @@ def _preview_for(f: _Fetcher, sid: int, rno: int, hd: str) -> dict | None:
     }}
 
 
+def _result_for(f: "_Fetcher", sid: int, rno: int, hd: str) -> dict | None:
+    html = f.get(f"{BASE}/raceresult?rno={rno}&jcd={sid:02d}&hd={hd}")
+    if not html:
+        return None
+    r = res_mod.parse_raceresult(html, sid, rno, hd)
+    return r if r.get("race_technique_number") else None
+
+
 def run(days: int = 3, max_races: int = MAX_RACES, budget_sec: int = BUDGET_SEC, data_dir: str = DATA,
-        today: datetime.date | None = None) -> dict:
+        today: datetime.date | None = None, only: str | None = None) -> dict:
+    """only: None = 全部 / "results" = 結果の取り直しだけ（初回の一括変換用）"""
     today = today or datetime.datetime.now(JST).date()
     block = SourceBlockDetector()
     f = _Fetcher(block, time.monotonic() + budget_sec)
@@ -207,15 +251,21 @@ def run(days: int = 3, max_races: int = MAX_RACES, budget_sec: int = BUDGET_SEC,
             break
         date = (today - datetime.timedelta(days=d)).strftime("%Y%m%d")
         p = plan(date, data_dir)
-        keys = sorted(set(p["odds"]) | set(p["previews"]))[:left]
+        if only == "results":
+            p["odds"], p["previews"] = [], []
+        keys = sorted(set(p["odds"]) | set(p["previews"]) | set(p["results"]))[:left]
         if not keys:
             continue
-        got_odds, got_prev = {}, {}
+        got_odds, got_prev, got_res = {}, {}, {}
         for sid, rno in keys:
             if block.blocked or time.monotonic() >= f.deadline:
                 break
             summary["attempted"] += 1
             left -= 1
+            if (sid, rno) in p["results"]:
+                rr = _result_for(f, sid, rno, date)
+                if rr:
+                    got_res[(sid, rno)] = rr
             if (sid, rno) in p["previews"]:
                 pv = _preview_for(f, sid, rno, date)
                 if pv:
@@ -226,10 +276,13 @@ def run(days: int = 3, max_races: int = MAX_RACES, budget_sec: int = BUDGET_SEC,
                     got_odds[(sid, rno)] = od
         a = merge_odds(date, got_odds, data_dir)
         b = merge_previews(date, got_prev, data_dir)
-        summary["updated"] += len(set(got_odds) | set(got_prev))
+        c = merge_results(date, got_res, data_dir)
+        summary["updated"] += len(set(got_odds) | set(got_prev) | set(got_res))
         summary["dates"][date] = {"need_odds": len(p["odds"]), "need_previews": len(p["previews"]),
-                                  "added_odds": a, "added_previews": b}
-        log.info("%s: odds +%d (need %d), previews +%d (need %d)", date, a, len(p["odds"]), b, len(p["previews"]))
+                                  "need_results": len(p["results"]),
+                                  "added_odds": a, "added_previews": b, "upgraded_results": c}
+        log.info("%s: odds +%d (need %d), previews +%d (need %d), results v2 +%d (need %d)",
+                 date, a, len(p["odds"]), b, len(p["previews"]), c, len(p["results"]))
     summary["requests"] = f.requests
     summary.update(block.stats())
     write_source_status("backfill", {"attempted": summary["attempted"], "updated": summary["updated"], **block.stats()},
@@ -241,8 +294,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=3)
     ap.add_argument("--max-races", type=int, default=MAX_RACES)
+    ap.add_argument("--budget-sec", type=int, default=BUDGET_SEC)
+    ap.add_argument("--only", choices=["results"], default=None)
     a = ap.parse_args(argv)
-    s = run(days=a.days, max_races=a.max_races)
+    s = run(days=a.days, max_races=a.max_races, budget_sec=a.budget_sec, only=a.only)
     log.info("backfill done: %s", json.dumps({k: v for k, v in s.items() if k != "dates"}))
     if s.get("blocked"):
         log.error("SOURCE BLOCKED — boatrace.jp が HTTP 403 を返し続けたため中止")

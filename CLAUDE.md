@@ -1534,3 +1534,25 @@ install できない）を解消。
   `workflow_dispatch` を送る（`maybeDispatchScrape`、KV `sentinel:scrape_dispatch` で同時刻 1 回、失敗時は次 tick で再試行）。
   **sentinel の `GH_TOKEN` 登録が前提**（未登録なら何もしない）。README で登録を推奨に格上げ。
 - test.yml: 静的検査テストがルートの eslint / acorn を使うため `npm ci` を追加（CI の Test が ERR_MODULE_NOT_FOUND で失敗していた）。
+
+## 修正履歴 (2026-11-20: 結果の解析を正しく + 選手・モーターの長期集計)
+
+### 結果の解析（決まり手が常に「逃げ」だった）
+- `scrape_results.py` と Worker の `parseRaceresultHTML` は決まり手を読まず、確定の目印として常に 1（逃げ）を入れていた
+  （アーカイブとアプリの結果表示で全レース「逃げ」）。進入は常に枠番、登録番号と ST は null。
+- 公式ページの「スタート情報」（行順 = 進入コース、ST、F/L）、「決まり手」、着順表の登録番号を読むようにした。
+  決まり手が読めない確定レースは 1 + `technique_unknown`。Python 側は `_parse_v: 2` を付け、`_completeness` で +8
+  （旧版の当日分は 1 回だけ取り直される。`COMPLETENESS_FULL` 7 → 15）。`parse_raceresult` に日付引数（過去日の取り直し用）。
+- fixture `raceresult_start_info.html`（2026-11-19 桐生 12R）で Python / Worker 両方をテスト（前付け・まくり差し・F/L を含む）。
+
+### 長期集計
+- `scripts/aggregate_racer_stats.py`: 確定した日（今日以外、確定レースの 90% 以上が解析版 2）を 1 日ずつ月別に畳み、
+  `data/db/racer_stats.json` に最大 24 か月残す（畳んだ日は `processed` に記録して二重計上しない）。
+  選手: コース別 [出走, 1着, 2連対, 3連対]、コース別の勝ち決まり手、1 コースでの負け方（差され / 捲られ …）、
+  本番 ST（F / L は別に数える）、本番 − 展示 ST のズレ。モーター: 場 × 番号の [出走, 1着, 2連対, 3連対]。
+  アプリ用に直近 12 か月（モーター 6 か月）を合算した `data/db/racer_stats_view.json`。scrape_all が archive_daily の後に実行。
+- `archive_daily.py`: results の保存期間 45 → 180 日（`KEEP_DAYS_BY_DOMAIN`）。他は 45 日のまま（長期の数字は集計側に残る）。
+- `backfill_archive.py`: 解析版が古い過去日の結果も取り直す（`--only results` で一括変換）。
+- レース詳細の出走表に 4 行: コース成績（展示の進入で引く）/ 決まり手（1 コースは逃げ率と負け方）/ 平均 ST と展示比 /
+  モーター 2 連率。取得は discovery 層 `src/discovery/racer_stats_loader.js`（reporting 層は network IO 禁止）、届いたら再描画。
+- テスト: test_aggregate_racer_stats.py（8 件）、test_racer_stats_view.js（4 件）、test_raceresult_parse の .py / .js に追加。

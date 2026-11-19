@@ -27,9 +27,11 @@ function extractFn(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-for (const fn of ['stripTags', 'toHalfWidthInt', 'parseRaceresultHTML']) {
+for (const fn of ['stripTags', 'toHalfWidthInt', 'parseStTiming', 'applyStartInfoAndTechnique', 'parseRaceresultHTML']) {
   vm.runInContext(extractFn(fn), ctx);
 }
+// 2026-11-20: 決まり手の対応表（関数ではないので行ごと取り出す）
+vm.runInContext(/^const TECHNIQUE_NUM = .*$/m.exec(src)[0].replace(/^const /, 'var '), ctx);
 
 const html = fs.readFileSync(path.join(__dirname, 'fixtures', 'raceresult_new_markup.html'), 'utf8');
 // vm 別レルムの Object と deepStrictEqual の prototype 比較を避けるため JSON 正規化
@@ -69,6 +71,33 @@ t('未掲載ページは technique=null', () => {
   const empty = vm.runInContext(
     'parseRaceresultHTML("<table><tbody><tr><td>データはありません</td></tr></tbody></table>", 2, 1, "2026-07-19")', ctx);
   assert.strictEqual(empty.race_technique_number, null);
+});
+
+// 2026-11-20: 決まり手・進入・ST・登録番号（fixture は boatrace.jp 2026-11-19 桐生 12R、Python 側と同じ）
+console.log('[parseRaceresultHTML: スタート情報 / 決まり手 / 登録番号]');
+const html2 = fs.readFileSync(path.join(__dirname, 'fixtures', 'raceresult_start_info.html'), 'utf8');
+const run2 = (h) => JSON.parse(JSON.stringify(vm.runInContext('parseRaceresultHTML(HTML2, 1, 12, "2026-11-19")', Object.assign(ctx, { HTML2: h }))));
+const r2 = run2(html2);
+const by2 = {}; r2.boats.forEach((b) => { by2[b.racer_boat_number] = b; });
+t('登録番号を読む（従来 null）', () => { assert.strictEqual(by2[1].racer_number, 4471); assert.strictEqual(by2[6].racer_number, 5004); });
+t('ST を読む', () => { assert.strictEqual(by2[1].racer_start_timing, 0.13); assert.strictEqual(by2[5].racer_start_timing, 0.16); });
+t('決まり手を読む（逃げ以外も）', () => {
+  assert.strictEqual(r2.race_technique_name, '逃げ');
+  assert.strictEqual(r2.race_technique_number, 1);
+  const r3 = run2(html2.replace('<td class="is-fs16">逃げ</td>', '<td class="is-fs16">まくり差し</td>'));
+  assert.strictEqual(r3.race_technique_number, 4, '従来は常に 1 (逃げ)');
+});
+t('進入コースはスタート情報の並び順（前付け）', () => {
+  const a = '<span class="table1_boatImage1Number is-type1">1</span>';
+  const b = '<span class="table1_boatImage1Number is-type2">2</span>';
+  const r4 = run2(html2.replace(a, '@@A@@').replace(b, a).replace('@@A@@', b));
+  const by4 = {}; r4.boats.forEach((x) => { by4[x.racer_boat_number] = x; });
+  assert.strictEqual(by4[2].racer_course_number, 1);
+  assert.strictEqual(by4[1].racer_course_number, 2);
+});
+t('F / L の ST', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('parseStTiming("F.02")', ctx))), { st: -0.02, kind: 'F' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('parseStTiming("L")', ctx))), { st: null, kind: 'L' });
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

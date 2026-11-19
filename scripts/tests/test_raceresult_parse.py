@@ -76,3 +76,60 @@ class TestRaceresultParse(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# 2026-11-20: 登録番号・進入コース・ST・決まり手を実際に読む（従来は決まり手を常に 1 = 逃げ、
+#   進入 = 枠番、登録番号と ST は None にしていた）。fixture は boatrace.jp 2026-11-19 桐生 12R。
+_FIXTURE_START = os.path.join(os.path.dirname(__file__), "fixtures", "raceresult_start_info.html")
+
+
+class TestRaceresultStartInfo(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with open(_FIXTURE_START, encoding="utf-8") as f:
+            cls.html = f.read()
+        cls.r = SR.parse_raceresult(cls.html, 1, 12)
+        cls.by = {b["racer_boat_number"]: b for b in cls.r["boats"]}
+
+    def test_racer_numbers(self):
+        self.assertEqual(self.by[1]["racer_number"], 4471)
+        self.assertEqual(self.by[6]["racer_number"], 5004)
+        self.assertEqual(self.by[1]["racer_name"], "新田　　泰章")
+
+    def test_start_timing(self):
+        self.assertAlmostEqual(self.by[1]["racer_start_timing"], 0.13)
+        self.assertAlmostEqual(self.by[5]["racer_start_timing"], 0.16)
+
+    def test_technique_from_page(self):
+        self.assertEqual(self.r["race_technique_name"], "逃げ")
+        self.assertEqual(self.r["race_technique_number"], 1)
+        self.assertEqual(self.r["_parse_v"], 2)
+        self.assertNotIn("technique_unknown", self.r)
+
+    def test_technique_other_than_nige(self):
+        html = self.html.replace('<td class="is-fs16">逃げ</td>', '<td class="is-fs16">まくり差し</td>')
+        r = SR.parse_raceresult(html, 1, 12)
+        self.assertEqual(r["race_technique_number"], 4, "従来は常に 1 (逃げ) だった")
+
+    def test_course_follows_start_order(self):
+        # 前付け: 2 号艇が 1 コース、1 号艇が 2 コースに入った形にスタート情報の行を入れ替える
+        a = '<span class="table1_boatImage1Number is-type1">1</span>'
+        b = '<span class="table1_boatImage1Number is-type2">2</span>'
+        html = self.html.replace(a, "@@A@@").replace(b, a).replace("@@A@@", b)
+        r = SR.parse_raceresult(html, 1, 12)
+        by = {x["racer_boat_number"]: x for x in r["boats"]}
+        self.assertEqual(by[2]["racer_course_number"], 1)
+        self.assertEqual(by[1]["racer_course_number"], 2)
+
+    def test_unknown_technique_is_flagged(self):
+        html = self.html.replace('<td class="is-fs16">逃げ</td>', '<td class="is-fs16"></td>')
+        r = SR.parse_raceresult(html, 1, 12)
+        self.assertEqual(r["race_technique_number"], 1, "確定の目印としては残す")
+        self.assertTrue(r.get("technique_unknown"))
+
+    def test_parse_st_variants(self):
+        self.assertEqual(SR._parse_st(".13"), (0.13, None))
+        self.assertEqual(SR._parse_st("F.01"), (-0.01, "F"))
+        self.assertEqual(SR._parse_st("L"), (None, "L"))
+        self.assertEqual(SR._parse_st(".08 まくり"), (0.08, None))
+        self.assertEqual(SR._parse_st(""), (None, None))
