@@ -229,6 +229,22 @@ function _renderRaceDetailBoats(ctx) {
     }
     boatsHtml += '<th>モーター</th></tr>';
 
+    // Row 6b: モーター番号 + 2連率（2026-11-20: ユーザー要望でモーター評価の直下へ移動。highlight pink if >=40%）
+    boatsHtml += '<tr>';
+    for (var bn = 1; bn <= 6; bn++) {
+      var bt = boatMap[bn];
+      if (!bt) {
+        boatsHtml += '<td>-</td>';
+        continue;
+      }
+      var mNum = bt.racer_assigned_motor_number || '-';
+      var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
+      var hlCls = mr2 >= 40 ? 'hl-pink' : '';
+      boatsHtml +=
+        '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + '%</span></td>';
+    }
+    boatsHtml += '<th>モーター</th></tr>';
+
     // Row 7: 全国勝率 + 2連率 (highlight pink if >=6.0)
     boatsHtml += '<tr>';
     for (var bn = 1; bn <= 6; bn++) {
@@ -285,22 +301,6 @@ function _renderRaceDetailBoats(ctx) {
       boatsHtml += '<td>' + (bt.racer_average_start_timing != null ? avgSt.toFixed(2) : '---') + '</td>';
     }
     boatsHtml += '<th>平均ST</th></tr>';
-
-    // Row 10: モーター番号 + 2連率 (highlight pink if >=40%)
-    boatsHtml += '<tr>';
-    for (var bn = 1; bn <= 6; bn++) {
-      var bt = boatMap[bn];
-      if (!bt) {
-        boatsHtml += '<td>-</td>';
-        continue;
-      }
-      var mNum = bt.racer_assigned_motor_number || '-';
-      var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
-      var hlCls = mr2 >= 40 ? 'hl-pink' : '';
-      boatsHtml +=
-        '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + '%</span></td>';
-    }
-    boatsHtml += '<th>モーター</th></tr>';
 
     // Row 11: ボート番号 + 2連率 (highlight pink if >=40%)
     boatsHtml += '<tr>';

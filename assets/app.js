@@ -9631,6 +9631,19 @@ async function _loadNextOpen(){
           boatsHtml += "<td>-</td>";
           continue;
         }
+        var mNum = bt.racer_assigned_motor_number || "-";
+        var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
+        var hlCls = mr2 >= 40 ? "hl-pink" : "";
+        boatsHtml += '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + "%</span></td>";
+      }
+      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
+      boatsHtml += "<tr>";
+      for (var bn = 1; bn <= 6; bn++) {
+        var bt = boatMap[bn];
+        if (!bt) {
+          boatsHtml += "<td>-</td>";
+          continue;
+        }
         var wr = pf(bt.racer_national_top_1_percent);
         var t2 = pf(bt.racer_national_top_2_percent);
         var hlCls = wr >= 6 ? "hl-pink" : "";
@@ -9661,19 +9674,6 @@ async function _loadNextOpen(){
         boatsHtml += "<td>" + (bt.racer_average_start_timing != null ? avgSt.toFixed(2) : "---") + "</td>";
       }
       boatsHtml += "<th>\u5E73\u5747ST</th></tr>";
-      boatsHtml += "<tr>";
-      for (var bn = 1; bn <= 6; bn++) {
-        var bt = boatMap[bn];
-        if (!bt) {
-          boatsHtml += "<td>-</td>";
-          continue;
-        }
-        var mNum = bt.racer_assigned_motor_number || "-";
-        var mr2 = pf(bt.racer_assigned_motor_top_2_percent);
-        var hlCls = mr2 >= 40 ? "hl-pink" : "";
-        boatsHtml += '<td class="' + hlCls + '"><b>' + mNum + '</b><br><span class="fs-9">' + mr2.toFixed(1) + "%</span></td>";
-      }
-      boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
       boatsHtml += "<tr>";
       for (var bn = 1; bn <= 6; bn++) {
         var bt = boatMap[bn];
