@@ -7,6 +7,14 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
+// ローカル / クラウド開発環境用: 固定版 Playwright が要求するブラウザ build が無く、
+//   別 build の Chromium だけが入っている環境（Claude Code クラウド等）向け。
+//   PW_CHROMIUM_PATH を設定すると Chromium 系 project がその実行ファイルを使い、
+//   WebKit smoke と同じ spec を Chromium で流す chromium-smoke project が追加される。
+//   未設定（CI）では従来と完全に同じ構成。
+const CHROMIUM_PATH = process.env.PW_CHROMIUM_PATH || '';
+const chromiumLaunch = CHROMIUM_PATH ? { launchOptions: { executablePath: CHROMIUM_PATH } } : {};
+
 export default defineConfig({
   testDir: resolve(ROOT, 'tests/e2e'),
   // VRT のしきい値（pixelmatch ベース）
@@ -49,9 +57,20 @@ export default defineConfig({
     {
       // VRT: snapshot — Chromium で再現性高く撮影
       name: 'chromium-vrt',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, ...chromiumLaunch },
       testMatch: /.*\.vrt\.spec\.mjs$/,
     },
+    ...(CHROMIUM_PATH
+      ? [
+          {
+            // WebKit が無い環境向けの代替 smoke（iPhone 13 の画面設定のまま Chromium で実行）。
+            //   iOS 固有の挙動は検証できないため、正式な判定は CI の webkit-smoke。
+            name: 'chromium-smoke',
+            use: { ...devices['iPhone 13'], browserName: 'chromium', ...chromiumLaunch },
+            testMatch: /.*\.smoke\.spec\.mjs$/,
+          },
+        ]
+      : []),
   ],
   webServer: {
     // http-server を使う場合は別 npm script で起動するが、ここでは python の標準モジュールで間に合わせる
