@@ -189,6 +189,10 @@ step "Web Worker protocol smoke" \
 step "Bet count zero / exacta options" \
      "node scripts/tests/test_bet_count_zero.js"
 
+# 2026-11-20: 多視点評価の quick wins（学習リーク / EV 設定 / Kelly 0 / 穴 EV<1 / BOX 表示 / ¥ / escText / TOP 回収率 / i18n）
+step "Review quick wins (leak / EV settings / ana / TOP ROI)" \
+     "node scripts/tests/test_review_quickwins.js"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"

@@ -125,7 +125,8 @@ function _renderRaceDetailBets(ctx) {
 
     // 🔥 穴予想: レースタイプ非依存、常に表示
     //   primary: オッズ30倍+ かつ EV>=1.0（高 EV 推奨）
-    //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN（EV<1 でも提示）
+    //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN を「見送り・参考」として表示
+    //             （2026-11-20: 買い目・履歴には入れない）
     //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
     //   B13 (2026-05-16): 推奨買い目に含まれる combo は穴からは除外し重複表示を防止
     var anaSrc = activePred || progPred;
@@ -167,9 +168,11 @@ function _renderRaceDetailBets(ctx) {
         var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
         var isPrimary = anaRes.primary.length > 0;
         if (picks.length > 0) {
+          // 2026-11-20: 主候補が無いときの高オッズ組は EV<1（期待値が低い）。買い目には入れず
+          //   （predictRace の bets.ana も主候補だけ）、「見送り」と明示して参考表示にとどめる。
           var subTitle = isPrimary
             ? 'オッズ30倍+ かつ EV≥1.0'
-            : '高 EV 候補なし — 高オッズ TOP' + picks.length + ' を参考表示';
+            : '妙味なし（見送り） — 参考: 高オッズ TOP' + picks.length + '（EV&lt;1・非推奨）';
           anaHtmlBlock =
             '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
           anaHtmlBlock +=

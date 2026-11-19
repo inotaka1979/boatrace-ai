@@ -1774,8 +1774,10 @@ async function _applyResultsRaw(rawR){
   resultData=_mergeResultIndex(resultData,indexResults(rawR));
   _noteUpdatedAt(rawR.updated_at);
   _noteTodayDataFromRaw(rawR,'results');
-  if(programData) updateDBFromResults(resultData, programData);
+  // 2026-11-20: 学習を DB 更新より先に行う。逆順だと学習時の特徴量（コース別成績・直近フォーム等）に
+  //   当該レース自身の着順が入る（リーク）。learnFromResults は DB 適用済みのレースを学習しない。
   await learnFromResults();
+  if(programData) updateDBFromResults(resultData, programData);
   updateHistoryWithResults();
 }
 function _loadResultLive(sid,rno){
@@ -2485,7 +2487,10 @@ async function forceRefresh(){
     if(navBtn){ navBtn.disabled=false; navBtn.innerHTML=origText; }
   }
 }
-function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+// 2026-11-20: DOM 非依存にし、引用符も変換する（属性値に入れても安全）。従来の textContent → innerHTML は
+//   " と ' を変換しないため、将来属性値に使われると穴になる。worker_predictor.js の escText と同一実装。
+//   正規表現に引用符を直接書くと scripts/split_app.py の関数抽出が文字列と誤認するため文字コードで書く。
+function escText(s){return String(s==null?'':s).replace(/[&<>\u0022\u0027\u00A0]/g,function(c){var k=c.charCodeAt(0);return k===38?'&amp;':k===60?'&lt;':k===62?'&gt;':k===34?'&quot;':k===39?'&#39;':'&nbsp;'})}
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
 function getJSTDate(offsetDays){
@@ -3373,11 +3378,6 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
     try {
       const stored = localStorage.getItem(I18N_KEY);
       if (stored && I18N_TABLES[stored]) return stored;
-    } catch (_) {
-    }
-    try {
-      const nav = (navigator.language || "").slice(0, 2);
-      if (nav && I18N_TABLES[nav]) return nav;
     } catch (_) {
     }
     return DEFAULT_LOCALE;
@@ -6615,15 +6615,17 @@ function _syncWorkerState(){
       balanced: { honmei: 6, middle: 8, ana: 5 },
       hit: { honmei: 10, middle: 12, ana: 8 }
     };
-    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var userEvMin = parseFloat(settings.evMin);
+    var defEvMin = userEvMin || 1.15;
     var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
     var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
     var evOpt = {
-      evMin: modeEvMin != null ? modeEvMin : defEvMin,
-      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+      maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
       // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
       //   誤差がある前提では full/half より現実的。
-      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
+      // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+      kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac)) ? parseFloat(settings.kellyFrac) : typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25,
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -6683,8 +6685,7 @@ function _syncWorkerState(){
           topN: anaTopN,
           excludeCombos
         });
-        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-        return picks.map(function(p) {
+        return anaRes.primary.map(function(p) {
           return p.combo;
         });
       }
@@ -7118,7 +7119,7 @@ function comparePredictions(progPred,livePred){
       selTri = boxBets.sort(function(a, b) {
         return b.prob - a.prob;
       }).slice(0, count3);
-      methodLabel = "BOX(" + topN + "\u8247)";
+      methodLabel = selTri.length < boxBets.length ? "BOX(" + topN + "\u8247)\u304B\u3089\u4E0A\u4F4D" + selTri.length + "\u70B9" : "BOX(" + topN + "\u8247)";
     } else {
       selTri = trifecta.slice(0, count3);
       methodLabel = "\u78BA\u7387\u9806";
@@ -7512,17 +7513,22 @@ function getAccuracy(){
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today&&h.actual&&h.actual.length>0});
-  if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0};
-  var th=0,eh=0,tp3=0,tp2=0;
+  if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0,invest3:0,roi3:null,backfilled:0};
+  var th=0,eh=0,tp3=0,tp2=0,inv3=0,bf=0;
+  // 2026-11-20: TOP に回収率も出す。投資額は calcTodayStats (FA-8) と同じ「実際に推奨した点数 × 100 円」。
+  var betCount3=_parseBetCount(settings.betCount3,10);
   verified.forEach(function(h){
     if(h.trifecta_hit){th++;tp3+=(h.payout3||0)}
     if(h.exacta_hit){eh++;tp2+=(h.payout2||0)}
+    inv3+=(Array.isArray(h.trifecta_bets)?h.trifecta_bets.length:betCount3)*100;
+    if(h.backfilled) bf++;
   });
   return{
     trifectaRate:(th/verified.length*100).toFixed(1),
     exactaRate:(eh/verified.length*100).toFixed(1),
     total:verified.length,trifectaHit:th,exactaHit:eh,
-    totalPayout3:tp3,totalPayout2:tp2
+    totalPayout3:tp3,totalPayout2:tp2,
+    invest3:inv3,roi3:inv3>0?Math.round(tp3/inv3*1000)/10:null,backfilled:bf
   };
 }
 
@@ -7620,7 +7626,8 @@ async function _yieldToMain(){
             l2weights,
             featureStats: _featureStats,
             trainStep: l2trainStep,
-            learnedKeys: l2learnedKeys
+            learnedKeys: l2learnedKeys,
+            dbAppliedKeys: globalThis._dbAppliedKeys || null
           }
         }
       });
@@ -7657,6 +7664,7 @@ async function _yieldToMain(){
         if (!prog || !prog.boats || !Array.isArray(prog.boats)) continue;
         var key = dateKey + "_" + sid + "_" + rn;
         if (l2learnedKeys[key]) continue;
+        if (globalThis._dbAppliedKeys && globalThis._dbAppliedKeys[key]) continue;
         var sorted = race.results.slice().sort(function(a, b) {
           return a.place - b.place;
         });
@@ -8099,13 +8107,14 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   // PE-8 + PE-9: 軽量な学習を deferred で実行
   //   PF-3: _backfillTodayPredictions は起動 critical path に入れず、この後 lazy に実行する
   try {
-    if(resultData) updateDBFromResults(resultData, programData);
     if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
     if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
     if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
     if(resultData) learnEntryPatternFromResults(resultData);
     if(resultData) learnSeriesAndPairwiseFromResults(resultData);
     await learnFromResults();              // PE-9: async + yield
+    // 2026-11-20: DB への結果反映は学習の後（_applyResultsRaw と同じ理由）
+    if(resultData) updateDBFromResults(resultData, programData);
     updateHistoryWithResults();
   } catch(e) {
     console.warn('[PE-8] learning step failed:', e);
@@ -8405,7 +8414,7 @@ function racerBadges(boat,form,divergence){
     if (!sumDiv) return;
     var acc = getAccuracy();
     var wait = !acc.total && !globalThis._histReady;
-    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + (wait ? "\u2026" : acc.total) + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + (wait ? "\u2026" : acc.trifectaHit) + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num c-success">' + (wait ? "\u2026" : acc.trifectaRate + "%") + '</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + Object.keys(racerDB).length + '</div><div class="s-label">\u9078\u624BDB</div></div></div>';
+    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + (wait ? "\u2026" : acc.total) + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + (wait ? "\u2026" : acc.trifectaHit) + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + (wait ? "\u2026" : acc.trifectaRate + "%") + '</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:' + (acc.roi3 == null ? "var(--text)" : acc.roi3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + (wait ? "\u2026" : acc.roi3 == null ? "-" : acc.roi3.toFixed(1) + "%") + '</div><div class="s-label">\u56DE\u53CE\u7387</div></div></div>' + (acc.backfilled > 0 ? '<div class="c-dim" style="font-size:12px;text-align:center;margin-top:2px">\u3046\u3061 ' + acc.backfilled + " \u4EF6\u306F\u30EC\u30FC\u30B9\u78BA\u5B9A\u5F8C\u306B\u751F\u6210\u3057\u305F\u4E88\u60F3\uFF08\u5B9F\u969B\u3088\u308A\u826F\u304F\u51FA\u307E\u3059\uFF09</div>" : "");
   }
   function renderStadiums() {
     document.getElementById("topLoading").style.display = "none";
@@ -9104,7 +9113,8 @@ async function _loadNextOpen(){
           var label = type === "trifecta" ? "3\u9023\u5358" : type === "trio" ? "3\u9023\u8907" : "2\u9023\u5358";
           if (result.refund[type]) {
             result.refund[type].forEach(function(r) {
-              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + r.combination + '</span><span class="refund-val">\\' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
+              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + escText(r.combination) + // 2026-11-20: 頭が円記号ではなくバックスラッシュ（"\1,520"）で表示されていた
+              '</span><span class="refund-val">\xA5' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
             });
           }
         });
@@ -9821,7 +9831,7 @@ async function _loadNextOpen(){
           var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
           var isPrimary = anaRes.primary.length > 0;
           if (picks.length > 0) {
-            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u9AD8 EV \u5019\u88DC\u306A\u3057 \u2014 \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + " \u3092\u53C2\u8003\u8868\u793A";
+            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u5999\u5473\u306A\u3057\uFF08\u898B\u9001\u308A\uFF09 \u2014 \u53C2\u8003: \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + "\uFF08EV&lt;1\u30FB\u975E\u63A8\u5968\uFF09";
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
             anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
             anaHtmlBlock += '<div class="bet-combos">';
@@ -10556,7 +10566,7 @@ function loadSettings(){
   var em = document.getElementById('setEvMin');
   if(em) em.value = String(settings.evMin || 1.15);
   var kf = document.getElementById('setKellyFrac');
-  if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.5);
+  if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.25);   // 2026-11-20: 実際の既定 (TUNING.KELLY.DEFAULT_FRAC) と一致させる
   var br = document.getElementById('setBankroll');
   if(br) br.value = settings.bankroll || 10000;
   // P0-3: KPI モード（保存値があれば反映、なければ balanced）

@@ -29,13 +29,22 @@ function _renderTopSummary() {
     '<div class="summary-item"><div class="s-num" style="color:var(--gold)">' +
     (wait ? '…' : acc.trifectaHit) +
     '</div><div class="s-label">3連単的中</div></div>' +
-    '<div class="summary-item"><div class="s-num c-success">' +
+    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
     (wait ? '…' : acc.trifectaRate + '%') +
     '</div><div class="s-label">的中率</div></div>' +
-    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
-    Object.keys(racerDB).length +
-    '</div><div class="s-label">選手DB</div></div>' +
-    '</div>';
+    // 2026-11-20: 的中率だけを緑で強調していた（10 点買いなら的中率は高く出て当然で、損をしていても
+    //   好成績に見える）。回収率を並べ、100% 未満は赤にする。選手DB の件数は設定画面にある。
+    '<div class="summary-item"><div class="s-num" style="color:' +
+    (acc.roi3 == null ? 'var(--text)' : acc.roi3 >= 100 ? 'var(--success)' : 'var(--danger)') +
+    '">' +
+    (wait ? '…' : acc.roi3 == null ? '-' : acc.roi3.toFixed(1) + '%') +
+    '</div><div class="s-label">回収率</div></div>' +
+    '</div>' +
+    (acc.backfilled > 0
+      ? '<div class="c-dim" style="font-size:12px;text-align:center;margin-top:2px">うち ' +
+        acc.backfilled +
+        ' 件はレース確定後に生成した予想（実際より良く出ます）</div>'
+      : '');
 }
 
 function renderStadiums() {

@@ -106,7 +106,8 @@
           var label = type === "trifecta" ? "3\u9023\u5358" : type === "trio" ? "3\u9023\u8907" : "2\u9023\u5358";
           if (result.refund[type]) {
             result.refund[type].forEach(function(r) {
-              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + r.combination + '</span><span class="refund-val">\\' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
+              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + escText(r.combination) + // 2026-11-20: 頭が円記号ではなくバックスラッシュ（"\1,520"）で表示されていた
+              '</span><span class="refund-val">\xA5' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
             });
           }
         });
@@ -409,7 +410,7 @@
           var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
           var isPrimary = anaRes.primary.length > 0;
           if (picks.length > 0) {
-            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u9AD8 EV \u5019\u88DC\u306A\u3057 \u2014 \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + " \u3092\u53C2\u8003\u8868\u793A";
+            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u5999\u5473\u306A\u3057\uFF08\u898B\u9001\u308A\uFF09 \u2014 \u53C2\u8003: \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + "\uFF08EV&lt;1\u30FB\u975E\u63A8\u5968\uFF09";
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
             anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
             anaHtmlBlock += '<div class="bet-combos">';

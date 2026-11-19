@@ -325,19 +325,26 @@ function predictRace(sid, raceNum) {
     balanced: { honmei: 6, middle: 8, ana: 5 },
     hit: { honmei: 10, middle: 12, ana: 8 },
   };
-  var defEvMin = parseFloat(settings.evMin) || 1.15;
+  var userEvMin = parseFloat(settings.evMin);
+  var defEvMin = userEvMin || 1.15;
   var modeEvMin = kpiMode !== 'off' && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
   var modeMaxBets = kpiMode !== 'off' && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
+  // 2026-11-20: KPI モードは「上限・下限の目安」で、ユーザーの設定を緩めない。
+  //   従来はプリセットが evMin / maxBets を上書きしており、3連単「0 点（買わない）」でも 1〜8 点、
+  //   EV 閾値 1.50 でも EV 1.21 の買い目が出ていた。
+  //   - 点数: プリセットと設定の小さい方（0 点は常に 0 点）
+  //   - EV 閾値: プリセットと、ユーザーが明示した値の大きい方
   var evOpt = {
-    evMin: modeEvMin != null ? modeEvMin : defEvMin,
-    maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+    evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+    maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
     // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
     //   誤差がある前提では full/half より現実的。
-    kellyFrac:
-      parseFloat(settings.kellyFrac) ||
-      (typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
+    // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+    kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac))
+      ? parseFloat(settings.kellyFrac)
+      : typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
         ? TUNING.KELLY.DEFAULT_FRAC
-        : 0.25),
+        : 0.25,
     bankroll: parseInt(settings.bankroll) || 10000,
   };
   // 当該レースのオッズを取得
@@ -418,8 +425,10 @@ function predictRace(sid, raceNum) {
         topN: anaTopN,
         excludeCombos: excludeCombos,
       });
-      var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-      return picks.map(function (p) {
+      // 2026-11-20: 買い目（履歴・回収率の対象）にするのは EV≥1.0 の主候補だけ。
+      //   従来は主候補が無いと EV<1 の高オッズ組を代わりに入れていた（期待値の低い券を推奨していた）。
+      //   代わりの候補は詳細画面で「参考・非推奨」として見せるだけにする。
+      return anaRes.primary.map(function (p) {
         return p.combo;
       });
     }

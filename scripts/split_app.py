@@ -225,6 +225,10 @@ for name, body in funcs.items():
 #         split 後のファイル間で重複しないよう片方からのみ削除する。
 REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_BACKTEST',
+    # 2026-11-20: bandit (買い目方式の A/B) と DP gradient (FL 送信) は critical 起動経路から
+    #   呼ばれない（critical 内の参照は自モジュール内のみ）。critical 予算 (残り 433B) を空ける。
+    'BANDIT',
+    'DP_GRADIENT',
     # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
     # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
     'ANALYSIS_SCORE_BOAT',

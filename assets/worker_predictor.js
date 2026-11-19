@@ -1669,7 +1669,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       selTri = boxBets.sort(function(a, b) {
         return b.prob - a.prob;
       }).slice(0, count3);
-      methodLabel = "BOX(" + topN + "\u8247)";
+      methodLabel = selTri.length < boxBets.length ? "BOX(" + topN + "\u8247)\u304B\u3089\u4E0A\u4F4D" + selTri.length + "\u70B9" : "BOX(" + topN + "\u8247)";
     } else {
       selTri = trifecta.slice(0, count3);
       methodLabel = "\u78BA\u7387\u9806";
@@ -1909,15 +1909,17 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       balanced: { honmei: 6, middle: 8, ana: 5 },
       hit: { honmei: 10, middle: 12, ana: 8 }
     };
-    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var userEvMin = parseFloat(settings.evMin);
+    var defEvMin = userEvMin || 1.15;
     var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
     var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
     var evOpt = {
-      evMin: modeEvMin != null ? modeEvMin : defEvMin,
-      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+      maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
       // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
       //   誤差がある前提では full/half より現実的。
-      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
+      // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+      kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac)) ? parseFloat(settings.kellyFrac) : typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25,
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -1977,8 +1979,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
           topN: anaTopN,
           excludeCombos
         });
-        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-        return picks.map(function(p) {
+        return anaRes.primary.map(function(p) {
           return p.combo;
         });
       }
@@ -2359,10 +2360,9 @@ function classifyTidePhase(tideEntry, raceTimeJst){
 
 // 2026-11-19: main の escText は DOM (document.createElement) を使うが worker には DOM が無く、
 //   部品交換情報 (partsTxt) のあるレースで scoreBoatV2 → escText が ReferenceError になっていた。
-//   DOM の textContent → innerHTML と同じ 4 種（& < > U+00A0）だけを置換する。引用符は DOM と同じく残し、
-//   null / undefined は DOM と同じく空文字にする。
+//   DOM 非依存の置換にした。2026-11-20 から main の escText も同じ実装（引用符も変換）。
 function escText(s){
-  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\u00A0/g,'&nbsp;');
+  return String(s == null ? '' : s).replace(/[&<>\u0022\u0027\u00A0]/g, function(c){ var k = c.charCodeAt(0); return k===38?'&amp;':k===60?'&lt;':k===62?'&gt;':k===34?'&quot;':k===39?'&#39;':'&nbsp;'; });
 }
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
@@ -2563,6 +2563,8 @@ function batchLearnFromResults(input){
     if(typeof input.state.trainStep === 'number') l2trainStep = input.state.trainStep;
     if(input.state.learnedKeys) l2learnedKeys = Object.assign({}, input.state.learnedKeys);
   }
+  // 2026-11-20: main の learning.js と同じく、DB 適用済みのレースは学習しない（リーク防止）
+  var dbApplied = (input.state && input.state.dbAppliedKeys) || {};
   // 入力データ
   var resultData = input.resultData;
   var programData = input.programData;
@@ -2598,6 +2600,7 @@ function batchLearnFromResults(input){
 
       var key = dateKey + '_' + sid + '_' + rn;
       if(l2learnedKeys[key]) continue;
+      if(dbApplied[key]) continue;
 
       var sorted = race.results.slice().sort(function(a,b){return a.place-b.place});
       var winnerBoat = sorted[0].racer_boat_number;

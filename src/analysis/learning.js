@@ -73,6 +73,7 @@ async function learnFromResultsViaWorker() {
           featureStats: _featureStats,
           trainStep: l2trainStep,
           learnedKeys: l2learnedKeys,
+          dbAppliedKeys: globalThis._dbAppliedKeys || null,
         },
       },
     });
@@ -114,6 +115,9 @@ async function learnFromResults() {
       // PB-1: 同レースの二重学習を防ぐ
       var key = dateKey + '_' + sid + '_' + rn;
       if (l2learnedKeys[key]) continue;
+      // 2026-11-20: このレースの結果が既に racerDB / stadiumDB に入っていれば学習しない
+      //   （特徴量に当該レースの着順が混ざる = リーク）。通常経路は学習 → DB 更新の順なので該当しない。
+      if (globalThis._dbAppliedKeys && globalThis._dbAppliedKeys[key]) continue;
 
       var sorted = race.results.slice().sort(function (a, b) {
         return a.place - b.place;

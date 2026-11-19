@@ -1432,3 +1432,25 @@ install できない）を解消。
 
 ### 未確認
 - Cloudflare Worker 側の展示スクレイプ / `/odds-proxy` が同じく拒否されているかは、この環境から確認できない。
+
+## 修正履歴 (2026-11-20: 多視点評価の quick wins)
+
+- **学習のリーク**: `_applyResultsRaw` と起動時の deferred 学習が「DB に結果を反映 → L2 学習」の順で、学習時の特徴量
+  （コース別成績・直近フォーム・場別勝率）に当該レース自身の着順が入っていた。学習 → DB 更新の順にし、
+  さらに `learnFromResults`（main / worker とも）は DB 適用済み（`_dbAppliedKeys`）のレースを学習しない。
+  サーバ側 `data/db/racerDB.json` が当日結果を含む場合のリークは対象外（要確認）。
+- **EV モードがユーザー設定を無視**: KPI プリセットが evMin / maxBets を上書きし、3連単 0 点でも 1〜8 点、
+  EV 閾値 1.30 でも EV 1.21 が出ていた。点数はプリセットとの小さい方、EV 閾値はユーザー明示値との大きい方に。
+- **Kelly 0（均等配分）が 0.25 に化けていた**（`parseFloat(v) || 既定`）。設定画面の既定表示も 0.5 → 実際の 0.25 に。
+- **🔥穴の買い目**: EV≥1.0 の主候補が無いと EV<1 の高オッズ組を買い目・履歴に入れていた。主候補だけにし、
+  詳細画面は「妙味なし（見送り）— 参考（EV<1・非推奨）」と表示。golden snapshot 3 件の `ana` が空に（意図した変更）。
+- **BOX 表示**: 点数が全組数に満たないとき「BOX(4艇)から上位10点」と表示（実際はボックス買いでないため）。
+- **払戻の頭が `\`**（`'\\'` の文字列）→ `¥`。組番を escText に通す。
+- **escText**: DOM 非依存にして `"` `'` も変換（属性値で安全）。main と worker で同一実装（split_app.py が正規表現内の
+  引用符を誤認するため文字コードで記述）。
+- **TOP 成績サマリー**: 的中率だけ緑で強調していた。選手DB 件数の枠を回収率（実際に推奨した点数 × 100 円で算出、
+  100% 未満は赤）に置換し、事後生成（backfilled）の件数を併記。`getAccuracy` が `invest3 / roi3 / backfilled` を返す。
+- **i18n**: navigator.language での自動切替を廃止（翻訳が一部だけで日英が混ざっていた）。既定 ja、`?lang=` か保存値で切替。
+  `#detailBack` に data-i18n を付与。
+- **critical 予算**: BANDIT / DP_GRADIENT を rest に移動（critical 起動経路から未参照）。99,567B → 97,789B。
+- `scripts/tests/test_review_quickwins.js`（15 件）。7 種の mutation すべてで失敗することを確認。

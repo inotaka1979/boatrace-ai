@@ -348,7 +348,10 @@ function generateBetsV2(marks, method, count3, count2) {
         return b.prob - a.prob;
       })
       .slice(0, count3);
-    methodLabel = 'BOX(' + topN + '艇)';
+    // 2026-11-20: 点数が BOX の全組数（3艇=6 / 4艇=24）に満たないと、実際は BOX の一部（確率上位）。
+    //   舟券の「ボックス買い」と誤解しないよう表示名に出す。
+    methodLabel =
+      selTri.length < boxBets.length ? 'BOX(' + topN + '艇)から上位' + selTri.length + '点' : 'BOX(' + topN + '艇)';
   } else {
     selTri = trifecta.slice(0, count3);
     methodLabel = '確率順';

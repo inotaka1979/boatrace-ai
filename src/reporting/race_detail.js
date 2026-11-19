@@ -217,8 +217,9 @@ function openRace(sid, rn) {
               '<div class="refund-row"><span class="refund-label">' +
               label +
               ' ' +
-              r.combination +
-              '</span><span class="refund-val">\\' +
+              escText(r.combination) +
+              // 2026-11-20: 頭が円記号ではなくバックスラッシュ（"\1,520"）で表示されていた
+              '</span><span class="refund-val">¥' +
               (r.amount || r.payout || 0).toLocaleString() +
               '</span></div>';
           });
