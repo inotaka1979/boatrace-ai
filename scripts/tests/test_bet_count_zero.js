@@ -1,5 +1,5 @@
 /**
- * 買い目点数 0（買わない）と 2連単の点数拡張（2026-11-20）
+ * 買い目点数 0（買わない）と 2連単の点数拡張、穴狙いの 0 点（2026-11-20）
  *
  * 背景: 設定画面に 0 点が無く、2連単は 3 / 5 点しか選べなかった。さらに点数を読む箇所が
  * すべて `parseInt(v) || 既定値` で、0 を保存しても 3連単 10 点 / 2連単 5 点に化けていた。
@@ -24,12 +24,12 @@ function t(name, fn) {
 
 const ctx = makeCtx();
 const fx = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'golden', 'race_konsen.json'), 'utf8'));
-function predictWith(betCount3, betCount2) {
+function predictWith(betCount3, betCount2, betCountAna, withOdds) {
   Object.assign(ctx, {
     programData: { [fx.sid]: { [fx.rno]: fx.program } },
     previewData: { [fx.sid]: { [fx.rno]: fx.preview } },
-    oddsData: { odds: [fx.odds] }, racerDB: {}, stadiumDB: {}, l2trainStep: 0,
-    settings: { betCount3, betCount2, betCountAna: 3, betMethod: 'prob', evMode: false, kpiMode: 'balanced' },
+    oddsData: { odds: withOdds === false ? [] : [fx.odds] }, racerDB: {}, stadiumDB: {}, l2trainStep: 0,
+    settings: { betCount3, betCount2, betCountAna: betCountAna === undefined ? 3 : betCountAna, betMethod: 'prob', evMode: false, kpiMode: 'balanced' },
   });
   return ctx.predictRace(fx.sid, fx.rno);
 }
@@ -67,6 +67,19 @@ t('設定が無ければ従来どおり 3連単 10 点・2連単 5 点', () => {
   assert.strictEqual(b.exacta.length, 5);
 });
 
+console.log('[穴狙いの点数]');
+// オッズ有りだと「30 倍+ / 15 倍+」の条件で候補数自体が絞られるため（この fixture では 2 点）、
+//   点数の上限どおりに並ぶオッズ未取得（AI 確率ベース）で確認する。
+t('穴狙い 0 点なら穴の買い目が空（オッズ有り・無しとも。従来は下限 1 点に引き上げられていた）', () => {
+  assert.strictEqual(predictWith('10', '5', '0').ana.length, 0);
+  assert.strictEqual(predictWith('10', '5', '0', false).ana.length, 0);
+});
+t('穴狙い 2 点はそのまま、未設定は従来どおり 3 点、上限は 6 点', () => {
+  assert.strictEqual(predictWith('10', '5', '2', false).ana.length, 2);
+  assert.strictEqual(predictWith('10', '5', undefined, false).ana.length, 3);
+  assert.strictEqual(predictWith('10', '5', '9', false).ana.length, 6);
+});
+
 console.log('[設定画面の選択肢]');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 function options(id) {
@@ -76,6 +89,7 @@ function options(id) {
 }
 t('3連単は 0〜12 点', () => assert.deepStrictEqual(options('setBetCount3'), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]));
 t('2連単は 0〜10 点', () => assert.deepStrictEqual(options('setBetCount2'), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+t('穴狙いは 0〜6 点', () => assert.deepStrictEqual(options('setBetCountAna'), [0, 1, 2, 3, 4, 5, 6]));
 
 console.log(`\n=== Result: ${pass} passed, ${fail} failed ===`);
 process.exit(fail);

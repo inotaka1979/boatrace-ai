@@ -404,9 +404,9 @@ function predictRace(sid, raceNum) {
   //   組込んで savePrediction で履歴追跡できるようにする。EV>=1.0 が無ければ
   //   AI 確率分布の top N (1コース絡み以外) を fallback で入れる。
   bets.ana = (function () {
-    var anaTopN = parseInt(settings.betCountAna) || 3;
-    if (anaTopN < 1) anaTopN = 1;
-    else if (anaTopN > 6) anaTopN = 6;
+    // 2026-11-20: 0 点（買わない）を選べるようにした。`|| 3` と下限 1 を撤去。
+    var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+    if (anaTopN === 0) return [];
     var excludeCombos = (bets.trifecta || []).map(function (t) {
       return t.combo;
     });

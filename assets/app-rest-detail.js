@@ -376,10 +376,10 @@
         predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
       }
       var anaSrc = activePred || progPred;
-      if (anaSrc && anaSrc.marks) {
-        var anaTopN = parseInt(settings.betCountAna) || 3;
-        if (anaTopN < 1) anaTopN = 1;
-        else if (anaTopN > 6) anaTopN = 6;
+      var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+      if (anaSrc && anaSrc.marks && anaTopN === 0) {
+        predHtml += '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px"><div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3</div><div class="bet-combos"><span class="fs-9 c-dim">0\u70B9\uFF08\u8CB7\u308F\u306A\u3044\u8A2D\u5B9A\uFF09</span></div></div>';
+      } else if (anaSrc && anaSrc.marks) {
         var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
         var _recommendedCombos = [];
         if (activePred && Array.isArray(activePred.trifecta)) {

@@ -129,10 +129,14 @@ function _renderRaceDetailBets(ctx) {
     //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
     //   B13 (2026-05-16): 推奨買い目に含まれる combo は穴からは除外し重複表示を防止
     var anaSrc = activePred || progPred;
-    if (anaSrc && anaSrc.marks) {
-      var anaTopN = parseInt(settings.betCountAna) || 3;
-      if (anaTopN < 1) anaTopN = 1;
-      else if (anaTopN > 6) anaTopN = 6;
+    // 2026-11-20: 穴狙いも 0 点（買わない）を選べる。0 なら候補を計算せず、その旨だけ出す。
+    var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+    if (anaSrc && anaSrc.marks && anaTopN === 0) {
+      predHtml +=
+        '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">' +
+        '<div class="bet-label" style="color:#FF5722">🔥 穴予想</div>' +
+        '<div class="bet-combos"><span class="fs-9 c-dim">0点（買わない設定）</span></div></div>';
+    } else if (anaSrc && anaSrc.marks) {
       var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
       // B13: 推奨買い目の combo 一覧を抽出 (excludeCombos に渡す)
       var _recommendedCombos = [];

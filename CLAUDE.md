@@ -1391,11 +1391,14 @@ install できない）を解消。
 点数を読む 8 箇所がすべて `parseInt(v) || 既定値` だったため、0 を保存しても 3連単 10 点 / 2連単 5 点に化けていた
 （設定画面も開き直すと 10 / 5 と表示）。
 
-- `index.html`: 3連単 0〜12 点、2連単 0〜10 点（0 は「0点（買わない）」表示）。穴狙い点数は変更なし（最低 1 点）。
+- `index.html`: 3連単 0〜12 点、2連単 0〜10 点、穴狙い 0〜6 点（0 は「0点（買わない）」表示）。
 - `src/utils/math.js`: `_parseBetCount(v, def)` を追加。0 は 0、空・不正・負の値のみ既定値。main / worker 両方に入る。
 - 読み取り箇所を置換: `predict_race.js` / `race_detail_bets.js` / `daily_stats_page.js` と app.js の
   `calcTodayStats` / `loadSettings`。投資額 0 の回収率は既存の `invest > 0` ガードで 0 除算しない。
 - `race_detail_bets.js`: 買い目 0 件のとき見出しだけが残らないよう「0点（買わない設定）」または「該当なし」
   （EV フィルタで 0 件など）を表示。
-- `scripts/tests/test_bet_count_zero.js`（9 件）を run_all.sh に追加。`||` に戻す mutation で 2 件失敗を確認。
+- 穴狙い: 従来は `parseInt(v) || 3` に加え下限 1 点に引き上げていた。`Math.min(6, _parseBetCount(v, 3))` にし、
+  0 なら予想の `bets.ana` を空に、レース詳細は「🔥 穴予想 0点（買わない設定）」を表示。成績の穴集計は
+  既存どおり `ana_bets.length > 0` のレースだけを数える。
+- `scripts/tests/test_bet_count_zero.js`（12 件）を run_all.sh に追加。`||` に戻す mutation で失敗を確認（穴狙いも同様）。
   実ブラウザで設定 0 / 7 点の保存・再読込後の表示・レース詳細（「3連単推奨 0点（買わない設定）」と 2連単 7 点）を確認。
