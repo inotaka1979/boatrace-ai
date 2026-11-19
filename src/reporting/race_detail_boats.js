@@ -176,6 +176,22 @@ function _renderRaceDetailBoats(ctx) {
     }
     boatsHtml += '<th>年齢等</th></tr>';
 
+    // Row 4b: F/L count（2026-11-20: ユーザー要望で年齢・体重の直下へ移動）
+    boatsHtml += '<tr>';
+    for (var bn = 1; bn <= 6; bn++) {
+      var bt = boatMap[bn];
+      if (!bt) {
+        boatsHtml += '<td>-</td>';
+        continue;
+      }
+      var fc = bt.racer_flying_count || 0;
+      var lc = bt.racer_late_start_count_in_current_term || 0;
+      var flStr = 'F' + fc + '/L' + lc;
+      if (fc > 0) flStr = '<span style="color:var(--danger);font-weight:700">F' + fc + '</span>/L' + lc;
+      boatsHtml += '<td>' + flStr + '</td>';
+    }
+    boatsHtml += '<th>F/L</th></tr>';
+
     // Row 5: バッジ
     boatsHtml += '<tr>';
     for (var bn = 1; bn <= 6; bn++) {
@@ -301,22 +317,6 @@ function _renderRaceDetailBoats(ctx) {
         '<td class="' + hlCls + '"><b>' + bNum + '</b><br><span class="fs-9">' + br2.toFixed(1) + '%</span></td>';
     }
     boatsHtml += '<th>ボート</th></tr>';
-
-    // Row 12: F/L count
-    boatsHtml += '<tr>';
-    for (var bn = 1; bn <= 6; bn++) {
-      var bt = boatMap[bn];
-      if (!bt) {
-        boatsHtml += '<td>-</td>';
-        continue;
-      }
-      var fc = bt.racer_flying_count || 0;
-      var lc = bt.racer_late_start_count_in_current_term || 0;
-      var flStr = 'F' + fc + '/L' + lc;
-      if (fc > 0) flStr = '<span style="color:var(--danger);font-weight:700">F' + fc + '</span>/L' + lc;
-      boatsHtml += '<td>' + flStr + '</td>';
-    }
-    boatsHtml += '<th>F/L</th></tr>';
 
     // 2026-11-20: 長期集計（scripts/aggregate_racer_stats.py → data/db/racer_stats_view.json）
     boatsHtml += _racerStatsRows(boatMap, pvMap, ctx.sid);
