@@ -1569,3 +1569,21 @@ install できない）を解消。
   展示を残す（前日の残骸は残さない）。90 秒 poll / 更新ボタン / レース更新の 3 経路とも同じ関数を通る。
 - `scripts/tests/test_preview_carry.mjs`（4 件、Worker は実モジュールで cron 1 回を KV 付きで実行）。両側とも修正を外す
   mutation で失敗。調査時点の Worker /api/previews は鳴門 1R の展示 6 艇を持っていた（一時的な欠落と整合）。
+
+## 修正履歴 (2026-11-20: 今節成績に前日の結果が出ない / 別の選手の成績が出る)
+
+ユーザー報告「今節の結果で昨日の結果表示されていない場がある」。
+- **原因**: 今節成績の元 `data/racedata/today.json` は 1 日 1 回（朝〜昼）しか取らず（当日分があれば再取得しない）、
+  取得後に確定したレースが入らない。翌朝は scrape-all（GitHub schedule で遅延）が racedata を取り直すまで前日の
+  racedata が残り、しかも艇番で並んでいる（選手番号が無い）ため、今日のレースに艇番で当てて**別の選手の今節成績**
+  （と部品交換）を出していた。調査時点（11/20 08:44）の racedata は 11/19 13:40 取得分。
+  津は 11/19 が中止で結果自体が無い（公式ページで確認）。
+- `scripts/build_series.py`（新規、scrape_all の最後に毎 run、ネットワーク不使用）: racedata の艇番をその日の番組表で
+  選手番号に引き直し、その日の確定結果でその日の枠を埋めて `data/racedata/series.json` を書く。日目はラベル /
+  最終日・ラベル無しは場の中の最後の埋まった枠 / 全員空なら初日。1 レースも確定しなかった場は `held: false`（中止）。
+  旧形式の結果は進入を展示から取り、ST は出さない。
+- アプリ: `getRaceDataForRace` は今日の racedata だけ返す。今節成績は `_seriesSlotsFor`（race_detail_boats.js）で
+  「今日の series.json > 今日の racedata > 前日の series.json（前日が最終日なら使わない、中止なら日目は進まない）」を
+  土台にし、今日の確定結果（resultData）でその選手の今日の n 走目を今日の n 番目の枠に入れる。
+- テスト: test_build_series.py（5 件）、test_series_results.js（7 件）。日付ゲート・中止・n 走目の mutation で失敗を確認。
+- 残: racedata 自体の朝の取得は scrape-all の実行時刻次第（sentinel の `GH_TOKEN` 登録で 8:30 に起動できる）。

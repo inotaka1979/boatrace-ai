@@ -4267,6 +4267,15 @@ async function loadDeferredData(rawPrograms, rawPreviews){
     }catch(e){raceData=null}
   })());
 
+  // 今節成績を選手番号で引ける形（scripts/build_series.py）。racedata が前日のままの朝や、
+  //   racedata 取得後に確定したレースを今節成績に出すために使う。
+  tasks.push((async function(){
+    try{
+      var srResp=await fetch('data/racedata/series.json?t='+Date.now());
+      if(srResp.ok) globalThis._seriesData=await srResp.json();
+    }catch(e){}
+  })());
+
   // 潮汐
   tasks.push((async function(){
     try{
@@ -4400,6 +4409,9 @@ function evBadge(ev){
 
 function getRaceDataForRace(sid,rn){
   if(!raceData||!raceData.racedata) return null;
+  // 2026-11-20: racedata は艇番で並ぶため、前日の racedata を今日のレースに当てると別の選手の
+  //   今節成績・部品交換になる（朝、scrape-all の racedata 更新前）。今日の分だけ使う。
+  if(raceData.race_date && String(raceData.race_date).replace(/-/g,'')!==todayStr()) return null;
   return raceData.racedata.find(function(r){return r.stadium===parseInt(sid)&&r.race===parseInt(rn)})||null;
 }
 

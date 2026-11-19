@@ -270,6 +270,7 @@ function openRace(sid, rn) {
     pred: pred,
     rdForRace: rdForRace,
     sid: sid, // 2026-11-20: モーター集計 (場 × 番号) の参照に使う
+    rn: rn, // 2026-11-20: 今節成績の補完（_seriesSlotsFor）
   };
   _renderRaceDetailBoats(_ctxBoats);
   var pvMap = _ctxBoats.pvMap;
