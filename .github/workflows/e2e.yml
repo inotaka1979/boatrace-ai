@@ -40,7 +40,9 @@ jobs:
     #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
     #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
+    #   テスト前に cancel された。install に余裕を持たせる。
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
@@ -97,7 +99,9 @@ jobs:
     #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
     #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
+    #   テスト前に cancel された。install に余裕を持たせる。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -154,7 +158,9 @@ jobs:
     #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
     #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
+    #   テスト前に cancel された。install に余裕を持たせる。
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
