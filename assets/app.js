@@ -6625,12 +6625,15 @@ function _syncWorkerState(){
     var raceType, typeLabel, typeCls;
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
       raceType = "honmei";
       typeLabel = "\u672C\u547D";
       typeCls = "type-honmei";
-    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
       raceType = "ana";
       typeLabel = "\u7A74";
       typeCls = "type-ana";
@@ -6674,8 +6677,10 @@ function _syncWorkerState(){
       });
       if (found) raceOddsForEV = found;
     }
+    var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+    var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
     if (method === "auto") {
-      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = "ev";
       else if (raceType === "honmei") method = "prob";
       else if (raceType === "ana") method = "box";
       else method = "formation";
@@ -6685,6 +6690,8 @@ function _syncWorkerState(){
     var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
     bets.marks = marks;
     bets.evApplied = method === "ev";
+    bets.oddsAgeMin = oddsAge;
+    bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
     bets.scenarios = scenarioRes.scenarios;
     bets.scenarioDist = scenarioRes.dist;
     bets.grade = grade;
@@ -6753,6 +6760,19 @@ function _syncWorkerState(){
     }();
     return bets;
   }
+  var ODDS_STALE_EV_MIN = 10;
+  function _raceOddsAgeMin(raceOdds, now) {
+    var t = 0;
+    if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+    if (typeof oddsData !== "undefined" && oddsData && oddsData.updated_at) {
+      var b = Date.parse(oddsData.updated_at);
+      if (Number.isFinite(b) && b > t) t = b;
+    }
+    if (!t) return null;
+    return Math.max(0, Math.round(((now || Date.now()) - t) / 6e4));
+  }
+  globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+  globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
   globalThis.predictRace = predictRace;
   globalThis.predictRaceAsync = predictRaceAsync;
 })();
@@ -9123,8 +9143,9 @@ async function _loadNextOpen(){
       var wtemp = w.water_temperature || w.race_water_temperature || "--";
       weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
     }
-    if (oddsData && oddsData.updated_at) {
-      var _ot = Date.parse(oddsData.updated_at);
+    var _osmRace = typeof _raceOddsAgeMin === "function" && raceOdds ? _raceOddsAgeMin(raceOdds) : null;
+    if (_osmRace != null || oddsData && oddsData.updated_at) {
+      var _ot = _osmRace != null ? Date.now() - _osmRace * 6e4 : Date.parse(oddsData.updated_at);
       if (!isNaN(_ot)) {
         var _osm = Math.round((Date.now() - _ot) / 6e4);
         if (_osm >= 30) {
@@ -9785,6 +9806,17 @@ async function _loadNextOpen(){
     if (activePred || progPred) {
       predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
       predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
+      predHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">\u904E\u53BB 37 \u65E5\u306E\u691C\u8A3C: \u4E09\u9023\u5358 \u78BA\u7387\u9806 10 \u70B9\u306E\u56DE\u53CE\u7387 <b style="color:var(--danger)">75%</b>\uFF08\u5358\u52DD 1 \u53F7\u8247\u30D9\u30BF\u8CB7\u3044 90%\uFF09\u3002\u9577\u671F\u7684\u306B\u306F\u640D\u5931\u306B\u306A\u308B\u524D\u63D0\u3067\u3001\u53C2\u8003\u60C5\u5831\u3068\u3057\u3066\u304A\u4F7F\u3044\u304F\u3060\u3055\u3044\u3002</div>';
+      if (raceOdds && typeof _raceOddsAgeMin === "function") {
+        var _oa = _raceOddsAgeMin(raceOdds);
+        if (_oa != null) {
+          var _stale = _oa > ODDS_STALE_EV_MIN;
+          predHtml += '<div style="font-size:12px;margin-bottom:6px;color:' + (_stale ? "var(--danger)" : "var(--text-dim)") + '">\u30AA\u30C3\u30BA: ' + _oa + " \u5206\u524D\u306B\u53D6\u5F97" + (_stale ? " \u26A0 \u53E4\u3044\u30AA\u30C3\u30BA\u306E EV \u306F\u904E\u5927\u306B\u51FA\u307E\u3059\uFF08\u7DE0\u5207\u76F4\u524D\u306F\u4EBA\u6C17\u306E\u7D44\u307B\u3069\u4E0B\u304C\u308B\uFF09" : "") + "</div>";
+        }
+      }
+      if (activePred && activePred.evSkippedStale) {
+        predHtml += '<div style="font-size:12px;margin-bottom:6px;color:var(--danger)">EV \u30E2\u30FC\u30C9: \u30AA\u30C3\u30BA\u304C ' + ODDS_STALE_EV_MIN + " \u5206\u3088\u308A\u53E4\u3044\u305F\u3081\u78BA\u7387\u9806\u3067\u9078\u3093\u3067\u3044\u307E\u3059</div>";
+      }
       if (activePred && activePred.trifecta) {
         predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968 <span class="bet-method">[' + escText(activePred.methodLabel || "") + ']</span></div><div class="bet-combos">';
         activePred.trifecta.forEach(function(t) {
@@ -9792,6 +9824,9 @@ async function _loadNextOpen(){
           var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
           var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
           var evHtml = evBadge(ev3);
+          if (activePred.evApplied && ev3 != null && ev3 < 1) {
+            evHtml += '<span style="font-size:11px;color:var(--danger);font-weight:700;margin-left:4px">\u5999\u5473\u6D88\u5931</span>';
+          }
           var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
           var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";

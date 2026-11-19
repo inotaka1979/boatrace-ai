@@ -1471,3 +1471,16 @@ install できない）を解消。
   schema v5 で旧校正（Platt / 場別 / isotonic / 選択）をリセット。
 - L1_TEMPERATURE / L1_COURSE_PRIOR_WEIGHT / MODEL_VERSION は WORKER_SHARED_CONSTANTS で worker に転記。
 - golden snapshot 3 件の確率が変化（意図した変更）。`scripts/tests/test_l1_calibration_fit.js`（10 件）。
+
+## 修正履歴 (2026-11-20: オッズ鮮度と EV / 風向と穴判定 / 推奨買い目の過去成績)
+
+- EV はオッズの取得時刻を見ずに計算していた。`_raceOddsAgeMin`（このレースの live `_live_at` と bulk `updated_at` の
+  新しい方）を追加し、`ODDS_STALE_EV_MIN`(10) 分より古い・時刻不明のオッズでは EV モードを使わず確率順にする
+  （`bets.evSkippedStale` / `bets.oddsAgeMin`）。詳細画面に「オッズ: N 分前に取得」、古ければ警告、EV で選んだ買い目が
+  最新オッズで EV<1 なら「妙味消失」。オッズ古さの赤バナーも live 取得時刻を見る（live が新しければ出さない）。
+- 穴判定: 風速 5m 以上なら風向に関係なく「穴」にしていたが、追い風は score_boat でイン有利（1 コース加点）と扱っており矛盾。
+  追い風なら風速では穴にしない（向かい風・横風は従来どおり）。
+- 推奨買い目の枠に過去の回収率（確率順 10 点 75% / 単勝 1 号艇 90%、docs/BACKTEST.md）を常に併記。
+- `scripts/tests/test_odds_staleness_wind.js`（5 件）。3 種の mutation で失敗を確認。
+- 未対応: 安定板（データソースに項目が無い）、場別の風向プロファイルを実データから作る（previews アーカイブに
+  気象が残っていない。アーカイブ被覆の改善後）。

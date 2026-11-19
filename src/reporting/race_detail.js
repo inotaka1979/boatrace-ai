@@ -167,8 +167,11 @@ function openRace(sid, rn) {
   // FIX: オッズデータの実スクレイプ経過を詳細画面トップに警告表示
   //   "0秒前" は GitHub Pages からの fetch 時刻であり、cron が止まると
   //   JSON 内のオッズは何時間も古い可能性がある（ユーザの混乱の主因）
-  if (oddsData && oddsData.updated_at) {
-    var _ot = Date.parse(oddsData.updated_at);
+  // 2026-11-20: bulk の updated_at だけでなく、このレースの live 取得時刻 (_live_at) も見る
+  //   （live が新しければ bulk が古くても警告しない）。
+  var _osmRace = typeof _raceOddsAgeMin === 'function' && raceOdds ? _raceOddsAgeMin(raceOdds) : null;
+  if (_osmRace != null || (oddsData && oddsData.updated_at)) {
+    var _ot = _osmRace != null ? Date.now() - _osmRace * 60000 : Date.parse(oddsData.updated_at);
     if (!isNaN(_ot)) {
       var _osm = Math.round((Date.now() - _ot) / 60000);
       if (_osm >= 30) {

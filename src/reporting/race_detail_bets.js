@@ -32,6 +32,33 @@ function _renderRaceDetailBets(ctx) {
       activePredLabel +
       'ベース</span></div>';
 
+    // 2026-11-20: 推奨買い目の過去成績を常に併記する（既定の「三連単 確率順 10 点」は控除率 ~25% を
+    //   超えて負けており、勝てる買い方として受け取られないように）。値は docs/BACKTEST.md の実データ
+    //   backtest（10/05〜11/10, 5,354 レース, L1 当てはめ後）。再計測したら更新する。
+    predHtml +=
+      '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">過去 37 日の検証: 三連単 確率順 10 点の回収率 ' +
+      '<b style="color:var(--danger)">75%</b>（単勝 1 号艇ベタ買い 90%）。長期的には損失になる前提で、参考情報としてお使いください。</div>';
+    // 2026-11-20: 買い目の EV に使うオッズの時刻を出す。古い（10 分超）なら EV が過大に出る旨を明示。
+    if (raceOdds && typeof _raceOddsAgeMin === 'function') {
+      var _oa = _raceOddsAgeMin(raceOdds);
+      if (_oa != null) {
+        var _stale = _oa > ODDS_STALE_EV_MIN;
+        predHtml +=
+          '<div style="font-size:12px;margin-bottom:6px;color:' +
+          (_stale ? 'var(--danger)' : 'var(--text-dim)') +
+          '">オッズ: ' +
+          _oa +
+          ' 分前に取得' +
+          (_stale ? ' ⚠ 古いオッズの EV は過大に出ます（締切直前は人気の組ほど下がる）' : '') +
+          '</div>';
+      }
+    }
+    if (activePred && activePred.evSkippedStale) {
+      predHtml +=
+        '<div style="font-size:12px;margin-bottom:6px;color:var(--danger)">EV モード: オッズが ' +
+        ODDS_STALE_EV_MIN +
+        ' 分より古いため確率順で選んでいます</div>';
+    }
     if (activePred && activePred.trifecta) {
       // 直前予想の買い目
       predHtml +=
@@ -45,6 +72,10 @@ function _renderRaceDetailBets(ctx) {
         var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
         var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
         var evHtml = evBadge(ev3);
+        // 2026-11-20: EV で選んだ買い目が最新オッズで EV<1 になったら、妙味が消えたことを明示する。
+        if (activePred.evApplied && ev3 != null && ev3 < 1) {
+          evHtml += '<span style="font-size:11px;color:var(--danger);font-weight:700;margin-left:4px">妙味消失</span>';
+        }
         // FIX: 表示書式を .toFixed(1) に統一（穴予想 / オッズテーブルと整合）
         var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + '倍</span>' : '';
         // X1: EV モードの場合、Kelly 配分（円）を表示。

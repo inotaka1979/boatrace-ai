@@ -38,7 +38,8 @@ function predictWith(ctx, settings) {
   Object.assign(ctx, {
     programData: { [fx.sid]: { [fx.rno]: fx.program } },
     previewData: { [fx.sid]: { [fx.rno]: fx.preview } },
-    oddsData: { odds: [fx.odds] }, racerDB: {}, stadiumDB: {}, l2trainStep: 0,
+    // 2026-11-20: EV モードは 10 分以内のオッズでだけ効くので取得時刻を「今」にする
+    oddsData: { odds: [fx.odds], updated_at: new Date().toISOString() }, racerDB: {}, stadiumDB: {}, l2trainStep: 0,
     settings: Object.assign({ betCount3: '10', betCount2: '5', betCountAna: '3', betMethod: 'auto', evMode: true, kpiMode: 'balanced' }, settings),
   });
   return ctx.predictRace(fx.sid, fx.rno);

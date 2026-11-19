@@ -1894,12 +1894,15 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var raceType, typeLabel, typeCls;
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
       raceType = "honmei";
       typeLabel = "\u672C\u547D";
       typeCls = "type-honmei";
-    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
       raceType = "ana";
       typeLabel = "\u7A74";
       typeCls = "type-ana";
@@ -1943,8 +1946,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       });
       if (found) raceOddsForEV = found;
     }
+    var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+    var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
     if (method === "auto") {
-      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = "ev";
       else if (raceType === "honmei") method = "prob";
       else if (raceType === "ana") method = "box";
       else method = "formation";
@@ -1954,6 +1959,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
     bets.marks = marks;
     bets.evApplied = method === "ev";
+    bets.oddsAgeMin = oddsAge;
+    bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
     bets.scenarios = scenarioRes.scenarios;
     bets.scenarioDist = scenarioRes.dist;
     bets.grade = grade;
@@ -2022,6 +2029,19 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }();
     return bets;
   }
+  var ODDS_STALE_EV_MIN = 10;
+  function _raceOddsAgeMin(raceOdds, now) {
+    var t = 0;
+    if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+    if (typeof oddsData !== "undefined" && oddsData && oddsData.updated_at) {
+      var b = Date.parse(oddsData.updated_at);
+      if (Number.isFinite(b) && b > t) t = b;
+    }
+    if (!t) return null;
+    return Math.max(0, Math.round(((now || Date.now()) - t) / 6e4));
+  }
+  globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+  globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
   globalThis.predictRace = predictRace;
 
   const FEATURE_VERSION = 2;

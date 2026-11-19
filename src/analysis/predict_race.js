@@ -302,13 +302,18 @@ function predictRace(sid, raceNum) {
   var raceType, typeLabel, typeCls;
   var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
   var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+  // 2026-11-20: 風速だけで「穴」にしていたが、追い風はイン有利（score_boat は 1 コースに加点）で判定が
+  //   矛盾していた。追い風なら風速では穴にしない（向かい風・横風は従来どおり）。
+  var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+  var tailWind = !!wd2 && typeof isTailWind === 'function' && isTailWind(wd2, sid);
+  var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
   // PC-3: TUNING.RACE_TYPE 集約定数を使用
   var RT = TUNING.RACE_TYPE;
   if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
     raceType = 'honmei';
     typeLabel = '本命';
     typeCls = 'type-honmei';
-  } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+  } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
     raceType = 'ana';
     typeLabel = '穴';
     typeCls = 'type-ana';
@@ -365,8 +370,12 @@ function predictRace(sid, raceNum) {
     });
     if (found) raceOddsForEV = found;
   }
+  // 2026-11-20: EV はオッズの取得時刻を見ずに計算していた。締切直前は人気の組ほどオッズが下がるため、
+  //   古いオッズの EV は過大に出る。ODDS_STALE_EV_MIN 分より古ければ EV 選定に使わない。
+  var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+  var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
   if (method === 'auto') {
-    if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = 'ev';
+    if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = 'ev';
     else if (raceType === 'honmei') method = 'prob';
     else if (raceType === 'ana') method = 'box';
     else method = 'formation';
@@ -379,6 +388,8 @@ function predictRace(sid, raceNum) {
   var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
   bets.marks = marks;
   bets.evApplied = method === 'ev';
+  bets.oddsAgeMin = oddsAge;
+  bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
   bets.scenarios = scenarioRes.scenarios; // {nige:0.55, sashi:0.18, ...}
   bets.scenarioDist = scenarioRes.dist; // {"1-2-3": 0.18, ...}
   bets.grade = grade;
@@ -469,6 +480,22 @@ function predictRace(sid, raceNum) {
 
   return bets;
 }
+
+// オッズの鮮度（分）。このレースの live 取得時刻 (_live_at, ms) と bulk の updated_at の新しい方。
+//   どちらも無ければ null。
+var ODDS_STALE_EV_MIN = 10;
+function _raceOddsAgeMin(raceOdds, now) {
+  var t = 0;
+  if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+  if (typeof oddsData !== 'undefined' && oddsData && oddsData.updated_at) {
+    var b = Date.parse(oddsData.updated_at);
+    if (Number.isFinite(b) && b > t) t = b;
+  }
+  if (!t) return null;
+  return Math.max(0, Math.round(((now || Date.now()) - t) / 60000));
+}
+globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
 
 // globalThis export (REST_ONLY)
 globalThis.predictRace = predictRace;
