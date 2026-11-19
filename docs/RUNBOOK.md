@@ -57,9 +57,10 @@ bash scripts/tests/run_all.sh
 
 ### 3.1 E2E (Playwright) をクラウド開発環境で動かす
 
-固定版 Playwright (1.59.1) が要求するブラウザ build が無く、別 build の Chromium だけが
-入っている環境（Claude Code クラウド等）では `make test-e2e` がブラウザ起動で全件失敗する。
-`PW_CHROMIUM_PATH` に Chromium の実行ファイルを指定して smoke を Chromium で流す:
+Playwright は 1.63.0 に固定している（Chromium build 1243）。Claude Code クラウド環境に入っている
+Chromium も build 1243 なので、Chromium 系 project はそのまま起動する。ただし WebKit は入っていないため
+webkit-smoke は動かない。`PW_CHROMIUM_PATH` に Chromium の実行ファイルを指定すると、smoke を
+Chromium で流す `chromium-smoke` project が追加される:
 
 ```bash
 PW_CHROMIUM_PATH=/opt/pw-browsers/chromium make test-e2e-local
@@ -67,8 +68,10 @@ PW_CHROMIUM_PATH=/opt/pw-browsers/chromium make test-e2e-local
 
 - 期待: chromium-smoke 4/4 PASS（1 並列。並列だと CPU 不足で遷移待ちが timeout する）。
 - iOS 固有の挙動は検証できない。正式な判定は CI の webkit-smoke。
-- VRT は同じ変数で `--project=chromium-vrt` として実行できるが、Google Fonts が取れず
-  代替フォントで描画されるため一致しない（§10、ローカル `--update-snapshots` は禁止）。
+- VRT は `--project=chromium-vrt` で実行できるが、Google Fonts が取れず代替フォントで
+  描画されるため一致しない（§10、ローカル `--update-snapshots` は禁止）。
+- Playwright を上げて Chromium の build が変わると、クラウド環境の build と合わなくなる。
+  その場合も `PW_CHROMIUM_PATH` を指定すれば Chromium 系 project はその実行ファイルで起動する。
 - `PW_CHROMIUM_PATH` 未設定（CI）では project 構成は従来と同一。
 
 ---

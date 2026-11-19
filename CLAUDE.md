@@ -1360,3 +1360,17 @@ worker が main と違う予想を出す状態だった。
 - 実ブラウザ (Chromium): 本日 132 レースで main と worker の予想が 132/132 一致。backfill 120 レースを
   エラー / fallback 0 件で worker が計算し、的中数は main 計算時と同じ（63 / 120）。
 - gate EXIT=0、critical 99,466B / 100,000B。worker_predictor.js は定数転記で 110KB（従来から warn 超過）。
+
+## 修正履歴 (2026-11-19: Playwright 1.59.1 → 1.63.0、CI を ubuntu-latest (26.04) に戻す)
+
+PR #332 で e2e / lighthouse の runner を `ubuntu-24.04` に固定した暫定策（1.59.1 は 26.04 にブラウザを
+install できない）を解消。
+
+- 各版の playwright-core を確認: 26.04 対応は 1.61 以降。**1.63.0** は Chromium build 1243 で、
+  Claude Code クラウド環境に入っている Chromium と同じ build のため、クラウド環境でも Chromium 系 project が
+  追加設定なしで起動する。2026-09 公開で、最新 1.65.1（11/13 公開）より安定。WebKit の 26.04 版
+  （`webkit-ubuntu-26.04.zip`）と依存パッケージ一覧も含むことを確認。
+- `build/package.json`: `^1.48.0`（lock で 1.59.1）→ `1.63.0` に完全固定（VRT がブラウザ版に依存するため）。
+- `e2e.yml`（smoke / vrt / update-snapshots）と `lighthouse.yml` の runner を `ubuntu-latest` に戻した。
+  timeout 延長と install の 3 回リトライは維持。
+- RUNBOOK §3.1 を更新。
