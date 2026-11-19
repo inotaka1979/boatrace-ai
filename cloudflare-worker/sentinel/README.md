@@ -35,8 +35,12 @@
 | データ更新の継続 | sentinel が 5 分毎に `refresh-now` | 検知と同時に開始 |
 | 本体 cron の再登録（再デプロイ）と issue | GitHub 側 `worker-watchdog.yml`（組込みトークン） | schedule 間引きのため最大 1 日程度 |
 
-つまり `GH_TOKEN` を入れて変わるのは 3 行目が「15 分」になることだけで、アプリから見える
-データ鮮度は変わらない。
+`GH_TOKEN` を入れると、3 行目が「15 分」になるのに加えて、**scrape-all の定時起動**が有効になる
+（2026-11-20）。GitHub schedule は本リポジトリで約 3.5 時間遅れて届き（実測 11/18-19: 宣言 8:30/10:00/13:00 →
+着 13:20〜17:07）、朝の今節成績・選手 DB が昼過ぎまで揃わない。sentinel が scrape-all.yml の宣言時刻
+（JST 8:30 / 10:00 / 13:00 / 16:00 / 19:00 / 22:00）に `workflow_dispatch` を送る（dispatch は遅延しない）。
+同じ時刻に 2 回送らないよう KV `sentinel:scrape_dispatch` に最後の時刻を残す（6 writes/日）。
+**推奨**: 朝のデータの揃い方が数時間早まるので、`GH_TOKEN` の登録を勧める。
 
 ### 本体への呼び出しは Service Binding
 
@@ -103,7 +107,8 @@ Settings → Variables and Secrets に Secret として追加する。
 
 - **`GH_TOKEN`** — GitHub の fine-grained personal access token。
   Repository access は `inotaka1979/boatrace-ai` のみ、Permissions は **Actions: Read and write** と
-  **Issues: Read and write**。効果は上の表のとおり（再デプロイと issue が 15 分に早まる）。
+  **Issues: Read and write**。効果は上の表のとおり（再デプロイと issue が 15 分に早まる）と、
+  scrape-all の定時起動。
 - **`TRIGGER_SECRET`** — 本体と同じ値。`refresh-now` の throttle を素通りし、
   `GET /run?secret=...` で cron を待たずに 1 回検査できる。
 

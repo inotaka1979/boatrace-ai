@@ -805,5 +805,42 @@ await t('HTTP: /health は 200、/run は secret 必須、/status は本体 prob
   }
 });
 
+// 2026-11-20: scrape-all の定時 dispatch（GitHub schedule の ~3.5 時間遅延の回避）
+await t('scrape dispatch: 宣言時刻〜+10 分で 1 回だけ、時刻外・GH_TOKEN 無しでは送らない', async () => {
+  const { dueScrapeAnchor, maybeDispatchScrape } = mod;
+  const at = (iso) => new Date(iso);
+  assert.strictEqual(dueScrapeAnchor(at('2026-11-20T08:29:00+09:00')), null);
+  assert.strictEqual(dueScrapeAnchor(at('2026-11-20T08:30:00+09:00')), '2026-11-20 08:30');
+  assert.strictEqual(dueScrapeAnchor(at('2026-11-20T08:39:59+09:00')), '2026-11-20 08:30');
+  assert.strictEqual(dueScrapeAnchor(at('2026-11-20T08:40:00+09:00')), null);
+  assert.strictEqual(dueScrapeAnchor(at('2026-11-20T22:05:00+09:00')), '2026-11-20 22:00');
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init && init.method, body: init && init.body });
+    return new Response(null, { status: 204 });
+  };
+  const env = baseEnv();
+  let r = await maybeDispatchScrape(env, { now: at('2026-11-20T10:02:00+09:00'), fetchImpl });
+  assert.strictEqual(r.dispatched, true);
+  assert.ok(calls[0].url.endsWith('/repos/o/r/actions/workflows/scrape-all.yml/dispatches'), calls[0].url);
+  assert.strictEqual(JSON.parse(calls[0].body).ref, 'main');
+  r = await maybeDispatchScrape(env, { now: at('2026-11-20T10:07:00+09:00'), fetchImpl });
+  assert.strictEqual(r.reason, 'already', '同じ時刻に 2 回 dispatch した');
+  r = await maybeDispatchScrape(env, { now: at('2026-11-20T11:00:00+09:00'), fetchImpl });
+  assert.strictEqual(r.reason, 'not_due');
+  r = await maybeDispatchScrape(baseEnv({ GH_TOKEN: undefined }), { now: at('2026-11-20T13:01:00+09:00'), fetchImpl });
+  assert.strictEqual(r.reason, 'no_gh_token');
+  assert.strictEqual(calls.length, 1);
+});
+await t('scrape dispatch: 失敗 (非 204) なら記録せず次の tick で再試行', async () => {
+  const { maybeDispatchScrape } = mod;
+  let n = 0;
+  const fetchImpl = async () => (++n === 1 ? new Response('{}', { status: 500 }) : new Response(null, { status: 204 }));
+  const env = baseEnv();
+  const now = new Date('2026-11-20T16:01:00+09:00');
+  assert.strictEqual((await maybeDispatchScrape(env, { now, fetchImpl })).dispatched, false);
+  assert.strictEqual((await maybeDispatchScrape(env, { now: new Date('2026-11-20T16:06:00+09:00'), fetchImpl })).dispatched, true);
+});
+
 console.log(`\n合計: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);
