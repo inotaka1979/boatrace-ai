@@ -29,9 +29,20 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+// #dataFreshness は data 読込完了後に文言（固定日付下では「💤 本日データ取得待ち」）が入り、
+//   幅 0 から伸びる。mask は中身を隠すだけで枠の幅は残るため、撮影が data 読込の前か後かで
+//   header-right の配置が変わり、同一コードでも成否が割れていた（2026-11-19 main run で 9% 差分）。
+//   baseline は「未描画 = 0x0」の状態で撮影済みなので、撮影前にその状態へ固定する。
+async function freezeFreshness(page) {
+  await page.addStyleTag({
+    content: '#dataFreshness{width:0!important;height:0!important;overflow:hidden!important}',
+  });
+}
+
 test('top: 開催場グリッド (prerender + static layout)', async ({ page }) => {
   // prerender HTML が即時表示されるので data 不要
   await page.waitForSelector('.stadium-card', { timeout: 5000 });
+  await freezeFreshness(page);
   await expect(page.locator('header.header')).toHaveScreenshot('top-header.png', {
     mask: [page.locator('#headerDate'), page.locator('#dataFreshness')],
   });
@@ -160,6 +171,7 @@ test('header: API banner 非表示時のヘッダレイアウト', async ({ page
     const b = document.getElementById('apiHealthBanner');
     if (b) b.style.display = 'none';
   });
+  await freezeFreshness(page);
   const header = page.locator('header.header');
   await expect(header).toBeVisible();
   await expect(header).toHaveScreenshot('header-normal.png', {
