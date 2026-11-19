@@ -161,8 +161,15 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         self.assertIn("results", tasks)
 
     def test_late_night_23_00_outside_window(self):
+        # 2026-11-20: 夜間はアーカイブの後追い (backfill) だけを行う（スクレイプの real-time 系は無し）
         tasks = self._at(23, 0)
-        self.assertEqual(tasks, [])
+        self.assertEqual(tasks, ["backfill"])
+
+    def test_backfill_only_at_night(self):
+        for h in (23, 0, 3, 6):
+            self.assertIn("backfill", self._at(h, 10), h)
+        for h in (7, 8, 12, 22):
+            self.assertNotIn("backfill", self._at(h, 10), h)
 
     def test_results_age_gated(self):
         # 2026-07-05 (結果更新停止の3層修正): 旧「毎時 25-35 分の窓」から

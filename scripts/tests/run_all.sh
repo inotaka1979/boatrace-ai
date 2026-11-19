@@ -63,6 +63,10 @@ step "Python unit tests (scrape-all lightweight targets)" \
 step "Python unit tests (source block detection)" \
      "python3 -m unittest scripts.tests.test_source_block -v"
 
+# 2026-11-20: 確定済みレースの展示・オッズのアーカイブ後追い
+step "Python unit tests (archive backfill)" \
+     "python3 -m unittest scripts.tests.test_backfill_archive -v"
+
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
      "node scripts/tests/test_ana_tracking.js"
@@ -210,6 +214,10 @@ step "no-undef: app.js / worker / src (AST globals)" \
      "node scripts/tests/test_no_undef.mjs"
 step "Worker state sync list covers what the predictor reads" \
      "node scripts/tests/test_worker_sync_list.mjs"
+
+# 2026-11-20: Cloudflare Worker の KV 書込枠（heartbeat 間引き / put 失敗の可視化）
+step "Cloudflare Worker KV write budget" \
+     "node scripts/tests/test_worker_kv_budget.mjs"
 
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \

@@ -1512,3 +1512,17 @@ install できない）を解消。
   - **実バグを発見**: `_origExhibIndex`（オリジナル展示、5 場の一周・まわり足）が worker に同期されておらず、worker 経路の
     予想だけ加点が無かった → 同期。test_worker_protocol.js に「オリジナル展示」の main≡worker ケースを追加（同期を外すと失敗）。
 - critical 予算: BANDIT / DP_GRADIENT を rest に移し 99,567B → 98,291B（UX 追加後）。gzip 計測への切替は未実施。
+
+## 修正履歴 (2026-11-20: データ基盤 — アーカイブ後追い / KV 書込枠 / backtest の展示読込)
+
+- `scripts/backfill_archive.py`: 確定済みレースのうち三連単オッズ・展示が欠けているものを、日付付きアーカイブ
+  （data/{odds,previews}/YYYYMMDD.json）へ後追い取得。対象は**今日より前の日付だけ**（今日のファイルは archive_daily が
+  毎 run 上書きする）、既存データは上書きしない、1 run 40 レース・内部期限 150s・間隔 0.5s、403 連続で停止、
+  後追い分は `_backfilled: true`（オッズは締切後の確定オッズ）。scrape_all が夜間（JST 23〜07 時）に実行する
+  （GitHub schedule の遅延で深夜に届く run は従来 no-op だった）。実サイトで 3 レース取得を確認。
+- backtest の `buildState` が previews の live スキーマ（`stadium` / `race` / `boats` dict）を読めず、アーカイブの展示が
+  一度も入っていなかったのを修正（展示ありのレース 846 / 5,580、後追いで増える見込み）。
+- Cloudflare Worker: heartbeat を直近 9 分以内なら書かない（日中 ~180 → ~90 writes/日、sentinel の日中閾値 1200s 内）。
+  KV put の失敗回数を `/health` の `kv_put_failures` に出す（従来は heartbeat の失敗を握り潰し、枠切れと cron 停止を
+  区別できなかった）。30 分の stamp refresh は鮮度監視が依存するため据え置き。**main へのマージで deploy-worker.yml が自動デプロイ**。
+- テスト: test_backfill_archive.py（6 件）、test_worker_kv_budget.mjs（2 件）、test_scrape_all_decide に夜間 backfill。

@@ -294,6 +294,19 @@ function _fnv1a(str) {
   return h.toString(16);
 }
 
+// 2026-11-20: KV 書込失敗の観測（isolate ローカル）。無料枠 (1,000 writes/日) を使い切ると put が失敗し、
+//   heartbeat も止まって sentinel が「cron 死亡」と誤判定する。従来は heartbeat の put 失敗を握り潰しており、
+//   枠切れと cron 停止を区別できなかった。/health の kv_put_failures で見えるようにする。
+let _kvPutFailures = 0;
+let _kvLastPutError = null;
+function _noteKvPutFailure(e) {
+  _kvPutFailures++;
+  _kvLastPutError = { at: new Date().toISOString(), error: String(e && e.message ? e.message : e).slice(0, 120) };
+}
+// heartbeat の最短間隔。日中 5 分毎の cron で毎回書くと ~180 writes/日。sentinel の日中閾値 (1200s) に対し
+//   9 分間隔でも最大 ~15 分で収まるので、半分に減らす（夜間 30 分 cron には影響しない）。
+const HEARTBEAT_MIN_INTERVAL_MS = 9 * 60 * 1000;
+
 async function kvWrite(env, key, data, src) {
   const now = new Date().toISOString();
   const newBody = JSON.stringify(data);
@@ -320,10 +333,15 @@ async function kvWrite(env, key, data, src) {
   }
   const wrapped = { updated_at: now, data, _kv_skipped: !changed };
   if (changed) {
-    await env.BOATRACE_KV.put(key, JSON.stringify({ updated_at: now, data }), {
-      expirationTtl: 86400 * 2,
-      metadata: { hash: newHash, wrote_at: now, src: src || 'cron' },
-    });
+    try {
+      await env.BOATRACE_KV.put(key, JSON.stringify({ updated_at: now, data }), {
+        expirationTtl: 86400 * 2,
+        metadata: { hash: newHash, wrote_at: now, src: src || 'cron' },
+      });
+    } catch (e) {
+      _noteKvPutFailure(e);
+      throw e;
+    }
   }
   // 鮮度監視は各キーに保存済みの updated_at（serveFromKV が返す）+ metadata で行うため、
   // ここで別キーへ書き込む必要はない（write 枠を消費しない）。
@@ -1160,7 +1178,13 @@ export default {
     const writeHb = async () => {
       if (hbWritten) return;
       hbWritten = true;
-      try { await env.BOATRACE_KV.put('health:heartbeat', new Date().toISOString()); } catch (_) {}
+      // 2026-11-20: 直近 HEARTBEAT_MIN_INTERVAL_MS 以内に書いていれば書かない（KV 書込枠の節約。読みは無料枠が大きい）
+      try {
+        const prevHb = await env.BOATRACE_KV.get('health:heartbeat');
+        const age = prevHb ? Date.now() - new Date(prevHb).getTime() : Infinity;
+        if (age >= 0 && age < HEARTBEAT_MIN_INTERVAL_MS) return;
+      } catch (_) { /* 読めなければ書く */ }
+      try { await env.BOATRACE_KV.put('health:heartbeat', new Date().toISOString()); } catch (e) { _noteKvPutFailure(e); }
     };
     const r = await refreshAll(env, { onBaseWritten: writeHb });
     await writeHb(); // base が 1 件も無かった等で未実行なら、完走の証跡として最後に打つ
@@ -1221,6 +1245,8 @@ export default {
         out.cron_age_sec = cronHb ? Math.round((Date.now() - new Date(cronHb).getTime()) / 1000) : null;
         // 2026-09-06 serve-heal の観測: この isolate が最後に cron 代替 refresh を発火した時刻。
         //   isolate ローカルなので null でも「未発火」とは限らない (別 isolate が発火し得る)。
+        // 2026-11-20: この isolate での KV put 失敗回数（枠切れの兆候）
+        out.kv_put_failures = { count: _kvPutFailures, last: _kvLastPutError };
         out.serve_heal = {
           last_at: _lastServeHealAt ? new Date(_lastServeHealAt).toISOString() : null,
           threshold_sec: Math.round(_cronDeadThresholdMs(Date.now()) / 1000),

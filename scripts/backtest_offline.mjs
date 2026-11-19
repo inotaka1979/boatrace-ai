@@ -129,10 +129,20 @@ function buildState(day) {
   });
   const previewData = {};
   day.previews.forEach((p) => {
-    var sid = p.race_stadium_number, rno = p.race_number;
+    // 2 スキーマを許容 (2026-11-20):
+    //   openapi 形: {race_stadium_number, race_number, boats: [{racer_boat_number, ...}], weather}
+    //   live 形 (archive_daily の previews = scrape_previews 出力): {stadium, race, boats: {"1": {...}}, weather?}
+    //   従来は前者しか読めず、アーカイブの展示 (live 形) が backtest に一度も入っていなかった。
+    var sid = p.race_stadium_number != null ? p.race_stadium_number : p.stadium;
+    var rno = p.race_number != null ? p.race_number : p.race;
     if (sid == null || rno == null) return;
     var boats = {};
-    (p.boats || []).forEach((b) => { if (b && b.racer_boat_number) boats[String(b.racer_boat_number)] = b; });
+    if (Array.isArray(p.boats)) {
+      p.boats.forEach((b) => { if (b && b.racer_boat_number) boats[String(b.racer_boat_number)] = b; });
+    } else if (p.boats && typeof p.boats === 'object') {
+      for (const k in p.boats) if (p.boats[k] && typeof p.boats[k] === 'object') boats[String(k)] = p.boats[k];
+    }
+    if (!Object.keys(boats).length) return;
     (previewData[sid] = previewData[sid] || {})[rno] = { weather: p.weather || {}, boats: boats };
   });
   const oddsData = { odds: day.odds || [] };

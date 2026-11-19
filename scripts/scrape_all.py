@@ -173,6 +173,12 @@ def _scrape_tide() -> int:
     return _run_subprocess("scrape_tide.py", timeout_sec=300)
 
 
+def _backfill_archive() -> int:
+    # 2026-11-20: 確定済みレースの展示・オッズを日付付きアーカイブへ後追い（scripts/backfill_archive.py）。
+    #   内部期限 150s で必ず書き出すので timeout は余裕を持たせる。
+    return _run_subprocess("backfill_archive.py", timeout_sec=240)
+
+
 def _prerender_top() -> int:
     return _run_subprocess("prerender_top.py", timeout_sec=120)
 
@@ -364,6 +370,12 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     ):
         tasks.append(("schedule(quick)", _scrape_schedule_quick))
 
+    # 2026-11-20: 夜間 (JST 23-07 時) は確定済みレースの展示・オッズをアーカイブへ後追いする。
+    #   GitHub schedule の遅延で深夜に届く run は従来何もせず終わっていた（実測 01:28 / 03:26 / 06:05 着）。
+    #   アーカイブ被覆（展示 15%・三連単オッズ 13〜30%/日）が backtest で締切前予想を評価できない原因。
+    if h >= 23 or h < 7:
+        tasks.append(("backfill", _backfill_archive))
+
     # tide: JST 07:30-09:30 で「今日のデータでなければ取る」
     tide_window = (h == 7 and m >= 30) or h == 8 or (h == 9 and m < 30)
     if tide_window and not _is_fresh_today("data/tide/today.json", now):
@@ -396,6 +408,7 @@ def main() -> int:
             "schedule": _scrape_schedule_quick,
             "tide": _scrape_tide,
             "prerender": _prerender_top,
+            "backfill": _backfill_archive,
         }
         if args.only not in m:
             log.error("unknown --only: %s", args.only)
