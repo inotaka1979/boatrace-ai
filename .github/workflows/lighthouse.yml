@@ -9,6 +9,7 @@ on:
       - 'sw.js'
       - 'manifest.json'
       - '.lighthouserc.json'
+      - '.github/workflows/lighthouse.yml'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +18,7 @@ on:
       - 'sw.js'
       - 'manifest.json'
       - '.lighthouserc.json'
+      - '.github/workflows/lighthouse.yml'
   workflow_dispatch:
 
 permissions:

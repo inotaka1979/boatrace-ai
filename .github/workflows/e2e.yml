@@ -12,6 +12,7 @@ on:
       - 'tests/e2e/**'
       - 'build/playwright.config.mjs'
       - 'build/package.json'
+      - '.github/workflows/e2e.yml'
   pull_request:
     branches: [main]
     paths:
@@ -23,6 +24,7 @@ on:
       - 'tests/e2e/**'
       - 'build/playwright.config.mjs'
       - 'build/package.json'
+      - '.github/workflows/e2e.yml'
   workflow_dispatch:
 
 permissions:
