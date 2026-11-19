@@ -149,10 +149,10 @@ const { makeCtx } = require('./_vm_harness');
 const FIX_DIR = path.join(ROOT, 'tests', 'fixtures', 'golden');
 const GOLDEN = ['race_honmei', 'race_konsen', 'race_arare'];
 const SETTINGS = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'prob', evMode: false, kpiMode: 'balanced' };
-// harness の document は innerHTML が常に '' なので、main の escText を実ブラウザと同じ結果にする
-//   （実 DOM の textContent → innerHTML は & < > U+00A0 のみ変換。Chromium で確認済み）
+// main の escText と同じ実装（2026-11-20 から main も DOM 非依存。旧: harness の document は innerHTML が
+//   常に '' なので上書きしていた）
 const domEscText = (v) => String(v == null ? '' : v)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/ /g, '&nbsp;');
 const loadFx = (name) => JSON.parse(fs.readFileSync(path.join(FIX_DIR, name + '.json'), 'utf8'));
 
 console.log('[worker ≡ main: predictRace]');
@@ -201,6 +201,12 @@ const STADIUM_DB = { 12: { courseWinRate: { 1: { races: 500, win: 220 }, 2: { ra
 const CALIB_CASES = {
   '選手 / 場 DB あり': () => ({ racerDB: RACER_DB, stadiumDB: STADIUM_DB }),
   '場別 Platt': (sid) => ({ calibrationMethod: 'platt', plattCoeffsByStadium: { [String(sid)]: { a: 1.6, b: 0.3, n: 150, fittedAt: 1 } } }),
+  // 2026-11-20: オリジナル展示（一周・まわり足）。従来 worker には同期されず、対応 5 場で予想が食い違っていた
+  'オリジナル展示': (sid, rno) => ({
+    origExhibIndex: { [sid]: { [rno]: { 1: { turn_time: 5.9, lap_time: 37.9 }, 2: { turn_time: 5.4, lap_time: 37.1 },
+      3: { turn_time: 6.0, lap_time: 38.2 }, 4: { turn_time: 6.1, lap_time: 38.0 }, 5: { turn_time: 5.8, lap_time: 37.6 },
+      6: { turn_time: 6.3, lap_time: 38.5 } } } },
+  }),
   isotonic: () => ({
     calibrationMethod: 'isotonic',
     isotonicCoeffs: { points: [{ x: 0, y: 0.02 }, { x: 0.2, y: 0.15 }, { x: 0.5, y: 0.55 }, { x: 1, y: 0.95 }], fittedAt: 1, n: 300 },
@@ -213,6 +219,7 @@ function applyCase(m, c) {
   if (c.isotonicCoeffs) m._isotonicCoeffs = c.isotonicCoeffs;
   if (c.racerDB) m.racerDB = structuredClone(c.racerDB);
   if (c.stadiumDB) m.stadiumDB = structuredClone(c.stadiumDB);
+  if (c.origExhibIndex) m._origExhibIndex = structuredClone(c.origExhibIndex);
 }
 for (const label of Object.keys(CALIB_CASES)) {
   t(label + ' の予想が main と完全一致（かつ既定状態とは異なる）', () => {
@@ -220,7 +227,7 @@ for (const label of Object.keys(CALIB_CASES)) {
     const programData = { [fx.sid]: { [fx.rno]: fx.program } };
     const previewData = { [fx.sid]: { [fx.rno]: fx.preview } };
     const oddsData = { odds: [fx.odds] };
-    const calib = CALIB_CASES[label](fx.sid);
+    const calib = CALIB_CASES[label](fx.sid, fx.rno);
     const mainPredict = (withCalib) => {
       const m = makeCtx();
       Object.assign(m, { programData, previewData, oddsData, racerDB: {}, stadiumDB: {}, l2trainStep: 0, settings: SETTINGS });
@@ -275,7 +282,8 @@ t('escText が document 無しで実 DOM と同じ結果を返す', () => {
   // 期待値は Chromium の textContent → innerHTML で採取
   assert.strictEqual(esc('a&b'), 'a&amp;b');
   assert.strictEqual(esc('<script>x</script>'), '&lt;script&gt;x&lt;/script&gt;');
-  assert.strictEqual(esc('"q" \'s\''), '"q" \'s\'');
+  // 2026-11-20: 引用符も変換する（属性値で安全に使えるよう main と揃えて強化）
+  assert.strictEqual(esc('"q" \'s\''), '&quot;q&quot; &#39;s&#39;');
   assert.strictEqual(esc('a b'), 'a&nbsp;b');
   assert.strictEqual(esc(null), '');
   assert.strictEqual(esc(''), '');

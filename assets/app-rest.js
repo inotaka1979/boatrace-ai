@@ -257,7 +257,7 @@
       selTri = boxBets.sort(function(a, b) {
         return b.prob - a.prob;
       }).slice(0, count3);
-      methodLabel = "BOX(" + topN + "\u8247)";
+      methodLabel = selTri.length < boxBets.length ? "BOX(" + topN + "\u8247)\u304B\u3089\u4E0A\u4F4D" + selTri.length + "\u70B9" : "BOX(" + topN + "\u8247)";
     } else {
       selTri = trifecta.slice(0, count3);
       methodLabel = "\u78BA\u7387\u9806";
@@ -390,6 +390,8 @@
     var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
       if (!h.actual || h.actual.length === 0) return false;
+      if (h.backfilled) return false;
+      if (typeof MODEL_VERSION === "number" && (h.model_v || 1) !== MODEL_VERSION) return false;
       if (Array.isArray(h.raw_probs)) return true;
       return allowLegacy && Array.isArray(h.mark_probs);
     });
@@ -788,8 +790,10 @@
     var logits = new Array(6);
     for (var b = 0; b < 6; b++) {
       var feat = features6[b];
+      var c = Math.round((feat[3] || 0) * 6);
+      if (!(c >= 1 && c <= 6)) c = b + 1;
       if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
+      var z = bias + (prior[c - 1] || 0);
       for (var i = 0; i < wlen; i++) {
         var fi = feat[i];
         if (fi) z += fi * (w[i] || 0);
@@ -876,7 +880,8 @@
             l2weights,
             featureStats: _featureStats,
             trainStep: l2trainStep,
-            learnedKeys: l2learnedKeys
+            learnedKeys: l2learnedKeys,
+            dbAppliedKeys: globalThis._dbAppliedKeys || null
           }
         }
       });
@@ -913,6 +918,7 @@
         if (!prog || !prog.boats || !Array.isArray(prog.boats)) continue;
         var key = dateKey + "_" + sid + "_" + rn;
         if (l2learnedKeys[key]) continue;
+        if (globalThis._dbAppliedKeys && globalThis._dbAppliedKeys[key]) continue;
         var sorted = race.results.slice().sort(function(a, b) {
           return a.place - b.place;
         });
@@ -956,7 +962,9 @@
             weather,
             etRanks[b.racer_boat_number] != null ? etRanks[b.racer_boat_number] : 5,
             stRanks[b.racer_boat_number] != null ? stRanks[b.racer_boat_number] : 5,
-            sid
+            sid,
+            { allBoats: prog.boats }
+            // 2026-11-20: 推論と同じく渡す（pairwiseH2H / motorFieldRank が定数だった）
           );
         });
         var winnerIdx = prog.boats.findIndex(function(b) {
@@ -1183,11 +1191,18 @@
       var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
       l1scores.push(s);
     });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
+    var _l1T = typeof L1_TEMPERATURE === "number" && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+    var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === "number" ? L1_COURSE_PRIOR_WEIGHT : 0;
+    var l1logits = l1scores.map(function(s) {
+      var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+      return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+    });
+    var _l1max = Math.max.apply(null, l1logits);
+    var l1total = l1logits.reduce(function(a, z) {
+      return a + Math.exp(z - _l1max);
     }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
+    var l1probs = l1logits.map(function(z) {
+      return Math.exp(z - _l1max) / l1total;
     });
     var stRanks = [];
     if (preview && preview.boats) {
@@ -1208,7 +1223,7 @@
         return s.boat === b.racer_boat_number;
       });
       var _stR = stRanks[b.racer_boat_number];
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -1293,12 +1308,15 @@
     var raceType, typeLabel, typeCls;
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
       raceType = "honmei";
       typeLabel = "\u672C\u547D";
       typeCls = "type-honmei";
-    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
       raceType = "ana";
       typeLabel = "\u7A74";
       typeCls = "type-ana";
@@ -1322,15 +1340,17 @@
       balanced: { honmei: 6, middle: 8, ana: 5 },
       hit: { honmei: 10, middle: 12, ana: 8 }
     };
-    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var userEvMin = parseFloat(settings.evMin);
+    var defEvMin = userEvMin || 1.15;
     var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
     var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
     var evOpt = {
-      evMin: modeEvMin != null ? modeEvMin : defEvMin,
-      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+      maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
       // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
       //   誤差がある前提では full/half より現実的。
-      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
+      // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+      kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac)) ? parseFloat(settings.kellyFrac) : typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25,
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -1340,8 +1360,10 @@
       });
       if (found) raceOddsForEV = found;
     }
+    var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+    var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
     if (method === "auto") {
-      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = "ev";
       else if (raceType === "honmei") method = "prob";
       else if (raceType === "ana") method = "box";
       else method = "formation";
@@ -1351,6 +1373,8 @@
     var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
     bets.marks = marks;
     bets.evApplied = method === "ev";
+    bets.oddsAgeMin = oddsAge;
+    bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
     bets.scenarios = scenarioRes.scenarios;
     bets.scenarioDist = scenarioRes.dist;
     bets.grade = grade;
@@ -1390,8 +1414,7 @@
           topN: anaTopN,
           excludeCombos
         });
-        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-        return picks.map(function(p) {
+        return anaRes.primary.map(function(p) {
           return p.combo;
         });
       }
@@ -1420,6 +1443,19 @@
     }();
     return bets;
   }
+  var ODDS_STALE_EV_MIN = 10;
+  function _raceOddsAgeMin(raceOdds, now) {
+    var t = 0;
+    if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+    if (typeof oddsData !== "undefined" && oddsData && oddsData.updated_at) {
+      var b = Date.parse(oddsData.updated_at);
+      if (Number.isFinite(b) && b > t) t = b;
+    }
+    if (!t) return null;
+    return Math.max(0, Math.round(((now || Date.now()) - t) / 6e4));
+  }
+  globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+  globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
   globalThis.predictRace = predictRace;
   globalThis.predictRaceAsync = predictRaceAsync;
 })();
@@ -2050,6 +2086,158 @@
 /* BUILD:ANALYSIS_SCORE_HELPERS:END */
 
 
+/* BUILD:BANDIT:START */
+"use strict";
+(() => {
+  // ../src/utils/bandit.js
+  var BANDIT_KEY = "boatrace_bandit";
+  function _sampleGamma(shape) {
+    if (shape < 1) {
+      return _sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
+    }
+    const d = shape - 1 / 3;
+    const c = 1 / Math.sqrt(9 * d);
+    while (true) {
+      let x, v;
+      do {
+        x = _sampleNormal();
+        v = 1 + c * x;
+      } while (v <= 0);
+      v = v * v * v;
+      const u = Math.random();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+  function _sampleNormal() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _sampleBeta(alpha, beta) {
+    const x = _sampleGamma(alpha);
+    const y = _sampleGamma(beta);
+    return x / (x + y);
+  }
+  function banditSelect(variants) {
+    if (!Array.isArray(variants) || variants.length === 0) return null;
+    let best = variants[0];
+    let bestSample = -Infinity;
+    for (const v of variants) {
+      const a = Math.max(1e-3, v.alpha || 1);
+      const b = Math.max(1e-3, v.beta || 1);
+      const s = _sampleBeta(a, b);
+      if (s > bestSample) {
+        bestSample = s;
+        best = v;
+      }
+    }
+    return best;
+  }
+  function banditUpdate(variants, variantId, reward) {
+    const v = variants.find((x) => x.id === variantId);
+    if (!v) return false;
+    const r = Math.max(0, Math.min(1, +reward || 0));
+    v.alpha = (v.alpha || 1) + r;
+    v.beta = (v.beta || 1) + (1 - r);
+    v.n = (v.n || 0) + 1;
+    v.lastReward = r;
+    v.lastUpdated = Date.now();
+    return true;
+  }
+  function banditMeans(variants) {
+    return variants.map((v) => ({
+      id: v.id,
+      mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
+      n: v.n || 0
+    })).sort((a, b) => b.mean - a.mean);
+  }
+  function banditLoad(defaults) {
+    let parsed = null;
+    try {
+      const raw = localStorage.getItem(BANDIT_KEY);
+      if (raw) parsed = JSON.parse(raw);
+    } catch (_) {
+    }
+    if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length === 0) {
+      return Array.isArray(defaults) ? defaults.slice() : [];
+    }
+    return parsed.variants;
+  }
+  function banditSave(variants) {
+    try {
+      localStorage.setItem(BANDIT_KEY, JSON.stringify({ variants, updated_at: Date.now() }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  globalThis.banditSelect = banditSelect;
+  globalThis.banditUpdate = banditUpdate;
+  globalThis.banditMeans = banditMeans;
+  globalThis.banditLoad = banditLoad;
+  globalThis.banditSave = banditSave;
+  globalThis.BANDIT_KEY = BANDIT_KEY;
+})();
+
+/* BUILD:BANDIT:END */
+
+
+/* BUILD:DP_GRADIENT:START */
+"use strict";
+(() => {
+  // ../src/utils/dp_gradient.js
+  function _sampleStdNormal() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _l2Norm(arr) {
+    let s = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (Number.isFinite(arr[i])) s += arr[i] * arr[i];
+    }
+    return Math.sqrt(s);
+  }
+  function clipGradient(grad, maxNorm) {
+    if (!Array.isArray(grad)) return grad;
+    const m = Math.max(1e-3, maxNorm || 1);
+    const n = _l2Norm(grad);
+    if (n <= m || n === 0) return grad.map((g) => Number.isFinite(g) ? g : 0);
+    const scale = m / n;
+    return grad.map((g) => Number.isFinite(g) ? g * scale : 0);
+  }
+  function addGaussianNoise(grad, sigma) {
+    if (!Array.isArray(grad)) return grad;
+    const s = Math.max(0, sigma || 0);
+    if (s === 0) return grad.slice();
+    return grad.map((g) => Number.isFinite(g) ? g + _sampleStdNormal() * s : 0);
+  }
+  function buildDPGradient(grad, opts) {
+    const o = opts || {};
+    const clipped = clipGradient(grad, o.maxNorm != null ? o.maxNorm : 1);
+    return addGaussianNoise(clipped, o.sigma != null ? o.sigma : 0.1);
+  }
+  function estimateDPParams(epsilon, delta, T) {
+    const eps = Math.max(0.01, epsilon || 1);
+    const dlt = Math.max(1e-9, delta || 1e-5);
+    const t = Math.max(1, T || 100);
+    const sensitivity = 1;
+    const epsPerStep = eps / Math.sqrt(t);
+    const sigma = Math.sqrt(2 * Math.log(1.25 / dlt)) * sensitivity / epsPerStep;
+    return { sigma, epsPerStep, T: t, epsilon: eps, delta: dlt };
+  }
+  globalThis.clipGradient = clipGradient;
+  globalThis.addGaussianNoise = addGaussianNoise;
+  globalThis.buildDPGradient = buildDPGradient;
+  globalThis.estimateDPParams = estimateDPParams;
+})();
+
+/* BUILD:DP_GRADIENT:END */
+
+
 /* BUILD:REPORTING_DEGRADED_BANNER:START */
 "use strict";
 (() => {
@@ -2097,6 +2285,85 @@
 })();
 
 /* BUILD:REPORTING_DEGRADED_BANNER:END */
+
+
+/* BUILD:REPORTING_SOON_STRIP:START */
+"use strict";
+(() => {
+  // ../src/reporting/soon_strip.js
+  var SOON_STRIP_MAX = 5;
+  var SOON_STRIP_WINDOW_MIN = 120;
+  function _soonClosedMs(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || "");
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
+  }
+  function _soonRaces(now) {
+    var t = now || Date.now();
+    var out = [];
+    if (typeof programData === "undefined" || !programData) return out;
+    for (var sid in programData) {
+      var st = programData[sid];
+      for (var rno in st) {
+        var r = st[rno];
+        var ms = _soonClosedMs(r && r.race_closed_at);
+        if (ms == null) continue;
+        var mins = Math.floor((ms - t) / 6e4);
+        if (mins < 0 || mins > SOON_STRIP_WINDOW_MIN) continue;
+        var res = typeof resultData !== "undefined" && resultData && resultData[sid] && resultData[sid][rno];
+        if (res && res.isFinished) continue;
+        out.push({ sid: parseInt(sid, 10), rno: parseInt(rno, 10), mins, closedMs: ms });
+      }
+    }
+    out.sort(function(a, b) {
+      return a.closedMs - b.closedMs || a.sid - b.sid;
+    });
+    return out.slice(0, SOON_STRIP_MAX);
+  }
+  function _soonTopMark(sid, rno) {
+    try {
+      var p = typeof predictRace === "function" ? predictRace(sid, rno) : null;
+      return p && p.marks && p.marks[0] ? p.marks[0].boat : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function _renderSoonStrip(now) {
+    var el = typeof document !== "undefined" && document.getElementById("soonStrip");
+    if (!el) return;
+    var list = _soonRaces(now);
+    if (!list.length) {
+      el.innerHTML = "";
+      el.style.minHeight = "";
+      return;
+    }
+    var html = '<div class="soon-strip" role="region" aria-label="\u307E\u3082\u306A\u304F\u7DE0\u5207"><div class="soon-title">\u23F1 \u307E\u3082\u306A\u304F\u7DE0\u5207</div>';
+    list.forEach(function(r) {
+      var name = typeof STADIUMS !== "undefined" && STADIUMS[r.sid] || "\u5834" + r.sid;
+      var mark = _soonTopMark(r.sid, r.rno);
+      var urgent = r.mins <= 5;
+      html += '<div class="soon-row" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + r.sid + '" data-arg-rn="' + r.rno + '"><span class="soon-name">' + escText(name) + " " + r.rno + 'R</span><span class="soon-mins' + (urgent ? " soon-urgent" : "") + '">\u3042\u3068 ' + r.mins + ' \u5206</span><span class="soon-mark">' + (mark ? "\u25CE" + mark : "") + "</span></div>";
+    });
+    html += "</div>";
+    el.innerHTML = html;
+  }
+  if (typeof setInterval === "function" && typeof document !== "undefined") {
+    setInterval(function() {
+      try {
+        var top = document.getElementById("pageTop");
+        if (top && top.classList && top.classList.contains("active") && !document.hidden) _renderSoonStrip();
+      } catch (_) {
+      }
+    }, 3e4);
+  }
+  globalThis._renderSoonStrip = _renderSoonStrip;
+  try {
+    if (typeof programData !== "undefined" && programData) _renderSoonStrip();
+  } catch (_) {
+  }
+  globalThis._soonRaces = _soonRaces;
+})();
+
+/* BUILD:REPORTING_SOON_STRIP:END */
 
 
 /* BUILD:REPORTING_STADIUM_RESULTS:START */
@@ -2578,8 +2845,10 @@ async function _applyResultsRaw(rawR){
   resultData=_mergeResultIndex(resultData,indexResults(rawR));
   _noteUpdatedAt(rawR.updated_at);
   _noteTodayDataFromRaw(rawR,'results');
-  if(programData) updateDBFromResults(resultData, programData);
+  // 2026-11-20: 学習を DB 更新より先に行う。逆順だと学習時の特徴量（コース別成績・直近フォーム等）に
+  //   当該レース自身の着順が入る（リーク）。learnFromResults は DB 適用済みのレースを学習しない。
   await learnFromResults();
+  if(programData) updateDBFromResults(resultData, programData);
   updateHistoryWithResults();
 }
 
@@ -3541,6 +3810,7 @@ function _syncWorkerState(){
       programData: programData,
       previewData: previewData,
       oddsData: oddsData,
+      origExhibIndex: _origExhibIndex,   // 2026-11-20: オリジナル展示（5 場）。未同期だと worker の予想だけ加点が無かった
     }
   });
 }
@@ -3717,6 +3987,7 @@ function _predFields(pred){
       for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
       return out;
     })(),
+    model_v: MODEL_VERSION,
     // FA-7 (2026-08-11): 校正「前」の確率。_refitPlattCoeffs は raw で fit する。
     raw_probs: (function(){
       var byBoat = {};
@@ -4044,13 +4315,14 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   // PE-8 + PE-9: 軽量な学習を deferred で実行
   //   PF-3: _backfillTodayPredictions は起動 critical path に入れず、この後 lazy に実行する
   try {
-    if(resultData) updateDBFromResults(resultData, programData);
     if(rawPrograms) learnMotorStatsFromPrograms(rawPrograms);
     if(rawPreviews) learnExhibitionStatsFromPreviews(rawPreviews);
     if(rawPreviews && rawPrograms) learnRacerStFromPreviews(rawPreviews, rawPrograms);
     if(resultData) learnEntryPatternFromResults(resultData);
     if(resultData) learnSeriesAndPairwiseFromResults(resultData);
     await learnFromResults();              // PE-9: async + yield
+    // 2026-11-20: DB への結果反映は学習の後（_applyResultsRaw と同じ理由）
+    if(resultData) updateDBFromResults(resultData, programData);
     updateHistoryWithResults();
   } catch(e) {
     console.warn('[PE-8] learning step failed:', e);
@@ -4379,7 +4651,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
 
     // Header: 左端「2着」ラベル + 6 columns(1着)（右端の冗長ラベル列は撤去）
     html+='<thead><tr>';
-    html+='<th class="left-col" style="font-size:10px;color:#999">2着</th>';
+    html+='<th class="left-col" style="font-size:11px;color:#999">2着</th>';
     for(var first=1;first<=6;first++){
       var hName=boatNames[first]||first;
       html+='<th style="background:'+BOAT_COLORS[first]+';color:'+BOAT_TEXT[first]+';border:1px solid '+(first===1?'#ccc':'transparent')+'">'+first+'.'+escText(hName)+'</th>';
@@ -4430,7 +4702,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
             else if(oddsVal>=100) oddsClass='odds-high';
           }
 
-          var badge='<span class="badge" style="display:inline-block;width:12px;height:12px;line-height:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:9px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
+          var badge='<span class="badge" style="display:inline-block;width:12px;height:12px;line-height:12px;background:'+BOAT_COLORS[thirdBoat]+';color:'+BOAT_TEXT[thirdBoat]+';text-align:center;border-radius:2px;font-size:11px;font-weight:700;border:1px solid '+(thirdBoat===1?'#ccc':'transparent')+'">'+thirdBoat+'</span>';
 
           var oddsStr=oddsVal?oddsVal.toFixed(1):'-';
           html+='<td class="'+cellClass+'"><div class="cell-flex">'+badge+'<span class="odds '+oddsClass+'">'+oddsStr+'</span></div></td>';
@@ -4502,7 +4774,7 @@ function renderOddsSection(sid,rn,raceOdds,pred,race){
   if(staleStr){
     html+=' <span style="font-size:11px;color:'+staleColor+';font-weight:'+(staleColor==='#D32F2F'?'700':'400')+';display:block;margin-top:4px">'+staleStr+'</span>';
   }
-  html+='<div style="font-size:9px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
+  html+='<div style="font-size:11px;color:var(--text-dim);margin-top:4px">自動更新: 5分間隔</div>';
   html+='</div>';
 
   return html;
@@ -4641,7 +4913,7 @@ function loadSettings(){
   var em = document.getElementById('setEvMin');
   if(em) em.value = String(settings.evMin || 1.15);
   var kf = document.getElementById('setKellyFrac');
-  if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.5);
+  if(kf) kf.value = String(settings.kellyFrac != null ? settings.kellyFrac : 0.25);   // 2026-11-20: 実際の既定 (TUNING.KELLY.DEFAULT_FRAC) と一致させる
   var br = document.getElementById('setBankroll');
   if(br) br.value = settings.bankroll || 10000;
   // P0-3: KPI モード（保存値があれば反映、なければ balanced）
@@ -4694,7 +4966,7 @@ function loadSettings(){
     + (withProbs.length >= TUNING.PREDICTION.PLATT_MIN_SAMPLES
         ? '<span class="c-success">✓ 自動再校正条件を満たしています</span>'
         : '<span style="color:var(--text-dim)">再校正まで残り '+(TUNING.PREDICTION.PLATT_MIN_SAMPLES - withProbs.length)+' 件</span>')
-    + '<br><br><b>📡 データソース</b> <span style="font-size:10px;color:var(--text-dim)">(各経路の鮮度を診断)</span>'
+    + '<br><br><b>📡 データソース</b> <span style="font-size:11px;color:var(--text-dim)">(各経路の鮮度を診断)</span>'
     + '<div id="dataSourcesPanel" style="font-size:11px;margin-top:6px">読込中...</div>';
 
   // D2a (2026-05-17): 各データソースの updated_at を並列 fetch し鮮度可視化
@@ -4766,7 +5038,7 @@ function _renderDataSourcesPanel(){
       html += '<div>'+ageStr(r.ts, s.warn, s.bad, s.fallback)+'</div>';
     });
     html += '</div>';
-    html += '<div style="font-size:9px;color:var(--text-dim);margin-top:6px">'
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">'
          + 'previews/results は 🟢≤10分/🟠≤30分/🔴>30分。programs(出走表)は日次データのため'
          + ' 🟢≤6時間。※予備 は Worker が緑なら ⚪(停止中)でも動作に影響なし。'
          + '</div>';

@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -43,6 +45,86 @@ DEFAULT_BACKOFF = 2.0  # 1, 2, 4 秒
 
 # 即時 raise する HTTP ステータス（リトライしても改善しない）
 _NON_RETRY_STATUS = {400, 401, 403, 404, 410}
+
+
+class HTTPStatusError(RuntimeError):
+    """リトライしない HTTP ステータスでの失敗。``status`` で呼出側が判別できる。"""
+
+    def __init__(self, message: str, status: int):
+        super().__init__(message)
+        self.status = status
+
+
+# 2026-11-20: 取得元 (boatrace.jp) によるブロックの検知。
+#   11/18 以降、GitHub Actions から boatrace.jp の全ページが HTTP 403 になった
+#   (同じ UA で別ネットワークからは 200)。旧実装は 403 を 3 回ずつ再試行し
+#   (1 run で 270 回)、失敗した run も updated_at を更新するため鮮度監視は緑のままだった。
+#   ブロックを回避する細工はしない。検知したら以降のリクエストを止め、状態を記録して
+#   人に知らせる。
+SOURCE_BLOCK_THRESHOLD = 5
+
+
+class SourceBlockDetector:
+    """成功 0 件のまま 403 が ``threshold`` 回続いたら「ブロックされている」と判定する。
+
+    1 件でも 200 が返れば判定しない（個別ページの 403 で全体を止めない）。
+    スレッド並列の scraper からも使えるよう lock で保護する。
+    """
+
+    def __init__(self, threshold: int = SOURCE_BLOCK_THRESHOLD):
+        self.threshold = threshold
+        self.ok = 0
+        self.forbidden = 0
+        self._streak = 0
+        self._lock = threading.Lock()
+
+    def record(self, status: int | str | None) -> None:
+        with self._lock:
+            if status == 200:
+                self.ok += 1
+                self._streak = 0
+            elif status == 403:
+                self.forbidden += 1
+                self._streak += 1
+
+    @property
+    def blocked(self) -> bool:
+        with self._lock:
+            return self.ok == 0 and self._streak >= self.threshold
+
+    def stats(self) -> dict[str, Any]:
+        return {"ok": self.ok, "http_403": self.forbidden, "blocked": self.blocked}
+
+
+SOURCE_STATUS_PATH = "data/_status.json"
+
+
+def write_source_status(task: str, stats: dict[str, Any], path: str = SOURCE_STATUS_PATH) -> None:
+    """scraper ごとの取得状況を ``data/_status.json`` の ``tasks[task]`` に記録する。
+
+    監視 (scrape-all の issue 起票) とアプリの状態表示が読む。失敗しても scrape 本体は止めない。
+    """
+    from io_utils import atomic_write_json  # 循環 import 回避
+    from time_utils import utc_iso_seconds
+
+    try:
+        cur: dict[str, Any] = {}
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    cur = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                cur = {}  # 壊れたファイルは作り直す
+        if not isinstance(cur, dict):
+            cur = {}
+        tasks = cur.get("tasks") if isinstance(cur.get("tasks"), dict) else {}
+        tasks[task] = {**stats, "at": utc_iso_seconds()}
+        cur["tasks"] = tasks
+        cur["source_blocked"] = any(bool(t.get("blocked")) for t in tasks.values() if isinstance(t, dict))
+        cur["updated_at"] = utc_iso_seconds()
+        atomic_write_json(path, cur)
+    except Exception as e:  # noqa: BLE001
+        log.warning("write_source_status(%s) failed: %s", task, e)
 
 
 def _merge_headers(extra: dict[str, str] | None) -> dict[str, str]:
@@ -73,7 +155,7 @@ def fetch_bytes(
         except HTTPError as e:
             last_err = e
             if e.code in _NON_RETRY_STATUS:
-                raise RuntimeError(f"fetch_bytes {e.code}: {url}") from e
+                raise HTTPStatusError(f"fetch_bytes {e.code}: {url}", e.code) from e
             log.warning("fetch_bytes retry %d/%d %s: HTTP %s",
                         i + 1, retries + 1, url, e.code)
         except (URLError, TimeoutError, OSError) as e:
@@ -85,6 +167,32 @@ def fetch_bytes(
     raise RuntimeError(
         f"fetch_bytes failed after {retries + 1} tries: {url}: {last_err}"
     )
+
+
+def fetch_once(
+    url: str,
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+    headers: dict[str, str] | None = None,
+    encoding: str = "utf-8",
+) -> tuple[int | str, str | None]:
+    """1 回だけ GET し ``(status, text)`` を返す（raise しない、retry しない）。
+
+    async scraper が ``asyncio.to_thread`` 経由で使う。再試行と rate limit は呼出側の責務。
+    通信例外は ``status="exc:<型名>"``・``text=None``。
+
+    2026-11-20: boatrace.jp は 11/18 から aiohttp のリクエストを HTTP 403 で拒否するようになった
+    （同じ UA・同じネットワークで urllib / curl は 200。拒否の対象はクライアントで、UA の身元ではない）。
+    scrape_odds_fast / scrape_previews の HTTP をこの共通クライアントに揃えた。UA は正直な bot UA のまま。
+    """
+    req = Request(url, headers=_merge_headers(headers))
+    try:
+        with urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode(encoding, errors="replace")
+    except HTTPError as e:
+        return e.code, None
+    except (URLError, TimeoutError, OSError) as e:
+        return f"exc:{type(e).__name__}", None
 
 
 def fetch_text(

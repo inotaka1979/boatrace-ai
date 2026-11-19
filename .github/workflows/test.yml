@@ -29,6 +29,10 @@ jobs:
       #   「OK」と表示されていた（＝公式サイトの markup 変更を検出できない）。
       - name: Install Python deps (scraper parser tests need bs4)
         run: pip install -r scripts/requirements.txt
+      # 2026-11-20: no-undef / worker 同期の検査 (test_no_undef.mjs / test_worker_sync_list.mjs) が
+      #   ルートの eslint / globals / acorn を使う。入れないと ERR_MODULE_NOT_FOUND で落ちる。
+      - name: Install JS dev deps (eslint / acorn for static checks)
+        run: npm ci --no-audit --no-fund
       - name: Run all tests
         run: bash scripts/tests/run_all.sh
       # Path B (2026-05-16): code-split 静的アナライザを CI ゲート化。

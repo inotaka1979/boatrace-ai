@@ -141,7 +141,7 @@ function _renderRaceDetailBoats(ctx) {
             return x.boat === bn;
           })
         : null;
-      var markStr = m ? ' <span style="font-size:10px;color:var(--accent)">' + m.mark + '</span>' : '';
+      var markStr = m ? ' <span style="font-size:11px;color:var(--accent)">' + m.mark + '</span>' : '';
       var rid = bt.racer_number || 0;
       var photoHtml = rid
         ? '<img class="racer-photo" src="data/photos/' +
@@ -172,7 +172,7 @@ function _renderRaceDetailBoats(ctx) {
       var age = bt.racer_age || '-';
       var branch = bt.racer_branch_name || '-';
       var weight = bt.racer_weight || '-';
-      boatsHtml += '<td style="font-size:10px">' + age + '歳/' + escText(branch) + '<br>' + weight + 'kg</td>';
+      boatsHtml += '<td style="font-size:11px">' + age + '歳/' + escText(branch) + '<br>' + weight + 'kg</td>';
     }
     boatsHtml += '<th>年齢等</th></tr>';
 
@@ -207,7 +207,7 @@ function _renderRaceDetailBoats(ctx) {
         me.cls +
         '">' +
         me.grade +
-        '</span> <span style="font-size:9px;color:var(--text-sub)">' +
+        '</span> <span style="font-size:11px;color:var(--text-sub)">' +
         me.label +
         '</span></td>';
     }

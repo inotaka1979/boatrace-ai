@@ -29,13 +29,22 @@ function _renderTopSummary() {
     '<div class="summary-item"><div class="s-num" style="color:var(--gold)">' +
     (wait ? '…' : acc.trifectaHit) +
     '</div><div class="s-label">3連単的中</div></div>' +
-    '<div class="summary-item"><div class="s-num c-success">' +
+    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
     (wait ? '…' : acc.trifectaRate + '%') +
     '</div><div class="s-label">的中率</div></div>' +
-    '<div class="summary-item"><div class="s-num" style="color:var(--text)">' +
-    Object.keys(racerDB).length +
-    '</div><div class="s-label">選手DB</div></div>' +
-    '</div>';
+    // 2026-11-20: 的中率だけを緑で強調していた（10 点買いなら的中率は高く出て当然で、損をしていても
+    //   好成績に見える）。回収率を並べ、100% 未満は赤にする。選手DB の件数は設定画面にある。
+    '<div class="summary-item"><div class="s-num" style="color:' +
+    (acc.roi3 == null ? 'var(--text)' : acc.roi3 >= 100 ? 'var(--success)' : 'var(--danger)') +
+    '">' +
+    (wait ? '…' : acc.roi3 == null ? '-' : acc.roi3.toFixed(1) + '%') +
+    '</div><div class="s-label">回収率</div></div>' +
+    '</div>' +
+    (acc.backfilled > 0
+      ? '<div class="c-dim" style="font-size:12px;text-align:center;margin-top:2px">うち ' +
+        acc.backfilled +
+        ' 件はレース確定後に生成した予想（実際より良く出ます）</div>'
+      : '');
 }
 
 function renderStadiums() {
@@ -48,6 +57,8 @@ function renderStadiums() {
   //   下記 list.innerHTML = html で atomic に置換、中間 empty 状態を作らない
 
   _renderTopSummary();
+  // 2026-11-20: まもなく締切（rest bundle。未 load なら次の描画で出る）
+  if (typeof _renderSoonStrip === 'function') _renderSoonStrip();
 
   var activeIds = {};
   if (programData) {
@@ -291,7 +302,7 @@ function openStadium(sid) {
     if (dispPred && progPred) {
       var diff = comparePredictions(progPred, dispPred);
       if (diff && diff.biggestRiser)
-        riserStr = ' <span style="color:#43A047;font-size:9px">↑' + diff.biggestRiser.boat + '</span>';
+        riserStr = ' <span style="color:#43A047;font-size:11px">↑' + diff.biggestRiser.boat + '</span>';
     }
 
     html += '<tr data-action="openRace" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">';
@@ -304,7 +315,7 @@ function openStadium(sid) {
     html +=
       '<td class="race-num-cell">' +
       rn +
-      '<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">' +
+      '<br><span style="font-size:11px;color:var(--text-dim);font-weight:400">' +
       closedTime +
       '</span><span class="race-type-icon"><span class="type-badge ' +
       typeCls +
@@ -467,3 +478,7 @@ function _prefetchLiveOddsForUpcoming(sid) {
 globalThis.renderStadiums = renderStadiums;
 globalThis._renderTopSummary = _renderTopSummary;
 globalThis.openStadium = openStadium;
+// 2026-11-20: 90 秒 poll（app.js）が typeof guard 付きで呼ぶが、本モジュールは IIFE に包まれて bundle されるため
+//   export しないと常に 'undefined' で、閲覧中の締切間近レースの live オッズ継続取得 (rt-fix3 P0-1) が
+//   一度も動いていなかった（no-undef の静的検査で発見）。
+globalThis._prefetchLiveOddsForUpcoming = _prefetchLiveOddsForUpcoming;

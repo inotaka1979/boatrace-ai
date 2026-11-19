@@ -225,6 +225,10 @@ for name, body in funcs.items():
 #         split 後のファイル間で重複しないよう片方からのみ削除する。
 REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_BACKTEST',
+    # 2026-11-20: bandit (買い目方式の A/B) と DP gradient (FL 送信) は critical 起動経路から
+    #   呼ばれない（critical 内の参照は自モジュール内のみ）。critical 予算 (残り 433B) を空ける。
+    'BANDIT',
+    'DP_GRADIENT',
     # scoreBoatV2 はレース詳細ページ open 時にしか呼ばれない。critical 入りを避けて
     # LCP/TBT を守る (~12KB minified)。app-rest 側に置く。
     'ANALYSIS_SCORE_BOAT',
@@ -250,6 +254,8 @@ REST_ONLY_BUILD_MARKERS = {
     'ANALYSIS_LEARNING',
     # マクール風 結果一覧ビュー — 場一覧の「結果」トグル選択時のみ。critical 起動には不要。
     'REPORTING_STADIUM_RESULTS',
+    # 2026-11-20: TOP まもなく締切帯 — predictRace を使うので rest
+    'REPORTING_SOON_STRIP',
     # レース詳細 — 詳細を開いた時のみ (race_detail.js orchestrator + boats + prediction)
     'REPORTING_RACE_DETAIL',
     'REPORTING_RACE_DETAIL_BOATS',

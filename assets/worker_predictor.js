@@ -99,6 +99,9 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+var L1_TEMPERATURE = 25;
+var L1_COURSE_PRIOR_WEIGHT = 0.6;
+var MODEL_VERSION = 2;
 var FEATURE_DIM = 24;
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
@@ -239,6 +242,7 @@ var tideData = null;
 var settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'auto' };
 var _plattCoeffsByStadium = {};
 var _isotonicCoeffs = null;
+var _origExhibIndex = {};   // 2026-11-20: main から sync_state で受ける（オリジナル展示）
 var _calibrationMethod = 'platt';
 
 // ダミー data accessors (worker は programData / previewData を main から受取)
@@ -410,6 +414,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
       if (!h.actual || h.actual.length === 0) return false;
+      if (h.backfilled) return false;
+      if (typeof MODEL_VERSION === "number" && (h.model_v || 1) !== MODEL_VERSION) return false;
       if (Array.isArray(h.raw_probs)) return true;
       return allowLegacy && Array.isArray(h.mark_probs);
     });
@@ -790,8 +796,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var logits = new Array(6);
     for (var b = 0; b < 6; b++) {
       var feat = features6[b];
+      var c = Math.round((feat[3] || 0) * 6);
+      if (!(c >= 1 && c <= 6)) c = b + 1;
       if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
+      var z = bias + (prior[c - 1] || 0);
       for (var i = 0; i < wlen; i++) {
         var fi = feat[i];
         if (fi) z += fi * (w[i] || 0);
@@ -1669,7 +1677,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       selTri = boxBets.sort(function(a, b) {
         return b.prob - a.prob;
       }).slice(0, count3);
-      methodLabel = "BOX(" + topN + "\u8247)";
+      methodLabel = selTri.length < boxBets.length ? "BOX(" + topN + "\u8247)\u304B\u3089\u4E0A\u4F4D" + selTri.length + "\u70B9" : "BOX(" + topN + "\u8247)";
     } else {
       selTri = trifecta.slice(0, count3);
       methodLabel = "\u78BA\u7387\u9806";
@@ -1770,11 +1778,18 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
       l1scores.push(s);
     });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
+    var _l1T = typeof L1_TEMPERATURE === "number" && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+    var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === "number" ? L1_COURSE_PRIOR_WEIGHT : 0;
+    var l1logits = l1scores.map(function(s) {
+      var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+      return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+    });
+    var _l1max = Math.max.apply(null, l1logits);
+    var l1total = l1logits.reduce(function(a, z) {
+      return a + Math.exp(z - _l1max);
     }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
+    var l1probs = l1logits.map(function(z) {
+      return Math.exp(z - _l1max) / l1total;
     });
     var stRanks = [];
     if (preview && preview.boats) {
@@ -1795,7 +1810,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
         return s.boat === b.racer_boat_number;
       });
       var _stR = stRanks[b.racer_boat_number];
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -1880,12 +1895,15 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var raceType, typeLabel, typeCls;
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+    var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
       raceType = "honmei";
       typeLabel = "\u672C\u547D";
       typeCls = "type-honmei";
-    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+    } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
       raceType = "ana";
       typeLabel = "\u7A74";
       typeCls = "type-ana";
@@ -1909,15 +1927,17 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       balanced: { honmei: 6, middle: 8, ana: 5 },
       hit: { honmei: 10, middle: 12, ana: 8 }
     };
-    var defEvMin = parseFloat(settings.evMin) || 1.15;
+    var userEvMin = parseFloat(settings.evMin);
+    var defEvMin = userEvMin || 1.15;
     var modeEvMin = kpiMode !== "off" && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
     var modeMaxBets = kpiMode !== "off" && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
     var evOpt = {
-      evMin: modeEvMin != null ? modeEvMin : defEvMin,
-      maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+      evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+      maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
       // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
       //   誤差がある前提では full/half より現実的。
-      kellyFrac: parseFloat(settings.kellyFrac) || (typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25),
+      // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+      kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac)) ? parseFloat(settings.kellyFrac) : typeof TUNING !== "undefined" && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null ? TUNING.KELLY.DEFAULT_FRAC : 0.25,
       bankroll: parseInt(settings.bankroll) || 1e4
     };
     var raceOddsForEV = null;
@@ -1927,8 +1947,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       });
       if (found) raceOddsForEV = found;
     }
+    var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+    var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
     if (method === "auto") {
-      if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = "ev";
+      if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = "ev";
       else if (raceType === "honmei") method = "prob";
       else if (raceType === "ana") method = "box";
       else method = "formation";
@@ -1938,6 +1960,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
     bets.marks = marks;
     bets.evApplied = method === "ev";
+    bets.oddsAgeMin = oddsAge;
+    bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
     bets.scenarios = scenarioRes.scenarios;
     bets.scenarioDist = scenarioRes.dist;
     bets.grade = grade;
@@ -1977,8 +2001,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
           topN: anaTopN,
           excludeCombos
         });
-        var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-        return picks.map(function(p) {
+        return anaRes.primary.map(function(p) {
           return p.combo;
         });
       }
@@ -2007,6 +2030,19 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     }();
     return bets;
   }
+  var ODDS_STALE_EV_MIN = 10;
+  function _raceOddsAgeMin(raceOdds, now) {
+    var t = 0;
+    if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+    if (typeof oddsData !== "undefined" && oddsData && oddsData.updated_at) {
+      var b = Date.parse(oddsData.updated_at);
+      if (Number.isFinite(b) && b > t) t = b;
+    }
+    if (!t) return null;
+    return Math.max(0, Math.round(((now || Date.now()) - t) / 6e4));
+  }
+  globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+  globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
   globalThis.predictRace = predictRace;
 
   const FEATURE_VERSION = 2;
@@ -2359,10 +2395,9 @@ function classifyTidePhase(tideEntry, raceTimeJst){
 
 // 2026-11-19: main の escText は DOM (document.createElement) を使うが worker には DOM が無く、
 //   部品交換情報 (partsTxt) のあるレースで scoreBoatV2 → escText が ReferenceError になっていた。
-//   DOM の textContent → innerHTML と同じ 4 種（& < > U+00A0）だけを置換する。引用符は DOM と同じく残し、
-//   null / undefined は DOM と同じく空文字にする。
+//   DOM 非依存の置換にした。2026-11-20 から main の escText も同じ実装（引用符も変換）。
 function escText(s){
-  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\u00A0/g,'&nbsp;');
+  return String(s == null ? '' : s).replace(/[&<>\u0022\u0027\u00A0]/g, function(c){ var k = c.charCodeAt(0); return k===38?'&amp;':k===60?'&lt;':k===62?'&gt;':k===34?'&quot;':k===39?'&#39;':'&nbsp;'; });
 }
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
@@ -2563,6 +2598,8 @@ function batchLearnFromResults(input){
     if(typeof input.state.trainStep === 'number') l2trainStep = input.state.trainStep;
     if(input.state.learnedKeys) l2learnedKeys = Object.assign({}, input.state.learnedKeys);
   }
+  // 2026-11-20: main の learning.js と同じく、DB 適用済みのレースは学習しない（リーク防止）
+  var dbApplied = (input.state && input.state.dbAppliedKeys) || {};
   // 入力データ
   var resultData = input.resultData;
   var programData = input.programData;
@@ -2598,6 +2635,7 @@ function batchLearnFromResults(input){
 
       var key = dateKey + '_' + sid + '_' + rn;
       if(l2learnedKeys[key]) continue;
+      if(dbApplied[key]) continue;
 
       var sorted = race.results.slice().sort(function(a,b){return a.place-b.place});
       var winnerBoat = sorted[0].racer_boat_number;
@@ -2631,7 +2669,7 @@ function batchLearnFromResults(input){
         //   (rank 5) として学習されていた。main 側の learnFromResults
         //   (src/analysis/learning.js:162-163) と同じ `!= null` に揃える。
         var _etR = etRanks[b.racer_boat_number], _stR = stRanks[b.racer_boat_number];
-        return getL2Features(b, pv, weather, _etR != null ? _etR : 5, _stR != null ? _stR : 5, sid);
+        return getL2Features(b, pv, weather, _etR != null ? _etR : 5, _stR != null ? _stR : 5, sid, { allBoats: prog.boats });   // 2026-11-20: main の learning.js と同じ
       });
       var winnerIdx = prog.boats.findIndex(function(b){return b.racer_boat_number === winnerBoat});
       if(winnerIdx >= 0){

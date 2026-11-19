@@ -1402,3 +1402,135 @@ install できない）を解消。
   既存どおり `ana_bets.length > 0` のレースだけを数える。
 - `scripts/tests/test_bet_count_zero.js`（12 件）を run_all.sh に追加。`||` に戻す mutation で失敗を確認（穴狙いも同様）。
   実ブラウザで設定 0 / 7 点の保存・再読込後の表示・レース詳細（「3連単推奨 0点（買わない設定）」と 2連単 7 点）を確認。
+
+## 修正履歴 (2026-11-20: 11/18 からオッズ・展示が全件取れていなかった問題)
+
+多視点評価（予測・賭け・データ基盤・フロント）で発見。11/18 以降、GitHub Actions のオッズ取得は
+15/15・8/8・14/14・7/7 件すべて失敗、展示は 0/132 だったが、失敗した run も updated_at を更新するため
+鮮度監視はすべて緑だった。
+
+### 原因
+- boatrace.jp が **aiohttp のリクエストだけ** を HTTP 403 で拒否するようになった。同じ run の中で
+  urllib を使う results / racedata は成功しており、同じ正直な bot UA・同じネットワークでも
+  aiohttp は 403、urllib / curl は 200（この環境で確認）。拒否の対象はクライアントで、UA の身元ではない。
+- 展示 (scrape_previews) は 403 を 3 回ずつ再試行して 1 run で 270 回叩いていた。さらに B-07 の
+  「正直な bot UA への統一」から漏れたブラウザ風 UA のままだった。
+
+### 修正
+- `http_utils.fetch_once`（1 回だけ GET し `(status, text)` を返す urllib クライアント）を追加し、
+  odds / previews の boatrace.jp への HTTP をこれに揃えた（`asyncio.to_thread` で呼ぶ。rate limit は従来どおり）。
+  previews の UA も `http_utils.USER_AGENT` に統一。
+- `http_utils.SourceBlockDetector`: 成功 0 件のまま 403 が 5 回続いたら、その run の残りのリクエストを送らない。
+  403 は再試行しない。odds / previews / results に適用し、ブロック時は exit 3。
+- `http_utils.write_source_status` で各 scraper が `data/_status.json` に「取りに行った / 取れた / 403」を記録。
+  `scripts/source_health.py` がそれを判定し、scrape-all の新 step「Source health alert」が
+  issue（label `source-blocked`）を開く。取得が戻れば自動クローズ。直近 2 時間の記録が無ければ開閉しない。
+- **ブロックを回避する細工（ブラウザ UA の偽装、プロキシ等）はしない** 方針を RUNBOOK §11 に明記。
+- `scripts/tests/test_source_block.py`（22 件）。検知・再試行しない・検知後に止める・UA・判定を固定し、
+  主要部分を外す mutation で失敗することを確認。実サイトに対して odds 1 レース（単勝 6 / 2連単 30 / 3連単 120）と
+  展示ページの取得を確認。
+
+### 未確認
+- Cloudflare Worker 側の展示スクレイプ / `/odds-proxy` が同じく拒否されているかは、この環境から確認できない。
+
+## 修正履歴 (2026-11-20: 多視点評価の quick wins)
+
+- **学習のリーク**: `_applyResultsRaw` と起動時の deferred 学習が「DB に結果を反映 → L2 学習」の順で、学習時の特徴量
+  （コース別成績・直近フォーム・場別勝率）に当該レース自身の着順が入っていた。学習 → DB 更新の順にし、
+  さらに `learnFromResults`（main / worker とも）は DB 適用済み（`_dbAppliedKeys`）のレースを学習しない。
+  サーバ側 `data/db/racerDB.json` が当日結果を含む場合のリークは対象外（要確認）。
+- **EV モードがユーザー設定を無視**: KPI プリセットが evMin / maxBets を上書きし、3連単 0 点でも 1〜8 点、
+  EV 閾値 1.30 でも EV 1.21 が出ていた。点数はプリセットとの小さい方、EV 閾値はユーザー明示値との大きい方に。
+- **Kelly 0（均等配分）が 0.25 に化けていた**（`parseFloat(v) || 既定`）。設定画面の既定表示も 0.5 → 実際の 0.25 に。
+- **🔥穴の買い目**: EV≥1.0 の主候補が無いと EV<1 の高オッズ組を買い目・履歴に入れていた。主候補だけにし、
+  詳細画面は「妙味なし（見送り）— 参考（EV<1・非推奨）」と表示。golden snapshot 3 件の `ana` が空に（意図した変更）。
+- **BOX 表示**: 点数が全組数に満たないとき「BOX(4艇)から上位10点」と表示（実際はボックス買いでないため）。
+- **払戻の頭が `\`**（`'\\'` の文字列）→ `¥`。組番を escText に通す。
+- **escText**: DOM 非依存にして `"` `'` も変換（属性値で安全）。main と worker で同一実装（split_app.py が正規表現内の
+  引用符を誤認するため文字コードで記述）。
+- **TOP 成績サマリー**: 的中率だけ緑で強調していた。選手DB 件数の枠を回収率（実際に推奨した点数 × 100 円で算出、
+  100% 未満は赤）に置換し、事後生成（backfilled）の件数を併記。`getAccuracy` が `invest3 / roi3 / backfilled` を返す。
+- **i18n**: navigator.language での自動切替を廃止（翻訳が一部だけで日英が混ざっていた）。既定 ja、`?lang=` か保存値で切替。
+  `#detailBack` に data-i18n を付与。
+- **critical 予算**: BANDIT / DP_GRADIENT を rest に移動（critical 起動経路から未参照）。99,567B → 97,789B。
+- `scripts/tests/test_review_quickwins.js`（15 件）。7 種の mutation すべてで失敗することを確認。
+
+## 修正履歴 (2026-11-20: L1 確率変換の当てはめと評価基盤)
+
+詳細と数値は docs/BACKTEST.md「L1 確率変換の当てはめ」。
+- L1 の確率化 `exp(score/15)` は 1 コースと 6 コースの差が ~3.4 倍にしかならず（実勢 ~27 倍）、6 号艇を実際の約 4 倍に
+  見積もり、固定のコース勝率表に logLoss で負けていた（1.3837 vs 1.3711）。
+  `p ∝ exp(score / L1_TEMPERATURE + L1_COURSE_PRIOR_WEIGHT × COURSE_LOG_PRIOR[コース])` にし、前半期間で当てはめ
+  T=25 / 重み 0.6 を採用（後半の検証で 1.3613 → 1.2732、コース表との差 -0.083 [-0.096, -0.069]）。
+  L2 再現込みでは 1.2527（市場 1.1904）。ROI(確率順 10 点) 0.699 → 0.746〜0.755。**EV モードの ROI は 0.81 → 0.45**（CI 広い、既定 OFF）。
+- backtest に確率ベースライン（コース表 / 場別コース / 市場）との paired 比較、艇別信頼性、多クラス ECE、
+  `--l2`（L2 学習の日次再現）、`--fit-l1` を追加。`main` は async に。
+- `l2Predict` のコース事前分布を配列順（枠番）ではなく進入コース（特徴量 index 3）で引く。
+- L2 特徴量に `extras={allBoats}` を渡す（推論・学習とも、worker も）。効果は中立。
+- 校正: `backfilled` と旧モデルの予想を当てはめに使わない。履歴に `model_v`（MODEL_VERSION=2）を記録、
+  schema v5 で旧校正（Platt / 場別 / isotonic / 選択）をリセット。
+- L1_TEMPERATURE / L1_COURSE_PRIOR_WEIGHT / MODEL_VERSION は WORKER_SHARED_CONSTANTS で worker に転記。
+- golden snapshot 3 件の確率が変化（意図した変更）。`scripts/tests/test_l1_calibration_fit.js`（10 件）。
+
+## 修正履歴 (2026-11-20: オッズ鮮度と EV / 風向と穴判定 / 推奨買い目の過去成績)
+
+- EV はオッズの取得時刻を見ずに計算していた。`_raceOddsAgeMin`（このレースの live `_live_at` と bulk `updated_at` の
+  新しい方）を追加し、`ODDS_STALE_EV_MIN`(10) 分より古い・時刻不明のオッズでは EV モードを使わず確率順にする
+  （`bets.evSkippedStale` / `bets.oddsAgeMin`）。詳細画面に「オッズ: N 分前に取得」、古ければ警告、EV で選んだ買い目が
+  最新オッズで EV<1 なら「妙味消失」。オッズ古さの赤バナーも live 取得時刻を見る（live が新しければ出さない）。
+- 穴判定: 風速 5m 以上なら風向に関係なく「穴」にしていたが、追い風は score_boat でイン有利（1 コース加点）と扱っており矛盾。
+  追い風なら風速では穴にしない（向かい風・横風は従来どおり）。
+- 推奨買い目の枠に過去の回収率（確率順 10 点 75% / 単勝 1 号艇 90%、docs/BACKTEST.md）を常に併記。
+- `scripts/tests/test_odds_staleness_wind.js`（5 件）。3 種の mutation で失敗を確認。
+- 未対応: 安定板（データソースに項目が無い）、場別の風向プロファイルを実データから作る（previews アーカイブに
+  気象が残っていない。アーカイブ被覆の改善後）。
+
+## 修正履歴 (2026-11-20: UX — まもなく締切 / 直前予想を先頭に / 接続表示 / 文字サイズ)
+
+- TOP に「まもなく締切」帯（`src/reporting/soon_strip.js`、rest）。全場から締切まで 0〜120 分の未確定レースを
+  締切順に最大 5 件、「あと N 分」（5 分以内は赤）と AI の ◎、タップでレース詳細。TOP 表示中は 30 秒ごとに更新。
+  renderStadiums から typeof guard で呼び、rest 読込時にも 1 回描く（データが先に揃う場合に出ないのを防ぐ）。
+- レース詳細「AI予想・買い目」: 展示が出たら（または確定後の締切時点予想）直前予想 → 買い目 → 番組予想（`<details>` で折りたたみ）
+  の順に。展示前は従来どおり番組予想が先。
+- ヘッダの接続表示: 取得失敗・Worker 停止で警告バナーが出ている間は「📡接続OK」ではなく「📡一部取得失敗」（黄）。
+- 文字サイズ: レポート描画の inline style と app.js の 9 / 10px を 11px に、`.fs-9` / `.fs-10` も 11px、
+  ラベル・バッジ系 15 クラスも 11px。三連単マトリクスなどの表のマス目は画面幅に収めるため据え置き。
+- `scripts/tests/test_ux_soon_strip.js`（7 件）。
+
+## 修正履歴 (2026-11-20: 保守性 — 未定義参照の静的検査と worker 同期の網羅性)
+
+- `build/app_globals.mjs`: app.js / worker の「グローバルに見える名前」を acorn の AST で集める（プログラム直下の宣言 +
+  `globalThis` / `_g` / `window` / `self` への export）。
+- `eslint.config.mjs`: 予測・描画の中核 15 ファイルの `no-undef` を off → error（app.js のグローバルを渡す）。
+- `scripts/tests/test_no_undef.mjs`: assets/app.js・worker 2 本・src/** を no-undef で検査（eslint の通常対象外だった）。
+  許可リストは理由付き（Chart = CDN、worker 内の main 専用経路のコピー）。
+  - **初回実行で実バグを発見**: 90 秒 poll が typeof guard で呼ぶ `_prefetchLiveOddsForUpcoming` が IIFE 内で export されず、
+    閲覧中の締切間近レースの live オッズ継続取得 (rt-fix3 P0-1) が一度も動いていなかった → export。
+  - 11/19 の worker 定数欠落と同じ mutation（worker から CLASS_COURSE_MULT を消す）で失敗することを確認。
+- `scripts/tests/test_worker_sync_list.mjs`: worker の予測ロジック (WORKER_TWIN_SYNCED) が読む app.js の可変 state を AST で集め、
+  main が送り worker が受けていること（または理由付きの WORKER_LOCAL）を要求。
+  - **実バグを発見**: `_origExhibIndex`（オリジナル展示、5 場の一周・まわり足）が worker に同期されておらず、worker 経路の
+    予想だけ加点が無かった → 同期。test_worker_protocol.js に「オリジナル展示」の main≡worker ケースを追加（同期を外すと失敗）。
+- critical 予算: BANDIT / DP_GRADIENT を rest に移し 99,567B → 98,291B（UX 追加後）。gzip 計測への切替は未実施。
+
+## 修正履歴 (2026-11-20: データ基盤 — アーカイブ後追い / KV 書込枠 / backtest の展示読込)
+
+- `scripts/backfill_archive.py`: 確定済みレースのうち三連単オッズ・展示が欠けているものを、日付付きアーカイブ
+  （data/{odds,previews}/YYYYMMDD.json）へ後追い取得。対象は**今日より前の日付だけ**（今日のファイルは archive_daily が
+  毎 run 上書きする）、既存データは上書きしない、1 run 40 レース・内部期限 150s・間隔 0.5s、403 連続で停止、
+  後追い分は `_backfilled: true`（オッズは締切後の確定オッズ）。scrape_all が夜間（JST 23〜07 時）に実行する
+  （GitHub schedule の遅延で深夜に届く run は従来 no-op だった）。実サイトで 3 レース取得を確認。
+- backtest の `buildState` が previews の live スキーマ（`stadium` / `race` / `boats` dict）を読めず、アーカイブの展示が
+  一度も入っていなかったのを修正（展示ありのレース 846 / 5,580、後追いで増える見込み）。
+- Cloudflare Worker: heartbeat を直近 9 分以内なら書かない（日中 ~180 → ~90 writes/日、sentinel の日中閾値 1200s 内）。
+  KV put の失敗回数を `/health` の `kv_put_failures` に出す（従来は heartbeat の失敗を握り潰し、枠切れと cron 停止を
+  区別できなかった）。30 分の stamp refresh は鮮度監視が依存するため据え置き。**main へのマージで deploy-worker.yml が自動デプロイ**。
+- テスト: test_backfill_archive.py（6 件）、test_worker_kv_budget.mjs（2 件）、test_scrape_all_decide に夜間 backfill。
+
+## 修正履歴 (2026-11-20: sentinel から scrape-all を定時起動)
+
+- GitHub schedule は scrape-all を約 3.5 時間遅れで届けていた（実測 11/18-19、宣言 8:30/10:00/13:00 → 着 13:20〜17:07）。
+  sentinel（Cloudflare cron 5 分毎）が scrape-all.yml の宣言時刻（JST 8:30/10/13/16/19/22）〜+10 分に
+  `workflow_dispatch` を送る（`maybeDispatchScrape`、KV `sentinel:scrape_dispatch` で同時刻 1 回、失敗時は次 tick で再試行）。
+  **sentinel の `GH_TOKEN` 登録が前提**（未登録なら何もしない）。README で登録を推奨に格上げ。
+- test.yml: 静的検査テストがルートの eslint / acorn を使うため `npm ci` を追加（CI の Test が ERR_MODULE_NOT_FOUND で失敗していた）。

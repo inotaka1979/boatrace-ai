@@ -23,7 +23,7 @@ ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
 #   ⚠ 旧 rotation (2026-05-10) は boatrace.jp の単純な UA ブロック回避策だった。
 #   本変更でブロックが再発する可能性があるため、odds workflow の失敗を要監視。
 #   再発時は http_utils.USER_AGENT の見直し or rotation 復活で対応 (git revert 容易)。
-from http_utils import USER_AGENT  # noqa: E402
+from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, write_source_status  # noqa: E402
 USER_AGENTS = [USER_AGENT]
 OUTPUT = "data/odds/today.json"
 PREVIEWS = "data/previews/today.json"
@@ -58,27 +58,38 @@ class RateLimiter:
             if w > 0: await asyncio.sleep(w)
             self._last = time.monotonic()
 
-async def fetch(session, limiter, url, retries=MAX_RETRIES):
-    """boatrace.jp HTML を取得。429/5xx は指数バックオフで retry、最終失敗時は None。"""
+# 2026-11-20: 取得元のブロック検知（http_utils.SourceBlockDetector の説明を参照）
+BLOCK = SourceBlockDetector()
+
+
+async def fetch(session, limiter, url, retries=MAX_RETRIES, block=None):
+    """boatrace.jp HTML を取得。429/5xx は指数バックオフで retry、最終失敗時は None。
+
+    ブロック（成功 0 件で 403 が続く）を検知したら、以後はリクエストせず None を返す。
+    """
+    block = block or BLOCK
     last_status = None
     for attempt in range(retries + 1):
-        try:
-            await limiter.acquire()
-            ua = USER_AGENTS[attempt % len(USER_AGENTS)]
-            headers = {"User-Agent": ua}
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as r:
-                last_status = r.status
-                if r.status == 200:
-                    return await r.text()
-                if r.status not in RETRY_STATUSES:
-                    # 4xx (404 等) は retry しても無駄なので即座に諦める
-                    log.debug("non-retryable %s for %s", r.status, url)
-                    return None
-                # 429/5xx は retry 対象
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            last_status = f"exc:{type(e).__name__}"
+        if block.blocked:
+            return None
+        await limiter.acquire()
+        # 2026-11-20: aiohttp は boatrace.jp に 403 で拒否されるため、共通の urllib クライアント
+        #   (http_utils.fetch_once) をスレッドで呼ぶ。session 引数は互換のため残す。
+        status, text = await asyncio.to_thread(fetch_once, url, timeout=15)
+        last_status = status
+        block.record(status)
+        if status == 200:
+            return text
+        if isinstance(status, str):
+            # 通信例外 (timeout 等) は retry 対象
             if attempt == retries:
-                log.warning("fetch failed %s: %s", url, e)
+                log.warning("fetch failed %s: %s", url, status)
+        elif status not in RETRY_STATUSES:
+            # 4xx (404 等) は retry しても無駄なので即座に諦める。
+            #   403 は取得元のブロックの兆候なので debug に埋めず warning に出す。
+            (log.warning if status == 403 else log.debug)("non-retryable %s for %s", status, url)
+            return None
+        # 429/5xx は retry 対象
         # 指数バックオフ + jitter (0,1,2,4,8s + ±20%)
         if attempt < retries:
             delay = (2 ** attempt) * (0.8 + 0.4 * random.random())
@@ -428,12 +439,17 @@ async def async_main():
             "failed": failed,
             "reliability": round(reliability, 3),
             "elapsed_sec": round(elapsed, 1),
+            "source": BLOCK.stats(),
         },
         "odds": [existing[k] for k in sorted(existing.keys())],
     })
+    write_source_status("odds", {"attempted": attempted, "updated": updated, **BLOCK.stats()})
     log.info("Done! %d/%d scraped (%d failed, %d skipped by budget, reliability=%.1f%%) in %.1fs",
              updated, attempted, failed, skipped, reliability * 100, elapsed)
     # 2026-05-10: 全レース失敗のときだけ workflow を red に (Actions 監視で気付ける)
+    if BLOCK.blocked:
+        log.error("SOURCE BLOCKED — boatrace.jp が HTTP 403 を返し続けたため取得を中止 (%s)", BLOCK.stats())
+        sys.exit(3)
     if attempted and updated == 0:
         log.error("ALL races failed — likely rate limited / boatrace.jp issue")
         sys.exit(1)

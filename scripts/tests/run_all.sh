@@ -59,6 +59,14 @@ step "Python unit tests (scrape_all decide / freshness gate)" \
 step "Python unit tests (scrape-all lightweight targets)" \
      "python3 -m unittest scripts.tests.test_scrape_lightweight -v"
 
+# 1d3) 2026-11-20: 取得元ブロックの検知（403 を再試行しない / 検知後は止める / 中身ゼロの通知）
+step "Python unit tests (source block detection)" \
+     "python3 -m unittest scripts.tests.test_source_block -v"
+
+# 2026-11-20: 確定済みレースの展示・オッズのアーカイブ後追い
+step "Python unit tests (archive backfill)" \
+     "python3 -m unittest scripts.tests.test_backfill_archive -v"
+
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
      "node scripts/tests/test_ana_tracking.js"
@@ -184,6 +192,32 @@ step "Web Worker protocol smoke" \
 # 9g2b) 買い目点数 0（買わない）が既定値に化けない / 2連単 0〜10 点
 step "Bet count zero / exacta options" \
      "node scripts/tests/test_bet_count_zero.js"
+
+# 2026-11-20: 多視点評価の quick wins（学習リーク / EV 設定 / Kelly 0 / 穴 EV<1 / BOX 表示 / ¥ / escText / TOP 回収率 / i18n）
+step "Review quick wins (leak / EV settings / ana / TOP ROI)" \
+     "node scripts/tests/test_review_quickwins.js"
+
+# 2026-11-20: L1 確率変換の当てはめ / 校正の対象 / backtest の確率ベースライン
+step "L1 fit / calibration scope / backtest probability baselines" \
+     "node scripts/tests/test_l1_calibration_fit.js"
+
+# 2026-11-20: オッズ鮮度と EV / 追い風で穴にしない / 推奨買い目の過去成績
+step "Odds staleness / wind ana / recommendation ROI note" \
+     "node scripts/tests/test_odds_staleness_wind.js"
+
+# 2026-11-20: TOP まもなく締切 / 詳細で直前予想を先頭に / ヘッダの接続表示 / 文字サイズ
+step "UX: soon strip / live prediction first / header state" \
+     "node scripts/tests/test_ux_soon_strip.js"
+
+# 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
+step "no-undef: app.js / worker / src (AST globals)" \
+     "node scripts/tests/test_no_undef.mjs"
+step "Worker state sync list covers what the predictor reads" \
+     "node scripts/tests/test_worker_sync_list.mjs"
+
+# 2026-11-20: Cloudflare Worker の KV 書込枠（heartbeat 間引き / put 失敗の可視化）
+step "Cloudflare Worker KV write budget" \
+     "node scripts/tests/test_worker_kv_budget.mjs"
 
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \

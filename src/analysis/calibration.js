@@ -190,6 +190,10 @@ function _extractPlattPairs(history, allowLegacyOverride) {
   var allowLegacy = typeof allowLegacyOverride === 'boolean' ? allowLegacyOverride : _calibrationIsIdentity();
   var samples = history.filter(function (h) {
     if (!h.actual || h.actual.length === 0) return false;
+    // 2026-11-20: 確定後に生成した予想 (backfilled) は、その結果を DB に入れた状態で計算されて
+    //   いる（リーク）ので校正に使わない。旧モデル (model_v 不一致) の確率も使わない。
+    if (h.backfilled) return false;
+    if (typeof MODEL_VERSION === 'number' && (h.model_v || 1) !== MODEL_VERSION) return false;
     if (Array.isArray(h.raw_probs)) return true;
     // raw_probs 未保存の旧エントリ: identity のときだけ mark_probs == raw とみなせる
     return allowLegacy && Array.isArray(h.mark_probs);

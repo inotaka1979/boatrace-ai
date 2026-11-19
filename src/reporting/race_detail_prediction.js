@@ -22,11 +22,12 @@ function _renderRaceDetailPrediction(ctx) {
   var progPred = predictRaceProgram(sid, parseInt(rn));
   var boats = race && race.boats ? race.boats : [];
 
+  var progHtml = '';
   // ========= 番組予想 =========
   if (progPred) {
-    predHtml +=
+    progHtml +=
       '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
-    predHtml +=
+    progHtml +=
       '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">番組予想 <span style="font-size:11px;color:#666;font-weight:400">出走表データのみ</span></div>';
     progPred.marks.forEach(function (m, i) {
       if (i >= 4) return;
@@ -35,28 +36,29 @@ function _renderRaceDetailPrediction(ctx) {
       });
       var nm = boatInfo ? (boatInfo.racer_name || '').split(/\s|\u3000/)[0] : '';
       var probPct = Math.round(m.prob * 100);
-      predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-      predHtml += '<span style="font-weight:700;width:20px">' + m.mark + '</span>';
-      predHtml += boatBadge(m.boat);
-      predHtml += '<span>' + escText(nm) + '</span>';
-      predHtml +=
+      progHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+      progHtml += '<span style="font-weight:700;width:20px">' + m.mark + '</span>';
+      progHtml += boatBadge(m.boat);
+      progHtml += '<span>' + escText(nm) + '</span>';
+      progHtml +=
         '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + '%</span>';
-      predHtml += '</div>';
+      progHtml += '</div>';
     });
     var progTypeIcon = progPred.raceType === 'honmei' ? '⚡' : progPred.raceType === 'ana' ? '🔥' : '📊';
-    predHtml +=
+    progHtml +=
       '<div class="note-orange">' + progTypeIcon + progPred.typeLabel + '  信頼度: ' + progPred.confidence + '%</div>';
     if (progPred.marks[0].reasons && progPred.marks[0].reasons.length > 0) {
-      predHtml +=
+      progHtml +=
         '<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
       progPred.marks[0].reasons.slice(0, 3).forEach(function (r) {
-        predHtml += '<div>・' + escText(r) + '</div>';
+        progHtml += '<div>・' + escText(r) + '</div>';
       });
-      predHtml += '</div>';
+      progHtml += '</div>';
     }
-    predHtml += '</div>';
+    progHtml += '</div>';
   }
 
+  var liveHtml = '';
   // ========= 直前予想 =========
   var hasRealPreview = false;
   if (preview && preview.boats) {
@@ -68,8 +70,8 @@ function _renderRaceDetailPrediction(ctx) {
     }
   }
 
-  predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
-  predHtml +=
+  liveHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
+  liveHtml +=
     '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">直前予想 <span style="font-size:11px;color:#666;font-weight:400">展示航走反映</span></div>';
 
   // 2026-09-06: 終了済レースは履歴の締切時点予想 (lockedPred) を、展示の有無に関わらず表示する。
@@ -77,7 +79,7 @@ function _renderRaceDetailPrediction(ctx) {
   var lockedPred = !!ctx.lockedPred;
   if ((hasRealPreview || lockedPred) && pred) {
     if (lockedPred) {
-      predHtml +=
+      liveHtml +=
         '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">🔒 締切時点の予想を表示しています' +
         (pred.restored ? '（保存データから復元）' : '') +
         '</div>';
@@ -106,17 +108,17 @@ function _renderRaceDetailPrediction(ctx) {
         var color = change.rankDiff > 0 ? '#43A047' : '#E53935';
         diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p + '%</span>';
       }
-      predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-      predHtml += '<span style="font-weight:700;width:20px">' + m.mark + '</span>';
-      predHtml += boatBadge(m.boat);
-      predHtml += '<span>' + escText(nm) + '</span>';
-      predHtml +=
+      liveHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+      liveHtml += '<span style="font-weight:700;width:20px">' + m.mark + '</span>';
+      liveHtml += boatBadge(m.boat);
+      liveHtml += '<span>' + escText(nm) + '</span>';
+      liveHtml +=
         '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + '%</span>';
-      predHtml += diffStr;
-      predHtml += '</div>';
+      liveHtml += diffStr;
+      liveHtml += '</div>';
     });
     var liveTypeIcon = pred.raceType === 'honmei' ? '⚡' : pred.raceType === 'ana' ? '🔥' : '📊';
-    predHtml +=
+    liveHtml +=
       '<div class="note-orange">' +
       liveTypeIcon +
       pred.typeLabel +
@@ -139,8 +141,8 @@ function _renderRaceDetailPrediction(ctx) {
           scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k] + '</b> ' + pct + '%</span>';
         }
       });
-      predHtml +=
-        '<div style="font-size:10px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">想定展開: ' +
+      liveHtml +=
+        '<div style="font-size:11px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">想定展開: ' +
         scenStr +
         '</div>';
     }
@@ -151,26 +153,26 @@ function _renderRaceDetailPrediction(ctx) {
         return c.rankDiff !== 0;
       });
       if (hasChange) {
-        predHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
-        predHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">展示による変動</div>';
+        liveHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
+        liveHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">展示による変動</div>';
         diff.changes.forEach(function (c) {
           if (c.rankDiff > 0) {
             var reasons = c.addedReasons.length > 0 ? c.addedReasons.slice(0, 2).join(', ') : '展示好調';
-            predHtml += '<div style="color:#2E7D32">↑ ' + c.boat + '号艇: ' + escText(reasons) + '</div>';
+            liveHtml += '<div style="color:#2E7D32">↑ ' + c.boat + '号艇: ' + escText(reasons) + '</div>';
           } else if (c.rankDiff < 0) {
             var risks = c.addedRisks.length > 0 ? c.addedRisks.slice(0, 2).join(', ') : '展示不調';
-            predHtml += '<div style="color:#C62828">↓ ' + c.boat + '号艇: ' + escText(risks) + '</div>';
+            liveHtml += '<div style="color:#C62828">↓ ' + c.boat + '号艇: ' + escText(risks) + '</div>';
           }
         });
         if (diff.typeChanged) {
-          predHtml +=
+          liveHtml +=
             '<div style="color:#D84315;font-weight:700;margin-top:4px">⚠ ' +
             diff.progType +
             ' → ' +
             diff.liveType +
             ' に変化</div>';
         }
-        predHtml += '</div>';
+        liveHtml += '</div>';
       }
     }
 
@@ -179,7 +181,7 @@ function _renderRaceDetailPrediction(ctx) {
       var aiTop = pred.marks[0].boat;
       var popTop = popularity[0] ? popularity[0].boat : 0;
       if (aiTop !== popTop && popTop > 0) {
-        predHtml +=
+        liveHtml +=
           '<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI予想◎' +
           aiTop +
           '号艇 vs 1番人気' +
@@ -192,25 +194,25 @@ function _renderRaceDetailPrediction(ctx) {
     //   1) レース終了済 → 「展示データ未取得」と明示（スクレイプ漏れ）
     //   2) レース前 → 「番組予想は上に表示されています」と誘導
     var _finished = !!(result && result.isFinished);
-    predHtml +=
+    liveHtml +=
       '<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
     if (_finished) {
-      predHtml += '<div style="font-size:20px;margin-bottom:6px">📋</div>';
-      predHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">展示データ未取得のレースです</div>';
-      predHtml +=
+      liveHtml += '<div style="font-size:20px;margin-bottom:6px">📋</div>';
+      liveHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">展示データ未取得のレースです</div>';
+      liveHtml +=
         '<div style="font-size:11px;color:#888;margin-top:4px">展示窓時刻にスクレイプが届かず、直前予想は生成されませんでした<br>上の<b>番組予想</b>と<b>レース結果</b>をご確認ください</div>';
     } else {
-      predHtml += '<div style="font-size:20px;margin-bottom:6px">⏳</div>';
-      predHtml += '<div style="font-size:13px;font-weight:700">展示航走の反映待ち</div>';
-      predHtml +=
+      liveHtml += '<div style="font-size:20px;margin-bottom:6px">⏳</div>';
+      liveHtml += '<div style="font-size:13px;font-weight:700">展示航走の反映待ち</div>';
+      liveHtml +=
         '<div style="font-size:11px;color:#888;margin-top:4px">レース開始約 15 分前の展示で更新されます<br>それまでは上の<b>番組予想</b>をご参照ください</div>';
     }
-    predHtml += '</div>';
+    liveHtml += '</div>';
   }
-  predHtml += '</div>';
+  liveHtml += '</div>';
 
   // ========= 買い目 + 穴予想 → src/reporting/race_detail_bets.js に外出し =========
-  predHtml += _renderRaceDetailBets({
+  var betsHtml = _renderRaceDetailBets({
     sid: sid,
     rn: rn,
     race: race,
@@ -219,6 +221,19 @@ function _renderRaceDetailPrediction(ctx) {
     hasRealPreview: hasRealPreview,
     raceOdds: raceOdds,
   });
+  // 2026-11-20: 展示が出た後（または確定後の締切時点予想）は、判断に使う直前予想と買い目を先頭に出し、
+  //   朝の番組予想は折りたたむ。従来は番組予想が先に来て、直前予想がファーストビューの外だった。
+  if ((hasRealPreview || lockedPred) && pred) {
+    predHtml += liveHtml + betsHtml;
+    if (progHtml) {
+      predHtml +=
+        '<details class="prog-pred-fold" style="margin:8px 0"><summary style="font-size:13px;color:var(--text-sub);cursor:pointer;min-height:44px;display:flex;align-items:center">番組予想（朝の出走表ベース）を表示</summary>' +
+        progHtml +
+        '</details>';
+    }
+  } else {
+    predHtml += progHtml + liveHtml + betsHtml;
+  }
   // P2-3: pairwise matchup 表示（pairwiseDB に十分なデータがある対戦のみ TOP3）
   if (typeof _renderPairwiseSummary === 'function' && race && race.boats) {
     var pwHtml = _renderPairwiseSummary(race.boats);

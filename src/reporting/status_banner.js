@@ -103,13 +103,19 @@ function _renderFreshness() {
   //   「更新しても変わらない」誤認対策: fetch 成功の経過時間も併記し、更新ボタンを
   //   押すと「接続OK(取得 たった今)」が可視で変わるようにする(データ世代は主表示で正直)。
   let conn = '';
+  // 2026-11-20: 一部の取得に失敗している（下の警告バナーが出ている）間は「接続OK」と出さない。
+  //   従来はヘッダが緑の「接続OK」、直下のバナーが「API取得失敗」と矛盾して表示されていた。
+  const health = _g._apiHealth || {};
+  const degraded = _g._workerHealthy === false || Object.keys(health).some((k) => health[k] === 'fail');
   if (fetchAt) {
     const fsec = Math.floor((now - fetchAt) / 1000);
     const fetchAgo = fsec < 5 ? 'たった今' : _ago(now - fetchAt);
     conn =
-      fsec < 300
-        ? '<span style="color:#81C784;font-size:0.85em"> ・📡接続OK(取得 ' + fetchAgo + ')</span>'
-        : '<span style="color:#FF8A80;font-size:0.85em"> ・📡接続不調(' + _ago(now - fetchAt) + ')</span>';
+      fsec >= 300
+        ? '<span style="color:#FF8A80;font-size:0.85em"> ・📡接続不調(' + _ago(now - fetchAt) + ')</span>'
+        : degraded
+          ? '<span style="color:#FFCC80;font-size:0.85em"> ・📡一部取得失敗(取得 ' + fetchAgo + ')</span>'
+          : '<span style="color:#81C784;font-size:0.85em"> ・📡接続OK(取得 ' + fetchAgo + ')</span>';
   } else {
     conn = '<span style="color:#FFCC80;font-size:0.85em"> ・📡未接続</span>';
   }

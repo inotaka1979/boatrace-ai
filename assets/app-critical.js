@@ -654,7 +654,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     }
   }
   var SCHEMA_KEY = "boatrace_schema_version";
-  var CURRENT_SCHEMA = 4;
+  var CURRENT_SCHEMA = 5;
   var MIGRATIONS = {
     // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
     2: function() {
@@ -726,6 +726,17 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         }
       } catch (_) {
       }
+    },
+    // v4→v5 (2026-11-20): L1 の確率変換を変更（L1_TEMPERATURE 15→25、コース事前分布 0→0.6）。
+    //   保存済みの校正 (Platt / 場別 Platt / isotonic) は旧 L1 の確率に当てはめたもので、新しい確率に
+    //   掛けるとかえって歪む。identity に戻し、新モデルの予想 (model_v=2) が溜まってから当てはめ直す。
+    5: function() {
+      ["boatrace_platt", "boatrace_platt_perstadium", "boatrace_isotonic", "boatrace_calib_method"].forEach(function(k) {
+        try {
+          localStorage.removeItem(k);
+        } catch (_) {
+        }
+      });
     }
   };
   function _runMigrations() {
@@ -1236,6 +1247,23 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+// 2026-11-20: L1（ルールベース点数）→ 確率の変換パラメータ。
+//   p_i ∝ exp(score_i / L1_TEMPERATURE + L1_COURSE_PRIOR_WEIGHT × COURSE_LOG_PRIOR[コース])
+//   従来は exp(score/15) 固定で、1 コースと 6 コースの差が点数上 ~18 点 = logit ~1.2（~3.4 倍）にしか
+//   ならず、実勢（1 着率 0.55 / 0.02 ≈ 27 倍）より大幅に弱かった。外枠の過大評価・1 号艇の過小評価が
+//   バックテスト（10/05〜11/10, 5,354 レース）で「コース勝率表」に logLoss で負ける原因だった。
+//   値は scripts/backtest_offline.mjs --fit-l1 で前半期間に当てはめ、後半期間で検証して決める
+//   （docs/BACKTEST.md「L1 確率変換の当てはめ」）。worker にも WORKER_SHARED_CONSTANTS で転記。
+//   当てはめ結果 (2026-11-20, 学習 10/05〜10/22 18 日 / 検証 10/23〜11/10 19 日、検証は選択に不使用):
+//     現行 T=15 / 重み 0   : 検証 logLoss 1.3613（コース勝率表 1.3563 に負け）、ROI(確率順 10 点) 0.695
+//     採用 T=25 / 重み 0.6 : 検証 logLoss 1.2732（勝率表との差 -0.083, 95%CI [-0.096, -0.069]）、ROI 0.752
+//   市場（単勝オッズ）1.134 にはまだ届かない。
+var L1_TEMPERATURE = 25;
+var L1_COURSE_PRIOR_WEIGHT = 0.6;
+// 予想の生成モデルの版。履歴 (boatrace_history) の model_v に記録し、校正の当てはめは
+//   現行版の予想だけを使う（旧版の確率で fit した校正を新しい確率に掛けない）。
+//   1 = 2026-11-20 より前（記録なし）、2 = L1 確率変換の当てはめ後。
+var MODEL_VERSION = 2;
 
 // PB-7: 特徴量 z-score 正規化用 rolling 統計（Welford's online algorithm）
 //   既定: mean=0, var=1 → z(x) ≈ x（identity）。学習が進むと真の z-score へ収束。
@@ -1690,6 +1718,9 @@ window.addEventListener('unhandledrejection', function(e){
 //   - 鮮度バッジを再描画
 //   - 視覚フィードバック（ボタン → ⏳更新中…）
 /* MOVED: function forceRefresh */
+// 2026-11-20: DOM 非依存にし、引用符も変換する（属性値に入れても安全）。従来の textContent → innerHTML は
+//   " と ' を変換しないため、将来属性値に使われると穴になる。worker_predictor.js の escText と同一実装。
+//   正規表現に引用符を直接書くと scripts/split_app.py の関数抽出が文字列と誤認するため文字コードで書く。
 /* MOVED: function escText */
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
@@ -2188,102 +2219,6 @@ window.addEventListener('unhandledrejection', function(e){
 
 /* BUILD:IDB:END */
 
-/* BUILD:BANDIT:START */
-"use strict";
-(() => {
-  // ../src/utils/bandit.js
-  var BANDIT_KEY = "boatrace_bandit";
-  function _sampleGamma(shape) {
-    if (shape < 1) {
-      return _sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
-    }
-    const d = shape - 1 / 3;
-    const c = 1 / Math.sqrt(9 * d);
-    while (true) {
-      let x, v;
-      do {
-        x = _sampleNormal();
-        v = 1 + c * x;
-      } while (v <= 0);
-      v = v * v * v;
-      const u = Math.random();
-      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
-      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
-    }
-  }
-  function _sampleNormal() {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  }
-  function _sampleBeta(alpha, beta) {
-    const x = _sampleGamma(alpha);
-    const y = _sampleGamma(beta);
-    return x / (x + y);
-  }
-  function banditSelect(variants) {
-    if (!Array.isArray(variants) || variants.length === 0) return null;
-    let best = variants[0];
-    let bestSample = -Infinity;
-    for (const v of variants) {
-      const a = Math.max(1e-3, v.alpha || 1);
-      const b = Math.max(1e-3, v.beta || 1);
-      const s = _sampleBeta(a, b);
-      if (s > bestSample) {
-        bestSample = s;
-        best = v;
-      }
-    }
-    return best;
-  }
-  function banditUpdate(variants, variantId, reward) {
-    const v = variants.find((x) => x.id === variantId);
-    if (!v) return false;
-    const r = Math.max(0, Math.min(1, +reward || 0));
-    v.alpha = (v.alpha || 1) + r;
-    v.beta = (v.beta || 1) + (1 - r);
-    v.n = (v.n || 0) + 1;
-    v.lastReward = r;
-    v.lastUpdated = Date.now();
-    return true;
-  }
-  function banditMeans(variants) {
-    return variants.map((v) => ({
-      id: v.id,
-      mean: (v.alpha || 1) / ((v.alpha || 1) + (v.beta || 1)),
-      n: v.n || 0
-    })).sort((a, b) => b.mean - a.mean);
-  }
-  function banditLoad(defaults) {
-    let parsed = null;
-    try {
-      const raw = localStorage.getItem(BANDIT_KEY);
-      if (raw) parsed = JSON.parse(raw);
-    } catch (_) {
-    }
-    if (!parsed || !Array.isArray(parsed.variants) || parsed.variants.length === 0) {
-      return Array.isArray(defaults) ? defaults.slice() : [];
-    }
-    return parsed.variants;
-  }
-  function banditSave(variants) {
-    try {
-      localStorage.setItem(BANDIT_KEY, JSON.stringify({ variants, updated_at: Date.now() }));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-  globalThis.banditSelect = banditSelect;
-  globalThis.banditUpdate = banditUpdate;
-  globalThis.banditMeans = banditMeans;
-  globalThis.banditLoad = banditLoad;
-  globalThis.banditSave = banditSave;
-  globalThis.BANDIT_KEY = BANDIT_KEY;
-})();
-
-/* BUILD:BANDIT:END */
 
 /* BUILD:I18N:START */
 "use strict";
@@ -2574,11 +2509,6 @@ window.addEventListener('unhandledrejection', function(e){
       if (stored && I18N_TABLES[stored]) return stored;
     } catch (_) {
     }
-    try {
-      const nav = (navigator.language || "").slice(0, 2);
-      if (nav && I18N_TABLES[nav]) return nav;
-    } catch (_) {
-    }
     return DEFAULT_LOCALE;
   }
   function setLocale(locale) {
@@ -2658,58 +2588,6 @@ window.addEventListener('unhandledrejection', function(e){
 
 /* BUILD:I18N:END */
 
-/* BUILD:DP_GRADIENT:START */
-"use strict";
-(() => {
-  // ../src/utils/dp_gradient.js
-  function _sampleStdNormal() {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  }
-  function _l2Norm(arr) {
-    let s = 0;
-    for (let i = 0; i < arr.length; i++) {
-      if (Number.isFinite(arr[i])) s += arr[i] * arr[i];
-    }
-    return Math.sqrt(s);
-  }
-  function clipGradient(grad, maxNorm) {
-    if (!Array.isArray(grad)) return grad;
-    const m = Math.max(1e-3, maxNorm || 1);
-    const n = _l2Norm(grad);
-    if (n <= m || n === 0) return grad.map((g) => Number.isFinite(g) ? g : 0);
-    const scale = m / n;
-    return grad.map((g) => Number.isFinite(g) ? g * scale : 0);
-  }
-  function addGaussianNoise(grad, sigma) {
-    if (!Array.isArray(grad)) return grad;
-    const s = Math.max(0, sigma || 0);
-    if (s === 0) return grad.slice();
-    return grad.map((g) => Number.isFinite(g) ? g + _sampleStdNormal() * s : 0);
-  }
-  function buildDPGradient(grad, opts) {
-    const o = opts || {};
-    const clipped = clipGradient(grad, o.maxNorm != null ? o.maxNorm : 1);
-    return addGaussianNoise(clipped, o.sigma != null ? o.sigma : 0.1);
-  }
-  function estimateDPParams(epsilon, delta, T) {
-    const eps = Math.max(0.01, epsilon || 1);
-    const dlt = Math.max(1e-9, delta || 1e-5);
-    const t = Math.max(1, T || 100);
-    const sensitivity = 1;
-    const epsPerStep = eps / Math.sqrt(t);
-    const sigma = Math.sqrt(2 * Math.log(1.25 / dlt)) * sensitivity / epsPerStep;
-    return { sigma, epsPerStep, T: t, epsilon: eps, delta: dlt };
-  }
-  globalThis.clipGradient = clipGradient;
-  globalThis.addGaussianNoise = addGaussianNoise;
-  globalThis.buildDPGradient = buildDPGradient;
-  globalThis.estimateDPParams = estimateDPParams;
-})();
-
-/* BUILD:DP_GRADIENT:END */
 
 // PF-2: softmax は BUILD:SAFE_STORAGE / MATH bundle で提供（旧 inline 削除）
 
@@ -3036,10 +2914,12 @@ window.addEventListener('unhandledrejection', function(e){
       color = "#BDBDBD";
     }
     let conn = "";
+    const health = _g._apiHealth || {};
+    const degraded = _g._workerHealthy === false || Object.keys(health).some((k) => health[k] === "fail");
     if (fetchAt) {
       const fsec = Math.floor((now - fetchAt) / 1e3);
       const fetchAgo = fsec < 5 ? "\u305F\u3063\u305F\u4ECA" : _ago(now - fetchAt);
-      conn = fsec < 300 ? '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK(\u53D6\u5F97 ' + fetchAgo + ")</span>" : '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>";
+      conn = fsec >= 300 ? '<span style="color:#FF8A80;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9A\u4E0D\u8ABF(' + _ago(now - fetchAt) + ")</span>" : degraded ? '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u4E00\u90E8\u53D6\u5F97\u5931\u6557(\u53D6\u5F97 ' + fetchAgo + ")</span>" : '<span style="color:#81C784;font-size:0.85em"> \u30FB\u{1F4E1}\u63A5\u7D9AOK(\u53D6\u5F97 ' + fetchAgo + ")</span>";
     } else {
       conn = '<span style="color:#FFCC80;font-size:0.85em"> \u30FB\u{1F4E1}\u672A\u63A5\u7D9A</span>';
     }
@@ -3649,13 +3529,14 @@ var _backfillTimer = null;
     if (!sumDiv) return;
     var acc = getAccuracy();
     var wait = !acc.total && !globalThis._histReady;
-    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + (wait ? "\u2026" : acc.total) + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + (wait ? "\u2026" : acc.trifectaHit) + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num c-success">' + (wait ? "\u2026" : acc.trifectaRate + "%") + '</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + Object.keys(racerDB).length + '</div><div class="s-label">\u9078\u624BDB</div></div></div>';
+    sumDiv.innerHTML = '<div class="summary-bar"><div class="summary-item"><div class="s-num" style="color:var(--accent)">' + (wait ? "\u2026" : acc.total) + '</div><div class="s-label">\u5224\u5B9A\u6E08</div></div><div class="summary-item"><div class="s-num" style="color:var(--gold)">' + (wait ? "\u2026" : acc.trifectaHit) + '</div><div class="s-label">3\u9023\u5358\u7684\u4E2D</div></div><div class="summary-item"><div class="s-num" style="color:var(--text)">' + (wait ? "\u2026" : acc.trifectaRate + "%") + '</div><div class="s-label">\u7684\u4E2D\u7387</div></div><div class="summary-item"><div class="s-num" style="color:' + (acc.roi3 == null ? "var(--text)" : acc.roi3 >= 100 ? "var(--success)" : "var(--danger)") + '">' + (wait ? "\u2026" : acc.roi3 == null ? "-" : acc.roi3.toFixed(1) + "%") + '</div><div class="s-label">\u56DE\u53CE\u7387</div></div></div>' + (acc.backfilled > 0 ? '<div class="c-dim" style="font-size:12px;text-align:center;margin-top:2px">\u3046\u3061 ' + acc.backfilled + " \u4EF6\u306F\u30EC\u30FC\u30B9\u78BA\u5B9A\u5F8C\u306B\u751F\u6210\u3057\u305F\u4E88\u60F3\uFF08\u5B9F\u969B\u3088\u308A\u826F\u304F\u51FA\u307E\u3059\uFF09</div>" : "");
   }
   function renderStadiums() {
     document.getElementById("topLoading").style.display = "none";
     var list = document.getElementById("stadiumList");
     list.style.display = "grid";
     _renderTopSummary();
+    if (typeof _renderSoonStrip === "function") _renderSoonStrip();
     var activeIds = {};
     if (programData) {
       for (var sid in programData) activeIds[sid] = true;
@@ -3813,14 +3694,14 @@ var _backfillTimer = null;
       if (dispPred && progPred) {
         var diff = comparePredictions(progPred, dispPred);
         if (diff && diff.biggestRiser)
-          riserStr = ' <span style="color:#43A047;font-size:9px">\u2191' + diff.biggestRiser.boat + "</span>";
+          riserStr = ' <span style="color:#43A047;font-size:11px">\u2191' + diff.biggestRiser.boat + "</span>";
       }
       html += '<tr data-action="openRace" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">';
       var closedAt = race.race_closed_at || "";
       var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
       if (closedTime) closedTime = closedTime.slice(0, 5);
       var stageLabel = hasRealPv ? '<span style="font-size:8px;color:#E65100">\u76F4\u524D</span>' : '<span style="font-size:8px;color:#1A237E">\u756A\u7D44</span>';
-      html += '<td class="race-num-cell">' + rn + '<br><span style="font-size:9px;color:var(--text-dim);font-weight:400">' + closedTime + '</span><span class="race-type-icon"><span class="type-badge ' + typeCls + '">' + typeIcon + "</span></span><br>" + stageLabel + riserStr + "</td>";
+      html += '<td class="race-num-cell">' + rn + '<br><span style="font-size:11px;color:var(--text-dim);font-weight:400">' + closedTime + '</span><span class="race-type-icon"><span class="type-badge ' + typeCls + '">' + typeIcon + "</span></span><br>" + stageLabel + riserStr + "</td>";
       if (race.boats && Array.isArray(race.boats)) {
         var boatMap = {};
         race.boats.forEach(function(bt2) {
@@ -3930,6 +3811,7 @@ var _backfillTimer = null;
   globalThis.renderStadiums = renderStadiums;
   globalThis._renderTopSummary = _renderTopSummary;
   globalThis.openStadium = openStadium;
+  globalThis._prefetchLiveOddsForUpcoming = _prefetchLiveOddsForUpcoming;
 })();
 
 /* BUILD:REPORTING_STADIUM_PAGES:END */
@@ -4478,7 +4360,7 @@ async function forceRefresh(){
   }
 }
 
-function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function escText(s){return String(s==null?'':s).replace(/[&<>\u0022\u0027\u00A0]/g,function(c){var k=c.charCodeAt(0);return k===38?'&amp;':k===60?'&lt;':k===62?'&gt;':k===34?'&quot;':k===39?'&#39;':'&nbsp;'})}
 
 function getJSTDate(offsetDays){
   var t = Date.now() + 9*3600000 + (offsetDays||0)*86400000;
@@ -4605,17 +4487,22 @@ function getAccuracy(){
   var today=todayStr();
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today&&h.actual&&h.actual.length>0});
-  if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0};
-  var th=0,eh=0,tp3=0,tp2=0;
+  if(!verified.length) return{trifectaRate:'0.0',exactaRate:'0.0',total:0,trifectaHit:0,exactaHit:0,totalPayout3:0,totalPayout2:0,invest3:0,roi3:null,backfilled:0};
+  var th=0,eh=0,tp3=0,tp2=0,inv3=0,bf=0;
+  // 2026-11-20: TOP に回収率も出す。投資額は calcTodayStats (FA-8) と同じ「実際に推奨した点数 × 100 円」。
+  var betCount3=_parseBetCount(settings.betCount3,10);
   verified.forEach(function(h){
     if(h.trifecta_hit){th++;tp3+=(h.payout3||0)}
     if(h.exacta_hit){eh++;tp2+=(h.payout2||0)}
+    inv3+=(Array.isArray(h.trifecta_bets)?h.trifecta_bets.length:betCount3)*100;
+    if(h.backfilled) bf++;
   });
   return{
     trifectaRate:(th/verified.length*100).toFixed(1),
     exactaRate:(eh/verified.length*100).toFixed(1),
     total:verified.length,trifectaHit:th,exactaHit:eh,
-    totalPayout3:tp3,totalPayout2:tp2
+    totalPayout3:tp3,totalPayout2:tp2,
+    invest3:inv3,roi3:inv3>0?Math.round(tp3/inv3*1000)/10:null,backfilled:bf
   };
 }
 

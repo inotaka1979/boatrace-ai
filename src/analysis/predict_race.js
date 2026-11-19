@@ -129,11 +129,19 @@ function predictRace(sid, raceNum) {
     l1scores.push(s);
   });
 
-  var l1total = l1scores.reduce(function (a, s) {
-    return a + Math.exp(s.score / 15);
+  // 2026-11-20: 温度とコース事前分布の重みを定数化（L1_TEMPERATURE の説明を参照）。
+  var _l1T = typeof L1_TEMPERATURE === 'number' && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+  var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === 'number' ? L1_COURSE_PRIOR_WEIGHT : 0;
+  var l1logits = l1scores.map(function (s) {
+    var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+    return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+  });
+  var _l1max = Math.max.apply(null, l1logits);
+  var l1total = l1logits.reduce(function (a, z) {
+    return a + Math.exp(z - _l1max);
   }, 0);
-  var l1probs = l1scores.map(function (s) {
-    return Math.exp(s.score / 15) / l1total;
+  var l1probs = l1logits.map(function (z) {
+    return Math.exp(z - _l1max) / l1total;
   });
 
   var stRanks = [];
@@ -160,7 +168,9 @@ function predictRace(sid, raceNum) {
     //   学習側 (src/analysis/learning.js:163) は `!= null` を使っており、推論と
     //   学習で特徴量の意味が食い違っていた。学習側の書き方に合わせる。
     var _stR = stRanks[b.racer_boat_number];
-    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+    // 2026-11-20: extras を渡す。従来は未指定で pairwiseH2H / motorFieldRank（レース内の相対情報）が
+    //   常に定数（0 / 0.5）になり、24 次元のうち 2 本が死んでいた。学習側 (learning.js) も同じ。
+    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
   });
   var l2probs = l2Predict(features6);
 
@@ -292,13 +302,18 @@ function predictRace(sid, raceNum) {
   var raceType, typeLabel, typeCls;
   var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
   var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
+  // 2026-11-20: 風速だけで「穴」にしていたが、追い風はイン有利（score_boat は 1 コースに加点）で判定が
+  //   矛盾していた。追い風なら風速では穴にしない（向かい風・横風は従来どおり）。
+  var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
+  var tailWind = !!wd2 && typeof isTailWind === 'function' && isTailWind(wd2, sid);
+  var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
   // PC-3: TUNING.RACE_TYPE 集約定数を使用
   var RT = TUNING.RACE_TYPE;
   if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
     raceType = 'honmei';
     typeLabel = '本命';
     typeCls = 'type-honmei';
-  } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || ws2 >= RT.ANA_WIND_SPEED_MS) {
+  } else if (topProb < RT.ANA_TOP1_MAX || wh >= RT.ANA_WAVE_HEIGHT_CM || windAna) {
     raceType = 'ana';
     typeLabel = '穴';
     typeCls = 'type-ana';
@@ -325,19 +340,26 @@ function predictRace(sid, raceNum) {
     balanced: { honmei: 6, middle: 8, ana: 5 },
     hit: { honmei: 10, middle: 12, ana: 8 },
   };
-  var defEvMin = parseFloat(settings.evMin) || 1.15;
+  var userEvMin = parseFloat(settings.evMin);
+  var defEvMin = userEvMin || 1.15;
   var modeEvMin = kpiMode !== 'off' && TYPE_EVMIN[kpiMode] ? TYPE_EVMIN[kpiMode][raceType] : null;
   var modeMaxBets = kpiMode !== 'off' && TYPE_MAXBETS[kpiMode] ? TYPE_MAXBETS[kpiMode][raceType] : null;
+  // 2026-11-20: KPI モードは「上限・下限の目安」で、ユーザーの設定を緩めない。
+  //   従来はプリセットが evMin / maxBets を上書きしており、3連単「0 点（買わない）」でも 1〜8 点、
+  //   EV 閾値 1.50 でも EV 1.21 の買い目が出ていた。
+  //   - 点数: プリセットと設定の小さい方（0 点は常に 0 点）
+  //   - EV 閾値: プリセットと、ユーザーが明示した値の大きい方
   var evOpt = {
-    evMin: modeEvMin != null ? modeEvMin : defEvMin,
-    maxBets: modeMaxBets != null ? modeMaxBets : betCount3,
+    evMin: modeEvMin != null ? Math.max(modeEvMin, Number.isFinite(userEvMin) ? userEvMin : 0) : defEvMin,
+    maxBets: modeMaxBets != null ? Math.min(modeMaxBets, betCount3) : betCount3,
     // S-04: 既定は quarter-Kelly (TUNING.KELLY.DEFAULT_FRAC=0.25)。確率推定に
     //   誤差がある前提では full/half より現実的。
-    kellyFrac:
-      parseFloat(settings.kellyFrac) ||
-      (typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
+    // 2026-11-20: 「0（均等配分）」が `|| 既定` で 0.25 に化けていたため、有限値ならそのまま使う。
+    kellyFrac: Number.isFinite(parseFloat(settings.kellyFrac))
+      ? parseFloat(settings.kellyFrac)
+      : typeof TUNING !== 'undefined' && TUNING.KELLY && TUNING.KELLY.DEFAULT_FRAC != null
         ? TUNING.KELLY.DEFAULT_FRAC
-        : 0.25),
+        : 0.25,
     bankroll: parseInt(settings.bankroll) || 10000,
   };
   // 当該レースのオッズを取得
@@ -348,8 +370,12 @@ function predictRace(sid, raceNum) {
     });
     if (found) raceOddsForEV = found;
   }
+  // 2026-11-20: EV はオッズの取得時刻を見ずに計算していた。締切直前は人気の組ほどオッズが下がるため、
+  //   古いオッズの EV は過大に出る。ODDS_STALE_EV_MIN 分より古ければ EV 選定に使わない。
+  var oddsAge = _raceOddsAgeMin(raceOddsForEV);
+  var oddsFreshForEV = oddsAge != null && oddsAge <= ODDS_STALE_EV_MIN;
   if (method === 'auto') {
-    if (evMode && raceOddsForEV && raceOddsForEV.trifecta) method = 'ev';
+    if (evMode && raceOddsForEV && raceOddsForEV.trifecta && oddsFreshForEV) method = 'ev';
     else if (raceType === 'honmei') method = 'prob';
     else if (raceType === 'ana') method = 'box';
     else method = 'formation';
@@ -362,6 +388,8 @@ function predictRace(sid, raceNum) {
   var bets = generateBetsV2(marks, method, betCount3, betCount2, raceOddsForEV, evOpt);
   bets.marks = marks;
   bets.evApplied = method === 'ev';
+  bets.oddsAgeMin = oddsAge;
+  bets.evSkippedStale = evMode && !!(raceOddsForEV && raceOddsForEV.trifecta) && !oddsFreshForEV;
   bets.scenarios = scenarioRes.scenarios; // {nige:0.55, sashi:0.18, ...}
   bets.scenarioDist = scenarioRes.dist; // {"1-2-3": 0.18, ...}
   bets.grade = grade;
@@ -418,8 +446,10 @@ function predictRace(sid, raceNum) {
         topN: anaTopN,
         excludeCombos: excludeCombos,
       });
-      var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
-      return picks.map(function (p) {
+      // 2026-11-20: 買い目（履歴・回収率の対象）にするのは EV≥1.0 の主候補だけ。
+      //   従来は主候補が無いと EV<1 の高オッズ組を代わりに入れていた（期待値の低い券を推奨していた）。
+      //   代わりの候補は詳細画面で「参考・非推奨」として見せるだけにする。
+      return anaRes.primary.map(function (p) {
         return p.combo;
       });
     }
@@ -450,6 +480,22 @@ function predictRace(sid, raceNum) {
 
   return bets;
 }
+
+// オッズの鮮度（分）。このレースの live 取得時刻 (_live_at, ms) と bulk の updated_at の新しい方。
+//   どちらも無ければ null。
+var ODDS_STALE_EV_MIN = 10;
+function _raceOddsAgeMin(raceOdds, now) {
+  var t = 0;
+  if (raceOdds && Number.isFinite(raceOdds._live_at)) t = raceOdds._live_at;
+  if (typeof oddsData !== 'undefined' && oddsData && oddsData.updated_at) {
+    var b = Date.parse(oddsData.updated_at);
+    if (Number.isFinite(b) && b > t) t = b;
+  }
+  if (!t) return null;
+  return Math.max(0, Math.round(((now || Date.now()) - t) / 60000));
+}
+globalThis._raceOddsAgeMin = _raceOddsAgeMin;
+globalThis.ODDS_STALE_EV_MIN = ODDS_STALE_EV_MIN;
 
 // globalThis export (REST_ONLY)
 globalThis.predictRace = predictRace;

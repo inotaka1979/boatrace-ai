@@ -28,10 +28,37 @@ function _renderRaceDetailBets(ctx) {
     predHtml +=
       '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
     predHtml +=
-      '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">推奨買い目 <span style="font-size:10px;color:var(--text-dim);font-weight:400">★' +
+      '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">推奨買い目 <span style="font-size:11px;color:var(--text-dim);font-weight:400">★' +
       activePredLabel +
       'ベース</span></div>';
 
+    // 2026-11-20: 推奨買い目の過去成績を常に併記する（既定の「三連単 確率順 10 点」は控除率 ~25% を
+    //   超えて負けており、勝てる買い方として受け取られないように）。値は docs/BACKTEST.md の実データ
+    //   backtest（10/05〜11/10, 5,354 レース, L1 当てはめ後）。再計測したら更新する。
+    predHtml +=
+      '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">過去 37 日の検証: 三連単 確率順 10 点の回収率 ' +
+      '<b style="color:var(--danger)">75%</b>（単勝 1 号艇ベタ買い 90%）。長期的には損失になる前提で、参考情報としてお使いください。</div>';
+    // 2026-11-20: 買い目の EV に使うオッズの時刻を出す。古い（10 分超）なら EV が過大に出る旨を明示。
+    if (raceOdds && typeof _raceOddsAgeMin === 'function') {
+      var _oa = _raceOddsAgeMin(raceOdds);
+      if (_oa != null) {
+        var _stale = _oa > ODDS_STALE_EV_MIN;
+        predHtml +=
+          '<div style="font-size:12px;margin-bottom:6px;color:' +
+          (_stale ? 'var(--danger)' : 'var(--text-dim)') +
+          '">オッズ: ' +
+          _oa +
+          ' 分前に取得' +
+          (_stale ? ' ⚠ 古いオッズの EV は過大に出ます（締切直前は人気の組ほど下がる）' : '') +
+          '</div>';
+      }
+    }
+    if (activePred && activePred.evSkippedStale) {
+      predHtml +=
+        '<div style="font-size:12px;margin-bottom:6px;color:var(--danger)">EV モード: オッズが ' +
+        ODDS_STALE_EV_MIN +
+        ' 分より古いため確率順で選んでいます</div>';
+    }
     if (activePred && activePred.trifecta) {
       // 直前予想の買い目
       predHtml +=
@@ -45,6 +72,10 @@ function _renderRaceDetailBets(ctx) {
         var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
         var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
         var evHtml = evBadge(ev3);
+        // 2026-11-20: EV で選んだ買い目が最新オッズで EV<1 になったら、妙味が消えたことを明示する。
+        if (activePred.evApplied && ev3 != null && ev3 < 1) {
+          evHtml += '<span style="font-size:11px;color:var(--danger);font-weight:700;margin-left:4px">妙味消失</span>';
+        }
         // FIX: 表示書式を .toFixed(1) に統一（穴予想 / オッズテーブルと整合）
         var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + '倍</span>' : '';
         // X1: EV モードの場合、Kelly 配分（円）を表示。
@@ -52,7 +83,7 @@ function _renderRaceDetailBets(ctx) {
         //   EV / オッズ乖離の「情報」表示に留める（未検証の確率で賭け金を推奨しない）。
         var stakeStr =
           t.stakeYen && !t.stakeSuppressed
-            ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
+            ? '<span style="font-size:11px;color:var(--accent);font-weight:700;margin-left:4px">¥' +
               t.stakeYen.toLocaleString() +
               '</span>'
             : '';
@@ -78,13 +109,13 @@ function _renderRaceDetailBets(ctx) {
           return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
         }, 0);
         predHtml +=
-          '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥' +
+          '<div style="font-size:11px;color:var(--accent);margin-top:4px">EV ベース投資合計: ¥' +
           totalStake.toLocaleString() +
           '</div>';
       }
       if (!raceOdds)
         predHtml +=
-          '<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
+          '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">オッズ未取得 -- 確率ベースの推定値</div>';
       predHtml += '<div class="bet-label">2連単推奨</div><div class="bet-combos">';
       activePred.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
@@ -120,12 +151,13 @@ function _renderRaceDetailBets(ctx) {
       predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
       predHtml += '</div>';
       predHtml +=
-        '<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
+        '<div style="font-size:11px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
     }
 
     // 🔥 穴予想: レースタイプ非依存、常に表示
     //   primary: オッズ30倍+ かつ EV>=1.0（高 EV 推奨）
-    //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN（EV<1 でも提示）
+    //   fallback: primary 0 件のとき オッズ15倍+ から EV 降順で topN を「見送り・参考」として表示
+    //             （2026-11-20: 買い目・履歴には入れない）
     //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
     //   B13 (2026-05-16): 推奨買い目に含まれる combo は穴からは除外し重複表示を防止
     var anaSrc = activePred || progPred;
@@ -167,13 +199,15 @@ function _renderRaceDetailBets(ctx) {
         var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
         var isPrimary = anaRes.primary.length > 0;
         if (picks.length > 0) {
+          // 2026-11-20: 主候補が無いときの高オッズ組は EV<1（期待値が低い）。買い目には入れず
+          //   （predictRace の bets.ana も主候補だけ）、「見送り」と明示して参考表示にとどめる。
           var subTitle = isPrimary
             ? 'オッズ30倍+ かつ EV≥1.0'
-            : '高 EV 候補なし — 高オッズ TOP' + picks.length + ' を参考表示';
+            : '妙味なし（見送り） — 参考: 高オッズ TOP' + picks.length + '（EV&lt;1・非推奨）';
           anaHtmlBlock =
             '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
           anaHtmlBlock +=
-            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' +
+            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:11px;color:var(--text-dim);font-weight:400">' +
             subTitle +
             '</span></div>';
           anaHtmlBlock += '<div class="bet-combos">';
@@ -188,7 +222,7 @@ function _renderRaceDetailBets(ctx) {
               '<span class="odds-val"> ' +
               p.odds.toFixed(1) +
               '倍</span>' +
-              '<span style="font-size:9px;color:' +
+              '<span style="font-size:11px;color:' +
               evColor +
               ';font-weight:700;margin-left:4px">EV ' +
               p.ev.toFixed(2) +
@@ -221,7 +255,7 @@ function _renderRaceDetailBets(ctx) {
           anaHtmlBlock =
             '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
           anaHtmlBlock +=
-            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:9px;color:var(--text-dim);font-weight:400">オッズ未取得 — AI 穴コンビ候補</span></div>';
+            '<div class="bet-label" style="color:#FF5722">🔥 穴予想 <span style="font-size:11px;color:var(--text-dim);font-weight:400">オッズ未取得 — AI 穴コンビ候補</span></div>';
           anaHtmlBlock += '<div class="bet-combos">';
           anaCands.forEach(function (p) {
             anaHtmlBlock +=
@@ -234,7 +268,7 @@ function _renderRaceDetailBets(ctx) {
           });
           anaHtmlBlock += '</div>';
           anaHtmlBlock +=
-            '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">※オッズ取得後に EV 評価へ自動更新</div>';
+            '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">※オッズ取得後に EV 評価へ自動更新</div>';
           anaHtmlBlock += '</div>';
         }
       }

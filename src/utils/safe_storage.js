@@ -309,7 +309,7 @@ function reportError(payload) {
 //   起動時に boot から `_runMigrations()` を呼び、CURRENT_SCHEMA まで段階適用する。
 //   各 migration は idempotent（多重実行しても無害）に書くこと。
 const SCHEMA_KEY = 'boatrace_schema_version';
-const CURRENT_SCHEMA = 4;
+const CURRENT_SCHEMA = 5;
 const MIGRATIONS = {
   // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
   2: function () {
@@ -382,6 +382,16 @@ const MIGRATIONS = {
         localStorage.setItem('boatrace_weights', JSON.stringify(w));
       }
     } catch (_) {}
+  },
+  // v4→v5 (2026-11-20): L1 の確率変換を変更（L1_TEMPERATURE 15→25、コース事前分布 0→0.6）。
+  //   保存済みの校正 (Platt / 場別 Platt / isotonic) は旧 L1 の確率に当てはめたもので、新しい確率に
+  //   掛けるとかえって歪む。identity に戻し、新モデルの予想 (model_v=2) が溜まってから当てはめ直す。
+  5: function () {
+    ['boatrace_platt', 'boatrace_platt_perstadium', 'boatrace_isotonic', 'boatrace_calib_method'].forEach(function (k) {
+      try {
+        localStorage.removeItem(k);
+      } catch (_) {}
+    });
   },
 };
 function _runMigrations() {

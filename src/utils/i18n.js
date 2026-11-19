@@ -3,7 +3,7 @@
 // 目的: 将来の多言語化に向けた最小フレーム。
 //   - 翻訳キー → 文字列テーブル（locale 別）
 //   - t(key, params) で翻訳取得、未定義キーは key そのものを返す（fail-soft）
-//   - locale は navigator.language 自動判定 + URL ?lang=xx で上書き可能
+//   - locale は既定 ja、URL ?lang=xx か保存済みの選択で切替（2026-11-20: navigator.language の自動判定は廃止）
 //
 // 現状: ja のみ実装、en は scaffold のみ。
 // 将来: 全 UI 文字列を t('xxx') 経由に置換 → en/zh 翻訳テーブル追加
@@ -288,7 +288,7 @@ const I18N_TABLES = {
 let _currentLocale = DEFAULT_LOCALE;
 
 function _detectLocale() {
-  // 優先順: URL ?lang=xx > localStorage > navigator.language の prefix > default
+  // 優先順: URL ?lang=xx > localStorage > default (ja)
   try {
     const qs = new URLSearchParams(location.search || '');
     const q = qs.get('lang');
@@ -298,10 +298,10 @@ function _detectLocale() {
     const stored = localStorage.getItem(I18N_KEY);
     if (stored && I18N_TABLES[stored]) return stored;
   } catch (_) {}
-  try {
-    const nav = (navigator.language || '').slice(0, 2);
-    if (nav && I18N_TABLES[nav]) return nav;
-  } catch (_) {}
+  // 2026-11-20: 端末の言語設定による自動切替をやめた。翻訳はナビ・見出しなど一部だけで、
+  //   予想の根拠・買い目・成績などの本文は日本語のため、英語設定の端末では画面ごとに日英が混ざっていた
+  //   （例: レース一覧は英語、レース詳細は「レース一覧に戻る」）。対象は日本の利用者なので既定は日本語、
+  //   他言語は ?lang= か保存済みの選択でだけ使う。
   return DEFAULT_LOCALE;
 }
 

@@ -138,6 +138,7 @@ async function main() {
     { marker: 'ANALYSIS_LEARNING', src: 'analysis/learning.js' },             // Phase 2 完遂続編 (learnFromResults)
     { marker: 'REPORTING_PAGE_ROUTER', src: 'reporting/page_router.js' },     // Phase 2 完遂続編 (showPage)
     { marker: 'REPORTING_STADIUM_PAGES', src: 'reporting/stadium_pages.js' }, // Phase 2 完遂続編 (renderStadiums + openStadium)
+    { marker: 'REPORTING_SOON_STRIP', src: 'reporting/soon_strip.js' }, // 2026-11-20: TOP まもなく締切 (rest bundle)
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
     { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
     { marker: 'REPORTING_RACE_DETAIL_BOATS', src: 'reporting/race_detail_boats.js' },           // Phase 2 完遂続編 (boats card)
@@ -239,7 +240,7 @@ async function main() {
   const WORKER_SHARED_CONSTANTS = [
     'COURSE_WIN_RATE', 'COURSE_MULTIPLIER', 'ET_COURSE_DECAY', 'DEFAULT_COURSE_TECHNIQUE',
     'L2_INIT_WEIGHTS', 'L2_BIAS', 'L2_LR0', 'L2_LR_TAU', 'L2_LAMBDA', 'L2_KEY_LIMIT',
-    'FEATURE_DIM', 'COURSE_LOG_PRIOR', 'TUNING',
+    'FEATURE_DIM', 'COURSE_LOG_PRIOR', 'L1_TEMPERATURE', 'L1_COURSE_PRIOR_WEIGHT', 'MODEL_VERSION', 'TUNING',
     'SCENARIO_PRIORS_BY_GRADE', 'SCENARIO_DIST',
     'STADIUM_WIND_PROFILE', 'GLOBAL_HEAD_DIRS', 'GLOBAL_TAIL_DIRS', 'TIDE_COURSE_BIAS',
     'DEFAULT_ENTRY_BY_STADIUM', 'GLOBAL_DEFAULT_ENTRY', 'ST_CLASS_BASELINE', 'CLASS_COURSE_MULT',

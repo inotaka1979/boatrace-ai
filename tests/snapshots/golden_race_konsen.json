@@ -2,88 +2,85 @@
   "raceType": "middle",
   "typeLabel": "混戦",
   "method": "prob",
-  "confidence": 43,
-  "confStars": 5,
-  "confLift": 3.62,
+  "confidence": 42,
+  "confStars": 1,
+  "confLift": 0.75,
   "marks": [
     {
-      "boat": 3,
+      "boat": 1,
       "mark": "◎",
-      "course": 3,
-      "prob": 0.434109
+      "course": 1,
+      "prob": 0.415155
     },
     {
-      "boat": 1,
+      "boat": 3,
       "mark": "○",
-      "course": 1,
-      "prob": 0.21001
+      "course": 3,
+      "prob": 0.257464
     },
     {
       "boat": 2,
       "mark": "▲",
       "course": 2,
-      "prob": 0.157098
+      "prob": 0.153471
     },
     {
       "boat": 4,
       "mark": "△",
       "course": 4,
-      "prob": 0.114591
+      "prob": 0.109894
     },
     {
       "boat": 5,
       "mark": "×",
       "course": 5,
-      "prob": 0.043737
+      "prob": 0.04286
     },
     {
       "boat": 6,
       "mark": "×",
       "course": 6,
-      "prob": 0.040455
+      "prob": 0.021157
     }
   ],
-  "trifectaSum": 0.448502,
+  "trifectaSum": 0.51324,
   "trifectaTop5": [
     {
-      "combo": "3-1-2",
-      "prob": 0.071116
+      "combo": "1-3-2",
+      "prob": 0.085676
     },
     {
-      "combo": "3-2-1",
-      "prob": 0.061911
+      "combo": "3-1-2",
+      "prob": 0.067481
+    },
+    {
+      "combo": "1-2-3",
+      "prob": 0.065022
+    },
+    {
+      "combo": "1-3-4",
+      "prob": 0.061348
     },
     {
       "combo": "3-1-4",
-      "prob": 0.051874
-    },
-    {
-      "combo": "1-3-2",
-      "prob": 0.050943
-    },
-    {
-      "combo": "2-3-1",
-      "prob": 0.041565
+      "prob": 0.04832
     }
   ],
   "exactaTop3": [
     {
-      "combo": "3-1",
-      "prob": 0.161104
-    },
-    {
-      "combo": "3-2",
-      "prob": 0.120513
-    },
-    {
       "combo": "1-3",
-      "prob": 0.115403
+      "prob": 0.182761
+    },
+    {
+      "combo": "3-1",
+      "prob": 0.143949
+    },
+    {
+      "combo": "1-2",
+      "prob": 0.108942
     }
   ],
-  "ana": [
-    "2-1-3",
-    "4-2-3"
-  ],
+  "ana": [],
   "scenarios": {
     "nige": 0.48,
     "sashi": 0.2,

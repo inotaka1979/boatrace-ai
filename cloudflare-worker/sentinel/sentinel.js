@@ -285,6 +285,8 @@ function gh(env, fetchImpl) {
   };
   return {
     dispatchDeploy: () => api('POST', `/actions/workflows/${env.DEPLOY_WORKFLOW}/dispatches`, { ref: 'main' }),
+    dispatchScrape: () =>
+      api('POST', `/actions/workflows/${env.SCRAPE_WORKFLOW || 'scrape-all.yml'}/dispatches`, { ref: 'main' }),
     ensureLabel: () =>
       api('POST', '/labels', { name: env.ISSUE_LABEL, color: 'd93f0b', description: 'Cloudflare Worker の cron が停止' }),
     findOpenIssue: async () => {
@@ -506,6 +508,57 @@ export async function runCheck(env, opts = {}) {
   return { ok: false, probe, actions, state };
 }
 
+// --- scrape-all の定時起動 (2026-11-20) ----------------------------------------
+//   GitHub schedule は本リポジトリで約 3.5 時間遅れて届き（実測 11/18-19: 宣言 8:30/10:00/13:00 →
+//   着 13:20-13:37 / 17:01-17:07 / 21:18-21:27）、朝の今節成績・racerDB が昼過ぎまで揃わなかった。
+//   workflow_dispatch は遅延しないので、sentinel (Cloudflare cron 5 分毎) が scrape-all.yml の宣言時刻に
+//   dispatch する。GH_TOKEN がある時だけ。同じ時刻に 2 回以上 dispatch しないよう KV に最後の時刻を残す
+//   (1 日 6 writes)。遅れて届いた schedule run は concurrency と各タスクの鮮度判定で空振りする。
+export const SCRAPE_ANCHORS_JST = [
+  [8, 30],
+  [10, 0],
+  [13, 0],
+  [16, 0],
+  [19, 0],
+  [22, 0],
+];
+const SCRAPE_DISPATCH_KEY = 'sentinel:scrape_dispatch';
+const SCRAPE_DISPATCH_WINDOW_MIN = 10; // 5 分 cron が 1 回欠けても拾える幅
+
+// 今が「宣言時刻〜+10 分」の中なら、その時刻の ID (JST 'YYYY-MM-DD HH:MM') を返す
+export function dueScrapeAnchor(now) {
+  const j = new Date(now.getTime() + 9 * 3600 * 1000);
+  const mins = j.getUTCHours() * 60 + j.getUTCMinutes();
+  for (const [h, m] of SCRAPE_ANCHORS_JST) {
+    const a = h * 60 + m;
+    if (mins >= a && mins < a + SCRAPE_DISPATCH_WINDOW_MIN) {
+      return j.toISOString().slice(0, 10) + ' ' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+  }
+  return null;
+}
+
+export async function maybeDispatchScrape(env, opts = {}) {
+  const now = opts.now || new Date();
+  const anchor = dueScrapeAnchor(now);
+  if (!anchor) return { dispatched: false, reason: 'not_due' };
+  const api = gh(env, opts.fetchImpl || fetch);
+  if (!api) return { dispatched: false, reason: 'no_gh_token', anchor };
+  let last = null;
+  try {
+    last = await env.BOATRACE_KV.get(SCRAPE_DISPATCH_KEY);
+  } catch (_) {}
+  if (last === anchor) return { dispatched: false, reason: 'already', anchor };
+  const r = await api.dispatchScrape();
+  const ok = r.status === 204;
+  if (ok) {
+    try {
+      await env.BOATRACE_KV.put(SCRAPE_DISPATCH_KEY, anchor);
+    } catch (_) {}
+  }
+  return { dispatched: ok, status: r.status, anchor };
+}
+
 // --- Worker entry ------------------------------------------------------------
 let _statusProbe = { at: 0, value: null }; // /status 用の本体 probe メモ (isolate ローカル)
 
@@ -522,6 +575,12 @@ export default {
       runCheck(env, { source: 'cron' }).then(
         (r) => console.log(`sentinel: ok=${r.ok} http=${r.probe.http} reason=${r.probe.reason} actions=[${r.actions.join('; ')}]`),
         (e) => console.log('sentinel: runCheck failed', e && e.message)
+      )
+    );
+    ctx.waitUntil(
+      maybeDispatchScrape(env).then(
+        (r) => r.reason !== 'not_due' && console.log('sentinel: scrape dispatch', JSON.stringify(r)),
+        (e) => console.log('sentinel: scrape dispatch failed', e && e.message)
       )
     );
   },

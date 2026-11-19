@@ -15,6 +15,7 @@
 //   - no-restricted-globals: stale な Open API 直接 fetch 防止 (現状空、Phase 7 後拡張)
 
 import globals from 'globals';
+import { appGlobals } from './build/app_globals.mjs';
 
 // ─── Phase 6: 退行防止ルール定義（共通） ───
 const CAPABILITIES_GUARDED_PATTERNS = [
@@ -175,10 +176,12 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: { ...globals.browser },
+      // 2026-11-20: app.js の宣言・export から集めたグローバル（build/app_globals.mjs）を渡して no-undef を有効化。
+      //   従来は off で、bundle 先のどこにも無い名前を参照しても検出できなかった。Chart は CDN を動的に読む。
+      globals: { ...globals.browser, ...appGlobals(), Chart: 'readonly' },
     },
     rules: {
-      'no-undef': 'off',
+      'no-undef': 'error',
       // 抽出元の var (関数スコープ) ループ変数を ESLint は block-scoped と
       // 誤検知して no-redeclare を出すので無効化 (原コードの挙動を保つ)
       'no-redeclare': 'off',

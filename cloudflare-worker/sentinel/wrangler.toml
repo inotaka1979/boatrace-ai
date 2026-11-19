@@ -38,6 +38,8 @@ crons = ["*/5 * * * *"]
 MAIN_BASE = "https://boatrace-scrape-trigger.inotaka1979.workers.dev"
 GH_REPO = "inotaka1979/boatrace-ai"
 DEPLOY_WORKFLOW = "deploy-worker.yml"
+# 2026-11-20: GH_TOKEN がある時、scrape-all.yml の宣言時刻 (JST 8:30/10/13/16/19/22) に dispatch する
+SCRAPE_WORKFLOW = "scrape-all.yml"
 ISSUE_LABEL = "worker-cron-dead"
 # 連続何回 strict 失敗で「障害」と判定するか（5 分 × 3 = 15 分）
 FAIL_THRESHOLD = "3"

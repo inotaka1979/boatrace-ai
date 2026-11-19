@@ -74,8 +74,9 @@
       var wtemp = w.water_temperature || w.race_water_temperature || "--";
       weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
     }
-    if (oddsData && oddsData.updated_at) {
-      var _ot = Date.parse(oddsData.updated_at);
+    var _osmRace = typeof _raceOddsAgeMin === "function" && raceOdds ? _raceOddsAgeMin(raceOdds) : null;
+    if (_osmRace != null || oddsData && oddsData.updated_at) {
+      var _ot = _osmRace != null ? Date.now() - _osmRace * 6e4 : Date.parse(oddsData.updated_at);
       if (!isNaN(_ot)) {
         var _osm = Math.round((Date.now() - _ot) / 6e4);
         if (_osm >= 30) {
@@ -106,7 +107,8 @@
           var label = type === "trifecta" ? "3\u9023\u5358" : type === "trio" ? "3\u9023\u8907" : "2\u9023\u5358";
           if (result.refund[type]) {
             result.refund[type].forEach(function(r) {
-              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + r.combination + '</span><span class="refund-val">\\' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
+              resHtml += '<div class="refund-row"><span class="refund-label">' + label + " " + escText(r.combination) + // 2026-11-20: 頭が円記号ではなくバックスラッシュ（"\1,520"）で表示されていた
+              '</span><span class="refund-val">\xA5' + (r.amount || r.payout || 0).toLocaleString() + "</span></div>";
             });
           }
         });
@@ -188,9 +190,9 @@
         if (stVal !== null && pf(stVal) < 0) stDisp = "F" + stDisp;
         var maintDisp = "";
         if (propVal)
-          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:9px">P' + escText(propVal) + "</span> ";
+          maintDisp += '<span style="background:#FFF3E0;color:#E65100;padding:1px 4px;border-radius:2px;font-size:11px">P' + escText(propVal) + "</span> ";
         if (partsVal)
-          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:9px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
+          maintDisp += '<span style="background:#E3F2FD;color:#1565C0;padding:1px 4px;border-radius:2px;font-size:11px;font-weight:700">\u2699' + escText(partsVal) + "</span>";
         if (!maintDisp) maintDisp = '<span style="color:#CCC">-</span>';
         var adjDisp = adjVal > 0 ? '<span style="color:var(--warn);font-weight:700">+' + adjVal.toFixed(1) + "</span>" : '<span style="color:#CCC">-</span>';
         exhHtml += "<tr>";
@@ -211,9 +213,9 @@
       }
       exhHtml += "</tbody></table></div>";
       if (_hasOe) {
-        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">' + _lapLabel + "\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>";
+        exhHtml += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">' + _lapLabel + "\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306F\u5F53\u8A72\u5834\u30AA\u30D5\u30A3\u30B7\u30E3\u30EB\u30B5\u30A4\u30C8\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\uFF08\u5B9F\u6E2C\uFF09</div>";
       } else {
-        exhHtml += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
+        exhHtml += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">\u203B \u3053\u306E\u5834\u306F\u4E00\u5468\u30FB\u307E\u308F\u308A\u8DB3\u30FB\u76F4\u7DDA\u306E\u30AA\u30EA\u30B8\u30CA\u30EB\u5C55\u793A\u306B\u672A\u5BFE\u5FDC\uFF08boatrace.jp \u516C\u5F0F\u306B\u306F\u975E\u63B2\u8F09\uFF09</div>';
       }
       if (preview && preview.boats) {
         var courseEntries = [];
@@ -320,7 +322,18 @@
     }
     if (activePred || progPred) {
       predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
-      predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
+      predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:11px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
+      predHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">\u904E\u53BB 37 \u65E5\u306E\u691C\u8A3C: \u4E09\u9023\u5358 \u78BA\u7387\u9806 10 \u70B9\u306E\u56DE\u53CE\u7387 <b style="color:var(--danger)">75%</b>\uFF08\u5358\u52DD 1 \u53F7\u8247\u30D9\u30BF\u8CB7\u3044 90%\uFF09\u3002\u9577\u671F\u7684\u306B\u306F\u640D\u5931\u306B\u306A\u308B\u524D\u63D0\u3067\u3001\u53C2\u8003\u60C5\u5831\u3068\u3057\u3066\u304A\u4F7F\u3044\u304F\u3060\u3055\u3044\u3002</div>';
+      if (raceOdds && typeof _raceOddsAgeMin === "function") {
+        var _oa = _raceOddsAgeMin(raceOdds);
+        if (_oa != null) {
+          var _stale = _oa > ODDS_STALE_EV_MIN;
+          predHtml += '<div style="font-size:12px;margin-bottom:6px;color:' + (_stale ? "var(--danger)" : "var(--text-dim)") + '">\u30AA\u30C3\u30BA: ' + _oa + " \u5206\u524D\u306B\u53D6\u5F97" + (_stale ? " \u26A0 \u53E4\u3044\u30AA\u30C3\u30BA\u306E EV \u306F\u904E\u5927\u306B\u51FA\u307E\u3059\uFF08\u7DE0\u5207\u76F4\u524D\u306F\u4EBA\u6C17\u306E\u7D44\u307B\u3069\u4E0B\u304C\u308B\uFF09" : "") + "</div>";
+        }
+      }
+      if (activePred && activePred.evSkippedStale) {
+        predHtml += '<div style="font-size:12px;margin-bottom:6px;color:var(--danger)">EV \u30E2\u30FC\u30C9: \u30AA\u30C3\u30BA\u304C ' + ODDS_STALE_EV_MIN + " \u5206\u3088\u308A\u53E4\u3044\u305F\u3081\u78BA\u7387\u9806\u3067\u9078\u3093\u3067\u3044\u307E\u3059</div>";
+      }
       if (activePred && activePred.trifecta) {
         predHtml += '<div class="bet-label">3\u9023\u5358\u63A8\u5968 <span class="bet-method">[' + escText(activePred.methodLabel || "") + ']</span></div><div class="bet-combos">';
         activePred.trifecta.forEach(function(t) {
@@ -328,8 +341,11 @@
           var odds3 = liveOdds != null ? liveOdds : t.odds != null ? t.odds : null;
           var ev3 = odds3 != null ? calcEV(t.prob, odds3) : t.ev != null ? t.ev : null;
           var evHtml = evBadge(ev3);
+          if (activePred.evApplied && ev3 != null && ev3 < 1) {
+            evHtml += '<span style="font-size:11px;color:var(--danger);font-weight:700;margin-left:4px">\u5999\u5473\u6D88\u5931</span>';
+          }
           var oddsStr = odds3 != null ? '<span class="odds-val"> ' + Number(odds3).toFixed(1) + "\u500D</span>" : "";
-          var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
+          var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:11px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
         predHtml += _emptyBetsNote(activePred.trifecta, settings.betCount3, 10);
@@ -341,10 +357,10 @@
           var totalStake = activePred.trifecta.reduce(function(a, t) {
             return a + (t.stakeSuppressed ? 0 : t.stakeYen || 0);
           }, 0);
-          predHtml += '<div style="font-size:10px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
+          predHtml += '<div style="font-size:11px;color:var(--accent);margin-top:4px">EV \u30D9\u30FC\u30B9\u6295\u8CC7\u5408\u8A08: \xA5' + totalStake.toLocaleString() + "</div>";
         }
         if (!raceOdds)
-          predHtml += '<div style="font-size:9px;color:var(--text-dim);margin-bottom:6px">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 -- \u78BA\u7387\u30D9\u30FC\u30B9\u306E\u63A8\u5B9A\u5024</div>';
+          predHtml += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 -- \u78BA\u7387\u30D9\u30FC\u30B9\u306E\u63A8\u5B9A\u5024</div>';
         predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
         activePred.exacta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + "</span>";
@@ -373,7 +389,7 @@
         });
         predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
         predHtml += "</div>";
-        predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
+        predHtml += '<div style="font-size:11px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
       }
       var anaSrc = activePred || progPred;
       var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
@@ -409,13 +425,13 @@
           var picks = anaRes.primary.length > 0 ? anaRes.primary : anaRes.fallback;
           var isPrimary = anaRes.primary.length > 0;
           if (picks.length > 0) {
-            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u9AD8 EV \u5019\u88DC\u306A\u3057 \u2014 \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + " \u3092\u53C2\u8003\u8868\u793A";
+            var subTitle = isPrimary ? "\u30AA\u30C3\u30BA30\u500D+ \u304B\u3064 EV\u22651.0" : "\u5999\u5473\u306A\u3057\uFF08\u898B\u9001\u308A\uFF09 \u2014 \u53C2\u8003: \u9AD8\u30AA\u30C3\u30BA TOP" + picks.length + "\uFF08EV&lt;1\u30FB\u975E\u63A8\u5968\uFF09";
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
-            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
+            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:11px;color:var(--text-dim);font-weight:400">' + subTitle + "</span></div>";
             anaHtmlBlock += '<div class="bet-combos">';
             picks.forEach(function(p) {
               var evColor = p.ev >= 1 ? "#FF5722" : "#999";
-              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p.odds.toFixed(1) + '\u500D</span><span style="font-size:9px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p.ev.toFixed(2) + "</span></span>";
+              anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + '%</span><span class="odds-val"> ' + p.odds.toFixed(1) + '\u500D</span><span style="font-size:11px;color:' + evColor + ';font-weight:700;margin-left:4px">EV ' + p.ev.toFixed(2) + "</span></span>";
             });
             anaHtmlBlock += "</div></div>";
           }
@@ -439,13 +455,13 @@
           anaCands = anaCands.slice(0, anaTopN);
           if (anaCands.length > 0) {
             anaHtmlBlock = '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">';
-            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:9px;color:var(--text-dim);font-weight:400">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 \u2014 AI \u7A74\u30B3\u30F3\u30D3\u5019\u88DC</span></div>';
+            anaHtmlBlock += '<div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3 <span style="font-size:11px;color:var(--text-dim);font-weight:400">\u30AA\u30C3\u30BA\u672A\u53D6\u5F97 \u2014 AI \u7A74\u30B3\u30F3\u30D3\u5019\u88DC</span></div>';
             anaHtmlBlock += '<div class="bet-combos">';
             anaCands.forEach(function(p) {
               anaHtmlBlock += '<span class="bet-chip">' + p.combo + ' <span class="fs-9 c-dim">' + (p.prob * 100).toFixed(2) + "%</span></span>";
             });
             anaHtmlBlock += "</div>";
-            anaHtmlBlock += '<div style="font-size:9px;color:var(--text-dim);margin-top:4px">\u203B\u30AA\u30C3\u30BA\u53D6\u5F97\u5F8C\u306B EV \u8A55\u4FA1\u3078\u81EA\u52D5\u66F4\u65B0</div>';
+            anaHtmlBlock += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">\u203B\u30AA\u30C3\u30BA\u53D6\u5F97\u5F8C\u306B EV \u8A55\u4FA1\u3078\u81EA\u52D5\u66F4\u65B0</div>';
             anaHtmlBlock += "</div>";
           }
         }
@@ -547,7 +563,7 @@
         var m = pred ? pred.marks.find(function(x) {
           return x.boat === bn;
         }) : null;
-        var markStr = m ? ' <span style="font-size:10px;color:var(--accent)">' + m.mark + "</span>" : "";
+        var markStr = m ? ' <span style="font-size:11px;color:var(--accent)">' + m.mark + "</span>" : "";
         var rid = bt.racer_number || 0;
         var photoHtml = rid ? '<img class="racer-photo" src="data/photos/' + rid + `.jpg" loading="lazy" alt="" onerror="this.dataset.broken='1'">` : "";
         boatsHtml += "<td>" + photoHtml + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
@@ -563,7 +579,7 @@
         var age = bt.racer_age || "-";
         var branch = bt.racer_branch_name || "-";
         var weight = bt.racer_weight || "-";
-        boatsHtml += '<td style="font-size:10px">' + age + "\u6B73/" + escText(branch) + "<br>" + weight + "kg</td>";
+        boatsHtml += '<td style="font-size:11px">' + age + "\u6B73/" + escText(branch) + "<br>" + weight + "kg</td>";
       }
       boatsHtml += "<th>\u5E74\u9F62\u7B49</th></tr>";
       boatsHtml += "<tr>";
@@ -588,7 +604,7 @@
         }
         var mr = pf(bt.racer_assigned_motor_top_2_percent);
         var me = motorEvalGrade(mr);
-        boatsHtml += '<td><span class="' + me.cls + '">' + me.grade + '</span> <span style="font-size:9px;color:var(--text-sub)">' + me.label + "</span></td>";
+        boatsHtml += '<td><span class="' + me.cls + '">' + me.grade + '</span> <span style="font-size:11px;color:var(--text-sub)">' + me.label + "</span></td>";
       }
       boatsHtml += "<th>\u30E2\u30FC\u30BF\u30FC</th></tr>";
       boatsHtml += "<tr>";
@@ -727,9 +743,10 @@
     var predHtml = "";
     var progPred = predictRaceProgram(sid, parseInt(rn));
     var boats = race && race.boats ? race.boats : [];
+    var progHtml = "";
     if (progPred) {
-      predHtml += '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
-      predHtml += '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">\u756A\u7D44\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u51FA\u8D70\u8868\u30C7\u30FC\u30BF\u306E\u307F</span></div>';
+      progHtml += '<div style="background:#F0F4FF;border:1px solid #C5CAE9;border-radius:10px;padding:12px;margin:8px 0">';
+      progHtml += '<div style="font-weight:700;font-size:14px;color:#1A237E;margin-bottom:8px">\u756A\u7D44\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u51FA\u8D70\u8868\u30C7\u30FC\u30BF\u306E\u307F</span></div>';
       progPred.marks.forEach(function(m, i) {
         if (i >= 4) return;
         var boatInfo = boats.find(function(b) {
@@ -737,24 +754,25 @@
         });
         var nm = boatInfo ? (boatInfo.racer_name || "").split(/\s|\u3000/)[0] : "";
         var probPct = Math.round(m.prob * 100);
-        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
-        predHtml += boatBadge(m.boat);
-        predHtml += "<span>" + escText(nm) + "</span>";
-        predHtml += '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + "%</span>";
-        predHtml += "</div>";
+        progHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+        progHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        progHtml += boatBadge(m.boat);
+        progHtml += "<span>" + escText(nm) + "</span>";
+        progHtml += '<span style="font-family:monospace;color:#1A237E;font-weight:700;margin-left:auto">' + probPct + "%</span>";
+        progHtml += "</div>";
       });
       var progTypeIcon = progPred.raceType === "honmei" ? "\u26A1" : progPred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + progTypeIcon + progPred.typeLabel + "  \u4FE1\u983C\u5EA6: " + progPred.confidence + "%</div>";
+      progHtml += '<div class="note-orange">' + progTypeIcon + progPred.typeLabel + "  \u4FE1\u983C\u5EA6: " + progPred.confidence + "%</div>";
       if (progPred.marks[0].reasons && progPred.marks[0].reasons.length > 0) {
-        predHtml += '<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
+        progHtml += '<div style="font-size:11px;color:#555;margin-top:6px;padding:6px;background:#E8EAF6;border-radius:6px">';
         progPred.marks[0].reasons.slice(0, 3).forEach(function(r) {
-          predHtml += "<div>\u30FB" + escText(r) + "</div>";
+          progHtml += "<div>\u30FB" + escText(r) + "</div>";
         });
-        predHtml += "</div>";
+        progHtml += "</div>";
       }
-      predHtml += "</div>";
+      progHtml += "</div>";
     }
+    var liveHtml = "";
     var hasRealPreview = false;
     if (preview && preview.boats) {
       for (var pk in preview.boats) {
@@ -764,12 +782,12 @@
         }
       }
     }
-    predHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
-    predHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
+    liveHtml += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px;margin:8px 0">';
+    liveHtml += '<div style="font-weight:700;font-size:14px;color:#E65100;margin-bottom:8px">\u76F4\u524D\u4E88\u60F3 <span style="font-size:11px;color:#666;font-weight:400">\u5C55\u793A\u822A\u8D70\u53CD\u6620</span></div>';
     var lockedPred = !!ctx.lockedPred;
     if ((hasRealPreview || lockedPred) && pred) {
       if (lockedPred) {
-        predHtml += '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">\u{1F512} \u7DE0\u5207\u6642\u70B9\u306E\u4E88\u60F3\u3092\u8868\u793A\u3057\u3066\u3044\u307E\u3059' + (pred.restored ? "\uFF08\u4FDD\u5B58\u30C7\u30FC\u30BF\u304B\u3089\u5FA9\u5143\uFF09" : "") + "</div>";
+        liveHtml += '<div style="font-size:11px;color:#6B6B6B;margin:-4px 0 6px">\u{1F512} \u7DE0\u5207\u6642\u70B9\u306E\u4E88\u60F3\u3092\u8868\u793A\u3057\u3066\u3044\u307E\u3059' + (pred.restored ? "\uFF08\u4FDD\u5B58\u30C7\u30FC\u30BF\u304B\u3089\u5FA9\u5143\uFF09" : "") + "</div>";
       }
       var diff = comparePredictions(progPred, pred);
       pred.marks.forEach(function(m, i) {
@@ -790,16 +808,16 @@
           var color = change.rankDiff > 0 ? "#43A047" : "#E53935";
           diffStr = ' <span style="color:' + color + ';font-size:11px;font-weight:700">' + arrow + pSign + p + "%</span>";
         }
-        predHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
-        predHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
-        predHtml += boatBadge(m.boat);
-        predHtml += "<span>" + escText(nm) + "</span>";
-        predHtml += '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + "%</span>";
-        predHtml += diffStr;
-        predHtml += "</div>";
+        liveHtml += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px">';
+        liveHtml += '<span style="font-weight:700;width:20px">' + m.mark + "</span>";
+        liveHtml += boatBadge(m.boat);
+        liveHtml += "<span>" + escText(nm) + "</span>";
+        liveHtml += '<span style="font-family:monospace;color:#E65100;font-weight:700;margin-left:auto">' + probPct + "%</span>";
+        liveHtml += diffStr;
+        liveHtml += "</div>";
       });
       var liveTypeIcon = pred.raceType === "honmei" ? "\u26A1" : pred.raceType === "ana" ? "\u{1F525}" : "\u{1F4CA}";
-      predHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%" + // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
+      liveHtml += '<div class="note-orange">' + liveTypeIcon + pred.typeLabel + "  \u4FE1\u983C\u5EA6: " + starsHtml(pred.confStars) + " " + pred.confidence + "%" + // A-03: ★はベースライン超過 (lift) で判定。「48% なのに★4」を lift 併記で説明。
       (pred.confLift != null ? " (\u57FA\u6E96\u6BD4 " + pred.confLift + "x)" : "") + "</div>";
       if (pred.scenarios) {
         var scen = pred.scenarios;
@@ -811,53 +829,53 @@
             scenStr += '<span style="margin-right:8px"><b>' + scenLabels[k] + "</b> " + pct + "%</span>";
           }
         });
-        predHtml += '<div style="font-size:10px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">\u60F3\u5B9A\u5C55\u958B: ' + scenStr + "</div>";
+        liveHtml += '<div style="font-size:11px;color:#666;margin-top:4px;padding:4px 6px;background:#F5F5F5;border-radius:4px">\u60F3\u5B9A\u5C55\u958B: ' + scenStr + "</div>";
       }
       if (diff) {
         var hasChange = diff.changes.some(function(c) {
           return c.rankDiff !== 0;
         });
         if (hasChange) {
-          predHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
-          predHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">\u5C55\u793A\u306B\u3088\u308B\u5909\u52D5</div>';
+          liveHtml += '<div style="font-size:11px;margin-top:8px;padding:6px;background:#FFF3E0;border-radius:6px">';
+          liveHtml += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">\u5C55\u793A\u306B\u3088\u308B\u5909\u52D5</div>';
           diff.changes.forEach(function(c) {
             if (c.rankDiff > 0) {
               var reasons = c.addedReasons.length > 0 ? c.addedReasons.slice(0, 2).join(", ") : "\u5C55\u793A\u597D\u8ABF";
-              predHtml += '<div style="color:#2E7D32">\u2191 ' + c.boat + "\u53F7\u8247: " + escText(reasons) + "</div>";
+              liveHtml += '<div style="color:#2E7D32">\u2191 ' + c.boat + "\u53F7\u8247: " + escText(reasons) + "</div>";
             } else if (c.rankDiff < 0) {
               var risks = c.addedRisks.length > 0 ? c.addedRisks.slice(0, 2).join(", ") : "\u5C55\u793A\u4E0D\u8ABF";
-              predHtml += '<div style="color:#C62828">\u2193 ' + c.boat + "\u53F7\u8247: " + escText(risks) + "</div>";
+              liveHtml += '<div style="color:#C62828">\u2193 ' + c.boat + "\u53F7\u8247: " + escText(risks) + "</div>";
             }
           });
           if (diff.typeChanged) {
-            predHtml += '<div style="color:#D84315;font-weight:700;margin-top:4px">\u26A0 ' + diff.progType + " \u2192 " + diff.liveType + " \u306B\u5909\u5316</div>";
+            liveHtml += '<div style="color:#D84315;font-weight:700;margin-top:4px">\u26A0 ' + diff.progType + " \u2192 " + diff.liveType + " \u306B\u5909\u5316</div>";
           }
-          predHtml += "</div>";
+          liveHtml += "</div>";
         }
       }
       if (popularity && pred.marks.length > 0) {
         var aiTop = pred.marks[0].boat;
         var popTop = popularity[0] ? popularity[0].boat : 0;
         if (aiTop !== popTop && popTop > 0) {
-          predHtml += '<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI\u4E88\u60F3\u25CE' + aiTop + "\u53F7\u8247 vs 1\u756A\u4EBA\u6C17" + popTop + "\u53F7\u8247 -- \u9006\u5F35\u308A\u6CE8\u76EE</div>";
+          liveHtml += '<div style="font-size:11px;color:var(--warn);margin:6px 0;padding:6px;background:#FFF8E1;border:1px solid #FFE0B2;border-radius:6px">AI\u4E88\u60F3\u25CE' + aiTop + "\u53F7\u8247 vs 1\u756A\u4EBA\u6C17" + popTop + "\u53F7\u8247 -- \u9006\u5F35\u308A\u6CE8\u76EE</div>";
         }
       }
     } else {
       var _finished = !!(result && result.isFinished);
-      predHtml += '<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
+      liveHtml += '<div style="text-align:center;padding:16px;color:#666;background:#FAFAFA;border:1px dashed #DDD;border-radius:8px">';
       if (_finished) {
-        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u{1F4CB}</div>';
-        predHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">\u5C55\u793A\u30C7\u30FC\u30BF\u672A\u53D6\u5F97\u306E\u30EC\u30FC\u30B9\u3067\u3059</div>';
-        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u5C55\u793A\u7A93\u6642\u523B\u306B\u30B9\u30AF\u30EC\u30A4\u30D7\u304C\u5C4A\u304B\u305A\u3001\u76F4\u524D\u4E88\u60F3\u306F\u751F\u6210\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F<br>\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3068<b>\u30EC\u30FC\u30B9\u7D50\u679C</b>\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044</div>';
+        liveHtml += '<div style="font-size:20px;margin-bottom:6px">\u{1F4CB}</div>';
+        liveHtml += '<div style="font-size:13px;font-weight:700;color:#C62828">\u5C55\u793A\u30C7\u30FC\u30BF\u672A\u53D6\u5F97\u306E\u30EC\u30FC\u30B9\u3067\u3059</div>';
+        liveHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u5C55\u793A\u7A93\u6642\u523B\u306B\u30B9\u30AF\u30EC\u30A4\u30D7\u304C\u5C4A\u304B\u305A\u3001\u76F4\u524D\u4E88\u60F3\u306F\u751F\u6210\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F<br>\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3068<b>\u30EC\u30FC\u30B9\u7D50\u679C</b>\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044</div>';
       } else {
-        predHtml += '<div style="font-size:20px;margin-bottom:6px">\u23F3</div>';
-        predHtml += '<div style="font-size:13px;font-weight:700">\u5C55\u793A\u822A\u8D70\u306E\u53CD\u6620\u5F85\u3061</div>';
-        predHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u30EC\u30FC\u30B9\u958B\u59CB\u7D04 15 \u5206\u524D\u306E\u5C55\u793A\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059<br>\u305D\u308C\u307E\u3067\u306F\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3092\u3054\u53C2\u7167\u304F\u3060\u3055\u3044</div>';
+        liveHtml += '<div style="font-size:20px;margin-bottom:6px">\u23F3</div>';
+        liveHtml += '<div style="font-size:13px;font-weight:700">\u5C55\u793A\u822A\u8D70\u306E\u53CD\u6620\u5F85\u3061</div>';
+        liveHtml += '<div style="font-size:11px;color:#888;margin-top:4px">\u30EC\u30FC\u30B9\u958B\u59CB\u7D04 15 \u5206\u524D\u306E\u5C55\u793A\u3067\u66F4\u65B0\u3055\u308C\u307E\u3059<br>\u305D\u308C\u307E\u3067\u306F\u4E0A\u306E<b>\u756A\u7D44\u4E88\u60F3</b>\u3092\u3054\u53C2\u7167\u304F\u3060\u3055\u3044</div>';
       }
-      predHtml += "</div>";
+      liveHtml += "</div>";
     }
-    predHtml += "</div>";
-    predHtml += _renderRaceDetailBets({
+    liveHtml += "</div>";
+    var betsHtml = _renderRaceDetailBets({
       sid,
       rn,
       race,
@@ -866,6 +884,14 @@
       hasRealPreview,
       raceOdds
     });
+    if ((hasRealPreview || lockedPred) && pred) {
+      predHtml += liveHtml + betsHtml;
+      if (progHtml) {
+        predHtml += '<details class="prog-pred-fold" style="margin:8px 0"><summary style="font-size:13px;color:var(--text-sub);cursor:pointer;min-height:44px;display:flex;align-items:center">\u756A\u7D44\u4E88\u60F3\uFF08\u671D\u306E\u51FA\u8D70\u8868\u30D9\u30FC\u30B9\uFF09\u3092\u8868\u793A</summary>' + progHtml + "</details>";
+      }
+    } else {
+      predHtml += progHtml + liveHtml + betsHtml;
+    }
     if (typeof _renderPairwiseSummary === "function" && race && race.boats) {
       var pwHtml = _renderPairwiseSummary(race.boats);
       if (pwHtml) predHtml += pwHtml;
