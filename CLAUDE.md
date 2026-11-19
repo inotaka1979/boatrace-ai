@@ -1556,3 +1556,16 @@ install できない）を解消。
 - レース詳細の出走表に 4 行: コース成績（展示の進入で引く）/ 決まり手（1 コースは逃げ率と負け方）/ 平均 ST と展示比 /
   モーター 2 連率。取得は discovery 層 `src/discovery/racer_stats_loader.js`（reporting 層は network IO 禁止）、届いたら再描画。
 - テスト: test_aggregate_racer_stats.py（8 件）、test_racer_stats_view.js（4 件）、test_raceresult_parse の .py / .js に追加。
+
+## 修正履歴 (2026-11-20: 表示済みの展示が消える（鳴門）)
+
+ユーザー報告「鳴門が展示が終わって表示されていたのに消えた」。2 層の原因。
+- **Worker**: 上流 previews が正常な時は openapi の previews（展示が無い / 欠ける）をそのまま base として KV に上書きし、
+  KV の展示を引き継ぐのは上流が壊れている時だけだった。直接スクレイプで足し直すのは締切窓内の最大 20 レースなので、
+  窓を過ぎたレースの展示は KV から消えたまま戻らない。→ `carryRicherExhibitions`: 同じ日の前回 KV のほうが展示艇数が
+  多いレースは前回の艇データ・気象を引き継いでから base を書く（`out.previews.kv_carried`）。
+- **アプリ**: `_filterStalePreviews` は展示も気象も無いレースを除外し（古い日付の応答は全件除外）、`_mergePreviewIndex` は
+  新しい応答にあるレースしか見ないため、応答から抜けたレースの表示済み展示が消えた。→ 今日の番組表にあるレースは
+  展示を残す（前日の残骸は残さない）。90 秒 poll / 更新ボタン / レース更新の 3 経路とも同じ関数を通る。
+- `scripts/tests/test_preview_carry.mjs`（4 件、Worker は実モジュールで cron 1 回を KV 付きで実行）。両側とも修正を外す
+  mutation で失敗。調査時点の Worker /api/previews は鳴門 1R の展示 6 艇を持っていた（一時的な欠落と整合）。

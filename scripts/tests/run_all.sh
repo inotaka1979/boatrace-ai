@@ -227,6 +227,10 @@ step "Worker state sync list covers what the predictor reads" \
 step "Cloudflare Worker KV write budget" \
      "node scripts/tests/test_worker_kv_budget.mjs"
 
+# 2026-11-20: 表示済みの展示が消えない（Worker の KV 引き継ぎ + アプリの poll マージ）
+step "Exhibition data is never dropped (Worker carry + app merge)" \
+     "node scripts/tests/test_preview_carry.mjs"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"
