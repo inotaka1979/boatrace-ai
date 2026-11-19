@@ -452,6 +452,15 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         log.warning("  aggregate_racer_stats error: %s (non-fatal)", e)
 
+    # 2026-11-20: 今節成績を選手番号で引ける形に（data/racedata/series.json）。racedata 取得後に
+    #   確定したレースと、racedata が前日のままの朝の表示に使う。ローカルのファイルだけで数秒。
+    try:
+        ser = _run_subprocess("build_series.py", timeout_sec=60)
+        if ser != 0:
+            log.warning("  build_series exit=%d (non-fatal)", ser)
+    except Exception as e:  # noqa: BLE001
+        log.warning("  build_series error: %s (non-fatal)", e)
+
     elapsed = time.monotonic() - overall_started
     log.info("=== scrape_all done in %.1fs, failures=%d ===", elapsed, len(failures))
     if failures:

@@ -322,18 +322,13 @@ function _renderRaceDetailBoats(ctx) {
     boatsHtml += _racerStatsRows(boatMap, pvMap, ctx.sid);
 
     // F16: 今節成績 (Macool 風) — 14 cells (= 7 days × 2 slots) を縦並べ
-    if (rdForRace && rdForRace.boats) {
+    {
       var boatsSeries = [];
       var maxNonNull = 0;
       for (var bn = 1; bn <= 6; bn++) {
         var bt = boatMap[bn];
         var rid = bt ? bt.racer_number || 0 : 0;
-        var rdBoat = rdForRace.boats
-          ? rdForRace.boats.find(function (rb) {
-              return rb.boat_number === bn || rb.racer_number === rid;
-            })
-          : null;
-        var arr = rdBoat ? rdBoat.current_series_results || [] : [];
+        var arr = _seriesSlotsFor(ctx.sid, rdForRace, bn, rid);
         boatsSeries.push(arr);
         for (var i = 0; i < arr.length; i++) {
           if (arr[i] != null && i + 1 > maxNonNull) maxNonNull = i + 1;
@@ -370,6 +365,108 @@ function _renderRaceDetailBoats(ctx) {
   ctx.pvMap = pvMap;
   ctx.etRankMap = etRankMap;
   ctx.stRankMap = stRankMap;
+}
+
+// ---------------------------------------------------------------------------
+// 2026-11-20: 今節成績（7 日 × 2 走 = 14 枠）を組み立てる。
+//   racedata は 1 日 1 回（朝〜昼）しか取らず、取得後に確定したレースが入らない。翌朝は前日の
+//   racedata が残る（getRaceDataForRace は今日の分しか返さない）。そこで
+//     1. 今日の racedata（rdForRace）、無ければ series.json（scripts/build_series.py、選手番号で引ける。
+//        前日分なら前日が最終日でないときだけ）を土台にし
+//     2. 今日の確定結果で今日の枠を埋める（その選手の今日の n 走目 → 今日の n 番目の枠）
+var SERIES_SLOTS = 14;
+
+function _seriesDayNum(label) {
+  if (!label) return null;
+  var s = String(label);
+  if (s.indexOf('初日') === 0) return 1;
+  var m = s
+    .replace(/[０-９]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xfee0);
+    })
+    .match(/(\d+)\s*日目/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function _stStr(v) {
+  if (v == null || v === '') return '';
+  var f = parseFloat(v);
+  if (isNaN(f)) return '';
+  if (f < 0) return 'F';
+  return f < 1 ? f.toFixed(2).replace(/^0/, '') : f.toFixed(2);
+}
+
+// 前日の series.json から今日の日目（前日が中止なら進まない）
+function _seriesNextDay(Ss) {
+  return Ss.held === false ? Ss.day : Ss.day + 1;
+}
+
+function _seriesSlotsFor(sid, rdForRace, bn, rid) {
+  var today = typeof todayStr === 'function' ? todayStr() : '';
+  var yday = typeof jstYmd === 'function' ? jstYmd(-1) : '';
+  var S = globalThis._seriesData;
+  var Ss = S && S.stadiums ? S.stadiums[String(sid)] : null;
+  var slots = null;
+  var day = null;
+  // 土台: 同じ日の series.json（racedata + 取得後の確定結果）> 今日の racedata > 前日の series.json
+  if (Ss && S.date === today && rid && Ss.racers[String(rid)]) {
+    slots = Ss.racers[String(rid)].slice();
+    day = Ss.day;
+  }
+  if (!slots && rdForRace && rdForRace.boats) {
+    var rb = rdForRace.boats.find(function (b) {
+      return (rid && b.racer_number === rid) || b.boat_number === bn;
+    });
+    if (rb) slots = (rb.current_series_results || []).slice();
+    day = _seriesDayNum(rdForRace.day_label);
+  }
+  if (!slots && Ss && S.date === yday && !Ss.final && Ss.day) {
+    if (rid && Ss.racers[String(rid)]) slots = Ss.racers[String(rid)].slice();
+    day = _seriesNextDay(Ss);
+  }
+  if (day == null && Ss && Ss.day && !Ss.final)
+    day = S.date === today ? Ss.day : S.date === yday ? _seriesNextDay(Ss) : null;
+  if (!slots) {
+    if (!day) return [];
+    slots = [];
+  }
+  while (slots.length < SERIES_SLOTS) slots.push(null);
+  if (!day || day > SERIES_SLOTS / 2 || !rid) return slots;
+  // 今日の確定結果で今日の枠を埋める
+  var st = programData && programData[sid];
+  if (!st) return slots;
+  var base = (day - 1) * 2;
+  var k = 0;
+  var rnos = Object.keys(st).sort(function (a, b) {
+    return parseInt(a) - parseInt(b);
+  });
+  for (var i = 0; i < rnos.length && k < 2; i++) {
+    var race = st[rnos[i]];
+    var pb =
+      race && race.boats
+        ? race.boats.find(function (b) {
+            return b.racer_number === rid;
+          })
+        : null;
+    if (!pb) continue;
+    var res = resultData && resultData[sid] && resultData[sid][rnos[i]];
+    if (res && res.isFinished && res.results) {
+      var wb = pb.racer_boat_number;
+      var rr = res.results.find(function (x) {
+        return x.racer_boat_number === wb;
+      });
+      // 失格・欠場（着順なし）も枠は消費する
+      var hasSt = rr && rr.racer_start_timing != null;
+      slots[base + k] = {
+        waku: wb,
+        course: rr && hasSt ? rr.racer_course_number : null,
+        place: rr ? rr.place : null,
+        st: rr && hasSt ? _stStr(rr.racer_start_timing) : '',
+      };
+    }
+    k++;
+  }
+  return slots;
 }
 
 // ---------------------------------------------------------------------------
@@ -482,3 +579,4 @@ function _racerStatsRows(boatMap, pvMap, sid) {
 
 globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
 globalThis._racerStatsRows = _racerStatsRows;
+globalThis._seriesSlotsFor = _seriesSlotsFor;

@@ -70,6 +70,9 @@ step "Python unit tests (archive backfill)" \
 # 2026-11-20: 選手・モーターの長期集計（月別、解析版 2 の結果だけ、二重計上なし）
 step "Python unit tests (long-term racer / motor aggregates)" \
      "python3 -m unittest scripts.tests.test_aggregate_racer_stats -v"
+# 2026-11-20: 今節成績を選手番号で引ける形に（racedata 取得後の確定結果で埋める）
+step "Python unit tests (series results by racer)" \
+     "python3 -m unittest scripts.tests.test_build_series -v"
 
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
@@ -216,6 +219,9 @@ step "UX: soon strip / live prediction first / header state" \
 # 2026-11-20: レース詳細の長期集計 4 行（コース成績 / 決まり手 / ST / モーター）
 step "Race detail: long-term racer stats rows" \
      "node scripts/tests/test_racer_stats_view.js"
+# 2026-11-20: 今節成績（前日の racedata を使わない / series.json + 今日の確定結果）
+step "Race detail: current series results" \
+     "node scripts/tests/test_series_results.js"
 
 # 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
 step "no-undef: app.js / worker / src (AST globals)" \
