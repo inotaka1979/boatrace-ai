@@ -654,7 +654,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     }
   }
   var SCHEMA_KEY = "boatrace_schema_version";
-  var CURRENT_SCHEMA = 4;
+  var CURRENT_SCHEMA = 5;
   var MIGRATIONS = {
     // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
     2: function() {
@@ -726,6 +726,17 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         }
       } catch (_) {
       }
+    },
+    // v4→v5 (2026-11-20): L1 の確率変換を変更（L1_TEMPERATURE 15→25、コース事前分布 0→0.6）。
+    //   保存済みの校正 (Platt / 場別 Platt / isotonic) は旧 L1 の確率に当てはめたもので、新しい確率に
+    //   掛けるとかえって歪む。identity に戻し、新モデルの予想 (model_v=2) が溜まってから当てはめ直す。
+    5: function() {
+      ["boatrace_platt", "boatrace_platt_perstadium", "boatrace_isotonic", "boatrace_calib_method"].forEach(function(k) {
+        try {
+          localStorage.removeItem(k);
+        } catch (_) {
+        }
+      });
     }
   };
   function _runMigrations() {
@@ -1236,6 +1247,23 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+// 2026-11-20: L1（ルールベース点数）→ 確率の変換パラメータ。
+//   p_i ∝ exp(score_i / L1_TEMPERATURE + L1_COURSE_PRIOR_WEIGHT × COURSE_LOG_PRIOR[コース])
+//   従来は exp(score/15) 固定で、1 コースと 6 コースの差が点数上 ~18 点 = logit ~1.2（~3.4 倍）にしか
+//   ならず、実勢（1 着率 0.55 / 0.02 ≈ 27 倍）より大幅に弱かった。外枠の過大評価・1 号艇の過小評価が
+//   バックテスト（10/05〜11/10, 5,354 レース）で「コース勝率表」に logLoss で負ける原因だった。
+//   値は scripts/backtest_offline.mjs --fit-l1 で前半期間に当てはめ、後半期間で検証して決める
+//   （docs/BACKTEST.md「L1 確率変換の当てはめ」）。worker にも WORKER_SHARED_CONSTANTS で転記。
+//   当てはめ結果 (2026-11-20, 学習 10/05〜10/22 18 日 / 検証 10/23〜11/10 19 日、検証は選択に不使用):
+//     現行 T=15 / 重み 0   : 検証 logLoss 1.3613（コース勝率表 1.3563 に負け）、ROI(確率順 10 点) 0.695
+//     採用 T=25 / 重み 0.6 : 検証 logLoss 1.2732（勝率表との差 -0.083, 95%CI [-0.096, -0.069]）、ROI 0.752
+//   市場（単勝オッズ）1.134 にはまだ届かない。
+var L1_TEMPERATURE = 25;
+var L1_COURSE_PRIOR_WEIGHT = 0.6;
+// 予想の生成モデルの版。履歴 (boatrace_history) の model_v に記録し、校正の当てはめは
+//   現行版の予想だけを使う（旧版の確率で fit した校正を新しい確率に掛けない）。
+//   1 = 2026-11-20 より前（記録なし）、2 = L1 確率変換の当てはめ後。
+var MODEL_VERSION = 2;
 
 // PB-7: 特徴量 z-score 正規化用 rolling 統計（Welford's online algorithm）
 //   既定: mean=0, var=1 → z(x) ≈ x（identity）。学習が進むと真の z-score へ収束。

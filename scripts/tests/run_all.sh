@@ -193,6 +193,10 @@ step "Bet count zero / exacta options" \
 step "Review quick wins (leak / EV settings / ana / TOP ROI)" \
      "node scripts/tests/test_review_quickwins.js"
 
+# 2026-11-20: L1 確率変換の当てはめ / 校正の対象 / backtest の確率ベースライン
+step "L1 fit / calibration scope / backtest probability baselines" \
+     "node scripts/tests/test_l1_calibration_fit.js"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"

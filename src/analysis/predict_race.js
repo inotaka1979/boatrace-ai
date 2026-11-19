@@ -129,11 +129,19 @@ function predictRace(sid, raceNum) {
     l1scores.push(s);
   });
 
-  var l1total = l1scores.reduce(function (a, s) {
-    return a + Math.exp(s.score / 15);
+  // 2026-11-20: 温度とコース事前分布の重みを定数化（L1_TEMPERATURE の説明を参照）。
+  var _l1T = typeof L1_TEMPERATURE === 'number' && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+  var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === 'number' ? L1_COURSE_PRIOR_WEIGHT : 0;
+  var l1logits = l1scores.map(function (s) {
+    var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+    return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+  });
+  var _l1max = Math.max.apply(null, l1logits);
+  var l1total = l1logits.reduce(function (a, z) {
+    return a + Math.exp(z - _l1max);
   }, 0);
-  var l1probs = l1scores.map(function (s) {
-    return Math.exp(s.score / 15) / l1total;
+  var l1probs = l1logits.map(function (z) {
+    return Math.exp(z - _l1max) / l1total;
   });
 
   var stRanks = [];
@@ -160,7 +168,9 @@ function predictRace(sid, raceNum) {
     //   学習側 (src/analysis/learning.js:163) は `!= null` を使っており、推論と
     //   学習で特徴量の意味が食い違っていた。学習側の書き方に合わせる。
     var _stR = stRanks[b.racer_boat_number];
-    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+    // 2026-11-20: extras を渡す。従来は未指定で pairwiseH2H / motorFieldRank（レース内の相対情報）が
+    //   常に定数（0 / 0.5）になり、24 次元のうち 2 本が死んでいた。学習側 (learning.js) も同じ。
+    return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
   });
   var l2probs = l2Predict(features6);
 

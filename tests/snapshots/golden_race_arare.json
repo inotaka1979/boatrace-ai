@@ -2,82 +2,82 @@
   "raceType": "ana",
   "typeLabel": "穴",
   "method": "prob",
-  "confidence": 42,
+  "confidence": 31,
   "confStars": 5,
-  "confLift": 3.49,
+  "confLift": 2.55,
   "marks": [
     {
       "boat": 3,
       "mark": "◎",
       "course": 3,
-      "prob": 0.418575
+      "prob": 0.305555
+    },
+    {
+      "boat": 1,
+      "mark": "○",
+      "course": 1,
+      "prob": 0.220827
     },
     {
       "boat": 4,
-      "mark": "○",
+      "mark": "▲",
       "course": 4,
-      "prob": 0.215817
+      "prob": 0.190938
     },
     {
       "boat": 2,
-      "mark": "▲",
+      "mark": "△",
       "course": 2,
-      "prob": 0.112294
+      "prob": 0.152197
     },
     {
       "boat": 5,
-      "mark": "△",
+      "mark": "×",
       "course": 5,
-      "prob": 0.111266
+      "prob": 0.091038
     },
     {
       "boat": 6,
       "mark": "×",
       "course": 6,
-      "prob": 0.082813
-    },
-    {
-      "boat": 1,
-      "mark": "×",
-      "course": 1,
-      "prob": 0.059236
+      "prob": 0.039445
     }
   ],
-  "trifectaSum": 0.351665,
+  "trifectaSum": 0.309452,
   "trifectaTop5": [
     {
-      "combo": "3-4-2",
-      "prob": 0.04772
+      "combo": "3-1-4",
+      "prob": 0.039171
     },
     {
-      "combo": "3-4-5",
-      "prob": 0.047283
+      "combo": "3-4-1",
+      "prob": 0.036846
     },
     {
-      "combo": "3-2-4",
-      "prob": 0.03719
+      "combo": "1-3-4",
+      "prob": 0.034912
     },
     {
-      "combo": "3-5-4",
-      "prob": 0.036769
+      "combo": "4-3-1",
+      "prob": 0.031626
     },
     {
-      "combo": "4-3-2",
-      "prob": 0.035382
+      "combo": "3-1-2",
+      "prob": 0.031223
     }
   ],
   "exactaTop3": [
     {
+      "combo": "3-1",
+      "prob": 0.097163
+    },
+    {
+      "combo": "1-3",
+      "prob": 0.086598
+    },
+    {
       "combo": "3-4",
-      "prob": 0.155369
-    },
-    {
-      "combo": "4-3",
-      "prob": 0.115197
-    },
-    {
-      "combo": "3-2",
-      "prob": 0.080842
+      "prob": 0.084012
     }
   ],
   "ana": [],

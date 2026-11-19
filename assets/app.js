@@ -649,7 +649,7 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
     }
   }
   var SCHEMA_KEY = "boatrace_schema_version";
-  var CURRENT_SCHEMA = 4;
+  var CURRENT_SCHEMA = 5;
   var MIGRATIONS = {
     // v1→v2: P0-3 で追加した kpiMode のデフォルト値を settings に流し込む
     2: function() {
@@ -721,6 +721,17 @@ var L2_KEY_LIMIT = 10000;    // learnedKeys 保持上限（古いキー切り捨
         }
       } catch (_) {
       }
+    },
+    // v4→v5 (2026-11-20): L1 の確率変換を変更（L1_TEMPERATURE 15→25、コース事前分布 0→0.6）。
+    //   保存済みの校正 (Platt / 場別 Platt / isotonic) は旧 L1 の確率に当てはめたもので、新しい確率に
+    //   掛けるとかえって歪む。identity に戻し、新モデルの予想 (model_v=2) が溜まってから当てはめ直す。
+    5: function() {
+      ["boatrace_platt", "boatrace_platt_perstadium", "boatrace_isotonic", "boatrace_calib_method"].forEach(function(k) {
+        try {
+          localStorage.removeItem(k);
+        } catch (_) {
+        }
+      });
     }
   };
   function _runMigrations() {
@@ -1231,6 +1242,23 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+// 2026-11-20: L1（ルールベース点数）→ 確率の変換パラメータ。
+//   p_i ∝ exp(score_i / L1_TEMPERATURE + L1_COURSE_PRIOR_WEIGHT × COURSE_LOG_PRIOR[コース])
+//   従来は exp(score/15) 固定で、1 コースと 6 コースの差が点数上 ~18 点 = logit ~1.2（~3.4 倍）にしか
+//   ならず、実勢（1 着率 0.55 / 0.02 ≈ 27 倍）より大幅に弱かった。外枠の過大評価・1 号艇の過小評価が
+//   バックテスト（10/05〜11/10, 5,354 レース）で「コース勝率表」に logLoss で負ける原因だった。
+//   値は scripts/backtest_offline.mjs --fit-l1 で前半期間に当てはめ、後半期間で検証して決める
+//   （docs/BACKTEST.md「L1 確率変換の当てはめ」）。worker にも WORKER_SHARED_CONSTANTS で転記。
+//   当てはめ結果 (2026-11-20, 学習 10/05〜10/22 18 日 / 検証 10/23〜11/10 19 日、検証は選択に不使用):
+//     現行 T=15 / 重み 0   : 検証 logLoss 1.3613（コース勝率表 1.3563 に負け）、ROI(確率順 10 点) 0.695
+//     採用 T=25 / 重み 0.6 : 検証 logLoss 1.2732（勝率表との差 -0.083, 95%CI [-0.096, -0.069]）、ROI 0.752
+//   市場（単勝オッズ）1.134 にはまだ届かない。
+var L1_TEMPERATURE = 25;
+var L1_COURSE_PRIOR_WEIGHT = 0.6;
+// 予想の生成モデルの版。履歴 (boatrace_history) の model_v に記録し、校正の当てはめは
+//   現行版の予想だけを使う（旧版の確率で fit した校正を新しい確率に掛けない）。
+//   1 = 2026-11-20 より前（記録なし）、2 = L1 確率変換の当てはめ後。
+var MODEL_VERSION = 2;
 
 // PB-7: 特徴量 z-score 正規化用 rolling 統計（Welford's online algorithm）
 //   既定: mean=0, var=1 → z(x) ≈ x（identity）。学習が進むと真の z-score へ収束。
@@ -5453,8 +5481,10 @@ function getStadiumCourseWinRate(sid,course){
     var logits = new Array(6);
     for (var b = 0; b < 6; b++) {
       var feat = features6[b];
+      var c = Math.round((feat[3] || 0) * 6);
+      if (!(c >= 1 && c <= 6)) c = b + 1;
       if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
+      var z = bias + (prior[c - 1] || 0);
       for (var i = 0; i < wlen; i++) {
         var fi = feat[i];
         if (fi) z += fi * (w[i] || 0);
@@ -6000,6 +6030,8 @@ var CLASS_COURSE_MULT = [
     var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
       if (!h.actual || h.actual.length === 0) return false;
+      if (h.backfilled) return false;
+      if (typeof MODEL_VERSION === "number" && (h.model_v || 1) !== MODEL_VERSION) return false;
       if (Array.isArray(h.raw_probs)) return true;
       return allowLegacy && Array.isArray(h.mark_probs);
     });
@@ -6476,11 +6508,18 @@ function _syncWorkerState(){
       var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
       l1scores.push(s);
     });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
+    var _l1T = typeof L1_TEMPERATURE === "number" && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+    var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === "number" ? L1_COURSE_PRIOR_WEIGHT : 0;
+    var l1logits = l1scores.map(function(s) {
+      var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+      return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+    });
+    var _l1max = Math.max.apply(null, l1logits);
+    var l1total = l1logits.reduce(function(a, z) {
+      return a + Math.exp(z - _l1max);
     }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
+    var l1probs = l1logits.map(function(z) {
+      return Math.exp(z - _l1max) / l1total;
     });
     var stRanks = [];
     if (preview && preview.boats) {
@@ -6501,7 +6540,7 @@ function _syncWorkerState(){
         return s.boat === b.racer_boat_number;
       });
       var _stR = stRanks[b.racer_boat_number];
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -7357,6 +7396,7 @@ function _predFields(pred){
       for(var b=1;b<=6;b++) out.push({boat:b, prob: Number.isFinite(byBoat[b]) ? byBoat[b] : 1/6});
       return out;
     })(),
+    model_v: MODEL_VERSION,
     // FA-7 (2026-08-11): 校正「前」の確率。_refitPlattCoeffs は raw で fit する。
     raw_probs: (function(){
       var byBoat = {};
@@ -7708,7 +7748,9 @@ async function _yieldToMain(){
             weather,
             etRanks[b.racer_boat_number] != null ? etRanks[b.racer_boat_number] : 5,
             stRanks[b.racer_boat_number] != null ? stRanks[b.racer_boat_number] : 5,
-            sid
+            sid,
+            { allBoats: prog.boats }
+            // 2026-11-20: 推論と同じく渡す（pairwiseH2H / motorFieldRank が定数だった）
           );
         });
         var winnerIdx = prog.boats.findIndex(function(b) {

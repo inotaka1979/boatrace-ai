@@ -165,7 +165,8 @@ async function learnFromResults() {
           weather,
           etRanks[b.racer_boat_number] != null ? etRanks[b.racer_boat_number] : 5,
           stRanks[b.racer_boat_number] != null ? stRanks[b.racer_boat_number] : 5,
-          sid
+          sid,
+          { allBoats: prog.boats } // 2026-11-20: 推論と同じく渡す（pairwiseH2H / motorFieldRank が定数だった）
         );
       });
       var winnerIdx = prog.boats.findIndex(function (b) {

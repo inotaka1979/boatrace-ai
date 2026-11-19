@@ -99,6 +99,9 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
+var L1_TEMPERATURE = 25;
+var L1_COURSE_PRIOR_WEIGHT = 0.6;
+var MODEL_VERSION = 2;
 var FEATURE_DIM = 24;
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
@@ -410,6 +413,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var allowLegacy = typeof allowLegacyOverride === "boolean" ? allowLegacyOverride : _calibrationIsIdentity();
     var samples = history.filter(function(h) {
       if (!h.actual || h.actual.length === 0) return false;
+      if (h.backfilled) return false;
+      if (typeof MODEL_VERSION === "number" && (h.model_v || 1) !== MODEL_VERSION) return false;
       if (Array.isArray(h.raw_probs)) return true;
       return allowLegacy && Array.isArray(h.mark_probs);
     });
@@ -790,8 +795,10 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var logits = new Array(6);
     for (var b = 0; b < 6; b++) {
       var feat = features6[b];
+      var c = Math.round((feat[3] || 0) * 6);
+      if (!(c >= 1 && c <= 6)) c = b + 1;
       if (warmupOk) feat = _normalizeFeatures(feat);
-      var z = bias + (prior[b] || 0);
+      var z = bias + (prior[c - 1] || 0);
       for (var i = 0; i < wlen; i++) {
         var fi = feat[i];
         if (fi) z += fi * (w[i] || 0);
@@ -1770,11 +1777,18 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       var s = scoreBoatV2(b, pv, weather, boats, preview, sid, predictedEntries, raceNum);
       l1scores.push(s);
     });
-    var l1total = l1scores.reduce(function(a, s) {
-      return a + Math.exp(s.score / 15);
+    var _l1T = typeof L1_TEMPERATURE === "number" && L1_TEMPERATURE > 0 ? L1_TEMPERATURE : 15;
+    var _l1B = typeof L1_COURSE_PRIOR_WEIGHT === "number" ? L1_COURSE_PRIOR_WEIGHT : 0;
+    var l1logits = l1scores.map(function(s) {
+      var c = s.course >= 1 && s.course <= 6 ? s.course : s.boat;
+      return s.score / _l1T + (_l1B ? _l1B * (COURSE_LOG_PRIOR[c - 1] || 0) : 0);
+    });
+    var _l1max = Math.max.apply(null, l1logits);
+    var l1total = l1logits.reduce(function(a, z) {
+      return a + Math.exp(z - _l1max);
     }, 0);
-    var l1probs = l1scores.map(function(s) {
-      return Math.exp(s.score / 15) / l1total;
+    var l1probs = l1logits.map(function(z) {
+      return Math.exp(z - _l1max) / l1total;
     });
     var stRanks = [];
     if (preview && preview.boats) {
@@ -1795,7 +1809,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
         return s.boat === b.racer_boat_number;
       });
       var _stR = stRanks[b.racer_boat_number];
-      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid);
+      return getL2Features(b, pv, weather, l1s ? l1s.etRank : 5, _stR != null ? _stR : 5, sid, { allBoats: boats });
     });
     var l2probs = l2Predict(features6);
     if (typeof _blendGBDTPrediction === "function" && typeof TUNING !== "undefined" && TUNING.PREDICTION && TUNING.PREDICTION.ENABLE_GBDT) {
@@ -2634,7 +2648,7 @@ function batchLearnFromResults(input){
         //   (rank 5) として学習されていた。main 側の learnFromResults
         //   (src/analysis/learning.js:162-163) と同じ `!= null` に揃える。
         var _etR = etRanks[b.racer_boat_number], _stR = stRanks[b.racer_boat_number];
-        return getL2Features(b, pv, weather, _etR != null ? _etR : 5, _stR != null ? _stR : 5, sid);
+        return getL2Features(b, pv, weather, _etR != null ? _etR : 5, _stR != null ? _stR : 5, sid, { allBoats: prog.boats });   // 2026-11-20: main の learning.js と同じ
       });
       var winnerIdx = prog.boats.findIndex(function(b){return b.racer_boat_number === winnerBoat});
       if(winnerIdx >= 0){

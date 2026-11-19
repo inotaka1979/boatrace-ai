@@ -1454,3 +1454,20 @@ install できない）を解消。
   `#detailBack` に data-i18n を付与。
 - **critical 予算**: BANDIT / DP_GRADIENT を rest に移動（critical 起動経路から未参照）。99,567B → 97,789B。
 - `scripts/tests/test_review_quickwins.js`（15 件）。7 種の mutation すべてで失敗することを確認。
+
+## 修正履歴 (2026-11-20: L1 確率変換の当てはめと評価基盤)
+
+詳細と数値は docs/BACKTEST.md「L1 確率変換の当てはめ」。
+- L1 の確率化 `exp(score/15)` は 1 コースと 6 コースの差が ~3.4 倍にしかならず（実勢 ~27 倍）、6 号艇を実際の約 4 倍に
+  見積もり、固定のコース勝率表に logLoss で負けていた（1.3837 vs 1.3711）。
+  `p ∝ exp(score / L1_TEMPERATURE + L1_COURSE_PRIOR_WEIGHT × COURSE_LOG_PRIOR[コース])` にし、前半期間で当てはめ
+  T=25 / 重み 0.6 を採用（後半の検証で 1.3613 → 1.2732、コース表との差 -0.083 [-0.096, -0.069]）。
+  L2 再現込みでは 1.2527（市場 1.1904）。ROI(確率順 10 点) 0.699 → 0.746〜0.755。**EV モードの ROI は 0.81 → 0.45**（CI 広い、既定 OFF）。
+- backtest に確率ベースライン（コース表 / 場別コース / 市場）との paired 比較、艇別信頼性、多クラス ECE、
+  `--l2`（L2 学習の日次再現）、`--fit-l1` を追加。`main` は async に。
+- `l2Predict` のコース事前分布を配列順（枠番）ではなく進入コース（特徴量 index 3）で引く。
+- L2 特徴量に `extras={allBoats}` を渡す（推論・学習とも、worker も）。効果は中立。
+- 校正: `backfilled` と旧モデルの予想を当てはめに使わない。履歴に `model_v`（MODEL_VERSION=2）を記録、
+  schema v5 で旧校正（Platt / 場別 / isotonic / 選択）をリセット。
+- L1_TEMPERATURE / L1_COURSE_PRIOR_WEIGHT / MODEL_VERSION は WORKER_SHARED_CONSTANTS で worker に転記。
+- golden snapshot 3 件の確率が変化（意図した変更）。`scripts/tests/test_l1_calibration_fit.js`（10 件）。

@@ -101,19 +101,20 @@ t('EV モードの点数は KPI プリセットと設定の小さい方', () => 
   const b = predictWith(makeCtx(), { betCount3: '2' });
   assert.ok(b.trifecta.length <= 2, b.trifecta.length + ' 点');
 });
-t('EV 閾値はユーザー設定より緩めない（本命 fixture の 1-3-2 は EV 1.21）', () => {
-  const hon = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'golden', 'race_honmei.json'), 'utf8'));
+t('EV 閾値はユーザー設定より緩めない（プリセットとの大きい方を generateBetsV2 に渡す）', () => {
+  // 2026-11-20 の L1 当てはめ後は fixture に EV≥1 の組が無いため、渡す閾値で確認する。
   const ctx = makeCtx();
-  const run = (evMin) => {
-    Object.assign(ctx, {
-      programData: { [hon.sid]: { [hon.rno]: hon.program } }, previewData: { [hon.sid]: { [hon.rno]: hon.preview } },
-      oddsData: { odds: [hon.odds] }, racerDB: {}, stadiumDB: {}, l2trainStep: 0,
-      settings: { betCount3: '10', betCount2: '5', betMethod: 'auto', evMode: true, kpiMode: 'balanced', evMin },
-    });
-    return ctx.predictRace(hon.sid, hon.rno).trifecta.map((x) => x.combo);
-  };
-  assert.deepStrictEqual(run(undefined), ['1-3-2'], 'プリセット (本命 1.10) では出る');
-  assert.deepStrictEqual(run('1.30'), [], 'EV 閾値 1.30 なのに EV 1.21 が出た');
+  let seen = null;
+  const orig = ctx.generateBetsV2;
+  ctx.generateBetsV2 = (m, method, c3, c2, odds, opt) => { seen = opt; return orig(m, method, c3, c2, odds, opt); };
+  predictWith(ctx, { evMin: '1.50' });
+  assert.strictEqual(seen.evMin, 1.5, 'ユーザー 1.50 > プリセット (混戦 1.15)');
+  predictWith(ctx, { evMin: '1.05' });
+  assert.strictEqual(seen.evMin, 1.15, 'ユーザー 1.05 < プリセット 1.15 ならプリセット');
+  predictWith(ctx, {});
+  assert.strictEqual(seen.evMin, 1.15, '未設定はプリセット');
+  predictWith(ctx, { betCount3: '3' });
+  assert.strictEqual(seen.maxBets, 3, '点数はプリセット (8) と設定 (3) の小さい方');
 });
 t('Kelly 0（均等配分）は 0 のまま generateBetsV2 に渡る（従来は 0.25 に化けた）', () => {
   const ctx = makeCtx();

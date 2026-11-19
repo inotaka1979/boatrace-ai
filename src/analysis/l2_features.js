@@ -201,8 +201,13 @@ function l2Predict(features6) {
   var logits = new Array(6);
   for (var b = 0; b < 6; b++) {
     var feat = features6[b];
+    // 2026-11-20: コース事前分布は配列順 (= 枠番) ではなく、その艇の進入コースで引く。
+    //   特徴量 index 3 は courseNorm = course / 6（正規化前の値から復元）。前付けで進入が変わると
+    //   従来は 1 号艇の位置に 1 コースの事前分布が付いていた。
+    var c = Math.round((feat[3] || 0) * 6);
+    if (!(c >= 1 && c <= 6)) c = b + 1;
     if (warmupOk) feat = _normalizeFeatures(feat);
-    var z = bias + (prior[b] || 0);
+    var z = bias + (prior[c - 1] || 0);
     for (var i = 0; i < wlen; i++) {
       var fi = feat[i];
       if (fi) z += fi * (w[i] || 0); // PF-5: 0 値は早期 skip（ホットループ短縮）

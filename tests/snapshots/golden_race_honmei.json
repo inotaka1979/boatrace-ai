@@ -2,82 +2,82 @@
   "raceType": "honmei",
   "typeLabel": "本命",
   "method": "prob",
-  "confidence": 87,
+  "confidence": 83,
   "confStars": 5,
-  "confLift": 1.59,
+  "confLift": 1.51,
   "marks": [
     {
       "boat": 1,
       "mark": "◎",
       "course": 1,
-      "prob": 0.873664
+      "prob": 0.828326
     },
     {
       "boat": 2,
       "mark": "○",
       "course": 2,
-      "prob": 0.046784
+      "prob": 0.062938
     },
     {
       "boat": 3,
       "mark": "▲",
       "course": 3,
-      "prob": 0.036589
+      "prob": 0.04951
     },
     {
       "boat": 4,
       "mark": "△",
       "course": 4,
-      "prob": 0.022946
+      "prob": 0.035517
     },
     {
       "boat": 5,
       "mark": "×",
       "course": 5,
-      "prob": 0.012579
+      "prob": 0.017213
     },
     {
       "boat": 6,
       "mark": "×",
       "course": 6,
-      "prob": 0.007437
+      "prob": 0.006496
     }
   ],
-  "trifectaSum": 0.719329,
+  "trifectaSum": 0.713708,
   "trifectaTop5": [
     {
       "combo": "1-2-3",
-      "prob": 0.148806
+      "prob": 0.138271
     },
     {
       "combo": "1-3-2",
-      "prob": 0.131902
+      "prob": 0.123073
     },
     {
       "combo": "1-2-4",
-      "prob": 0.093322
+      "prob": 0.099191
     },
     {
       "combo": "1-4-2",
-      "prob": 0.071805
+      "prob": 0.079215
     },
     {
       "combo": "1-3-4",
-      "prob": 0.064694
+      "prob": 0.069453
     }
   ],
   "exactaTop3": [
     {
       "combo": "1-2",
-      "prob": 0.323532
+      "prob": 0.303675
     },
     {
       "combo": "1-3",
-      "prob": 0.253029
+      "prob": 0.238887
     },
     {
       "combo": "1-4",
-      "prob": 0.158684
+      "prob": 0.17137
     }
   ],
   "ana": [],

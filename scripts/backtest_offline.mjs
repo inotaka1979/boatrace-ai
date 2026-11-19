@@ -52,7 +52,7 @@ const { makeCtx } = require('./tests/_vm_harness.js');
 
 // ---------- args ----------
 function parseArgs(argv) {
-  const a = { archive: 'data/archive', out: null, leak: false };
+  const a = { archive: 'data/archive', out: null, leak: false, l2: false, l1Temp: null, l1Prior: null, fitL1: false, split: null };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
     if (t === '--from') a.from = argv[++i];
@@ -60,6 +60,13 @@ function parseArgs(argv) {
     else if (t === '--archive') a.archive = argv[++i];
     else if (t === '--out') a.out = argv[++i];
     else if (t === '--leak') a.leak = true;
+    // 2026-11-20: L2 オンライン学習を日ごとに再現する（前日までの結果で学習 → 当日を予測）
+    else if (t === '--l2') a.l2 = true;
+    // 2026-11-20: L1 確率変換のパラメータを上書き / 当てはめ
+    else if (t === '--l1-temp') a.l1Temp = parseFloat(argv[++i]);
+    else if (t === '--l1-prior') a.l1Prior = parseFloat(argv[++i]);
+    else if (t === '--fit-l1') a.fitL1 = true;
+    else if (t === '--split') a.split = argv[++i];
   }
   return a;
 }
@@ -234,18 +241,40 @@ function calibChunk(marks, winnerBoat) {
   return { logLoss, brier, topProb: p[marks[0].boat] || 0, winnerProb: pw };
 }
 
-// ---------- main ----------
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (!args.from || !args.to) {
-    console.error('usage: node scripts/backtest_offline.mjs --from YYYYMMDD --to YYYYMMDD [--archive dir] [--out file] [--leak]');
-    process.exit(2);
+// L2 学習の入力（app の resultData / programData 形）を 1 日分つくる
+function learnInputs(day, state) {
+  const resultData = {};
+  day.results.forEach((r) => {
+    const order = (r.boats || []).filter((b) => Number.isInteger(b.racer_place_number));
+    if (order.length < 3) return;
+    (resultData[r.race_stadium_number] = resultData[r.race_stadium_number] || {})[r.race_number] = {
+      isFinished: true,
+      results: order.map((b) => ({ place: b.racer_place_number, racer_boat_number: b.racer_boat_number })),
+    };
+  });
+  const programData = {};
+  const ds = day.date.slice(0, 4) + '-' + day.date.slice(4, 6) + '-' + day.date.slice(6, 8);
+  for (const sid in state.programData) {
+    programData[sid] = {};
+    for (const rno in state.programData[sid]) programData[sid][rno] = Object.assign({ race_date: ds }, state.programData[sid][rno]);
   }
+  return { resultData, programData, previewData: state.previewData };
+}
+
+// ---------- main ----------
+async function runOnce(args, dates, opts) {
+  const o = opts || {};
   const ctx = makeCtx();
   ctx.settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'prob', evMode: false, kpiMode: 'off', evMin: 1.15, bankroll: 10000 };
   ctx.racerDB = {};
   ctx.stadiumDB = {};
   ctx.l2trainStep = 0;
+  ctx._getAppWorker = () => null;
+  ctx._yieldToMain = async () => {};
+  if (o.l1Temp != null && Number.isFinite(o.l1Temp)) ctx.L1_TEMPERATURE = o.l1Temp;
+  if (o.l1Prior != null && Number.isFinite(o.l1Prior)) ctx.L1_COURSE_PRIOR_WEIGHT = o.l1Prior;
+  const courseWinRate = ctx.COURSE_WIN_RATE;
+  const probRows = [];
 
   const STRAT = ['model_prob', 'model_ev', 'baseline_inner', 'baseline_fav', 'baseline_pop3'];
   const acc = {};
@@ -253,7 +282,6 @@ function main() {
   const calib = []; // {logLoss, brier, topProb, correct}
   let daysUsed = 0, racesScored = 0;
 
-  const dates = datesInRange(args.from, args.to);
   for (const date of dates) {
     const day = loadDay(args.archive, date);
     if (!day) continue;
@@ -281,6 +309,19 @@ function main() {
 
       // --- calibration (model 分布) ---
       calib.push(Object.assign(calibChunk(bets.marks, winner), { correct: bets.marks[0].boat === winner }));
+      // --- 確率ベースラインとの対比 (同じレース) ---
+      const courses = raceCourses(state.previewData, sid, rno);
+      const modelP = marksToProbs(bets.marks);
+      const mkt = marketProbs(raceOdds && raceOdds.win);
+      probRows.push({
+        winner,
+        modelP,
+        model: scoreProbs(modelP, winner),
+        course: scoreProbs(courseTableProbs(courseWinRate, courses), winner),
+        stadium: scoreProbs(stadiumCourseProbs(ctx.stadiumDB, sid, courseWinRate, courses), winner),
+        market: mkt ? scoreProbs(mkt, winner) : null,
+      });
+      if (o.calibOnly) return;
 
       // --- model_prob: 確率順 top-N 三連単、各 ¥100 ---
       scoreTrifectaBets(acc.model_prob, (bets.trifecta || []).map((t) => t.combo), triCombo, triPay);
@@ -313,6 +354,12 @@ function main() {
       }
     });
 
+    // L2: 当日の結果で学習（予測の後 = 翌日以降の予測にだけ効く）。DB への畳み込みより先に行う
+    //   （app と同じ順序。逆だと学習の特徴量に当該レースの着順が混ざる）。
+    if (o.l2) {
+      Object.assign(ctx, learnInputs(day, state));
+      await ctx.learnFromResults();
+    }
     if (!args.leak) foldResultsIntoDB(day, ctx.racerDB, ctx.stadiumDB); // ← 正常: 予測の後に畳み込む
   }
 
@@ -325,23 +372,94 @@ function main() {
   });
 
   const out = {
-    range: { from: args.from, to: args.to },
+    range: { from: dates[0], to: dates[dates.length - 1] },
     daysUsed, racesScored,
     leak: args.leak,
+    l2: !!o.l2,
+    l1: { temperature: ctx.L1_TEMPERATURE, coursePriorWeight: ctx.L1_COURSE_PRIOR_WEIGHT },
+    l2trainStep: ctx.l2trainStep,
     strategies,
-    modelCalibration: cal,
+    modelCalibration: Object.assign(cal, { eceMulticlass: multiclassECE(probRows) }),
+    // 2026-11-20: 同じレース集合での確率品質。diff は model − baseline の logLoss（負なら model が良い）。
+    probability: {
+      model: meanMetric(probRows, 'model'),
+      course_table: meanMetric(probRows, 'course'),
+      stadium_course: meanMetric(probRows, 'stadium'),
+      market: meanMetric(probRows, 'market'),
+      diffVsCourseTable: pairedDiff(probRows, 'course'),
+      diffVsStadiumCourse: pairedDiff(probRows, 'stadium'),
+      diffVsMarket: pairedDiff(probRows, 'market'),
+      reliabilityByBoat: reliabilityByBoat(probRows),
+    },
     leakageNote: args.leak
       ? 'LEAK MODE: 当日結果を予測前に DB へ畳み込んでいる。ROI は無効 (未来情報リーク)。'
-      : 'racerDB/stadiumDB は前日以前の結果のみで構築 (forward-chain)。L2 オンライン学習は未再現 (l2trainStep=0, alpha≈1 = L1 単独)。',
+      : o.l2
+        ? 'racerDB/stadiumDB と L2 は前日以前の結果のみで学習 (forward-chain)。'
+        : 'racerDB/stadiumDB は前日以前の結果のみで構築 (forward-chain)。L2 オンライン学習は未再現 (l2trainStep=0, alpha≈1 = L1 単独)。--l2 で再現。',
     oddsNote: '締切直前の最終オッズを使用。実際にはこの価格で買えないため ROI は楽観側にバイアスする。',
     verdict: verdict(strategies),
   };
 
+  return out;
+}
+
+// 2026-11-20: L1 の温度とコース事前分布の重みを、前半 (from..split-1) の logLoss 最小で選び、
+//   後半 (split..to) で現行値・ベースラインと比べる。後半はパラメータ選択に一切使わない。
+const FIT_TEMPS = [10, 15, 20, 25, 30, 40, 60];
+const FIT_PRIORS = [0, 0.25, 0.4, 0.5, 0.6, 0.75, 1.0];
+async function fitL1(args, dates) {
+  const split = args.split || dates[Math.floor(dates.length / 2)];
+  const train = dates.filter((d) => d < split);
+  const test = dates.filter((d) => d >= split);
+  const grid = [];
+  for (const T of FIT_TEMPS) {
+    for (const B of FIT_PRIORS) {
+      const r = await runOnce(args, train, { l1Temp: T, l1Prior: B, calibOnly: true, l2: args.l2 });
+      grid.push({ T, B, logLoss: r.probability.model.logLoss, n: r.probability.model.n });
+    }
+  }
+  grid.sort((a, b) => a.logLoss - b.logLoss);
+  const best = grid[0];
+  const testCur = await runOnce(args, test, { l2: args.l2 });
+  const testBest = await runOnce(args, test, { l1Temp: best.T, l1Prior: best.B, l2: args.l2 });
+  return {
+    split, trainDays: train.length, testDays: test.length,
+    grid,
+    best: { temperature: best.T, coursePriorWeight: best.B, trainLogLoss: best.logLoss },
+    test: {
+      current: { l1: testCur.l1, probability: testCur.probability, roi: testCur.strategies.model_prob.roi },
+      best: { l1: testBest.l1, probability: testBest.probability, roi: testBest.strategies.model_prob.roi },
+    },
+  };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (!args.from || !args.to) {
+    console.error('usage: node scripts/backtest_offline.mjs --from YYYYMMDD --to YYYYMMDD [--archive dir] [--out file] [--leak] [--l2] [--l1-temp T --l1-prior B] [--fit-l1 [--split YYYYMMDD]]');
+    process.exit(2);
+  }
+  const dates = datesInRange(args.from, args.to).filter((d) => loadDay(args.archive, d));
+  if (!dates.length) { console.error('\n[backtest] no archive days found in ' + args.archive + ' for range'); process.exit(3); }
+  const out = args.fitL1 ? await fitL1(args, dates) : await runOnce(args, dates, { l2: args.l2, l1Temp: args.l1Temp, l1Prior: args.l1Prior });
   const json = JSON.stringify(out, null, 2);
   if (args.out) { fs.mkdirSync(path.dirname(args.out), { recursive: true }); fs.writeFileSync(args.out, json + '\n'); }
-  printSummary(out);
-  if (daysUsed === 0) { console.error('\n[backtest] no archive days found in ' + args.archive + ' for range'); process.exit(3); }
+  if (args.fitL1) printFit(out); else printSummary(out);
   return out;
+}
+
+function printFit(f) {
+  console.log(`\n=== L1 fit: train ${f.trainDays} days (< ${f.split}), test ${f.testDays} days ===`);
+  console.log('top grid (train logLoss):');
+  f.grid.slice(0, 5).forEach((g) => console.log(`  T=${g.T} prior=${g.B} logLoss=${g.logLoss}`));
+  console.log(`best: T=${f.best.temperature} prior=${f.best.coursePriorWeight}`);
+  for (const k of ['current', 'best']) {
+    const t = f.test[k];
+    const p = t.probability;
+    console.log(`test ${k.padEnd(7)} (T=${t.l1.temperature}, prior=${t.l1.coursePriorWeight}): logLoss=${p.model.logLoss} ` +
+      `vs course_table ${p.course_table.logLoss} (diff ${p.diffVsCourseTable.mean} [${p.diffVsCourseTable.lo}, ${p.diffVsCourseTable.hi}]) ` +
+      `vs stadium_course ${p.stadium_course.logLoss} | market ${p.market.logLoss} (n=${p.market.n}, diff ${p.diffVsMarket.mean}) | ROI(prob) ${t.roi}`);
+  }
 }
 
 function scoreTrifectaBets(rec, combos, actualCombo, triPay) {
@@ -359,6 +477,120 @@ function scoreWinBet(rec, boat, winner, winPay) {
   const pay = hit ? (winPay[String(boat)] || 0) : 0;
   rec.bets += 1; rec.stake += stake; rec.payout += pay; if (hit) rec.hits++;
   rec.perRace.push({ stake, payout: pay });
+}
+
+// ---------- 確率のベースライン (2026-11-20) ----------
+//   ROI は 1 本の当たりで大きく振れ、どちらの結論も出せない（model_ev の CI が [0.23, 1.56]）。
+//   予測の良し悪しは「同じレース集合」での logLoss / Brier の差で、固定のコース勝率表と
+//   市場（単勝オッズ）を相手に比べる。
+function raceCourses(prev, sid, rno) {
+  // 展示の進入（あれば）、無ければ枠番 = コース
+  const pv = prev && prev[sid] && prev[sid][rno];
+  const out = {};
+  for (let b = 1; b <= 6; b++) {
+    const c = pv && pv.boats && pv.boats[String(b)] && pv.boats[String(b)].racer_course_number;
+    out[b] = Number.isInteger(c) && c >= 1 && c <= 6 ? c : b;
+  }
+  return out;
+}
+function courseTableProbs(courseWinRate, courses) {
+  const p = {};
+  let tot = 0;
+  for (let b = 1; b <= 6; b++) { p[b] = courseWinRate[courses[b]] || 0.01; tot += p[b]; }
+  for (let b = 1; b <= 6; b++) p[b] /= tot;
+  return p;
+}
+// 場別コース勝率（前日までの結果で forward-chain、全国値へ k=200 レースで縮約）
+function stadiumCourseProbs(stadiumDB, sid, courseWinRate, courses) {
+  const sd = stadiumDB[sid];
+  const p = {};
+  let tot = 0;
+  for (let b = 1; b <= 6; b++) {
+    const c = courses[b];
+    const prior = courseWinRate[c] || 0.01;
+    const st = sd && sd.courseWinRate && sd.courseWinRate[c];
+    const k = 200;
+    p[b] = st && st.races ? (st.win + prior * k) / (st.races + k) : prior;
+    tot += p[b];
+  }
+  for (let b = 1; b <= 6; b++) p[b] /= tot;
+  return p;
+}
+// 単勝オッズの逆数を正規化（6 艇すべて揃っている時だけ）
+function marketProbs(oddsWin) {
+  if (!oddsWin) return null;
+  const p = {};
+  let tot = 0;
+  for (let b = 1; b <= 6; b++) {
+    const o = oddsWin[String(b)];
+    if (!(o > 0)) return null;
+    p[b] = 1 / o; tot += p[b];
+  }
+  for (let b = 1; b <= 6; b++) p[b] /= tot;
+  return p;
+}
+function marksToProbs(marks) {
+  const p = {};
+  let tot = 0;
+  marks.forEach((m) => { p[m.boat] = Math.max(1e-9, m.prob); tot += p[m.boat]; });
+  for (let b = 1; b <= 6; b++) p[b] = (p[b] || 1e-9) / (tot || 1);
+  return p;
+}
+function scoreProbs(p, winner) {
+  const pw = Math.max(1e-9, Math.min(1 - 1e-9, p[winner] || 0));
+  let brier = 0;
+  for (let b = 1; b <= 6; b++) { const y = b === winner ? 1 : 0; brier += (p[b] - y) * (p[b] - y); }
+  return { logLoss: -Math.log(pw), brier };
+}
+// 同じレース集合での logLoss 差（model − baseline）。負なら model が良い。paired bootstrap 95% CI。
+function pairedDiff(rows, key, iters = 2000) {
+  const d = rows.filter((r) => r[key] != null).map((r) => r.model.logLoss - r[key].logLoss);
+  const n = d.length;
+  if (!n) return { n: 0, mean: null, lo: null, hi: null };
+  const mean = d.reduce((a, b) => a + b, 0) / n;
+  const bs = [];
+  for (let it = 0; it < iters; it++) {
+    let s = 0;
+    for (let k = 0; k < n; k++) s += d[(Math.random() * n) | 0];
+    bs.push(s / n);
+  }
+  bs.sort((a, b) => a - b);
+  return { n, mean: round4(mean), lo: round4(bs[Math.floor(iters * 0.025)]), hi: round4(bs[Math.floor(iters * 0.975)]) };
+}
+function meanMetric(rows, key) {
+  const xs = rows.filter((r) => r[key] != null);
+  if (!xs.length) return { n: 0, logLoss: null, brier: null };
+  return {
+    n: xs.length,
+    logLoss: round4(xs.reduce((a, r) => a + r[key].logLoss, 0) / xs.length),
+    brier: round4(xs.reduce((a, r) => a + r[key].brier, 0) / xs.length),
+  };
+}
+// 艇番別の信頼性: 予測確率の平均 vs 実際の 1 着率
+function reliabilityByBoat(rows) {
+  const out = {};
+  for (let b = 1; b <= 6; b++) {
+    let sp = 0, win = 0;
+    rows.forEach((r) => { sp += r.modelP[b]; if (r.winner === b) win++; });
+    out[b] = { predicted: round4(sp / (rows.length || 1)), actual: round4(win / (rows.length || 1)) };
+  }
+  return out;
+}
+// 多クラス ECE（6 艇すべての (予測確率, 当たり) を 10 bin に入れる）。top-1 だけの ECE は
+//   艇別の逆向きの偏り（1 号艇は過小・外枠は過大）を打ち消して小さく見える。
+function multiclassECE(rows) {
+  const bins = Array.from({ length: 10 }, () => ({ n: 0, conf: 0, acc: 0 }));
+  let n = 0;
+  rows.forEach((r) => {
+    for (let b = 1; b <= 6; b++) {
+      const p = r.modelP[b];
+      const bi = Math.min(9, Math.floor(p * 10));
+      bins[bi].n++; bins[bi].conf += p; bins[bi].acc += r.winner === b ? 1 : 0; n++;
+    }
+  });
+  let ece = 0;
+  bins.forEach((x) => { if (x.n) ece += (x.n / n) * Math.abs(x.conf / x.n - x.acc / x.n); });
+  return round4(ece);
 }
 
 function computeECE(calib) {
@@ -395,7 +627,12 @@ function printSummary(out) {
       s.roiCI.lo + ', ' + s.roiCI.hi + ']');
   }
   const c = out.modelCalibration;
-  console.log(`model calibration: logLoss=${c.logLoss} brier=${c.brier} ece=${c.ece} (n=${c.n})`);
+  console.log(`model calibration: logLoss=${c.logLoss} brier=${c.brier} ece(top1)=${c.ece} ece(全艇)=${c.eceMulticlass} (n=${c.n})`);
+  const p = out.probability;
+  console.log(`L1: T=${out.l1.temperature} prior=${out.l1.coursePriorWeight}${out.l2 ? ' / L2 replay trainStep=' + out.l2trainStep : ''}`);
+  console.log(`probability (同じレース): model ${p.model.logLoss} | course_table ${p.course_table.logLoss} (diff ${p.diffVsCourseTable.mean} [${p.diffVsCourseTable.lo}, ${p.diffVsCourseTable.hi}])` +
+    ` | stadium_course ${p.stadium_course.logLoss} (diff ${p.diffVsStadiumCourse.mean}) | market ${p.market.logLoss} (n=${p.market.n}, diff ${p.diffVsMarket.mean})`);
+  console.log('reliability by boat (predicted / actual):', Object.entries(p.reliabilityByBoat).map(([b, v]) => b + ':' + v.predicted + '/' + v.actual).join('  '));
   console.log('leakageNote:', out.leakageNote);
   console.log('oddsNote:', out.oddsNote);
   console.log('verdict:', out.verdict);
@@ -404,9 +641,8 @@ function printSummary(out) {
 // ESM: main を実行 (テストは import して個別関数を叩く)
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  main();
   // app.js を vm に読むと host の setInterval が生き残りプロセスが終了しないため明示 exit
-  process.exit(0);
+  main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
 }
 
-export { parseArgs, datesInRange, buildState, progIndex, foldResultsIntoDB, actualOrder, favoriteBoat, calibChunk, computeECE, bootstrapRoiCI, scoreTrifectaBets, scoreWinBet, verdict, loadDay, main };
+export { parseArgs, datesInRange, buildState, progIndex, foldResultsIntoDB, actualOrder, favoriteBoat, calibChunk, computeECE, bootstrapRoiCI, scoreTrifectaBets, scoreWinBet, verdict, loadDay, main, runOnce, fitL1, courseTableProbs, stadiumCourseProbs, marketProbs, marksToProbs, scoreProbs, pairedDiff, multiclassECE, reliabilityByBoat, raceCourses, learnInputs };
