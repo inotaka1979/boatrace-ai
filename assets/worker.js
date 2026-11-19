@@ -69,8 +69,9 @@ try {
 // =============================================================================
 // state holders (init メッセージで main から受信)
 // =============================================================================
-// PG-7: state 同期は「重い (racerDB ~5MB / stadiumDB) は worker が自前で fetch」、
-//        「軽量 (l2weights / plattCoeffs 等) は postMessage で同期」の hybrid
+// 2026-11-19: state はすべて main から sync_state で受け取る（racerDB / stadiumDB を含む）。
+//   旧 PG-7 の worker 自前 fetch (load_heavy_dbs) は /assets/data/db/ を取りに行って 404 になり、
+//   worker の DB が常に空だったため撤去した。
 function _syncState(state) {
   if (!state || typeof state !== 'object') return;
   // 軽量項目は post で受信
@@ -83,72 +84,20 @@ function _syncState(state) {
   //   Worker 経路と main fallback で予測が食い違う。
   if (typeof state.trainStep === 'number') l2trainStep = state.trainStep;
   if (state.plattCoeffs) _plattCoeffs = state.plattCoeffs;
+  // 2026-11-19: 校正 3 種と settings も main と揃える（未同期だと worker 経路だけ
+  //   場別 Platt / isotonic が効かず、買い目点数・EV モードも既定値のままになる）。
+  if (state.plattCoeffsByStadium) _plattCoeffsByStadium = state.plattCoeffsByStadium;
+  if (state.isotonicCoeffs !== undefined) _isotonicCoeffs = state.isotonicCoeffs;
+  if (typeof state.calibrationMethod === 'string') _calibrationMethod = state.calibrationMethod;
+  if (state.settings && typeof state.settings === 'object') settings = state.settings;
   if (typeof state.stackingGamma === 'number') _stackingGamma = state.stackingGamma;
   if (state.tideData !== undefined) tideData = state.tideData;
   // programData / previewData / oddsData は予測時点で送られる input
   if (state.programData) programData = state.programData;
   if (state.previewData) previewData = state.previewData;
   if (state.oddsData !== undefined) oddsData = state.oddsData;
-  // 重量項目: post で送られた場合のみ受信、未送なら自前 fetch（PG-7）
   if (state.racerDB) racerDB = state.racerDB;
   if (state.stadiumDB) stadiumDB = state.stadiumDB;
-}
-
-// PG-7: worker 自前で重量 DB を fetch（main の postMessage 負荷削減）
-async function _loadHeavyDBs() {
-  try {
-    const ts = '?t=' + Date.now();
-    const [r1, r2] = await Promise.all([
-      fetch('data/db/racerDB.json' + ts).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('data/db/stadiumDB.json' + ts).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]);
-    if (r1 && r1.racers) {
-      // app.js の loadDeferredData と同じ変換
-      racerDB = {};
-      for (const rn in r1.racers) {
-        const r = r1.racers[rn];
-        racerDB[rn] = {
-          name: r.name, classNum: r.classNum,
-          courseStats: {}, courseStyle: {},
-          recentResults: r.recentResults || [],
-          lastUpdated: r1.updated_at ? r1.updated_at.slice(0, 10).replace(/-/g, '') : ''
-        };
-        if (r.courseStats) {
-          for (const c in r.courseStats) {
-            const cs = r.courseStats[c];
-            racerDB[rn].courseStats[c] = {
-              races: cs.entries || 0, win: cs.wins || 0,
-              top2: Math.round((cs.entries || 0) * (cs.top2Rate || 0) / 100),
-              top3: Math.round((cs.entries || 0) * (cs.top2Rate || 0) / 100 * 1.3),
-              avgST: cs.avgST || 0
-            };
-          }
-        }
-      }
-    }
-    if (r2 && r2.stadiums) {
-      stadiumDB = {};
-      for (const sid in r2.stadiums) {
-        const s = r2.stadiums[sid];
-        stadiumDB[sid] = { courseWinRate: {}, techniqueRate: {}, courseTechnique: {} };
-        if (s.courseWinRate) {
-          for (const c in s.courseWinRate) {
-            stadiumDB[sid].courseWinRate[c] = {
-              races: s.totalRaces || 100,
-              win: Math.round((s.totalRaces || 100) * s.courseWinRate[c])
-            };
-          }
-        }
-      }
-    }
-    self.postMessage({
-      type: 'heavy_db_loaded',
-      racerCount: Object.keys(racerDB).length,
-      stadiumCount: Object.keys(stadiumDB).length,
-    });
-  } catch (e) {
-    self.postMessage({ type: 'heavy_db_error', error: String(e) });
-  }
 }
 
 // =============================================================================
@@ -184,11 +133,6 @@ self.addEventListener('message', (e) => {
     if (msg.type === 'sync_state') {
       _syncState(msg.state);
       self.postMessage({ type: 'sync_done' });
-      return;
-    }
-    if (msg.type === 'load_heavy_dbs') {
-      // PG-7: worker 自前で fetch
-      _loadHeavyDBs();
       return;
     }
     if (msg.type === 'predict') {

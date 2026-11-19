@@ -3333,7 +3333,6 @@ var _appWorkerCallbacks = new Map();
 //   軽量項目のみ postMessage で送信
 //   呼出契機: l2Update / 学習完了 / DB 読込完了
 /* MOVED: function _syncWorkerState */
-var _workerHeavyLoaded = false;
 
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）

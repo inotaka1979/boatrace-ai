@@ -1327,3 +1327,36 @@ build 1243 の Chromium だけが入っており WebKit も無いため、`make 
 - `make test-e2e-local`: chromium-smoke を 1 並列で実行（並列だと CPU 不足で遷移待ちが timeout した）。
 - RUNBOOK §3.1 に手順。VRT はフォント差（Google Fonts 不達で代替フォント）で一致しないため対象外。
 - 実行結果: chromium-smoke 4/4 PASS。iOS 固有の挙動の正式判定は引き続き CI の webkit-smoke。
+
+## 修正履歴 (2026-11-19: 予測用 Web Worker が一度も正しく動いていなかった問題)
+
+11/14 の記録「予測用 Web Worker が全く機能していない」を修正。調べると原因は 3 層あり、エラーを消すだけでは
+worker が main と違う予想を出す状態だった。
+
+### 原因
+1. **定数のコピー漏れ**: worker_predictor.js の定数は手作業コピーで、7 個（`DEFAULT_ENTRY_BY_STADIUM` /
+   `CLASS_COURSE_MULT` / `SCENARIO_DIST` など）が欠落 → predict が毎回 ReferenceError → main fallback。
+   コピー済みの定数も `L2_INIT_WEIGHTS[3]`（FA-3 で -4 → 0）と `STADIUM_WIND_PROFILE`（4 場のみ）が main と乖離。
+2. **state の未同期**: `settings` / `_plattCoeffsByStadium` / `_isotonicCoeffs` / `_calibrationMethod` が
+   worker で未宣言・未同期。`escText` は DOM を使う main のコピーで、部品交換情報のあるレースで落ちた。
+3. **DB が常に空**: PG-7 の worker 自前 fetch (`load_heavy_dbs`) は worker のスクリプト位置 (assets/) 基準で
+   `/assets/data/db/*.json` を取りに行き 404。worker の racerDB / stadiumDB は導入以来ずっと空で、実データでは
+   30/30 レース main と予想が食い違っていた（1 コース場勝率が既定 55%、選手の直近成績が無視される等）。
+
+### 修正
+- `build/build.mjs`: `WORKER_SHARED_CONSTANTS`（23 定数）を assets/app.js のトップレベル `var` から抜き出して
+  `BUILD:WORKER_SHARED_CONSTANTS` 領域へ自動転記。手作業コピーを撤去（見つからない名前は build 失敗）。
+- `_syncWorkerState` (app.js) / `_syncState` (worker.js): 上記 4 state と racerDB / stadiumDB を main から送る。
+  DB の実サイズは racerDB ~800KB / stadiumDB ~6KB、structured clone ~7ms（backfill 毎に 1 回）。
+  main の DB は端末で積み上げた更新も含むので、worker が取り直す方式では原理的に一致しない。
+  壊れていた `load_heavy_dbs` は撤去。
+- worker の `escText` を DOM 非依存に（`& < > U+00A0` のみ変換、null は空文字。Chromium の実 DOM と照合）。
+- worker の `batchLearnFromResults`: `race_date` 欠落時に main と同じく今日 (JST) を学習キーに使う。
+
+### 検証
+- `scripts/tests/test_worker_protocol.js` 7 → 16 件。worker が main と **完全一致** すること（golden 3 レース ×
+  展示あり/なし、DB あり、場別 Platt、isotonic、学習結果、23 定数）を固定。DB・校正のケースは main の
+  `_syncWorkerState` が実際に送るメッセージを使う。修正の各部分を外す mutation 13 通り（worker 側 7・main の送信漏れ 6）すべてで失敗することを確認。
+- 実ブラウザ (Chromium): 本日 132 レースで main と worker の予想が 132/132 一致。backfill 120 レースを
+  エラー / fallback 0 件で worker が計算し、的中数は main 計算時と同じ（63 / 120）。
+- gate EXIT=0、critical 99,466B / 100,000B。worker_predictor.js は定数転記で 110KB（従来から warn 超過）。

@@ -6352,7 +6352,14 @@ function _syncWorkerState(){
   w.postMessage({
     type: 'sync_state',
     state: {
-      // PG-7: racerDB / stadiumDB は worker が fetch するため省略
+      // 2026-11-19: racerDB / stadiumDB も main の実体を送る。
+      //   PG-7 は「racerDB ~5MB」を理由に worker 自前 fetch としたが、worker は assets/ 基準で
+      //   相対 URL を解決するため /assets/data/db/*.json を取りに行き 404 → worker の DB は常に空で、
+      //   実データでは 30/30 レース main と予想が食い違っていた（1 コース場勝率が既定 55% になる等）。
+      //   実サイズは racerDB ~800KB / stadiumDB ~6KB、structured clone は ~7ms（backfill 毎に 1 回）。
+      //   main の DB は端末で積み上げた更新も含むため、worker が取り直しても一致しない点でも送るのが正。
+      racerDB: racerDB,
+      stadiumDB: stadiumDB,
       pairwiseDB: pairwiseDB,
       stadiumMotorStats: stadiumMotorStats,
       stadiumExhibitionStats: stadiumExhibitionStats,
@@ -6360,6 +6367,10 @@ function _syncWorkerState(){
       featureStats: _featureStats,
       trainStep: l2trainStep,   // S-01 (2026-07-26): 融合比 α の分母。未送だと worker が main と α 不一致
       plattCoeffs: _plattCoeffs,
+      plattCoeffsByStadium: _plattCoeffsByStadium,   // 2026-11-19: 校正 3 種と settings も同期
+      isotonicCoeffs: _isotonicCoeffs,               //   （未同期だと worker 経路だけ main と予想が食い違う）
+      calibrationMethod: _calibrationMethod,
+      settings: settings,
       stackingGamma: _stackingGamma,
       tideData: tideData,
       programData: programData,
@@ -6367,13 +6378,7 @@ function _syncWorkerState(){
       oddsData: oddsData,
     }
   });
-  // PG-7: worker に「重量 DB を自分で fetch しろ」と指示（並列 load）
-  if(!_workerHeavyLoaded){
-    w.postMessage({ type: 'load_heavy_dbs' });
-    _workerHeavyLoaded = true;   // 1 回だけ
-  }
 }
-var _workerHeavyLoaded = false;
 
 // PG-4: 予測を Worker に委譲する async 版
 //   既存 predictRace は同期維持（onclick ハンドラ互換）
