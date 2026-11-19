@@ -818,7 +818,7 @@
       rows.motor += mv ? "<td>" + _pct(mv[2], mv[0]) + '<br><span class="fs-9">(' + mv[0] + ")</span></td>" : "<td>-</td>";
     }
     var win = V.window && V.window.racer_months ? V.window.racer_months : 12;
-    return "<tr>" + rows.course + '<th>\u30B3\u30FC\u30B9<br>\u6210\u7E3E<br><span class="fs-9">' + win + "\u304B\u6708</span></th></tr><tr>" + rows.tech + "<th>\u6C7A\u307E\u308A\u624B</th></tr><tr>" + rows.st + "<th>\u5E73\u5747ST</th></tr><tr>" + rows.motor + '<th>\u30E2\u30FC\u30BF\u30FC<br>2\u9023\u7387<br><span class="fs-9">' + (V.window && V.window.motor_months || 6) + "\u304B\u6708</span></th></tr>";
+    return "<tr>" + rows.course + '<th>\u30B3\u30FC\u30B9<br>\u6210\u7E3E<br><span class="fs-9">' + win + "\u304B\u6708</span></th></tr><tr>" + rows.tech + "<th>\u6C7A\u307E\u308A\u624B</th></tr><tr>" + rows.st + '<th>ST\u50BE\u5411<br><span class="fs-9">' + (V.window && V.window.racer_months || 12) + "\u304B\u6708</span></th></tr><tr>" + rows.motor + '<th>\u30E2\u30FC\u30BF\u30FC<br>2\u9023\u7387<br><span class="fs-9">' + (V.window && V.window.motor_months || 6) + "\u304B\u6708</span></th></tr>";
   }
   globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
   globalThis._racerStatsRows = _racerStatsRows;

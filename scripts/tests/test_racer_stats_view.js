@@ -54,7 +54,7 @@ t('初回は空文字で取得を始め、届いた後は 4 行を返す（取�
   await tick(); await tick(); await tick();
   const html = s.ctx._racerStatsRows(s.boatMap, {}, 15);
   assert.strictEqual(s.calls(), 1);
-  ['コース<br>成績', '決まり手', '平均ST', 'モーター'].forEach((k) => assert.ok(html.includes(k), k));
+  ['コース<br>成績', '決まり手', 'ST傾向', 'モーター'].forEach((k) => assert.ok(html.includes(k), k));
 });
 
 t('1 コース: 1着率・逃げ率・負け方、モーター 2連率', async () => {

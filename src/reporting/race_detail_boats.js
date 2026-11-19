@@ -469,7 +469,9 @@ function _racerStatsRows(boatMap, pvMap, sid) {
     '<th>決まり手</th></tr>' +
     '<tr>' +
     rows.st +
-    '<th>平均ST</th></tr>' +
+    '<th>ST傾向<br><span class="fs-9">' +
+    ((V.window && V.window.racer_months) || 12) +
+    'か月</span></th></tr>' +
     '<tr>' +
     rows.motor +
     '<th>モーター<br>2連率<br><span class="fs-9">' +
