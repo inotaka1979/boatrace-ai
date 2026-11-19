@@ -24,7 +24,9 @@ permissions:
 
 jobs:
   lighthouse:
-    runs-on: ubuntu-latest
+    # ubuntu-latest は 26.04 に移行済み。e2e.yml と同じく、計測環境 (Chrome / フォント) を
+    #   従来の 24.04 に揃えて過去スコアと比較できるようにする。
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
