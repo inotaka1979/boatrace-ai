@@ -313,6 +313,11 @@
     var predHtml = "";
     var activePred = hasRealPreview && pred ? pred : null;
     var activePredLabel = hasRealPreview ? "\u76F4\u524D\u4E88\u60F3" : "\u756A\u7D44\u4E88\u60F3";
+    function _emptyBetsNote(list, settingVal, def) {
+      if (list && list.length) return "";
+      var msg = _parseBetCount(settingVal, def) === 0 ? "0\u70B9\uFF08\u8CB7\u308F\u306A\u3044\u8A2D\u5B9A\uFF09" : "\u8A72\u5F53\u306A\u3057";
+      return '<span class="fs-9 c-dim">' + msg + "</span>";
+    }
     if (activePred || progPred) {
       predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
       predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
@@ -327,6 +332,7 @@
           var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
+        predHtml += _emptyBetsNote(activePred.trifecta, settings.betCount3, 10);
         predHtml += "</div>";
         var _stakeShown = activePred.trifecta.some(function(t) {
           return t.stakeYen && !t.stakeSuppressed;
@@ -343,10 +349,11 @@
         activePred.exacta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + "</span>";
         });
+        predHtml += _emptyBetsNote(activePred.exacta, settings.betCount2, 5);
         predHtml += "</div>";
       } else if (progPred) {
-        var betCount3 = parseInt(settings.betCount3) || 10;
-        var betCount2 = parseInt(settings.betCount2) || 5;
+        var betCount3 = _parseBetCount(settings.betCount3, 10);
+        var betCount2 = _parseBetCount(settings.betCount2, 5);
         var method = settings.betMethod || "auto";
         if (method === "auto") {
           if (progPred.raceType === "honmei") method = "prob";
@@ -358,19 +365,21 @@
         progBets.trifecta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span></span>";
         });
+        predHtml += _emptyBetsNote(progBets.trifecta, settings.betCount3, 10);
         predHtml += "</div>";
         predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
         progBets.exacta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + "</span>";
         });
+        predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
         predHtml += "</div>";
         predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
       }
       var anaSrc = activePred || progPred;
-      if (anaSrc && anaSrc.marks) {
-        var anaTopN = parseInt(settings.betCountAna) || 3;
-        if (anaTopN < 1) anaTopN = 1;
-        else if (anaTopN > 6) anaTopN = 6;
+      var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+      if (anaSrc && anaSrc.marks && anaTopN === 0) {
+        predHtml += '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px"><div class="bet-label" style="color:#FF5722">\u{1F525} \u7A74\u4E88\u60F3</div><div class="bet-combos"><span class="fs-9 c-dim">0\u70B9\uFF08\u8CB7\u308F\u306A\u3044\u8A2D\u5B9A\uFF09</span></div></div>';
+      } else if (anaSrc && anaSrc.marks) {
         var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
         var _recommendedCombos = [];
         if (activePred && Array.isArray(activePred.trifecta)) {

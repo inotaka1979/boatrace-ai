@@ -294,7 +294,12 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     const prob = pi * (pj / denom);
     return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
   }
+  function _parseBetCount(v, def) {
+    var n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 0 ? n : def;
+  }
   globalThis.softmax = softmax;
+  globalThis._parseBetCount = _parseBetCount;
   globalThis.sigmoid = sigmoid;
   globalThis.safeDiv = safeDiv;
   globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;
@@ -1889,8 +1894,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
       typeLabel = "\u6DF7\u6226";
       typeCls = "type-middle";
     }
-    var betCount3 = parseInt(settings.betCount3) || 10;
-    var betCount2 = parseInt(settings.betCount2) || 5;
+    var betCount3 = _parseBetCount(settings.betCount3, 10);
+    var betCount2 = _parseBetCount(settings.betCount2, 5);
     var method = settings.betMethod || "auto";
     var evMode = settings.evMode === true || settings.evMode === "true";
     var kpiMode = settings.kpiMode || "balanced";
@@ -1959,9 +1964,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     bets.confLift = Math.round(_lift * 100) / 100;
     bets.confStars = _lift >= 1.35 ? 5 : _lift >= 1.2 ? 4 : _lift >= 1.08 ? 3 : _lift >= 0.95 ? 2 : 1;
     bets.ana = function() {
-      var anaTopN = parseInt(settings.betCountAna) || 3;
-      if (anaTopN < 1) anaTopN = 1;
-      else if (anaTopN > 6) anaTopN = 6;
+      var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+      if (anaTopN === 0) return [];
       var excludeCombos = (bets.trifecta || []).map(function(t) {
         return t.combo;
       });

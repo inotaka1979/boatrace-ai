@@ -62,7 +62,21 @@ function _plackettLuceExactaProb(p, i, j) {
 }
 
 // グローバル export
+/**
+ * 買い目点数の設定値を読む。0 は「購入しない」という正当な値なので 0 のまま返し、
+ * 空・数値でない・負の値のときだけ既定値を返す。
+ * （従来の `parseInt(v) || def` は 0 を既定値に置き換えていた）
+ * @param {*} v - 設定値（select から保存された文字列や数値）
+ * @param {number} def - 既定値
+ * @returns {number}
+ */
+function _parseBetCount(v, def) {
+  var n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
 globalThis.softmax = softmax;
+globalThis._parseBetCount = _parseBetCount;
 globalThis.sigmoid = sigmoid;
 globalThis.safeDiv = safeDiv;
 globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;

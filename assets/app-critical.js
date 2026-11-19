@@ -1747,7 +1747,12 @@ window.addEventListener('unhandledrejection', function(e){
     const prob = pi * (pj / denom);
     return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
   }
+  function _parseBetCount(v, def) {
+    var n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 0 ? n : def;
+  }
   globalThis.softmax = softmax;
+  globalThis._parseBetCount = _parseBetCount;
   globalThis.sigmoid = sigmoid;
   globalThis.safeDiv = safeDiv;
   globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;

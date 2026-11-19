@@ -96,8 +96,8 @@ function _fmtDate(yyyymmdd) {
 function renderDailyStats() {
   var history = _g.safeParse('boatrace_history', []);
   var st = _g.settings || {};
-  var b3 = parseInt(st.betCount3) || 10;
-  var b2 = parseInt(st.betCount2) || 5;
+  var b3 = _g._parseBetCount(st.betCount3, 10);
+  var b2 = _g._parseBetCount(st.betCount2, 5);
   var daily = calcDailyStats(history, b3, b2, 30);
 
   // サマリ: 直近 7 日の合算

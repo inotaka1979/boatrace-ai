@@ -181,6 +181,10 @@ step "S-05 degraded feature banner tests" \
 step "Web Worker protocol smoke" \
      "node scripts/tests/test_worker_protocol.js"
 
+# 9g2b) 買い目点数 0（買わない）が既定値に化けない / 2連単 0〜10 点
+step "Bet count zero / exacta options" \
+     "node scripts/tests/test_bet_count_zero.js"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"

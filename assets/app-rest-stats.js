@@ -343,8 +343,8 @@
   function renderDailyStats() {
     var history = _g.safeParse("boatrace_history", []);
     var st = _g.settings || {};
-    var b3 = parseInt(st.betCount3) || 10;
-    var b2 = parseInt(st.betCount2) || 5;
+    var b3 = _g._parseBetCount(st.betCount3, 10);
+    var b2 = _g._parseBetCount(st.betCount2, 5);
     var daily = calcDailyStats(history, b3, b2, 30);
     var last7 = daily.slice(-7);
     var t = { races: 0, hit3: 0, invest: 0, payout: 0 };

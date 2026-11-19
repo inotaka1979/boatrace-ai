@@ -17,6 +17,13 @@ function _renderRaceDetailBets(ctx) {
   // ========= 買い目（直前予想ベースを優先） =========
   var activePred = hasRealPreview && pred ? pred : null;
   var activePredLabel = hasRealPreview ? '直前予想' : '番組予想';
+  // 2026-11-20: 買い目が 0 件のとき見出しだけが残り表示が壊れて見えるため、理由を出す。
+  //   設定が 0 点なら「買わない設定」、それ以外（EV フィルタで 0 件など）は「該当なし」。
+  function _emptyBetsNote(list, settingVal, def) {
+    if (list && list.length) return '';
+    var msg = _parseBetCount(settingVal, def) === 0 ? '0点（買わない設定）' : '該当なし';
+    return '<span class="fs-9 c-dim">' + msg + '</span>';
+  }
   if (activePred || progPred) {
     predHtml +=
       '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
@@ -60,6 +67,7 @@ function _renderRaceDetailBets(ctx) {
           stakeStr +
           '</span>';
       });
+      predHtml += _emptyBetsNote(activePred.trifecta, settings.betCount3, 10);
       predHtml += '</div>';
       // X1: EV モード時の合計投資額表示（S-04: 賭け金推奨が有効なときだけ）
       var _stakeShown = activePred.trifecta.some(function (t) {
@@ -81,11 +89,12 @@ function _renderRaceDetailBets(ctx) {
       activePred.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
       });
+      predHtml += _emptyBetsNote(activePred.exacta, settings.betCount2, 5);
       predHtml += '</div>';
     } else if (progPred) {
       // 番組予想ベースの買い目
-      var betCount3 = parseInt(settings.betCount3) || 10;
-      var betCount2 = parseInt(settings.betCount2) || 5;
+      var betCount3 = _parseBetCount(settings.betCount3, 10);
+      var betCount2 = _parseBetCount(settings.betCount2, 5);
       var method = settings.betMethod || 'auto';
       if (method === 'auto') {
         if (progPred.raceType === 'honmei') method = 'prob';
@@ -102,11 +111,13 @@ function _renderRaceDetailBets(ctx) {
           (t.prob * 100).toFixed(1) +
           '%</span></span>';
       });
+      predHtml += _emptyBetsNote(progBets.trifecta, settings.betCount3, 10);
       predHtml += '</div>';
       predHtml += '<div class="bet-label">2連単推奨</div><div class="bet-combos">';
       progBets.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
       });
+      predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
       predHtml += '</div>';
       predHtml +=
         '<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';
@@ -118,10 +129,14 @@ function _renderRaceDetailBets(ctx) {
     //   オッズ未取得時は AI 確率のみで穴コンビ候補を表示
     //   B13 (2026-05-16): 推奨買い目に含まれる combo は穴からは除外し重複表示を防止
     var anaSrc = activePred || progPred;
-    if (anaSrc && anaSrc.marks) {
-      var anaTopN = parseInt(settings.betCountAna) || 3;
-      if (anaTopN < 1) anaTopN = 1;
-      else if (anaTopN > 6) anaTopN = 6;
+    // 2026-11-20: 穴狙いも 0 点（買わない）を選べる。0 なら候補を計算せず、その旨だけ出す。
+    var anaTopN = Math.min(6, _parseBetCount(settings.betCountAna, 3));
+    if (anaSrc && anaSrc.marks && anaTopN === 0) {
+      predHtml +=
+        '<div style="margin-top:12px;padding:8px;background:rgba(255,87,34,0.08);border-left:3px solid #FF5722;border-radius:6px">' +
+        '<div class="bet-label" style="color:#FF5722">🔥 穴予想</div>' +
+        '<div class="bet-combos"><span class="fs-9 c-dim">0点（買わない設定）</span></div></div>';
+    } else if (anaSrc && anaSrc.marks) {
       var hasAnaOdds = !!(raceOdds && raceOdds.trifecta && Object.keys(raceOdds.trifecta).length > 0);
       // B13: 推奨買い目の combo 一覧を抽出 (excludeCombos に渡す)
       var _recommendedCombos = [];
