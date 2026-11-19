@@ -205,6 +205,12 @@ step "Odds staleness / wind ana / recommendation ROI note" \
 step "UX: soon strip / live prediction first / header state" \
      "node scripts/tests/test_ux_soon_strip.js"
 
+# 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
+step "no-undef: app.js / worker / src (AST globals)" \
+     "node scripts/tests/test_no_undef.mjs"
+step "Worker state sync list covers what the predictor reads" \
+     "node scripts/tests/test_worker_sync_list.mjs"
+
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
      "python3 -m unittest scripts.tests.test_racedata_empty_lockin"

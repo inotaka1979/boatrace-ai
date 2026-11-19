@@ -3810,6 +3810,7 @@ function _syncWorkerState(){
       programData: programData,
       previewData: previewData,
       oddsData: oddsData,
+      origExhibIndex: _origExhibIndex,   // 2026-11-20: オリジナル展示（5 場）。未同期だと worker の予想だけ加点が無かった
     }
   });
 }

@@ -478,3 +478,7 @@ function _prefetchLiveOddsForUpcoming(sid) {
 globalThis.renderStadiums = renderStadiums;
 globalThis._renderTopSummary = _renderTopSummary;
 globalThis.openStadium = openStadium;
+// 2026-11-20: 90 秒 poll（app.js）が typeof guard 付きで呼ぶが、本モジュールは IIFE に包まれて bundle されるため
+//   export しないと常に 'undefined' で、閲覧中の締切間近レースの live オッズ継続取得 (rt-fix3 P0-1) が
+//   一度も動いていなかった（no-undef の静的検査で発見）。
+globalThis._prefetchLiveOddsForUpcoming = _prefetchLiveOddsForUpcoming;

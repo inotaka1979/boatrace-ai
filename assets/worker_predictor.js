@@ -242,6 +242,7 @@ var tideData = null;
 var settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'auto' };
 var _plattCoeffsByStadium = {};
 var _isotonicCoeffs = null;
+var _origExhibIndex = {};   // 2026-11-20: main から sync_state で受ける（オリジナル展示）
 var _calibrationMethod = 'platt';
 
 // ダミー data accessors (worker は programData / previewData を main から受取)

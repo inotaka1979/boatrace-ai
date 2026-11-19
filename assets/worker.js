@@ -97,6 +97,9 @@ function _syncState(state) {
   if (state.previewData) previewData = state.previewData;
   if (state.oddsData !== undefined) oddsData = state.oddsData;
   if (state.racerDB) racerDB = state.racerDB;
+  // 2026-11-20: オリジナル展示（score_boat が globalThis._origExhibIndex を読む）。未同期だと worker 経路だけ
+  //   対応 5 場の一周・まわり足の加点が無く、main と予想が食い違っていた（test_worker_sync_list.mjs で検出）。
+  if (state.origExhibIndex && typeof state.origExhibIndex === 'object') _origExhibIndex = state.origExhibIndex;
   if (state.stadiumDB) stadiumDB = state.stadiumDB;
 }
 

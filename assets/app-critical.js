@@ -3811,6 +3811,7 @@ var _backfillTimer = null;
   globalThis.renderStadiums = renderStadiums;
   globalThis._renderTopSummary = _renderTopSummary;
   globalThis.openStadium = openStadium;
+  globalThis._prefetchLiveOddsForUpcoming = _prefetchLiveOddsForUpcoming;
 })();
 
 /* BUILD:REPORTING_STADIUM_PAGES:END */

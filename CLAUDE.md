@@ -1496,3 +1496,19 @@ install できない）を解消。
 - 文字サイズ: レポート描画の inline style と app.js の 9 / 10px を 11px に、`.fs-9` / `.fs-10` も 11px、
   ラベル・バッジ系 15 クラスも 11px。三連単マトリクスなどの表のマス目は画面幅に収めるため据え置き。
 - `scripts/tests/test_ux_soon_strip.js`（7 件）。
+
+## 修正履歴 (2026-11-20: 保守性 — 未定義参照の静的検査と worker 同期の網羅性)
+
+- `build/app_globals.mjs`: app.js / worker の「グローバルに見える名前」を acorn の AST で集める（プログラム直下の宣言 +
+  `globalThis` / `_g` / `window` / `self` への export）。
+- `eslint.config.mjs`: 予測・描画の中核 15 ファイルの `no-undef` を off → error（app.js のグローバルを渡す）。
+- `scripts/tests/test_no_undef.mjs`: assets/app.js・worker 2 本・src/** を no-undef で検査（eslint の通常対象外だった）。
+  許可リストは理由付き（Chart = CDN、worker 内の main 専用経路のコピー）。
+  - **初回実行で実バグを発見**: 90 秒 poll が typeof guard で呼ぶ `_prefetchLiveOddsForUpcoming` が IIFE 内で export されず、
+    閲覧中の締切間近レースの live オッズ継続取得 (rt-fix3 P0-1) が一度も動いていなかった → export。
+  - 11/19 の worker 定数欠落と同じ mutation（worker から CLASS_COURSE_MULT を消す）で失敗することを確認。
+- `scripts/tests/test_worker_sync_list.mjs`: worker の予測ロジック (WORKER_TWIN_SYNCED) が読む app.js の可変 state を AST で集め、
+  main が送り worker が受けていること（または理由付きの WORKER_LOCAL）を要求。
+  - **実バグを発見**: `_origExhibIndex`（オリジナル展示、5 場の一周・まわり足）が worker に同期されておらず、worker 経路の
+    予想だけ加点が無かった → 同期。test_worker_protocol.js に「オリジナル展示」の main≡worker ケースを追加（同期を外すと失敗）。
+- critical 予算: BANDIT / DP_GRADIENT を rest に移し 99,567B → 98,291B（UX 追加後）。gzip 計測への切替は未実施。
