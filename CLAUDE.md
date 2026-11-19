@@ -1526,3 +1526,11 @@ install できない）を解消。
   KV put の失敗回数を `/health` の `kv_put_failures` に出す（従来は heartbeat の失敗を握り潰し、枠切れと cron 停止を
   区別できなかった）。30 分の stamp refresh は鮮度監視が依存するため据え置き。**main へのマージで deploy-worker.yml が自動デプロイ**。
 - テスト: test_backfill_archive.py（6 件）、test_worker_kv_budget.mjs（2 件）、test_scrape_all_decide に夜間 backfill。
+
+## 修正履歴 (2026-11-20: sentinel から scrape-all を定時起動)
+
+- GitHub schedule は scrape-all を約 3.5 時間遅れで届けていた（実測 11/18-19、宣言 8:30/10:00/13:00 → 着 13:20〜17:07）。
+  sentinel（Cloudflare cron 5 分毎）が scrape-all.yml の宣言時刻（JST 8:30/10/13/16/19/22）〜+10 分に
+  `workflow_dispatch` を送る（`maybeDispatchScrape`、KV `sentinel:scrape_dispatch` で同時刻 1 回、失敗時は次 tick で再試行）。
+  **sentinel の `GH_TOKEN` 登録が前提**（未登録なら何もしない）。README で登録を推奨に格上げ。
+- test.yml: 静的検査テストがルートの eslint / acorn を使うため `npm ci` を追加（CI の Test が ERR_MODULE_NOT_FOUND で失敗していた）。
