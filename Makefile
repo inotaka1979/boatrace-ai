@@ -18,7 +18,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install lint format type test test-e2e snapshots-update build build-check split gate clean backtest
+.PHONY: help install lint format type test test-e2e test-e2e-local snapshots-update build build-check split gate clean backtest
 
 help:
 	@echo "Clearwing local CI gate (BoatRace Oracle)"
@@ -29,6 +29,7 @@ help:
 	@echo "  make type              - tsc --noEmit -p jsconfig.json (JSDoc strict / Phase 4)"
 	@echo "  make test              - bash scripts/tests/run_all.sh"
 	@echo "  make test-e2e          - Playwright suite (heavy)"
+	@echo "  make test-e2e-local    - smoke を Chromium で実行 (PW_CHROMIUM_PATH 必須)"
 	@echo "  make snapshots-update  - 期待が変わったら UPDATE_SNAPSHOTS=1 で再生成"
 	@echo "  make split             - python3 scripts/split_app.py (critical/rest 再生成)"
 	@echo "  make build             - esbuild IIFE inject + minify (canonical app.js)"
@@ -59,6 +60,14 @@ test:
 test-e2e:
 	bash scripts/ensure_e2e_deps.sh
 	npm run test:e2e
+
+# WebKit が無く Chromium の build が固定版と合わない環境（クラウド開発環境等）用。
+#   PW_CHROMIUM_PATH 必須。smoke を Chromium で 1 並列実行する（並列だと CPU 不足で
+#   遷移待ちが timeout する）。VRT はフォント差で一致しないため含めない（RUNBOOK §3）。
+test-e2e-local:
+	@test -n "$$PW_CHROMIUM_PATH" || { echo "PW_CHROMIUM_PATH を設定してください (例: /opt/pw-browsers/chromium)"; exit 2; }
+	bash scripts/ensure_e2e_deps.sh
+	cd build && npx playwright test --config playwright.config.mjs --project=chromium-smoke --workers=1 --trace off
 
 # Clearwing Phase 5: snapshot 再生成。
 #   通常開発で expectation が変わったら本ターゲットで更新 → git diff で内容を確認してから commit。

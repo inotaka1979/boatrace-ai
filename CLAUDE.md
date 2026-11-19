@@ -1316,3 +1316,14 @@ TOP に戻っても描き直されず、夜（データ世代が変わらない�
 - localStorage の実容量は Chromium で約 524 万文字。履歴 1 件は約 2,140 文字（うち `pred_snapshot` 1,214）。
   起動時の auto-trim が効くので書込失敗には至らないが、過去日の `pred_snapshot` は表示に使わないので
   落とせば履歴を半分以下にできる。
+
+## 修正履歴 (2026-11-19: クラウド開発環境で E2E を実行可能に)
+
+固定版 Playwright 1.59.1 は Chromium build 1217 を要求するが、Claude Code クラウド環境には
+build 1243 の Chromium だけが入っており WebKit も無いため、`make test-e2e` が全 14 件ブラウザ起動で失敗していた。
+
+- `build/playwright.config.mjs`: `PW_CHROMIUM_PATH` 設定時のみ Chromium 系 project がその実行ファイルを使い、
+  smoke spec を Chromium で流す `chromium-smoke` project を追加。未設定（CI）では構成不変（`--list` で 14 件を確認）。
+- `make test-e2e-local`: chromium-smoke を 1 並列で実行（並列だと CPU 不足で遷移待ちが timeout した）。
+- RUNBOOK §3.1 に手順。VRT はフォント差（Google Fonts 不達で代替フォント）で一致しないため対象外。
+- 実行結果: chromium-smoke 4/4 PASS。iOS 固有の挙動の正式判定は引き続き CI の webkit-smoke。
