@@ -17,6 +17,13 @@ function _renderRaceDetailBets(ctx) {
   // ========= 買い目（直前予想ベースを優先） =========
   var activePred = hasRealPreview && pred ? pred : null;
   var activePredLabel = hasRealPreview ? '直前予想' : '番組予想';
+  // 2026-11-20: 買い目が 0 件のとき見出しだけが残り表示が壊れて見えるため、理由を出す。
+  //   設定が 0 点なら「買わない設定」、それ以外（EV フィルタで 0 件など）は「該当なし」。
+  function _emptyBetsNote(list, settingVal, def) {
+    if (list && list.length) return '';
+    var msg = _parseBetCount(settingVal, def) === 0 ? '0点（買わない設定）' : '該当なし';
+    return '<span class="fs-9 c-dim">' + msg + '</span>';
+  }
   if (activePred || progPred) {
     predHtml +=
       '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
@@ -60,6 +67,7 @@ function _renderRaceDetailBets(ctx) {
           stakeStr +
           '</span>';
       });
+      predHtml += _emptyBetsNote(activePred.trifecta, settings.betCount3, 10);
       predHtml += '</div>';
       // X1: EV モード時の合計投資額表示（S-04: 賭け金推奨が有効なときだけ）
       var _stakeShown = activePred.trifecta.some(function (t) {
@@ -81,11 +89,12 @@ function _renderRaceDetailBets(ctx) {
       activePred.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
       });
+      predHtml += _emptyBetsNote(activePred.exacta, settings.betCount2, 5);
       predHtml += '</div>';
     } else if (progPred) {
       // 番組予想ベースの買い目
-      var betCount3 = parseInt(settings.betCount3) || 10;
-      var betCount2 = parseInt(settings.betCount2) || 5;
+      var betCount3 = _parseBetCount(settings.betCount3, 10);
+      var betCount2 = _parseBetCount(settings.betCount2, 5);
       var method = settings.betMethod || 'auto';
       if (method === 'auto') {
         if (progPred.raceType === 'honmei') method = 'prob';
@@ -102,11 +111,13 @@ function _renderRaceDetailBets(ctx) {
           (t.prob * 100).toFixed(1) +
           '%</span></span>';
       });
+      predHtml += _emptyBetsNote(progBets.trifecta, settings.betCount3, 10);
       predHtml += '</div>';
       predHtml += '<div class="bet-label">2連単推奨</div><div class="bet-combos">';
       progBets.exacta.forEach(function (t) {
         predHtml += '<span class="bet-chip">' + t.combo + '</span>';
       });
+      predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
       predHtml += '</div>';
       predHtml +=
         '<div style="font-size:10px;color:#FF9800;margin-top:6px">※展示航走後に最終版の買い目に更新されます</div>';

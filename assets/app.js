@@ -2548,7 +2548,12 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
     const prob = pi * (pj / denom);
     return Number.isFinite(prob) ? Math.max(0, Math.min(1, prob)) : 0;
   }
+  function _parseBetCount(v, def) {
+    var n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 0 ? n : def;
+  }
   globalThis.softmax = softmax;
+  globalThis._parseBetCount = _parseBetCount;
   globalThis.sigmoid = sigmoid;
   globalThis.safeDiv = safeDiv;
   globalThis._plackettLuceTrifectaProb = _plackettLuceTrifectaProb;
@@ -6595,8 +6600,8 @@ function _syncWorkerState(){
       typeLabel = "\u6DF7\u6226";
       typeCls = "type-middle";
     }
-    var betCount3 = parseInt(settings.betCount3) || 10;
-    var betCount2 = parseInt(settings.betCount2) || 5;
+    var betCount3 = _parseBetCount(settings.betCount3, 10);
+    var betCount2 = _parseBetCount(settings.betCount2, 5);
     var method = settings.betMethod || "auto";
     var evMode = settings.evMode === true || settings.evMode === "true";
     var kpiMode = settings.kpiMode || "balanced";
@@ -9721,6 +9726,11 @@ async function _loadNextOpen(){
     var predHtml = "";
     var activePred = hasRealPreview && pred ? pred : null;
     var activePredLabel = hasRealPreview ? "\u76F4\u524D\u4E88\u60F3" : "\u756A\u7D44\u4E88\u60F3";
+    function _emptyBetsNote(list, settingVal, def) {
+      if (list && list.length) return "";
+      var msg = _parseBetCount(settingVal, def) === 0 ? "0\u70B9\uFF08\u8CB7\u308F\u306A\u3044\u8A2D\u5B9A\uFF09" : "\u8A72\u5F53\u306A\u3057";
+      return '<span class="fs-9 c-dim">' + msg + "</span>";
+    }
     if (activePred || progPred) {
       predHtml += '<div style="background:var(--card-bg);border:2px solid var(--accent);border-radius:10px;padding:12px;margin:8px 0">';
       predHtml += '<div style="font-weight:700;font-size:14px;color:var(--accent);margin-bottom:8px">\u63A8\u5968\u8CB7\u3044\u76EE <span style="font-size:10px;color:var(--text-dim);font-weight:400">\u2605' + activePredLabel + "\u30D9\u30FC\u30B9</span></div>";
@@ -9735,6 +9745,7 @@ async function _loadNextOpen(){
           var stakeStr = t.stakeYen && !t.stakeSuppressed ? '<span style="font-size:9px;color:var(--accent);font-weight:700;margin-left:4px">\xA5' + t.stakeYen.toLocaleString() + "</span>" : "";
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span>" + oddsStr + evHtml + stakeStr + "</span>";
         });
+        predHtml += _emptyBetsNote(activePred.trifecta, settings.betCount3, 10);
         predHtml += "</div>";
         var _stakeShown = activePred.trifecta.some(function(t) {
           return t.stakeYen && !t.stakeSuppressed;
@@ -9751,10 +9762,11 @@ async function _loadNextOpen(){
         activePred.exacta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + "</span>";
         });
+        predHtml += _emptyBetsNote(activePred.exacta, settings.betCount2, 5);
         predHtml += "</div>";
       } else if (progPred) {
-        var betCount3 = parseInt(settings.betCount3) || 10;
-        var betCount2 = parseInt(settings.betCount2) || 5;
+        var betCount3 = _parseBetCount(settings.betCount3, 10);
+        var betCount2 = _parseBetCount(settings.betCount2, 5);
         var method = settings.betMethod || "auto";
         if (method === "auto") {
           if (progPred.raceType === "honmei") method = "prob";
@@ -9766,11 +9778,13 @@ async function _loadNextOpen(){
         progBets.trifecta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + ' <span class="fs-9 c-dim">' + (t.prob * 100).toFixed(1) + "%</span></span>";
         });
+        predHtml += _emptyBetsNote(progBets.trifecta, settings.betCount3, 10);
         predHtml += "</div>";
         predHtml += '<div class="bet-label">2\u9023\u5358\u63A8\u5968</div><div class="bet-combos">';
         progBets.exacta.forEach(function(t) {
           predHtml += '<span class="bet-chip">' + t.combo + "</span>";
         });
+        predHtml += _emptyBetsNote(progBets.exacta, settings.betCount2, 5);
         predHtml += "</div>";
         predHtml += '<div style="font-size:10px;color:#FF9800;margin-top:6px">\u203B\u5C55\u793A\u822A\u8D70\u5F8C\u306B\u6700\u7D42\u7248\u306E\u8CB7\u3044\u76EE\u306B\u66F4\u65B0\u3055\u308C\u307E\u3059</div>';
       }
@@ -10030,8 +10044,8 @@ function calcTodayStats(){
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});
 
-  var betCount3=parseInt(settings.betCount3)||10;
-  var betCount2=parseInt(settings.betCount2)||5;
+  var betCount3=_parseBetCount(settings.betCount3,10);   // 0 点（購入しない）を既定値に化けさせない
+  var betCount2=_parseBetCount(settings.betCount2,5);
   var unitBet=100;
 
   var tri={hits:0, invest:0, payout:0};
@@ -10364,8 +10378,8 @@ function _rateColor(rate){
   function renderDailyStats() {
     var history = _g.safeParse("boatrace_history", []);
     var st = _g.settings || {};
-    var b3 = parseInt(st.betCount3) || 10;
-    var b2 = parseInt(st.betCount2) || 5;
+    var b3 = _g._parseBetCount(st.betCount3, 10);
+    var b2 = _g._parseBetCount(st.betCount2, 5);
     var daily = calcDailyStats(history, b3, b2, 30);
     var last7 = daily.slice(-7);
     var t = { races: 0, hit3: 0, invest: 0, payout: 0 };
@@ -10531,8 +10545,9 @@ function _loadChartLib(){
 // SCREEN 5: SETTINGS (REWRITTEN)
 // ===============================================
 function loadSettings(){
-  document.getElementById('setBetCount3').value=settings.betCount3||10;
-  document.getElementById('setBetCount2').value=settings.betCount2||5;
+  // 2026-11-20: `||` だと 0 点（購入しない）が既定値の表示に化けるため _parseBetCount で読む
+  document.getElementById('setBetCount3').value=String(_parseBetCount(settings.betCount3,10));
+  document.getElementById('setBetCount2').value=String(_parseBetCount(settings.betCount2,5));
   var ba = document.getElementById('setBetCountAna');
   if(ba) ba.value=settings.betCountAna||3;
   document.getElementById('setBetMethod').value=settings.betMethod||'auto';

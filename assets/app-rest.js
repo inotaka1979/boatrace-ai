@@ -1307,8 +1307,8 @@
       typeLabel = "\u6DF7\u6226";
       typeCls = "type-middle";
     }
-    var betCount3 = parseInt(settings.betCount3) || 10;
-    var betCount2 = parseInt(settings.betCount2) || 5;
+    var betCount3 = _parseBetCount(settings.betCount3, 10);
+    var betCount2 = _parseBetCount(settings.betCount2, 5);
     var method = settings.betMethod || "auto";
     var evMode = settings.evMode === true || settings.evMode === "true";
     var kpiMode = settings.kpiMode || "balanced";
@@ -4519,8 +4519,8 @@ function calcTodayStats(){
   var history=safeParse('boatrace_history', []);   // PA-5
   var verified=history.filter(function(h){return h.date===today && h.actual && h.actual.length>0});
 
-  var betCount3=parseInt(settings.betCount3)||10;
-  var betCount2=parseInt(settings.betCount2)||5;
+  var betCount3=_parseBetCount(settings.betCount3,10);   // 0 点（購入しない）を既定値に化けさせない
+  var betCount2=_parseBetCount(settings.betCount2,5);
   var unitBet=100;
 
   var tri={hits:0, invest:0, payout:0};
@@ -4630,8 +4630,9 @@ function _loadChartLib(){
 }
 
 function loadSettings(){
-  document.getElementById('setBetCount3').value=settings.betCount3||10;
-  document.getElementById('setBetCount2').value=settings.betCount2||5;
+  // 2026-11-20: `||` だと 0 点（購入しない）が既定値の表示に化けるため _parseBetCount で読む
+  document.getElementById('setBetCount3').value=String(_parseBetCount(settings.betCount3,10));
+  document.getElementById('setBetCount2').value=String(_parseBetCount(settings.betCount2,5));
   var ba = document.getElementById('setBetCountAna');
   if(ba) ba.value=settings.betCountAna||3;
   document.getElementById('setBetMethod').value=settings.betMethod||'auto';

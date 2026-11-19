@@ -308,8 +308,8 @@ function predictRace(sid, raceNum) {
     typeCls = 'type-middle';
   }
 
-  var betCount3 = parseInt(settings.betCount3) || 10;
-  var betCount2 = parseInt(settings.betCount2) || 5;
+  var betCount3 = _parseBetCount(settings.betCount3, 10);
+  var betCount2 = _parseBetCount(settings.betCount2, 5);
   var method = settings.betMethod || 'auto';
   // X1: EV モード優先（オッズが揃っていれば）
   var evMode = settings.evMode === true || settings.evMode === 'true';

@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=31f208c1" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=31f208c1" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=cef09f76" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=cef09f76" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -594,6 +594,7 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row">
       <span class="setting-label">3連単 買い目点数</span>
       <select id="setBetCount3" aria-label="3連単 買い目点数" data-action="saveSetting" data-arg-key="betCount3">
+        <option value="0">0点（買わない）</option>
         <option value="1">1点</option><option value="2">2点</option><option value="3">3点</option>
         <option value="4">4点</option><option value="5">5点</option><option value="6">6点</option>
         <option value="7">7点</option><option value="8">8点</option><option value="9">9点</option>
@@ -603,7 +604,11 @@ button.action-btn:active{background:#F0F0F0}
     <div class="setting-row">
       <span class="setting-label">2連単 買い目点数</span>
       <select id="setBetCount2" aria-label="2連単 買い目点数" data-action="saveSetting" data-arg-key="betCount2">
-        <option value="3">3点</option><option value="5" selected>5点</option>
+        <option value="0">0点（買わない）</option>
+        <option value="1">1点</option><option value="2">2点</option><option value="3">3点</option>
+        <option value="4">4点</option><option value="5" selected>5点</option><option value="6">6点</option>
+        <option value="7">7点</option><option value="8">8点</option><option value="9">9点</option>
+        <option value="10">10点</option>
       </select>
     </div>
     <div class="setting-row">
@@ -743,7 +748,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=31f208c1" defer></script>
-<script src="assets/app-rest.min.js?v=31f208c1" defer></script>
+<script src="assets/app-critical.min.js?v=cef09f76" defer></script>
+<script src="assets/app-rest.min.js?v=cef09f76" defer></script>
 </body>
 </html>
