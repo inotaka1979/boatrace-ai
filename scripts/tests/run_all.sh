@@ -59,6 +59,10 @@ step "Python unit tests (scrape_all decide / freshness gate)" \
 step "Python unit tests (scrape-all lightweight targets)" \
      "python3 -m unittest scripts.tests.test_scrape_lightweight -v"
 
+# 1d3) 2026-11-20: 取得元ブロックの検知（403 を再試行しない / 検知後は止める / 中身ゼロの通知）
+step "Python unit tests (source block detection)" \
+     "python3 -m unittest scripts.tests.test_source_block -v"
+
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
      "node scripts/tests/test_ana_tracking.js"

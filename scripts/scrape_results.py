@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from time_utils import utc_iso_seconds, jst_now  # PC-10 / D-02 / FIX: JST aware
-from http_utils import fetch_text, fetch_json  # PC-1: HTTP 共通化
+from http_utils import fetch_text, fetch_json, HTTPStatusError, SourceBlockDetector, write_source_status  # PC-1: HTTP 共通化
 from io_utils import atomic_write_json, quality_header  # P0-8 / P1-B4
 from programs_source import load_local_official_programs  # 公式移行 Phase 2
 
@@ -53,14 +53,27 @@ def fetch(url: str) -> str:
     return fetch_text(url, timeout=FETCH_TIMEOUT, retries=FETCH_RETRIES)
 
 
+# 2026-11-20: 取得元のブロック検知（http_utils.SourceBlockDetector の説明を参照）
+BLOCK = SourceBlockDetector()
+
+
 def _fetch_one_race(args: tuple[int, int, str]) -> tuple[int, int, dict | None, str | None]:
-    """並列ワーカー: 1 レース分の HTML を fetch & parse。例外は文字列で返す。"""
+    """並列ワーカー: 1 レース分の HTML を fetch & parse。例外は文字列で返す。
+
+    ブロックを検知した後はリクエストせず "source blocked" を返す。
+    """
     sid, rn, date_str = args
+    if BLOCK.blocked:
+        return sid, rn, None, "source blocked"
     jcd = f"{sid:02d}"
     url = f"{BASE_URL}?rno={rn}&jcd={jcd}&hd={date_str}"
     try:
         html = fetch(url)
+        BLOCK.record(200)
         return sid, rn, parse_raceresult(html, sid, rn), None
+    except HTTPStatusError as e:
+        BLOCK.record(e.status)
+        return sid, rn, None, str(e)[:80]
     except Exception as e:
         return sid, rn, None, str(e)[:80]
 
@@ -493,6 +506,10 @@ def main() -> None:
         "Done! %d finished races",
         len([r for r in all_results if r['race_technique_number']]),
     )
+    write_source_status("results", {"attempted": requested_n, "updated": len(all_results), **BLOCK.stats()})
+    if BLOCK.blocked:
+        log.error("SOURCE BLOCKED — boatrace.jp が HTTP 403 を返し続けたため取得を中止 (%s)", BLOCK.stats())
+        sys.exit(3)
 
 
 if __name__ == "__main__":

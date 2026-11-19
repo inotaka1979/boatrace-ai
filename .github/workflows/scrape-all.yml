@@ -72,6 +72,8 @@ jobs:
     timeout-minutes: 50
     permissions:
       contents: write
+      # 2026-11-20: 取得元ブロック / 中身ゼロの検知 issue を開閉する（Source health alert）
+      issues: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,6 +110,42 @@ jobs:
             echo "::warning::$stale data file(s) failed freshness gate"
           fi
           # gate failure は warning に留め commit はする (watchdog が拾う)
+      # 2026-11-20: 鮮度ゲートは updated_at しか見ないため、11/18 からオッズ・展示が全件
+      #   HTTP 403 で空のままでも緑だった。各 scraper が data/_status.json に残した
+      #   「取りに行った / 取れた / 403」の件数で中身を判定し、issue で知らせる。
+      #   commit は止めない（結果など取れているデータは配信する）。
+      - name: Source health alert (取得元ブロック / 中身ゼロ)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          LABEL=source-blocked
+          verdict=$(python3 scripts/source_health.py data/_status.json)
+          echo "source health: $verdict"
+          state=$(printf '%s' "$verdict" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+          lines=$(printf '%s' "$verdict" | python3 -c 'import json,sys; print("\n".join("- " + l for l in json.load(sys.stdin)["lines"]))')
+          existing=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")
+          if [ "$state" = "problem" ]; then
+            echo "::error::boatrace.jp からデータが取れていません: $(printf '%s' "$lines" | tr '\n' ' ')"
+            body="$(printf '%s\n\n%s\n\n%s' \
+              "### $(date -u +%Y-%m-%dT%H:%MZ) scrape-all: 取得元からデータが取れていません" \
+              "$lines" \
+              "run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} / 対処: docs/RUNBOOK.md §11")"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null 2>&1 || echo "::warning::issue comment failed"
+            else
+              gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color B60205 --description "boatrace.jp からの取得失敗" >/dev/null 2>&1 || true
+              gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+                --title "boatrace.jp からの取得失敗を検知 ($(date -u '+%Y-%m-%d %H:%MZ'))" --body "$body" >/dev/null 2>&1 \
+                || echo "::warning::issue create failed"
+            fi
+          elif [ "$state" = "ok" ] && [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "✅ $(date -u +%Y-%m-%dT%H:%MZ) scrape-all: 取得が復旧しました。自動クローズします。" >/dev/null 2>&1 || true
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || true
+          fi
+          exit 0
       - name: Commit & Push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

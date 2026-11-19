@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds  # P2 D-02 / D-10
 from programs_source import load_local_official_programs  # 公式移行 Phase 2
+from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, write_source_status  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 定数
@@ -33,7 +34,10 @@ from programs_source import load_local_official_programs  # 公式移行 Phase 2
 PROGRAMS_URL = "https://boatraceopenapi.github.io/programs/v2/today.json"
 BEFOREINFO_URL = "https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
 RESULTS_URL = "https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd:02d}&hd={date}"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+# 2026-11-20: B-07 の正直な bot UA 統一から漏れていたブラウザ風 UA を共通定数に揃える。
+HEADERS = {"User-Agent": USER_AGENT}
+# 取得元のブロック検知（http_utils.SourceBlockDetector の説明を参照）
+BLOCK = SourceBlockDetector()
 
 OUTPUT = "data/previews/today.json"
 SCRAPE_STATE = "data/previews/.scrape_state.json"  # スクレイプ状態追跡 (gitignore推奨)
@@ -473,20 +477,30 @@ class RateLimiter:
 
 
 async def fetch_with_retry(session, url, limiter, retries=MAX_RETRIES):
-    """リトライ付きHTTPフェッチ"""
+    """リトライ付きHTTPフェッチ
+
+    2026-11-20: 403 は再試行しない（旧実装は 1 run で 270 回の 403 を叩いていた）。
+    ブロックを検知したら以後はリクエストせず None を返す。
+    """
     for attempt in range(retries + 1):
-        try:
-            await limiter.acquire()
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(url, headers=HEADERS, timeout=timeout) as resp:
-                if resp.status == 200:
-                    return await resp.text()
-                elif resp.status == 404:
-                    return None  # ページ未公開
-                else:
-                    log.warning("HTTP %d for %s (attempt %d)", resp.status, url, attempt + 1)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            log.warning("Fetch error %s (attempt %d): %s", url, attempt + 1, e)
+        if BLOCK.blocked:
+            return None
+        await limiter.acquire()
+        # aiohttp は boatrace.jp に 403 で拒否されるため共通の urllib クライアントを使う
+        #   (http_utils.fetch_once の説明を参照)。
+        status, text = await asyncio.to_thread(fetch_once, url, timeout=REQUEST_TIMEOUT, headers=HEADERS)
+        BLOCK.record(status)
+        if status == 200:
+            return text
+        elif status == 404:
+            return None  # ページ未公開
+        elif status == 403:
+            log.warning("HTTP 403 for %s (no retry)", url)
+            return None
+        elif isinstance(status, str):
+            log.warning("Fetch error %s (attempt %d): %s", url, attempt + 1, status)
+        else:
+            log.warning("HTTP %d for %s (attempt %d)", status, url, attempt + 1)
         if attempt < retries:
             await asyncio.sleep(1.0 * (attempt + 1))
     return None
@@ -769,6 +783,10 @@ def _write_output(existing, closing_map, date_str):
     previews = sum(1 for r in all_races if r.get("boats"))
     total = len(all_races)
     log.info("Output: %d/%d previews, %d/%d finished -> %s", previews, total, finished, total, OUTPUT)
+    write_source_status("previews", {"attempted": len(targets), "updated": updated_count, **BLOCK.stats()})
+    if BLOCK.blocked:
+        log.error("SOURCE BLOCKED — boatrace.jp が HTTP 403 を返し続けたため取得を中止 (%s)", BLOCK.stats())
+        sys.exit(3)
 
 
 def main():

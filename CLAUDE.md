@@ -1402,3 +1402,33 @@ install できない）を解消。
   既存どおり `ana_bets.length > 0` のレースだけを数える。
 - `scripts/tests/test_bet_count_zero.js`（12 件）を run_all.sh に追加。`||` に戻す mutation で失敗を確認（穴狙いも同様）。
   実ブラウザで設定 0 / 7 点の保存・再読込後の表示・レース詳細（「3連単推奨 0点（買わない設定）」と 2連単 7 点）を確認。
+
+## 修正履歴 (2026-11-20: 11/18 からオッズ・展示が全件取れていなかった問題)
+
+多視点評価（予測・賭け・データ基盤・フロント）で発見。11/18 以降、GitHub Actions のオッズ取得は
+15/15・8/8・14/14・7/7 件すべて失敗、展示は 0/132 だったが、失敗した run も updated_at を更新するため
+鮮度監視はすべて緑だった。
+
+### 原因
+- boatrace.jp が **aiohttp のリクエストだけ** を HTTP 403 で拒否するようになった。同じ run の中で
+  urllib を使う results / racedata は成功しており、同じ正直な bot UA・同じネットワークでも
+  aiohttp は 403、urllib / curl は 200（この環境で確認）。拒否の対象はクライアントで、UA の身元ではない。
+- 展示 (scrape_previews) は 403 を 3 回ずつ再試行して 1 run で 270 回叩いていた。さらに B-07 の
+  「正直な bot UA への統一」から漏れたブラウザ風 UA のままだった。
+
+### 修正
+- `http_utils.fetch_once`（1 回だけ GET し `(status, text)` を返す urllib クライアント）を追加し、
+  odds / previews の boatrace.jp への HTTP をこれに揃えた（`asyncio.to_thread` で呼ぶ。rate limit は従来どおり）。
+  previews の UA も `http_utils.USER_AGENT` に統一。
+- `http_utils.SourceBlockDetector`: 成功 0 件のまま 403 が 5 回続いたら、その run の残りのリクエストを送らない。
+  403 は再試行しない。odds / previews / results に適用し、ブロック時は exit 3。
+- `http_utils.write_source_status` で各 scraper が `data/_status.json` に「取りに行った / 取れた / 403」を記録。
+  `scripts/source_health.py` がそれを判定し、scrape-all の新 step「Source health alert」が
+  issue（label `source-blocked`）を開く。取得が戻れば自動クローズ。直近 2 時間の記録が無ければ開閉しない。
+- **ブロックを回避する細工（ブラウザ UA の偽装、プロキシ等）はしない** 方針を RUNBOOK §11 に明記。
+- `scripts/tests/test_source_block.py`（22 件）。検知・再試行しない・検知後に止める・UA・判定を固定し、
+  主要部分を外す mutation で失敗することを確認。実サイトに対して odds 1 レース（単勝 6 / 2連単 30 / 3連単 120）と
+  展示ページの取得を確認。
+
+### 未確認
+- Cloudflare Worker 側の展示スクレイプ / `/odds-proxy` が同じく拒否されているかは、この環境から確認できない。
