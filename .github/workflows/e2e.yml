@@ -60,7 +60,14 @@ jobs:
         working-directory: build
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps webkit
+          # Ubuntu の apt ミラーが一時的に 503 を返すことがある (2026-11-19 実測) ため、
+          #   失敗したら 60 秒待って最大 3 回まで試す。
+          for i in 1 2 3; do
+            npx playwright install --with-deps webkit && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            echo "::warning::playwright install failed (attempt $i), retrying in 60s"
+            sleep 60
+          done
       # FIX: tests/e2e/*.mjs が `@playwright/test` を import するが、deps は build/node_modules
       # にある。Node ESM resolution は test ファイルから上方向に node_modules を探すため、
       # repo root から resolve できる経路を張る。
@@ -118,7 +125,14 @@ jobs:
         working-directory: build
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          # Ubuntu の apt ミラーが一時的に 503 を返すことがある (2026-11-19 実測) ため、
+          #   失敗したら 60 秒待って最大 3 回まで試す。
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            echo "::warning::playwright install failed (attempt $i), retrying in 60s"
+            sleep 60
+          done
       # FIX: tests/e2e/*.mjs が `@playwright/test` を import するが、deps は build/node_modules
       # にある。Node ESM resolution は test ファイルから上方向に node_modules を探すため、
       # repo root から resolve できる経路を張る。
@@ -180,7 +194,14 @@ jobs:
         working-directory: build
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium webkit
+          # Ubuntu の apt ミラーが一時的に 503 を返すことがある (2026-11-19 実測) ため、
+          #   失敗したら 60 秒待って最大 3 回まで試す。
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium webkit && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            echo "::warning::playwright install failed (attempt $i), retrying in 60s"
+            sleep 60
+          done
       - name: Link @playwright for ESM resolution
         run: bash scripts/ensure_e2e_deps.sh
       - name: Regenerate VRT baselines
