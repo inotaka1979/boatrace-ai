@@ -227,6 +227,60 @@ async function main() {
     return src;
   }
 
+  // 2026-11-19: worker が参照する定数を assets/app.js から自動転記する。
+  //   従来は worker_predictor.js に手作業でコピーしており、
+  //     - 7 個（DEFAULT_ENTRY_BY_STADIUM / CLASS_COURSE_MULT など）がコピー漏れで
+  //       predict が毎回 ReferenceError → main thread fallback、
+  //     - L2_INIT_WEIGHTS[3]（FA-3 で -4 → 0）と STADIUM_WIND_PROFILE（4 場 → 全場）が
+  //       main から乖離、
+  //   していた。app.js のトップレベル `var NAME = ...;` を文字列のまま抜き出し、
+  //   app.js 内の出現順に並べて BUILD:WORKER_SHARED_CONSTANTS 領域へ注入する。
+  //   見つからない名前があれば build を失敗させる（黙って欠落させない）。
+  const WORKER_SHARED_CONSTANTS = [
+    'COURSE_WIN_RATE', 'COURSE_MULTIPLIER', 'ET_COURSE_DECAY', 'DEFAULT_COURSE_TECHNIQUE',
+    'L2_INIT_WEIGHTS', 'L2_BIAS', 'L2_LR0', 'L2_LR_TAU', 'L2_LAMBDA', 'L2_KEY_LIMIT',
+    'FEATURE_DIM', 'COURSE_LOG_PRIOR', 'TUNING',
+    'SCENARIO_PRIORS_BY_GRADE', 'SCENARIO_DIST',
+    'STADIUM_WIND_PROFILE', 'GLOBAL_HEAD_DIRS', 'GLOBAL_TAIL_DIRS', 'TIDE_COURSE_BIAS',
+    'DEFAULT_ENTRY_BY_STADIUM', 'GLOBAL_DEFAULT_ENTRY', 'ST_CLASS_BASELINE', 'CLASS_COURSE_MULT',
+  ];
+
+  // 行頭の `var NAME =` から、括弧の外に出た最初の `;` までを返す（文字列 / コメント考慮）
+  function extractTopLevelVar(src, name) {
+    const re = new RegExp('^var ' + name + '\\s*=', 'm');
+    const m = re.exec(src);
+    if (!m) return null;
+    let depth = 0, inStr = null, inLineC = false, inBlockC = false, inTpl = false;
+    for (let j = m.index + m[0].length; j < src.length; j++) {
+      const ch = src[j], nxt = j + 1 < src.length ? src[j + 1] : '';
+      if (inLineC) { if (ch === '\n') inLineC = false; }
+      else if (inBlockC) { if (ch === '*' && nxt === '/') { inBlockC = false; j++; } }
+      else if (inStr) { if (ch === '\\') j++; else if (ch === inStr) inStr = null; }
+      else if (inTpl) { if (ch === '\\') j++; else if (ch === '`') inTpl = false; }
+      else if (ch === '/' && nxt === '/') { inLineC = true; j++; }
+      else if (ch === '/' && nxt === '*') { inBlockC = true; j++; }
+      else if (ch === "'" || ch === '"') inStr = ch;
+      else if (ch === '`') inTpl = true;
+      else if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') depth--;
+      else if (ch === ';' && depth === 0) return { index: m.index, text: src.slice(m.index, j + 1) };
+    }
+    return null;
+  }
+
+  async function generateWorkerSharedConstants() {
+    const app = await readFile(appJsPath, 'utf8');
+    const found = [];
+    for (const name of WORKER_SHARED_CONSTANTS) {
+      const hit = extractTopLevelVar(app, name);
+      if (!hit) throw new Error('WORKER_SHARED_CONSTANTS: assets/app.js にトップレベル `var ' + name + ' =` が無い');
+      found.push(hit);
+    }
+    found.sort((a, b) => a.index - b.index); // app.js 内の定義順（相互参照の順序を保つ）
+    return '// 自動生成: assets/app.js から転記（build/build.mjs の WORKER_SHARED_CONSTANTS）。手で編集しない。\n'
+      + found.map((h) => h.text).join('\n');
+  }
+
   async function applyInjections(targetPath, mods, label){
     const before = await readFile(targetPath, 'utf8');
     let current = before;
@@ -235,6 +289,10 @@ async function main() {
       const code = await bundleModule(resolve(SRC, m.src));
       console.log('  -> ' + code.length + ' chars (marker: ' + m.marker + ')');
       current = injectBundle(current, m.marker, code);
+    }
+    if (targetPath.endsWith('worker_predictor.js')) {
+      console.log('[bundle] WORKER_SHARED_CONSTANTS (assets/app.js から ' + WORKER_SHARED_CONSTANTS.length + ' 定数を転記)');
+      current = injectBundle(current, 'WORKER_SHARED_CONSTANTS', await generateWorkerSharedConstants());
     }
     // Phase 2 完遂続編: worker_predictor.js のみ WORKER_TWIN_SYNCED auto-gen を注入
     if (targetPath.endsWith('worker_predictor.js') && current.indexOf('/* BUILD:WORKER_TWIN_SYNCED:START */') >= 0) {

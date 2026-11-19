@@ -1,6 +1,9 @@
 // PG-2: Worker 用予測モジュール
-// Clearwing Phase 2: src/capabilities-worker.js を BUILD マーカー領域に注入。
-//   その他の関数は本ファイルが source-of-truth（手動メンテ）。
+// 自動生成される領域（build/build.mjs）:
+//   BUILD:CAPABILITIES_WORKER     … src/capabilities-worker.js
+//   BUILD:WORKER_SHARED_CONSTANTS … assets/app.js のトップレベル定数を転記
+//   BUILD:WORKER_TWIN_SYNCED      … src/utils + src/analysis の予測ロジック
+//   それ以外（worker の state 宣言と worker 専用 helper）は手動メンテ。
 
 'use strict';
 
@@ -69,6 +72,8 @@
 
 /* BUILD:CAPABILITIES_WORKER:END */
 
+/* BUILD:WORKER_SHARED_CONSTANTS:START */
+// 自動生成: assets/app.js から転記（build/build.mjs の WORKER_SHARED_CONSTANTS）。手で編集しない。
 var COURSE_WIN_RATE={1:0.55,2:0.14,3:0.12,4:0.11,5:0.06,6:0.02};
 var COURSE_MULTIPLIER=35;
 var ET_COURSE_DECAY={1:1.0,2:1.0,3:0.9,4:0.8,5:0.6,6:0.5};
@@ -80,20 +85,12 @@ var DEFAULT_COURSE_TECHNIQUE={
   5:{nige:0,sashi:0.10,makuri:0.45,makuriSashi:0.30,nuki:0.10,megumare:0.05},
   6:{nige:0,sashi:0.15,makuri:0.35,makuriSashi:0.30,nuki:0.10,megumare:0.10}
 };
-// 場別風向プロファイル（PG-2 抽出漏れ修正: isHeadWind / isTailWind が参照）
-var STADIUM_WIND_PROFILE = {
-  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13] },
-  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15] },
-  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3]   },
-  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1] },
-};
-var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
-var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
-
-// v2 (2026-05-24): 12 → 24 拡張、追加 12 weights は 0 init (assets/app.js と同期)
-var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,-4.0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5,0,0,0,0,0,0,0,0,0,0,0,0];
+var L2_INIT_WEIGHTS=[3.0,1.5,-1.0,0,-1.5,0.5,4.0,-0.8,1.0,1.5,0.3,3.5,0,0,0,0,0,0,0,0,0,0,0,0];
 var L2_BIAS=0;
-var FEATURE_DIM = 24;
+var L2_LR0       = 0.05;
+var L2_LR_TAU    = 5000;
+var L2_LAMBDA    = 1e-4;
+var L2_KEY_LIMIT = 10000;
 var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[1]||0.55),
   Math.log(COURSE_WIN_RATE[2]||0.14),
@@ -102,14 +99,12 @@ var COURSE_LOG_PRIOR = [
   Math.log(COURSE_WIN_RATE[5]||0.06),
   Math.log(COURSE_WIN_RATE[6]||0.02)
 ];
-// FIX (2026-08-11): 手動保守のためこの TUNING が assets/app.js から乖離していた。
-//   特に KELLY.MAX_STAKE_RATIO が S-04 修正前の 1.0（= 1 レースに資金 100%）の
-//   ままで、worker 経路が生きた瞬間に main の 20 倍の賭け金上限になる状態だった。
-//   RACE_TYPE も旧しきい値のままで ⚡/📊/🔥 判定が main と食い違い、GBDT 系キーは
-//   欠落していた。以下は assets/app.js の TUNING と一致させたもの。
-//   （恒久対策: TUNING を src/context 側へ移して twin auto-gen 対象にする — 別 PR）
+var FEATURE_DIM = 24;
 var TUNING = Object.freeze({
   // レースタイプ判定（top1 確率 / top2 累積 / 環境ペナルティ）
+  // FIX: 旧しきい値 (top1>0.40, top2>0.55, top1<0.25) ではボートレース 1コース
+  //   優位性により大半が本命判定 → 穴/混戦が極端に少なくユーザに偏り。
+  //   30/49/21 程度の分布になるように再調整。
   RACE_TYPE: Object.freeze({
     HONMEI_TOP1_MIN: 0.50,        // top1 これ以上で本命候補（旧 0.40）
     HONMEI_TOP2_MIN: 0.65,        // 本命は top1+top2 ≥ 0.65 を満たす必要（旧 0.55）
@@ -117,11 +112,14 @@ var TUNING = Object.freeze({
     ANA_WAVE_HEIGHT_CM: 7,        // 波高 cm 以上で穴判定
     ANA_WIND_SPEED_MS: 5,         // 風速 m/s 以上で穴判定
   }),
-  // EV / Kelly（X1 設計 / S-04 安全化）
+  // EV / Kelly（X1 設計 / S-04 2026-07-26 安全化）
+  //   MIN_STAKE_RATIO(=0.005) と ENABLE_STAKE_SUGGESTION(=false) は
+  //   src/analysis/bet_generation.js / predict_race.js 側の既定にフォールバックする
+  //   （critical bundle 予算を守るため TUNING には持たない。有効化時はそちらを編集）。
   KELLY: Object.freeze({
-    DEFAULT_FRAC: 0.25,          // quarter-Kelly
+    DEFAULT_FRAC: 0.25,          // quarter-Kelly（確率推定に誤差がある前提の現実解）
     MIN_FRAC: 0.0,               // 最低 fraction（負ベット禁止）
-    MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限
+    MAX_STAKE_RATIO: 0.05,       // 1 レースあたり bankroll の 5% を上限（旧 1.0 は破産リスク）
   }),
   // L2 ロジ回帰（PB で改善予定: LR decay / L2 正則化）
   L2: Object.freeze({
@@ -135,11 +133,95 @@ var TUNING = Object.freeze({
     STACKING_MODE: 'shrinkage',  // PB-5: 'shrinkage' | 'residual'（既定は線形融合）
     PLATT_MIN_SAMPLES: 200,      // Platt fit に必要な履歴最低件数
     ZSCORE_WARMUP_N: 100,        // z-score 適用開始までの観測数
-    ENABLE_GBDT: true,           // Tier 3: model 側 n_train で gating
-    GBDT_BLEND_WEIGHT: 0.3,
-    GBDT_MIN_TRAIN: 5000,
+    // Tier 3 (2026-05-24): GBDT 第 3 層
+    //   gbdt_model.json (n_train >= GBDT_MIN_TRAIN) があれば _blendGBDTPrediction
+    //   が L1+L2 logit に blend する。placeholder 中は何もしない (safety)。
+    ENABLE_GBDT: true,           // 既定 ON: model 側 n_train で gating されるため安全
+    GBDT_BLEND_WEIGHT: 0.3,      // GBDT 寄与の割合 (1-w)*L1L2 + w*GBDT
+    GBDT_MIN_TRAIN: 5000,        // model.n_train がこの未満なら blend を見送り
   }),
 });
+var SCENARIO_PRIORS_BY_GRADE = {
+  0:  { nige: 0.55, sashi: 0.15, makuri: 0.15, makuriSashi: 0.10, other: 0.05 },  // 一般
+  1:  { nige: 0.55, sashi: 0.18, makuri: 0.13, makuriSashi: 0.10, other: 0.04 },
+  2:  { nige: 0.50, sashi: 0.18, makuri: 0.17, makuriSashi: 0.10, other: 0.05 },
+  3:  { nige: 0.48, sashi: 0.20, makuri: 0.17, makuriSashi: 0.10, other: 0.05 },
+  4:  { nige: 0.45, sashi: 0.22, makuri: 0.18, makuriSashi: 0.10, other: 0.05 },  // SG はトップ選手で逃げ崩れも多い
+  5:  { nige: 0.65, sashi: 0.13, makuri: 0.10, makuriSashi: 0.07, other: 0.05 },  // 女子戦は逃げ率高
+};
+var SCENARIO_DIST = {
+  nige: {       // 1コース逃げ
+    '1-2-3': 0.20, '1-3-2': 0.15, '1-2-4': 0.10, '1-4-2': 0.08,
+    '1-3-4': 0.08, '1-4-3': 0.06, '1-2-5': 0.05, '1-5-2': 0.04,
+    '1-3-5': 0.04, '1-5-3': 0.03, '1-2-6': 0.03, '1-6-2': 0.02,
+    '1-3-6': 0.02, '1-4-5': 0.02, '1-5-4': 0.02, '1-4-6': 0.02,
+    '1-6-3': 0.02, '1-6-4': 0.02,
+  },
+  sashi: {      // 2コース差し
+    '2-1-3': 0.18, '2-1-4': 0.12, '2-3-1': 0.10, '2-1-5': 0.08,
+    '2-4-1': 0.08, '2-3-4': 0.06, '2-1-6': 0.05, '2-4-3': 0.05,
+    '2-5-1': 0.05, '2-3-5': 0.04, '2-4-5': 0.04, '2-5-3': 0.03,
+    '2-6-1': 0.03, '2-5-4': 0.03, '2-6-3': 0.03, '2-6-4': 0.03,
+  },
+  makuri: {     // 3-4 コースまくり (主に4コース)
+    '4-2-3': 0.10, '4-1-2': 0.10, '4-2-1': 0.08, '4-3-2': 0.08,
+    '4-1-3': 0.07, '4-3-1': 0.06, '3-1-2': 0.08, '3-2-1': 0.07,
+    '3-2-4': 0.05, '3-1-4': 0.05, '4-2-5': 0.04, '4-5-2': 0.04,
+    '3-4-2': 0.03, '3-1-5': 0.03, '4-1-5': 0.03, '4-5-1': 0.03,
+    '3-5-1': 0.03, '3-2-5': 0.03,
+  },
+  makuriSashi: {  // 3-4 コースまくり差し
+    '3-1-2': 0.12, '3-2-1': 0.10, '4-1-2': 0.10, '4-2-1': 0.08,
+    '3-1-4': 0.08, '3-2-4': 0.06, '4-1-3': 0.07, '4-3-1': 0.06,
+    '3-4-1': 0.05, '4-2-3': 0.05, '3-2-5': 0.04, '4-1-5': 0.04,
+    '3-1-5': 0.03, '4-2-5': 0.03, '3-5-1': 0.03, '4-3-2': 0.03,
+  },
+  other: {      // 5/6 コース穴含む
+    '5-1-2': 0.08, '5-2-1': 0.07, '6-1-2': 0.07, '6-2-1': 0.06,
+    '5-1-3': 0.05, '5-3-1': 0.05, '6-1-3': 0.05, '6-3-1': 0.04,
+    '5-2-3': 0.04, '5-4-1': 0.04, '6-2-4': 0.04, '6-4-1': 0.03,
+    '5-3-2': 0.03, '5-4-2': 0.03, '6-1-4': 0.03, '6-4-2': 0.03,
+    '5-2-4': 0.03, '5-1-4': 0.03, '6-3-2': 0.03,
+  },
+};
+var STADIUM_WIND_PROFILE = {
+  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
+  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
+  '04': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'運河地形・北東〜東で1コース不利（平和島）' }, // P1-A1
+  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
+  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
+  '19': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'関門海峡・南東で外有利（下関）' }, // P1-A1
+  '20': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'玄界灘・北東で1コース不利（若松）' }, // P1-A1
+  // 残り18場は将来 GitHub Actions nightly で「場×風向×1コース勝率」を集計し
+  // 自動更新する `config/wind_profile.json` で補完予定（P2）。
+};
+var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
+var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
+var TIDE_COURSE_BIAS = {
+  rising:  {1:-3, 2:-2, 3:0, 4:+2, 5:+3, 6:+2},   // 上げ潮: センター/アウト有利
+  falling: {1:+4, 2:+2, 3:0, 4:-2, 5:-3, 6:-2},   // 下げ潮: イン残り
+  high:    {1:-5, 2:-3, 3:0, 4:+3, 5:+4, 6:+3},
+  low:     {1:+5, 2:+3, 3:0, 4:-3, 5:-4, 6:-3},
+};
+var DEFAULT_ENTRY_BY_STADIUM = {
+  // 桐生 / 平和島 / 江戸川 / 戸田: 前付け少なめ
+  '01': {1:{1:0.99,2:0.01},2:{2:0.97,1:0.02,3:0.01},3:{3:0.95,2:0.03,4:0.02},4:{4:0.94,3:0.04,5:0.02},5:{5:0.92,4:0.05,6:0.03},6:{6:0.95,5:0.04,4:0.01}},
+  // 平和島 / 多摩川 / 浜名湖 / 蒲郡: 中程度
+  '02': {1:{1:0.85,2:0.10,3:0.05},2:{2:0.80,1:0.10,3:0.10},3:{3:0.75,2:0.15,4:0.10},4:{4:0.70,3:0.15,2:0.10,5:0.05},5:{5:0.70,4:0.20,6:0.10},6:{6:0.75,5:0.20,4:0.05}},
+  // 住之江 / 尼崎 / 鳴門 / 丸亀: 前付け多い
+  '12': {1:{1:0.75,2:0.15,3:0.10},2:{2:0.70,1:0.15,3:0.15},3:{3:0.65,2:0.20,4:0.15},4:{4:0.60,3:0.20,2:0.15,5:0.05},5:{5:0.60,4:0.25,6:0.10,3:0.05},6:{6:0.65,5:0.25,4:0.10}},
+};
+var GLOBAL_DEFAULT_ENTRY = {1:{1:0.92,2:0.05,3:0.03},2:{2:0.88,1:0.08,3:0.04},3:{3:0.85,2:0.08,4:0.05,1:0.02},4:{4:0.82,3:0.10,5:0.05,2:0.03},5:{5:0.78,4:0.13,6:0.07,3:0.02},6:{6:0.85,5:0.10,4:0.05}};
+var ST_CLASS_BASELINE = { 1: 0.13, 2: 0.15, 3: 0.16, 4: 0.17 };
+var CLASS_COURSE_MULT = [
+  [1.10, 1.02, 1.00, 0.85],
+  [1.08, 1.02, 1.00, 0.88],
+  [1.06, 1.02, 1.00, 0.92],
+  [1.05, 1.02, 1.00, 0.94],
+  [1.03, 1.01, 1.00, 0.97],
+  [1.02, 1.01, 1.00, 0.98]
+];
+/* BUILD:WORKER_SHARED_CONSTANTS:END */
 
 // PG-3: Worker state (init/sync メッセージで main thread から受信)
 var racerDB = {};
@@ -152,6 +234,12 @@ var _featureStats = { mean: new Array(FEATURE_DIM).fill(0), m2: new Array(FEATUR
 var _plattCoeffs = { a: 1.0, b: 0.0, fittedAt: 0, n: 0 };
 var _stackingGamma = 0.0;
 var tideData = null;
+// 2026-11-19: predictRace / 校正が参照するのに宣言・同期されておらず、worker 経路で
+//   ReferenceError になっていた state。既定値は app.js の未保存時と同じ。
+var settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'auto' };
+var _plattCoeffsByStadium = {};
+var _isotonicCoeffs = null;
+var _calibrationMethod = 'platt';
 
 // ダミー data accessors (worker は programData / previewData を main から受取)
 var programData = null;
@@ -2156,11 +2244,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
 //   下の worker smoke test (scripts/tests/test_worker_protocol.js) が恒久ガード。
 // =============================================================================
 
-// 学習用ハイパパラメータ (app.js と同期、変更時は両方更新)
-var L2_LR0 = 0.05;
-var L2_LR_TAU = 5000;
-var L2_LAMBDA = 1e-4;
-var L2_KEY_LIMIT = 10000;
+// 学習用ハイパパラメータ L2_LR0 / L2_LR_TAU / L2_LAMBDA / L2_KEY_LIMIT は
+//   BUILD:WORKER_SHARED_CONSTANTS で app.js から自動転記される。
 
 var l2trainStep = 0;
 var l2learnedKeys = {};
@@ -2268,7 +2353,13 @@ function classifyTidePhase(tideEntry, raceTimeJst){
   return null;
 }
 
-function escText(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+// 2026-11-19: main の escText は DOM (document.createElement) を使うが worker には DOM が無く、
+//   部品交換情報 (partsTxt) のあるレースで scoreBoatV2 → escText が ReferenceError になっていた。
+//   DOM の textContent → innerHTML と同じ 4 種（& < > U+00A0）だけを置換する。引用符は DOM と同じく残し、
+//   null / undefined は DOM と同じく空文字にする。
+function escText(s){
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\u00A0/g,'&nbsp;');
+}
 
 // P3 L-11: JST日付計算を 1 関数に集約（旧 todayStr/formatDate のロジックを内部利用）
 function getJSTDate(offsetDays){
@@ -2483,6 +2574,12 @@ function batchLearnFromResults(input){
       if(pgm && pgm.race_date){ dateKey = String(pgm.race_date).replace(/-/g,''); break; }
     }
     if(dateKey) break;
+  }
+  // 2026-11-19: main (learning.js) と同じく race_date が無ければ今日 (JST) を使う。
+  //   従来は空のまま "_sid_rno" で記録され、別の日の同じ場・R が「学習済み」扱いで飛ばされ得た。
+  if(!dateKey){
+    var _d = getJSTDate(0);
+    dateKey = _d.getUTCFullYear() + ('0'+(_d.getUTCMonth()+1)).slice(-2) + ('0'+_d.getUTCDate()).slice(-2);
   }
 
   var learnedThisCall = 0;
