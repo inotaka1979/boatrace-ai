@@ -11834,6 +11834,20 @@ function _mergePreviewIndex(newIdx){
       }
     }
   }
+  // 2026-11-20: 新しい応答に無いレースも、表示済みの展示を残す。_filterStalePreviews は展示も気象も無い
+  //   レースを除外し、古い日付の応答なら全件除外するため、従来は「新しい応答に無い = 表示済みの展示ごと
+  //   消える」になっていた（2026-11-20 鳴門: Worker の base 書込と展示スクレイプの間に poll が当たると、
+  //   出ていた展示が消えた）。前日のデータを持ち越さないよう、今日の番組表にあるレースだけ残す。
+  for(var osid in previewData){
+    for(var orn in previewData[osid]){
+      if(newIdx[osid] && newIdx[osid][orn]) continue;
+      var keep = previewData[osid][orn];
+      if(!_previewRichness(keep)) continue;
+      if(programData && !(programData[osid] && programData[osid][orn])) continue;
+      if(!newIdx[osid]) newIdx[osid] = {};
+      newIdx[osid][orn] = keep;
+    }
+  }
   return newIdx;
 }
 

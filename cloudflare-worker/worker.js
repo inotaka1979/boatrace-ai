@@ -273,6 +273,40 @@ function mergePreviewsBoatsFrom(target, old) {
   }
 }
 
+// 2026-11-20: 展示 (racer_exhibition_time > 0) の艇数
+function exhibitionCount(row) {
+  const bs = row && row.boats;
+  if (!bs) return 0;
+  const arr = Array.isArray(bs) ? bs : Object.values(bs);
+  let n = 0;
+  for (const b of arr) if (b && (b.racer_exhibition_time || 0) > 0) n++;
+  return n;
+}
+
+// 2026-11-20: 同じ日の前回 KV のほうが展示を多く持つレースは、前回の艇データ・気象を引き継ぐ。
+//   従来は上流 previews が壊れている時しか KV の展示を引き継がず、普段は openapi の previews（展示が
+//   まだ無い / 欠けている）をそのまま base として KV に上書きしていた。直接スクレイプで足し直すのは
+//   締切窓内の最大 20 レースだけなので、窓を過ぎたレースの展示は KV から消えたまま戻らず、アプリでは
+//   「表示されていた展示が消える」（2026-11-20 鳴門）。
+function carryRicherExhibitions(target, old) {
+  if (!isValidPreviewsShape(target) || !isValidPreviewsShape(old)) return 0;
+  const byKey = new Map();
+  for (const r of old.previews) byKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
+  let carried = 0;
+  for (const row of target.previews) {
+    const o = byKey.get(`${row.race_stadium_number}-${row.race_number}`);
+    if (!o || o.race_date !== row.race_date) continue;
+    if (exhibitionCount(o) > exhibitionCount(row)) {
+      row.boats = o.boats;
+      for (const f of PREVIEW_WEATHER_FIELDS) {
+        if (o[f] != null) row[f] = o[f];
+      }
+      carried++;
+    }
+  }
+  return carried;
+}
+
 // rt-fix P1-6 (2026-06-04): KV write を「内容が変化した時のみ」に変更。
 //   Cloudflare 無料枠 = 1000 writes/日。従来は毎 refresh で無条件 put し
 //   948/日と上限に貼り付いていた → わずかな超過で put が throw → catch 握り潰し
@@ -919,6 +953,20 @@ async function refreshAll(env, opts) {
       } catch (e) {
         out.previews.kv_carry_err = String(e).slice(0, 100);
       }
+    }
+  }
+
+  // 2026-11-20: 正常な上流 previews でも、前回 KV のほうが展示を多く持つレースは引き継ぐ
+  //   （carryRicherExhibitions の説明を参照）。合成 previews の経路は上で引き継ぎ済み。
+  else if (env.BOATRACE_KV && isValidPreviewsShape(previews)) {
+    try {
+      const rawKvPv = await env.BOATRACE_KV.get(KV_KEYS.previews);
+      if (rawKvPv) {
+        const kvPv = JSON.parse(rawKvPv);
+        if (kvPv && kvPv.data) out.previews.kv_carried = carryRicherExhibitions(previews, kvPv.data);
+      }
+    } catch (e) {
+      out.previews.kv_carry_err = String(e).slice(0, 100);
     }
   }
 
