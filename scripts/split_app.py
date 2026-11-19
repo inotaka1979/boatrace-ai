@@ -259,6 +259,7 @@ REST_ONLY_BUILD_MARKERS = {
     # レース詳細 — 詳細を開いた時のみ (race_detail.js orchestrator + boats + prediction)
     'REPORTING_RACE_DETAIL',
     'REPORTING_RACE_DETAIL_BOATS',
+    'DISCOVERY_RACER_STATS',
     'REPORTING_RACE_DETAIL_PREDICTION',
     'REPORTING_RACE_DETAIL_BETS',
     # データ縮退バナー (PR-6) — DB fetch 完了後に描画。critical 起動には不要。
@@ -285,6 +286,7 @@ REST_STATS_FUNCTION_NAMES = {
 REST_DETAIL_BUILD_MARKERS = {
     'REPORTING_RACE_DETAIL',             # openRace orchestrator + header + weather + result + exhibition
     'REPORTING_RACE_DETAIL_BOATS',       # 出走表
+    'DISCOVERY_RACER_STATS',             # 2026-11-20: 出走表の長期集計 (data/db/racer_stats_view.json) の取得
     'REPORTING_RACE_DETAIL_PREDICTION',  # 番組予想 + 直前予想
     'REPORTING_RACE_DETAIL_BETS',        # 買い目 + 穴予想
 }

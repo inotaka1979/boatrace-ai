@@ -27,6 +27,10 @@ from time_utils import jst_now  # noqa: E402
 
 DOMAINS = ("programs", "previews", "odds", "results")
 KEEP_DAYS = 45
+# 2026-11-20: results は 180 日残す（1 日 ~200KB、180 日で ~36MB）。登録番号・進入・ST・決まり手が入った
+#   結果 (scrape_results の解析版 2) は単体で選手の長期集計に使える。programs / previews / odds は 1 日
+#   ~650 / 110 / 80KB と大きく、長期集計は aggregate_racer_stats.py が月別に畳んで data/db に残すので 45 日のまま。
+KEEP_DAYS_BY_DOMAIN = {"results": 180}
 _DATED = re.compile(r"^\d{8}\.json$")
 
 
@@ -74,7 +78,7 @@ def archive_domain(domain: str, now: datetime.datetime) -> str | None:
     date = archive_date(obj, now)
     dst = os.path.join("data", domain, f"{date}.json")
     atomic_write_json(dst, obj)
-    pruned = prune(os.path.join("data", domain), KEEP_DAYS, now)
+    pruned = prune(os.path.join("data", domain), KEEP_DAYS_BY_DOMAIN.get(domain, KEEP_DAYS), now)
     print(f"  {domain}: → {dst} (pruned {pruned})")
     return date
 
@@ -85,7 +89,7 @@ def main() -> int:
     for dom in DOMAINS:
         if archive_domain(dom, now):
             n += 1
-    print(f"archived {n}/{len(DOMAINS)} domains (retention {KEEP_DAYS}d)")
+    print(f"archived {n}/{len(DOMAINS)} domains (retention {KEEP_DAYS}d, results {KEEP_DAYS_BY_DOMAIN['results']}d)")
     if n == 0:
         print("::warning::no today.json found to archive", file=sys.stderr)
         return 5

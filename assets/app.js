@@ -9282,7 +9282,9 @@ async function _loadNextOpen(){
       race,
       preview,
       pred,
-      rdForRace
+      rdForRace,
+      sid
+      // 2026-11-20: モーター集計 (場 × 番号) の参照に使う
     };
     _renderRaceDetailBoats(_ctxBoats);
     var pvMap = _ctxBoats.pvMap;
@@ -9455,6 +9457,29 @@ async function _loadNextOpen(){
 
 /* BUILD:REPORTING_RACE_DETAIL:END */
 
+/* BUILD:DISCOVERY_RACER_STATS:START */
+"use strict";
+(() => {
+  // ../src/discovery/racer_stats_loader.js
+  var _racerStatsLoading = false;
+  function _loadRacerStatsView(onLoaded) {
+    if (globalThis._racerStatsView || _racerStatsLoading || typeof fetch !== "function") return;
+    _racerStatsLoading = true;
+    fetch("data/db/racer_stats_view.json", { cache: "no-cache" }).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(function(j) {
+      if (!j || !j.racers) return;
+      globalThis._racerStatsView = j;
+      if (typeof onLoaded === "function") onLoaded();
+    }).catch(function() {
+    }).then(function() {
+      _racerStatsLoading = false;
+    });
+  }
+  globalThis._loadRacerStatsView = _loadRacerStatsView;
+})();
+
+/* BUILD:DISCOVERY_RACER_STATS:END */
 /* BUILD:REPORTING_RACE_DETAIL_BOATS:START */
 "use strict";
 (() => {
@@ -9662,6 +9687,7 @@ async function _loadNextOpen(){
         boatsHtml += "<td>" + flStr + "</td>";
       }
       boatsHtml += "<th>F/L</th></tr>";
+      boatsHtml += _racerStatsRows(boatMap, pvMap, ctx.sid);
       if (rdForRace && rdForRace.boats) {
         var boatsSeries = [];
         var maxNonNull = 0;
@@ -9705,7 +9731,73 @@ async function _loadNextOpen(){
     ctx.etRankMap = etRankMap;
     ctx.stRankMap = stRankMap;
   }
+  var TECH_SHORT = { 1: "\u9003\u3052", 2: "\u5DEE\u3057", 3: "\u307E\u304F\u308A", 4: "\u307E\u304F\u308A\u5DEE\u3057", 5: "\u629C\u304D", 6: "\u6075\u307E\u308C" };
+  var LOSS_SHORT = { 2: "\u5DEE\u3055\u308C", 3: "\u6372\u3089\u308C", 4: "\u6372\u3089\u308C\u5DEE\u3057", 5: "\u629C\u304B\u308C", 6: "\u6075\u307E\u308C" };
+  function _onRacerStatsLoaded() {
+    try {
+      var page = document.querySelector(".page.active");
+      if (page && page.id === "pageDetail" && currentStadium && currentRace && typeof openRace === "function") {
+        openRace(currentStadium, currentRace);
+      }
+    } catch (_) {
+    }
+  }
+  function _pct(a, b) {
+    return b > 0 ? Math.round(a / b * 100) + "%" : "-";
+  }
+  function _racerStatsRows(boatMap, pvMap, sid) {
+    var V = globalThis._racerStatsView;
+    if (!V) {
+      if (typeof _loadRacerStatsView === "function") _loadRacerStatsView(_onRacerStatsLoaded);
+      return "";
+    }
+    var rows = { course: "", tech: "", st: "", motor: "" };
+    for (var bn = 1; bn <= 6; bn++) {
+      var bt = boatMap[bn];
+      var pv = pvMap[bn];
+      var course = pv && pv.racer_course_number >= 1 && pv.racer_course_number <= 6 ? pv.racer_course_number : bn;
+      var rs = bt && bt.racer_number ? V.racers[String(bt.racer_number)] : null;
+      var c = rs && rs.c ? rs.c[String(course)] : null;
+      rows.course += c ? "<td>" + _pct(c[1], c[0]) + '<br><span class="fs-9">2\u9023' + _pct(c[2], c[0]) + " (" + c[0] + ")</span></td>" : "<td>-</td>";
+      var tech = "-";
+      if (rs && c && c[0] > 0) {
+        var kw = rs.kw && rs.kw[String(course)] || {};
+        if (course === 1) {
+          tech = "\u9003\u3052" + _pct(kw["1"] || 0, c[0]);
+          var l1 = rs.l1 || {};
+          var parts = [];
+          Object.keys(l1).sort(function(a, b) {
+            return l1[b] - l1[a];
+          }).slice(0, 2).forEach(function(k) {
+            parts.push((LOSS_SHORT[k] || "\u4ED6") + _pct(l1[k], c[0]));
+          });
+          if (parts.length) tech += '<br><span class="fs-9">' + parts.join(" ") + "</span>";
+        } else {
+          var ks = Object.keys(kw).sort(function(a, b) {
+            return kw[b] - kw[a];
+          });
+          tech = ks.length ? ks.slice(0, 2).map(function(k) {
+            return (TECH_SHORT[k] || "\u4ED6") + kw[k];
+          }).join("<br>") : "\u52DD\u3061\u306A\u3057";
+        }
+      }
+      rows.tech += "<td>" + tech + "</td>";
+      var st = rs && rs.st;
+      var sz = rs && rs.sz;
+      var stCell = st && st[0] != null ? st[0].toFixed(2) : "-";
+      if (sz && sz[2] >= 3)
+        stCell += '<br><span class="fs-9">\u5C55\u793A\u6BD4' + (sz[0] >= 0 ? "+" : "") + sz[0].toFixed(2) + "</span>";
+      if (st && st[2] > 0) stCell += '<br><span style="color:var(--danger);font-size:11px">F' + st[2] + "</span>";
+      rows.st += "<td>" + stCell + "</td>";
+      var mno = bt && bt.racer_assigned_motor_number;
+      var mv = mno && V.motors && V.motors[String(sid)] ? V.motors[String(sid)][String(mno)] : null;
+      rows.motor += mv ? "<td>" + _pct(mv[2], mv[0]) + '<br><span class="fs-9">(' + mv[0] + ")</span></td>" : "<td>-</td>";
+    }
+    var win = V.window && V.window.racer_months ? V.window.racer_months : 12;
+    return "<tr>" + rows.course + '<th>\u30B3\u30FC\u30B9<br>\u6210\u7E3E<br><span class="fs-9">' + win + "\u304B\u6708</span></th></tr><tr>" + rows.tech + "<th>\u6C7A\u307E\u308A\u624B</th></tr><tr>" + rows.st + "<th>\u5E73\u5747ST</th></tr><tr>" + rows.motor + '<th>\u30E2\u30FC\u30BF\u30FC<br>2\u9023\u7387<br><span class="fs-9">' + (V.window && V.window.motor_months || 6) + "\u304B\u6708</span></th></tr>";
+  }
   globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
+  globalThis._racerStatsRows = _racerStatsRows;
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_BOATS:END */

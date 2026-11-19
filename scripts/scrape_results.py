@@ -39,7 +39,9 @@ WALL_BUDGET_SEC = 1200
 #   - 既存 today.json で _completeness が FULL 以上 (確定 + 着順 + 三連単払戻) → skip
 #   - 締切まで RESULT_GRACE_MIN 分以上あるレース → skip（結果が存在し得ない）
 #   環境変数 RESULTS_REFETCH_ALL=1 で旧挙動（全件再取得）に戻せる。
-COMPLETENESS_FULL = 7
+# 2026-11-20: 解析版 2（登録番号・進入・ST・決まり手）を +8 で評価する。旧版で「完全」だった 7 点のレースも
+#   FULL 未満になり、当日分は 1 回だけ取り直される（以後は 15 点で skip）。
+COMPLETENESS_FULL = 15
 RESULT_GRACE_MIN = 0       # 締切「後」になるまで待つ（レース自体は締切後 ~3 分で終わる）
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -70,7 +72,7 @@ def _fetch_one_race(args: tuple[int, int, str]) -> tuple[int, int, dict | None, 
     try:
         html = fetch(url)
         BLOCK.record(200)
-        return sid, rn, parse_raceresult(html, sid, rn), None
+        return sid, rn, parse_raceresult(html, sid, rn, date_str), None
     except HTTPStatusError as e:
         BLOCK.record(e.status)
         return sid, rn, None, str(e)[:80]
@@ -91,13 +93,35 @@ _PAYOUT_LABELS = {
 }
 
 
+# 2026-11-20: 決まり手の名前 → 番号（Open API / app.js の TECHNIQUE と同じ）。
+#   従来は決まり手を読まず、確定の目印として常に 1（逃げ）を入れていたため、アーカイブとアプリの
+#   結果表示がすべて「逃げ」になっていた（11/18-20 の 120 レース全部 1）。
+_TECHNIQUE_NUM = {"逃げ": 1, "差し": 2, "まくり": 3, "まくり差し": 4, "抜き": 5, "恵まれ": 6}
+# 結果の解析版。2 = 登録番号・進入コース・ST・決まり手を実際に読む（aggregate_racer_stats が要求）
+RESULT_PARSE_VERSION = 2
+
+
+def _parse_st(text: str) -> tuple[float | None, str | None]:
+    """スタート情報の ST 表記を (秒, 区分) に。'.13'→(0.13, None)、'F.01'→(-0.01, 'F')、'L'→(None, 'L')。"""
+    t = re.sub(r"\s+", "", str(text or ""))
+    m = re.match(r"^([FL]?)(\d?\.\d+)", t)
+    if m:
+        v = float(m.group(2))
+        return (-v if m.group(1) == "F" else v), (m.group(1) or None)
+    if t.startswith("L"):
+        return None, "L"
+    if t.startswith("F"):
+        return None, "F"
+    return None, None
+
+
 def _zen_to_int(s: str) -> int | None:
     """全角/半角数字文字列を int に。数値でなければ None。"""
     t = str(s or "").strip().translate(str.maketrans("０１２３４５６７８９", "0123456789"))
     return int(t) if t.isdigit() else None
 
 
-def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
+def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | None = None) -> dict:
     """raceresult ページの HTML から 1 レース分の結果を抽出する。
 
     Args:
@@ -112,7 +136,9 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
     result = {
         "race_stadium_number": stadium,
         "race_number": race_num,
-        "race_date": jst_now().strftime("%Y-%m-%d"),  # FIX: GHA UTC 起動時に前日になるバグ回避
+        # FIX: GHA UTC 起動時に前日になるバグ回避。2026-11-20: 過去日の取り直し (backfill) では取得した日付を使う
+        "race_date": (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}" if date_str and len(date_str) == 8
+                      else jst_now().strftime("%Y-%m-%d")),
         "race_technique_number": None,
         "boats": [],
         "payouts": {
@@ -165,16 +191,18 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
                     and place not in places_seen and boat_num not in boats_seen):
                 places_seen.add(place)
                 boats_seen.add(boat_num)
-                name = tds[2].get_text(" ", strip=True)
-                name = re.sub(r"\s*\d{4,5}\s*", "", name).strip()
+                raw_name = tds[2].get_text(" ", strip=True)
+                rid = re.search(r"\d{4,5}", raw_name)
+                name = re.sub(r"\s*\d{4,5}\s*", "", raw_name).strip()
                 result["boats"].append(
                     {
                         "racer_boat_number": boat_num,
                         "racer_place_number": place,
+                        # 進入コースは下のスタート情報で上書きする（読めなければ枠番のまま）
                         "racer_course_number": boat_num,
                         "racer_name": name,
                         "racer_start_timing": None,
-                        "racer_number": None,
+                        "racer_number": int(rid.group()) if rid else None,
                     }
                 )
                 continue
@@ -209,10 +237,44 @@ def parse_raceresult(html: str, stadium: int, race_num: int) -> dict:
                 continue
             result["payouts"][current].append({"combination": combo, "amount": amount})
 
+    # 2026-11-20: スタート情報（コース順に並ぶ: i 行目 = i+1 コース、艇番と ST）と決まり手を読む
+    by_boat = {b["racer_boat_number"]: b for b in result["boats"]}
+    for table in soup.find_all("table"):
+        th = table.find("th")
+        label = re.sub(r"\s+", "", th.get_text()) if th else ""
+        if label == "スタート情報":
+            course = 0
+            for tr in (table.find("tbody") or table).find_all("tr"):
+                num = tr.select_one(".table1_boatImage1Number")
+                if not num:
+                    continue
+                course += 1
+                bn = _zen_to_int(num.get_text(strip=True))
+                tm = tr.select_one(".table1_boatImage1TimeInner")
+                st, kind = _parse_st(tm.get_text(" ", strip=True) if tm else "")
+                b = by_boat.get(bn)
+                if b is not None:
+                    b["racer_course_number"] = course
+                    b["racer_start_timing"] = st
+                    if kind:
+                        b["racer_start_kind"] = kind  # F (フライング) / L (出遅れ)
+            result["_course_from_start"] = course >= 3
+        elif label == "決まり手":
+            td = (table.find("tbody") or table).find("td")
+            name = re.sub(r"\s+", "", td.get_text()) if td else ""
+            if name:
+                result["race_technique_name"] = name
+
     # sanity check (worker と同一): 上位 3 着 + 1着 が揃って初めて確定扱い
     has_first = any(b["racer_place_number"] == 1 for b in result["boats"])
     if len(result["boats"]) >= 3 and has_first:
-        result["race_technique_number"] = 1
+        tech = _TECHNIQUE_NUM.get(result.get("race_technique_name") or "")
+        # race_technique_number は「確定」の目印も兼ねる（多くの箇所が truthy で判定）。決まり手が読めない
+        #   確定レースは 1 を入れるが、technique_unknown を立てて集計では使わない。
+        result["race_technique_number"] = tech or 1
+        if not tech:
+            result["technique_unknown"] = True
+        result["_parse_v"] = RESULT_PARSE_VERSION
 
     return result
 
@@ -233,6 +295,8 @@ def _completeness(r: dict | None) -> int:
     payouts = r.get("payouts") or {}
     if payouts.get("trifecta"):
         score += 1
+    if (r.get("_parse_v") or 0) >= 2 and r.get("race_technique_number"):
+        score += 8
     return score
 
 

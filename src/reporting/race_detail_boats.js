@@ -318,6 +318,9 @@ function _renderRaceDetailBoats(ctx) {
     }
     boatsHtml += '<th>F/L</th></tr>';
 
+    // 2026-11-20: 長期集計（scripts/aggregate_racer_stats.py → data/db/racer_stats_view.json）
+    boatsHtml += _racerStatsRows(boatMap, pvMap, ctx.sid);
+
     // F16: 今節成績 (Macool 風) — 14 cells (= 7 days × 2 slots) を縦並べ
     if (rdForRace && rdForRace.boats) {
       var boatsSeries = [];
@@ -369,4 +372,111 @@ function _renderRaceDetailBoats(ctx) {
   ctx.stRankMap = stRankMap;
 }
 
+// ---------------------------------------------------------------------------
+// 2026-11-20: 選手・モーターの長期集計（直近 12 か月 / モーター 6 か月）
+//   取得は discovery 層 (src/discovery/racer_stats_loader.js)、ここは globalThis._racerStatsView を読むだけ。
+var TECH_SHORT = { 1: '逃げ', 2: '差し', 3: 'まくり', 4: 'まくり差し', 5: '抜き', 6: '恵まれ' };
+var LOSS_SHORT = { 2: '差され', 3: '捲られ', 4: '捲られ差し', 5: '抜かれ', 6: '恵まれ' };
+
+// 集計が届いたら、開いているレース詳細を描き直す（届く前に描いた分は 4 行が無いため）
+function _onRacerStatsLoaded() {
+  try {
+    var page = document.querySelector('.page.active');
+    if (page && page.id === 'pageDetail' && currentStadium && currentRace && typeof openRace === 'function') {
+      openRace(currentStadium, currentRace);
+    }
+  } catch (_) {}
+}
+
+function _pct(a, b) {
+  return b > 0 ? Math.round((a / b) * 100) + '%' : '-';
+}
+
+// 出走表の追加 4 行（コース成績 / 決まり手 / ST / モーター）
+function _racerStatsRows(boatMap, pvMap, sid) {
+  var V = globalThis._racerStatsView;
+  if (!V) {
+    if (typeof _loadRacerStatsView === 'function') _loadRacerStatsView(_onRacerStatsLoaded);
+    return '';
+  }
+  var rows = { course: '', tech: '', st: '', motor: '' };
+  for (var bn = 1; bn <= 6; bn++) {
+    var bt = boatMap[bn];
+    var pv = pvMap[bn];
+    var course = pv && pv.racer_course_number >= 1 && pv.racer_course_number <= 6 ? pv.racer_course_number : bn;
+    var rs = bt && bt.racer_number ? V.racers[String(bt.racer_number)] : null;
+    var c = rs && rs.c ? rs.c[String(course)] : null;
+    // コース成績: 1着率 / 2連対率（出走数）
+    rows.course += c
+      ? '<td>' + _pct(c[1], c[0]) + '<br><span class="fs-9">2連' + _pct(c[2], c[0]) + ' (' + c[0] + ')</span></td>'
+      : '<td>-</td>';
+    // 決まり手: 1 コースは逃げ率と負け方、他は勝ち決まり手の内訳
+    var tech = '-';
+    if (rs && c && c[0] > 0) {
+      var kw = (rs.kw && rs.kw[String(course)]) || {};
+      if (course === 1) {
+        tech = '逃げ' + _pct(kw['1'] || 0, c[0]);
+        var l1 = rs.l1 || {};
+        var parts = [];
+        Object.keys(l1)
+          .sort(function (a, b) {
+            return l1[b] - l1[a];
+          })
+          .slice(0, 2)
+          .forEach(function (k) {
+            parts.push((LOSS_SHORT[k] || '他') + _pct(l1[k], c[0]));
+          });
+        if (parts.length) tech += '<br><span class="fs-9">' + parts.join(' ') + '</span>';
+      } else {
+        var ks = Object.keys(kw).sort(function (a, b) {
+          return kw[b] - kw[a];
+        });
+        tech = ks.length
+          ? ks
+              .slice(0, 2)
+              .map(function (k) {
+                return (TECH_SHORT[k] || '他') + kw[k];
+              })
+              .join('<br>')
+          : '勝ちなし';
+      }
+    }
+    rows.tech += '<td>' + tech + '</td>';
+    // ST: 平均 ST / 展示との平均ズレ / F 回数
+    var st = rs && rs.st;
+    var sz = rs && rs.sz;
+    var stCell = st && st[0] != null ? st[0].toFixed(2) : '-';
+    if (sz && sz[2] >= 3)
+      stCell += '<br><span class="fs-9">展示比' + (sz[0] >= 0 ? '+' : '') + sz[0].toFixed(2) + '</span>';
+    if (st && st[2] > 0) stCell += '<br><span style="color:var(--danger);font-size:11px">F' + st[2] + '</span>';
+    rows.st += '<td>' + stCell + '</td>';
+    // モーター（場 × 番号、直近 6 か月）: 2連対率（出走数）
+    var mno = bt && bt.racer_assigned_motor_number;
+    var mv = mno && V.motors && V.motors[String(sid)] ? V.motors[String(sid)][String(mno)] : null;
+    rows.motor += mv
+      ? '<td>' + _pct(mv[2], mv[0]) + '<br><span class="fs-9">(' + mv[0] + ')</span></td>'
+      : '<td>-</td>';
+  }
+  var win = V.window && V.window.racer_months ? V.window.racer_months : 12;
+  return (
+    '<tr>' +
+    rows.course +
+    '<th>コース<br>成績<br><span class="fs-9">' +
+    win +
+    'か月</span></th></tr>' +
+    '<tr>' +
+    rows.tech +
+    '<th>決まり手</th></tr>' +
+    '<tr>' +
+    rows.st +
+    '<th>平均ST</th></tr>' +
+    '<tr>' +
+    rows.motor +
+    '<th>モーター<br>2連率<br><span class="fs-9">' +
+    ((V.window && V.window.motor_months) || 6) +
+    'か月</span></th></tr>'
+  );
+}
+
 globalThis._renderRaceDetailBoats = _renderRaceDetailBoats;
+globalThis._racerStatsRows = _racerStatsRows;

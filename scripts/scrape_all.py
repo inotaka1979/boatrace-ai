@@ -443,6 +443,15 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         log.warning("  archive_daily error: %s (non-fatal)", e)
 
+    # 2026-11-20: 確定した日を選手・モーターの月別集計へ畳む（data/db/racer_stats*.json）。
+    #   日次アーカイブは 45〜180 日で消えるため、長期の数字はここで残す。補助タスクなので失敗は数えない。
+    try:
+        agg = _run_subprocess("aggregate_racer_stats.py", timeout_sec=180)
+        if agg != 0:
+            log.warning("  aggregate_racer_stats exit=%d (non-fatal)", agg)
+    except Exception as e:  # noqa: BLE001
+        log.warning("  aggregate_racer_stats error: %s (non-fatal)", e)
+
     elapsed = time.monotonic() - overall_started
     log.info("=== scrape_all done in %.1fs, failures=%d ===", elapsed, len(failures))
     if failures:

@@ -113,10 +113,10 @@ class TestOddsTargets(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # results
 # ---------------------------------------------------------------------------
-def _result(sid, rno, *, technique=1, boats=True, trifecta=True, date="2026-11-11"):
+def _result(sid, rno, *, technique=1, boats=True, trifecta=True, date="2026-11-11", parse_v=2):
     return {
         "race_stadium_number": sid, "race_number": rno, "race_date": date,
-        "race_technique_number": technique,
+        "race_technique_number": technique, "_parse_v": parse_v,
         "boats": [{"racer_place_number": 1}] if boats else [],
         "payouts": {"trifecta": [{"combination": "1-2-3", "amount": 1000}] if trifecta else []},
     }
@@ -148,6 +148,7 @@ class TestResultsTargets(unittest.TestCase):
                     _result(4, 2, trifecta=False),              # 払戻未掲出 → 再取得
                     _result(4, 3, technique=None, boats=False, trifecta=False),  # 未確定
                     _result(4, 4, date="2026-11-10"),           # 前日 → 無視
+                    _result(4, 5, parse_v=None),                # 旧解析版 (決まり手・ST なし) → 取り直す
                 ]}, f)
             self.assertEqual(res._load_complete_keys(p, "20261111"), {(4, 1)})
             self.assertEqual(res._load_complete_keys(os.path.join(d, "nope.json"), "20261111"), set())
