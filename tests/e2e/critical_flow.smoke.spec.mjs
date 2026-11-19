@@ -34,9 +34,24 @@ test('トップページが表示され、開催場カードが存在する', as
 });
 
 test('開催場カードのタップで race 一覧画面に遷移する (PJ Phase 致命バグ回帰防止)', async ({ page }) => {
+  // 2026-11-20: index.html の事前描画カードは生成時点（古い日付）の「開催中」を持つが、アプリは
+  //   起動後に実データで一覧を描き直す。データが今日 (JST) のものでなければ（0 時台など）
+  //   「開催中」は 0 になるため、事前描画のカードをクリックしようとした瞬間に描き直されると
+  //   探し直しても見つからず 30 秒 timeout、描き直しが先なら skip、という時刻と順序次第の
+  //   flake になっていた（PR #337 の CI が JST 0:03 に実行され再現）。
+  //   アプリの最初の描き直しを待ってから「開催中」を探す。
+  await page.addInitScript(() => {
+    window.__stadiumRenders = 0;
+    document.addEventListener('DOMContentLoaded', () => {
+      const list = document.getElementById('stadiumList');
+      if (list) new MutationObserver(() => { window.__stadiumRenders++; }).observe(list, { childList: true });
+    });
+  });
   await page.goto('/index.html');
   // critical bundle ロード完了まで待つ
   await page.waitForFunction(() => typeof window.openStadium === 'function', { timeout: 15_000 });
+  // アプリが実データで一覧を描き直すまで待つ（loadAllData は失敗時も必ず renderStadiums する）
+  await page.waitForFunction(() => window.__stadiumRenders >= 1, { timeout: 15_000 });
   // active な開催場カードが少なくとも1つあることを期待
   const activeCard = page.locator('.stadium-card.active-stadium').first();
   if (await activeCard.count() === 0) {

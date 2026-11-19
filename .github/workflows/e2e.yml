@@ -36,10 +36,8 @@ jobs:
   #   現状は advisory（fail でも PR を block しない）。実バグは下流で検出される。
   #   baseline 整備後に continue-on-error を外す。
   smoke:
-    # ubuntu-latest は 26.04 に移行済みで、固定版 Playwright 1.59.1 はブラウザを install できない
-    #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
-    #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
-    runs-on: ubuntu-24.04
+    # Playwright 1.63.0 は ubuntu 26.04 (= ubuntu-latest) に対応（1.59.1 は非対応で 24.04 に固定していた）。
+    runs-on: ubuntu-latest
     # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
     #   テスト前に cancel された。install に余裕を持たせる。
     timeout-minutes: 20
@@ -102,10 +100,8 @@ jobs:
   #   で下の update-snapshots ジョブを main に対して実行する。baseline が
   #   自動 commit され、以降は本物の退行だけが赤くなる。
   vrt:
-    # ubuntu-latest は 26.04 に移行済みで、固定版 Playwright 1.59.1 はブラウザを install できない
-    #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
-    #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
-    runs-on: ubuntu-24.04
+    # Playwright 1.63.0 は ubuntu 26.04 (= ubuntu-latest) に対応（1.59.1 は非対応で 24.04 に固定していた）。
+    runs-on: ubuntu-latest
     # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
     #   テスト前に cancel された。install に余裕を持たせる。
     timeout-minutes: 20
@@ -168,10 +164,8 @@ jobs:
   #   これを使ったあとに smoke + vrt の continue-on-error を外す。
   update-snapshots:
     if: github.event_name == 'workflow_dispatch'
-    # ubuntu-latest は 26.04 に移行済みで、固定版 Playwright 1.59.1 はブラウザを install できない
-    #   ("Playwright does not support chromium/webkit on ubuntu26.04-x64")。VRT baseline も
-    #   24.04 のフォントで撮影されているため、Playwright を上げるまで 24.04 に固定する。
-    runs-on: ubuntu-24.04
+    # Playwright 1.63.0 は ubuntu 26.04 (= ubuntu-latest) に対応（1.59.1 は非対応で 24.04 に固定していた）。
+    runs-on: ubuntu-latest
     # apt ミラーが遅い日 (2026-11-19 実測 ~117kB/s) は WebKit の依存取得だけで 10 分を超え、
     #   テスト前に cancel された。install に余裕を持たせる。
     timeout-minutes: 25

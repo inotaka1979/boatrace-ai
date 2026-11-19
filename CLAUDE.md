@@ -1360,3 +1360,27 @@ worker が main と違う予想を出す状態だった。
 - 実ブラウザ (Chromium): 本日 132 レースで main と worker の予想が 132/132 一致。backfill 120 レースを
   エラー / fallback 0 件で worker が計算し、的中数は main 計算時と同じ（63 / 120）。
 - gate EXIT=0、critical 99,466B / 100,000B。worker_predictor.js は定数転記で 110KB（従来から warn 超過）。
+
+## 修正履歴 (2026-11-19: Playwright 1.59.1 → 1.63.0、CI を ubuntu-latest (26.04) に戻す)
+
+PR #332 で e2e / lighthouse の runner を `ubuntu-24.04` に固定した暫定策（1.59.1 は 26.04 にブラウザを
+install できない）を解消。
+
+- 各版の playwright-core を確認: 26.04 対応は 1.61 以降。**1.63.0** は Chromium build 1243 で、
+  Claude Code クラウド環境に入っている Chromium と同じ build のため、クラウド環境でも Chromium 系 project が
+  追加設定なしで起動する。2026-09 公開で、最新 1.65.1（11/13 公開）より安定。WebKit の 26.04 版
+  （`webkit-ubuntu-26.04.zip`）と依存パッケージ一覧も含むことを確認。
+- `build/package.json`: `^1.48.0`（lock で 1.59.1）→ `1.63.0` に完全固定（VRT がブラウザ版に依存するため）。
+- `e2e.yml`（smoke / vrt / update-snapshots）と `lighthouse.yml` の runner を `ubuntu-latest` に戻した。
+  timeout 延長と install の 3 回リトライは維持。
+- RUNBOOK §3.1 を更新。
+- 同 PR の CI が JST 0 時台に走り、時刻依存のテスト 2 件が顕在化したので修正（Playwright 更新とは無関係、
+  main でも同時刻なら落ちる）:
+  - `test_status_banner_freshness.js`: 実時刻の `Date.now()` を使っており、JST 0:00〜0:50 は「5〜50 分前」が前日に
+    なって「本日データ取得待ち」が返り 6 件が落ちた。現在時刻を JST 12:00 に固定し、日付またぎを明示テスト化。
+  - `critical_flow.smoke.spec.mjs`「開催場カードのタップ」: index.html の事前描画（古い日付）は 13 場を「開催中」で
+    持つが、アプリは起動後に実データで描き直し、データが今日でなければ「開催中」が 0 になる。事前描画のカードを
+    クリックする瞬間に描き直されると 30 秒 timeout、先に描き直されると skip、という順序次第の flake だった
+    （ローカル WebKit 2 並列で 5 回中 3 回失敗を再現）。アプリの最初の描き直しを待ってから探すように修正し、
+    0 時台 6/6 で安定 skip、ブラウザ時計を日中にすると 4/4 でクリック → 遷移、タップを握り潰す mutation で失敗
+    （PJ Phase の回帰検出は維持）を確認。
