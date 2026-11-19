@@ -44,6 +44,13 @@ evalInGlobal(code);
 const render = globalThis._renderFreshness;
 assert(typeof render === 'function', '_renderFreshness が export されている');
 
+// 2026-11-20: 現在時刻を日中 (JST 12:00) に固定する。
+//   実時刻だと JST 0:00〜0:50 に実行したとき「5〜50 分前」が前日になり、_renderFreshness が
+//   「💤 本日データ取得待ち」を返して色判定まで進まず、時刻次第で 6 件が落ちていた
+//   （PR #337 の CI が JST 00:01 に実行され再現）。
+const FIXED_NOW = Date.parse('2026-11-19T12:00:00+09:00');
+Date.now = () => FIXED_NOW;
+
 const GREEN = '#A5D6A7';
 const YELLOW = '#FFCC80';
 const RED = '#FF8A80';
@@ -76,6 +83,12 @@ assert(html.indexOf(YELLOW) >= 0, 'データ世代25分は黄');
 // 4) 接続が途絶(10分前が最後の成功) → 副次に「接続不調」
 html = run(5, 600);
 assert(html.indexOf('接続不調') >= 0, 'fetch成功が5分以上前なら接続不調を表示');
+
+// 5) 日付をまたぐ: JST 0:05 時点でデータ世代が 10 分前（＝前日 23:55）なら「本日データ取得待ち」
+Date.now = () => Date.parse('2026-11-20T00:05:00+09:00');
+html = run(10, 1);
+assert(html.indexOf('本日データ取得待ち') >= 0, '日付をまたいだ前日データは「本日データ取得待ち」');
+Date.now = () => FIXED_NOW;
 
 console.log(`\n_renderFreshness freshness semantics: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
