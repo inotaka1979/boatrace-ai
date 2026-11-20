@@ -83,6 +83,22 @@ t('途中から中止 → 「NR以降中止」（最終日でも中止を優先�
   assert.strictEqual(d.cancelled, false);
 });
 
+t('1 レースも確定せず 1R から中止 → 全日中止（後半は未判定でも、開催日タブが古くても）', () => {
+  const ctx = ctxWith({
+    labels: { stadiums: { 9: { label: '初日', final: false, cancelled: false } } },
+    results: { 9: { 1: { isCancelled: true }, 2: { isCancelled: true } } },
+  });
+  const d = ctx._stadiumDayInfo('9', '', RNS);
+  assert.strictEqual(d.text, '中止');
+  assert.strictEqual(d.cancelled, true);
+});
+t('1R が確定済みなら途中中止のまま', () => {
+  const ctx = ctxWith({ results: { 9: { 1: { isFinished: true }, 2: { isCancelled: true } } } });
+  const d = ctx._stadiumDayInfo('9', '', RNS);
+  assert.strictEqual(d.text, '2R以降中止');
+  assert.strictEqual(d.cancelled, false);
+});
+
 console.log('[場カード]');
 t('renderStadiums が日目のクラスと中止を出す', () => {
   const ctx = ctxWith({ labels: { stadiums: {
