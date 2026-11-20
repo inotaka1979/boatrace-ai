@@ -582,6 +582,11 @@ function parseRaceresultHTML(html, stadium, raceNum, raceDate) {
     boats: [],
     payouts: { trifecta:[], trio:[], exacta:[], quinella:[], quinella_place:[], win:[], place:[] },
   };
+  // 2026-11-20: 中止のレースは「レース中止」の見出しだけが出る（scrape_results.py と同じ判定）
+  if (/title12_title[^>]*>\s*レース中止/.test(html)) {
+    out.race_cancelled = true;
+    return out;
+  }
   // 全 tbody を抽出して、各 tbody 内の最初の tr で 着順 + 艇番 が取れるなら採用
   const tbodyRe = /<tbody[^>]*>([\s\S]*?)<\/tbody>/g;
   const tbodies = [];
@@ -731,7 +736,7 @@ async function mergeBoatraceJpResults(programs, results, nowMs, maxScrapes = MAX
     const hasTechnique = r && r.race_technique_number != null;
     const hasPayouts = r && r.payouts
       && Array.isArray(r.payouts.trifecta) && r.payouts.trifecta.length > 0;
-    if (hasTechnique && hasPayouts) continue;
+    if ((hasTechnique && hasPayouts) || (r && r.race_cancelled)) continue;
     scrapeTargets.push({ sid, rno, hd, raceDate: p.race_date, rPtr: r, closedAt: p.race_closed_at });
   }
   // FIFO (古い順): 古いレースほど結果が確定している確率が高く + backlog drain 保証
@@ -750,7 +755,7 @@ async function mergeBoatraceJpResults(programs, results, nowMs, maxScrapes = MAX
   for (const r of settled) {
     if (r.status !== 'fulfilled' || !r.value.parsed) continue;
     const { t, parsed } = r.value;
-    if (parsed.race_technique_number == null) continue;   // 結果ページがまだ無い
+    if (parsed.race_technique_number == null && !parsed.race_cancelled) continue;   // 結果ページがまだ無い
     if (t.rPtr) {
       // 上流 results 配列内のエントリをマージで上書き
       // 2026-05-24 (致命): payouts を smart merge する。
@@ -1630,7 +1635,7 @@ export default {
         const parsed = await scrapeRaceresult(sidNum, parseInt(race), hd, raceDate);
         // 着順未確定(結果ページがまだ無い/parse 不完全)は pending を返す。
         //   クライアントは pending 時に tried フラグを解除して後で再取得する。
-        if (!parsed || parsed.race_technique_number == null) {
+        if (!parsed || (parsed.race_technique_number == null && !parsed.race_cancelled)) {
           return new Response(JSON.stringify({ pending: true }), {
             headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS },
           });

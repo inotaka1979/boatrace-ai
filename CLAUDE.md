@@ -1587,3 +1587,22 @@ install できない）を解消。
   土台にし、今日の確定結果（resultData）でその選手の今日の n 走目を今日の n 番目の枠に入れる。
 - テスト: test_build_series.py（5 件）、test_series_results.js（7 件）。日付ゲート・中止・n 走目の mutation で失敗を確認。
 - 残: racedata 自体の朝の取得は scrape-all の実行時刻次第（sentinel の `GH_TOKEN` 登録で 8:30 に起動できる）。
+
+## 修正履歴 (2026-11-20: TOP の場カードに「何日目 / 最終日 / 中止」)
+
+ユーザー要望「開催何日目、最終日、中止が TOP 画面で分かるように」。従来は今日の racedata（1 日 1 回、朝の取得が
+遅れがち）の day_label がある時だけ「◯日目」を出しており、朝は空欄、中止は表示手段が無かった。
+- `scripts/scrape_day_labels.py`（新規）: 公式の出走表ページ上部の開催日タブ（例: 11月19日 中止 / 11月20日 初日 / …
+  / 最終日）を場ごとに 1 ページ読み、`data/schedule/day_labels.json` に書く。中止・順延も公式の表記どおり。
+  scrape_all が JST 6〜22 時に、今日の分が無いか 60 分以上古ければ実行（中止は当日決まることがある）。
+- レース単位の中止: 結果ページが「レース中止」の見出しだけのとき、scrape_results.py と Worker の
+  parseRaceresultHTML が `race_cancelled: true` を返す（Python は確定扱いで取り直さない、Worker は bulk の補完と
+  `/result-proxy` の両方で採用）。アプリは `isCancelled` を付け、未確定で上書きしない。
+- アプリ: `src/reporting/stadium_day.js`（rest）の `_stadiumDayInfo` を renderStadiums が typeof guard で呼ぶ。
+  日目は「開催日タブ（今日）> 今日の racedata > 前日の series.json（+1 日、前日中止なら同じ日目）」。
+  最終日は黄色、中止は赤のバッジ。全日中止は次レース欄を「発売なし」、途中から中止は「NR以降中止」。
+  deferred のデータ（day_labels / series / racedata）が揃った時と rest の読込時に場カードを描き直す。
+- テスト: test_day_labels.py（6 件）、test_stadium_day.js（9 件）、test_raceresult_parse.js に中止 1 件、
+  test_scrape_all_decide の 7 時の期待値を更新。fixture `raceresult_cancelled.html`（津 1R 11/19 の縮小）。
+  実ブラウザで 12 場の日目・最終日 2 場・中止（模擬）の表示を確認。critical 98,533B。
+- Worker の変更は main へのマージで deploy-worker.yml が自動デプロイ。

@@ -121,6 +121,9 @@ def _zen_to_int(s: str) -> int | None:
     return int(t) if t.isdigit() else None
 
 
+_CANCEL_RE = re.compile(r'title12_title[^>]*>\s*レース中止')
+
+
 def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | None = None) -> dict:
     """raceresult ページの HTML から 1 レース分の結果を抽出する。
 
@@ -151,6 +154,11 @@ def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | Non
             "place": [],
         },
     }
+
+    # 2026-11-20: 中止のレースは「レース中止」の見出しだけが出る。確定扱いにして取り直さない
+    if _CANCEL_RE.search(html or ""):
+        result["race_cancelled"] = True
+        return result
 
     try:
         from bs4 import BeautifulSoup
@@ -287,6 +295,8 @@ def _completeness(r: dict | None) -> int:
     """
     if not r:
         return -1
+    if r.get("race_cancelled"):
+        return COMPLETENESS_FULL  # 中止: これ以上の情報は無い
     score = 0
     if r.get("race_technique_number"):
         score += 4

@@ -73,6 +73,9 @@ step "Python unit tests (long-term racer / motor aggregates)" \
 # 2026-11-20: 今節成績を選手番号で引ける形に（racedata 取得後の確定結果で埋める）
 step "Python unit tests (series results by racer)" \
      "python3 -m unittest scripts.tests.test_build_series -v"
+# 2026-11-20: 開催日タブ（何日目 / 最終日 / 中止）とレース中止の判定
+step "Python unit tests (day labels / race cancelled)" \
+     "python3 -m unittest scripts.tests.test_day_labels -v"
 
 # 1e) 2026-05-17 B14: 穴予想 (ana_bets) 履歴追跡 smoke test
 step "JS tests (ana_bets / checkHit / ana_hit)" \
@@ -222,6 +225,9 @@ step "Race detail: long-term racer stats rows" \
 # 2026-11-20: 今節成績（前日の racedata を使わない / series.json + 今日の確定結果）
 step "Race detail: current series results" \
      "node scripts/tests/test_series_results.js"
+# 2026-11-20: TOP の場カード「何日目 / 最終日 / 中止」
+step "TOP: stadium day label / cancelled" \
+     "node scripts/tests/test_stadium_day.js"
 
 # 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
 step "no-undef: app.js / worker / src (AST globals)" \

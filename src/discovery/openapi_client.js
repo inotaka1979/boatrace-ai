@@ -313,6 +313,7 @@ function indexResults(apiJson) {
       if (r.payouts) r.refund = r.payouts;
       r.technique_number = r.race_technique_number;
       r.isFinished = isFinished;
+      if (r.race_cancelled) r.isCancelled = true; // 2026-11-20: 「レース中止」
     }
   }
   return indexed;

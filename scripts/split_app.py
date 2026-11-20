@@ -256,6 +256,7 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_STADIUM_RESULTS',
     # 2026-11-20: TOP まもなく締切帯 — predictRace を使うので rest
     'REPORTING_SOON_STRIP',
+    'REPORTING_STADIUM_DAY',
     # レース詳細 — 詳細を開いた時のみ (race_detail.js orchestrator + boats + prediction)
     'REPORTING_RACE_DETAIL',
     'REPORTING_RACE_DETAIL_BOATS',

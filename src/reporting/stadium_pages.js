@@ -123,6 +123,15 @@ function renderStadiums() {
         if (rd && rd.day_label) dayInfo = rd.day_label;
         else if (rd && rd.day) dayInfo = rd.day + '日目'; // 後方互換
       }
+      // 2026-11-20: 公式の開催日タブ・前日の今節成績・レース中止も見る（rest: stadium_day.js）
+      var dayCls = '';
+      var dayOff = false;
+      if (typeof _stadiumDayInfo === 'function') {
+        var di = _stadiumDayInfo(sid, dayInfo, raceNums);
+        dayInfo = di.text;
+        dayCls = di.cls;
+        dayOff = di.cancelled;
+      }
 
       // rt-fix3 (2026-06-27): 他サイト同様、現在(次)レースに締切時刻も併記（例「6R 18:02」）。
       //   全レースの締切が過ぎた（次レース無し）場合は他サイト同様「発売終了」表示。
@@ -134,6 +143,7 @@ function renderStadiums() {
       } else {
         nextRaceInfo = '発売終了';
       }
+      if (dayOff) nextRaceInfo = '発売なし'; // 全日中止
 
       // PH-2 + CLS 対策: stadium-day を常に 2 つレンダー（dayInfo 無くても &nbsp; placeholder）
       // PI-fix: iOS standalone PWA で event delegation が click 発火しないため
@@ -160,7 +170,9 @@ function renderStadiums() {
         '/' +
         totalRaces +
         'R</span>' +
-        '<span class="stadium-day">' +
+        '<span class="stadium-day' +
+        (dayCls ? ' ' + dayCls : '') +
+        '">' +
         (dayInfo || '&nbsp;') +
         '</span>' +
         '<span class="stadium-day">' +

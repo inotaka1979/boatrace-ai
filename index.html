@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=072d712a" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=072d712a" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=e0e83b52" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=e0e83b52" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -144,6 +144,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 .grade-general{background:transparent;color:transparent}
 .stadium-status{font-size:12px;margin-top:2px;display:block}
 .stadium-day{font-size:12px;display:block;margin-top:1px}
+.stadium-card .stadium-day.day-final{display:inline-block;background:#FFD54F;color:#3E2723;font-weight:700;border-radius:4px;padding:0 6px}
+.stadium-card .stadium-day.day-cancel{display:inline-block;background:#C62828;color:#fff;font-weight:700;border-radius:4px;padding:0 6px}
 
 /* Summary bar */
 .soon-strip{background:var(--card-bg);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;padding:8px 10px;margin-bottom:10px}
@@ -759,7 +761,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=072d712a" defer></script>
-<script src="assets/app-rest.min.js?v=072d712a" defer></script>
+<script src="assets/app-critical.min.js?v=e0e83b52" defer></script>
+<script src="assets/app-rest.min.js?v=e0e83b52" defer></script>
 </body>
 </html>
