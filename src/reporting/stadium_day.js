@@ -7,6 +7,7 @@
 //     2. 今日の racedata の day_label（renderStadiums が渡す）
 //     3. 前日の series.json（前日が最終日でなければ前日 + 1 日、前日が中止なら同じ日目）
 //   レース単位の中止（結果ページが「レース中止」= resultData[sid][rn].isCancelled）は日目より優先して出す。
+//   1 レースも確定せず 1R から中止なら全日中止（11/20 の津: 開催日タブ取得後に中止が決まり、11・12R は締切前）。
 //
 // Public: _stadiumDayInfo(sid, rdDayLabel, races) → { text, cls, cancelled }
 
@@ -39,7 +40,12 @@ function _stadiumDayInfo(sid, rdDay, races) {
     if (r && r.isCancelled) cancelled.push(parseInt(rns[i], 10));
     else if (r && r.isFinished) finished++;
   }
-  var dayCancelled = !!(e && e.cancelled) || (rns.length > 0 && cancelled.length === rns.length);
+  // 1 レースも確定せず最初のレースから中止 = 全日中止（後半のレースは締切前でまだ「中止」と判定されていない）
+  var firstRn = rns.length ? Math.min.apply(null, rns.map(Number)) : null;
+  var dayCancelled =
+    !!(e && e.cancelled) ||
+    (rns.length > 0 && cancelled.length === rns.length) ||
+    (finished === 0 && cancelled.indexOf(firstRn) >= 0);
   if (dayCancelled) text = '中止';
   else if (cancelled.length) text = Math.min.apply(null, cancelled) + 'R以降中止';
 

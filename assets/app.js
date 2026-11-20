@@ -8964,7 +8964,8 @@ function racerBadges(boat,form,divergence){
       if (r && r.isCancelled) cancelled.push(parseInt(rns[i], 10));
       else if (r && r.isFinished) finished++;
     }
-    var dayCancelled = !!(e && e.cancelled) || rns.length > 0 && cancelled.length === rns.length;
+    var firstRn = rns.length ? Math.min.apply(null, rns.map(Number)) : null;
+    var dayCancelled = !!(e && e.cancelled) || rns.length > 0 && cancelled.length === rns.length || finished === 0 && cancelled.indexOf(firstRn) >= 0;
     if (dayCancelled) text = "\u4E2D\u6B62";
     else if (cancelled.length) text = Math.min.apply(null, cancelled) + "R\u4EE5\u964D\u4E2D\u6B62";
     var cls = "";
