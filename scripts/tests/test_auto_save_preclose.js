@@ -72,7 +72,7 @@ t('締切前は次の呼び出しで更新、締切後は更新しない', async
   await ctx._autoSavePreClosePredictions();
   const first = JSON.stringify(hist(ctx).find((h) => h.stadium === 1 && h.race === 2));
   // 予想が変わる（2 回目は別の印）
-  ctx.predictRace = (sid, rn) => ({ marks: [{ boat: 2, prob: 0.6, probRaw: 0.6, mark: '◎' }], trifecta: [], exacta: [] });
+  ctx.predictRace = () => ({ marks: [{ boat: 2, prob: 0.6, probRaw: 0.6, mark: '◎' }], trifecta: [], exacta: [] });
   await ctx._autoSavePreClosePredictions();
   const second = JSON.stringify(hist(ctx).find((h) => h.stadium === 1 && h.race === 2));
   assert.notStrictEqual(first, second, '締切前なのに更新されない');
