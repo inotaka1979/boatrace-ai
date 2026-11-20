@@ -123,7 +123,10 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         return _names(scrape_all._decide_tasks(now, force_all=False))
 
     def test_pre_race_hours_no_tasks(self):
-        self.assertEqual(self._at(7, 0), [])
+        # 2026-11-20: 開催日タブ（何日目 / 中止）だけは 6 時から取る
+        self.assertEqual(self._at(7, 0), ["day_labels"])
+        self.assertNotIn("day_labels", self._at(5, 30))
+        self.assertNotIn("day_labels", self._at(23, 10))
 
     def test_tide_window_07_30(self):
         tasks = self._at(7, 30)

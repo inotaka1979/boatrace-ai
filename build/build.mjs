@@ -139,6 +139,7 @@ async function main() {
     { marker: 'REPORTING_PAGE_ROUTER', src: 'reporting/page_router.js' },     // Phase 2 完遂続編 (showPage)
     { marker: 'REPORTING_STADIUM_PAGES', src: 'reporting/stadium_pages.js' }, // Phase 2 完遂続編 (renderStadiums + openStadium)
     { marker: 'REPORTING_SOON_STRIP', src: 'reporting/soon_strip.js' }, // 2026-11-20: TOP まもなく締切 (rest bundle)
+    { marker: 'REPORTING_STADIUM_DAY', src: 'reporting/stadium_day.js' }, // 2026-11-20: TOP 何日目/最終日/中止 (rest bundle)
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
     { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
     { marker: 'DISCOVERY_RACER_STATS', src: 'discovery/racer_stats_loader.js' }, // 2026-11-20: 長期集計の取得 (rest-detail)

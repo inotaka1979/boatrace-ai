@@ -2782,6 +2782,7 @@ window.addEventListener('unhandledrejection', function(e){
         if (r.payouts) r.refund = r.payouts;
         r.technique_number = r.race_technique_number;
         r.isFinished = isFinished;
+        if (r.race_cancelled) r.isCancelled = true;
       }
     }
     return indexed;
@@ -3585,6 +3586,14 @@ var _backfillTimer = null;
           if (rd && rd.day_label) dayInfo = rd.day_label;
           else if (rd && rd.day) dayInfo = rd.day + "\u65E5\u76EE";
         }
+        var dayCls = "";
+        var dayOff = false;
+        if (typeof _stadiumDayInfo === "function") {
+          var di = _stadiumDayInfo(sid, dayInfo, raceNums);
+          dayInfo = di.text;
+          dayCls = di.cls;
+          dayOff = di.cancelled;
+        }
         var nextRaceInfo;
         if (nextRn) {
           var _ncClosed = stadium[nextRn] && stadium[nextRn].race_closed_at;
@@ -3593,7 +3602,8 @@ var _backfillTimer = null;
         } else {
           nextRaceInfo = "\u767A\u58F2\u7D42\u4E86";
         }
-        html += '<div class="stadium-card active-stadium" data-sid="' + sid + '" role="button" tabindex="0" data-action="openStadium" data-arg-sid="' + sid + '"><span class="stadium-grade ' + grade.cls + '">' + grade.name + '</span><span class="stadium-name">' + name + '</span><span class="stadium-status">' + doneCount + "/" + totalRaces + 'R</span><span class="stadium-day">' + (dayInfo || "&nbsp;") + '</span><span class="stadium-day">' + nextRaceInfo + "</span></div>";
+        if (dayOff) nextRaceInfo = "\u767A\u58F2\u306A\u3057";
+        html += '<div class="stadium-card active-stadium" data-sid="' + sid + '" role="button" tabindex="0" data-action="openStadium" data-arg-sid="' + sid + '"><span class="stadium-grade ' + grade.cls + '">' + grade.name + '</span><span class="stadium-name">' + name + '</span><span class="stadium-status">' + doneCount + "/" + totalRaces + 'R</span><span class="stadium-day' + (dayCls ? " " + dayCls : "") + '">' + (dayInfo || "&nbsp;") + '</span><span class="stadium-day">' + nextRaceInfo + "</span></div>";
       } else {
         var iso = typeof _nextOpenMap === "object" && _nextOpenMap ? _nextOpenMap[sid] || "" : "";
         var dateLabel = _formatNextOpen(iso);

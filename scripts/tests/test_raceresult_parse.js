@@ -100,5 +100,15 @@ t('F / L の ST', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('parseStTiming("L")', ctx))), { st: null, kind: 'L' });
 });
 
+// 2026-11-20: 「レース中止」ページ（津 1R 20261119 の縮小）
+t('レース中止は race_cancelled（着順・決まり手なし）', () => {
+  const hc = fs.readFileSync(path.join(__dirname, 'fixtures', 'raceresult_cancelled.html'), 'utf8');
+  const rc = JSON.parse(JSON.stringify(vm.runInContext('parseRaceresultHTML(HC, 9, 1, "2026-11-19")', Object.assign(ctx, { HC: hc }))));
+  assert.strictEqual(rc.race_cancelled, true);
+  assert.strictEqual(rc.race_technique_number, null);
+  assert.strictEqual(rc.boats.length, 0);
+  assert.ok(!('race_cancelled' in r), '通常の結果に付いた');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

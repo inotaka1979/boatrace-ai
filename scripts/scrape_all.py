@@ -99,6 +99,10 @@ def _remaining_budget_sec(cap_sec: int) -> int:
     return max(120, min(cap_sec, int(left)))
 
 
+def _scrape_day_labels() -> int:
+    return _run_subprocess("scrape_day_labels.py", timeout_sec=240)
+
+
 def _scrape_racedata() -> int:
     # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
     #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
@@ -356,6 +360,14 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         tasks.append(("previews", _scrape_previews))
         tasks.append(("odds", _scrape_odds))
 
+    # 2026-11-20: 場ごとの開催日タブ（何日目 / 最終日 / 中止）。1 場 1 ページで軽い。中止は当日に
+    #   決まることがあるので、今日の分があっても 60 分ごとに取り直す。
+    if 6 <= h <= 22 and (
+        not _is_fresh_today("data/schedule/day_labels.json", now)
+        or _age_minutes("data/schedule/day_labels.json") >= 60
+    ):
+        tasks.append(("day_labels", _scrape_day_labels))
+
     # 2026-08-11 FIX: racedata は real-time 系 (odds/previews/results) の後に実行する。
     #   理由は上の racedata_stale ブロックのコメント参照。
     if racedata_stale:
@@ -409,6 +421,7 @@ def main() -> int:
             "tide": _scrape_tide,
             "prerender": _prerender_top,
             "backfill": _backfill_archive,
+            "day_labels": _scrape_day_labels,
         }
         if args.only not in m:
             log.error("unknown --only: %s", args.only)

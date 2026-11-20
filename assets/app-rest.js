@@ -2366,6 +2366,53 @@
 /* BUILD:REPORTING_SOON_STRIP:END */
 
 
+/* BUILD:REPORTING_STADIUM_DAY:START */
+"use strict";
+(() => {
+  // ../src/reporting/stadium_day.js
+  function _stadiumDayInfo(sid, rdDay, races) {
+    var key = String(sid);
+    var today = typeof todayStr === "function" ? todayStr() : "";
+    var text = "";
+    var D = globalThis._dayLabels;
+    var e = D && D.date === today && D.stadiums ? D.stadiums[key] : null;
+    if (e && e.label) text = e.label;
+    else if (rdDay) text = rdDay;
+    else {
+      var S = globalThis._seriesData;
+      var s = S && S.stadiums ? S.stadiums[key] : null;
+      if (s && s.day && !s.final && typeof jstYmd === "function" && S.date === jstYmd(-1)) {
+        var n = s.held === false ? s.day : s.day + 1;
+        text = n === 1 ? "\u521D\u65E5" : n + "\u65E5\u76EE";
+      }
+    }
+    var res = typeof resultData !== "undefined" && resultData ? resultData[key] : null;
+    var rns = races || [];
+    var cancelled = [];
+    var finished = 0;
+    for (var i = 0; i < rns.length; i++) {
+      var r = res && res[rns[i]];
+      if (r && r.isCancelled) cancelled.push(parseInt(rns[i], 10));
+      else if (r && r.isFinished) finished++;
+    }
+    var dayCancelled = !!(e && e.cancelled) || rns.length > 0 && cancelled.length === rns.length;
+    if (dayCancelled) text = "\u4E2D\u6B62";
+    else if (cancelled.length) text = Math.min.apply(null, cancelled) + "R\u4EE5\u964D\u4E2D\u6B62";
+    var cls = "";
+    if (dayCancelled || cancelled.length) cls = "day-cancel";
+    else if (e && e.final || /最終/.test(text)) cls = "day-final";
+    return { text, cls, cancelled: dayCancelled, finished };
+  }
+  globalThis._stadiumDayInfo = _stadiumDayInfo;
+  try {
+    if (typeof programData !== "undefined" && programData && typeof renderStadiums === "function") renderStadiums();
+  } catch (_) {
+  }
+})();
+
+/* BUILD:REPORTING_STADIUM_DAY:END */
+
+
 /* BUILD:REPORTING_STADIUM_RESULTS:START */
 "use strict";
 (() => {
@@ -2824,7 +2871,9 @@ function _mergeResultIndex(oldIdx, newIdx){
       if(!o) continue;
       var n=newIdx[sid]&&newIdx[sid][rn];
       if(n){
-        if(o.isFinished && !n.isFinished){
+        if(o.isCancelled && !n.isFinished && !n.isCancelled){
+          newIdx[sid][rn]=o;   // 中止を未確定で上書きしない
+        } else if(o.isFinished && !n.isFinished){
           newIdx[sid][rn]=o;   // 確定済みを未確定で上書きしない(openapi の揺らぎ対策)
         } else {
           newIdx[sid][rn]=_mergeResultEntry(o,n);
@@ -2870,6 +2919,13 @@ function _loadResultLive(sid,rno){
     fetch(base+'/result-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(obj){
+        if(obj && obj.race_cancelled){   // 2026-11-20: レース中止（取り直さない）
+          var ci=indexResults({results:[obj]});
+          if(!resultData) resultData={};
+          if(!resultData[sid]) resultData[sid]={};
+          if(ci&&ci[sid]&&ci[sid][rno]) resultData[sid][rno]=ci[sid][rno];
+          return;
+        }
         if(!obj || obj.pending || obj.race_technique_number==null){ _retry(); return; }
         var idx=indexResults({results:[obj]});
         var rr=idx&&idx[sid]&&idx[sid][rno];
@@ -4276,6 +4332,14 @@ async function loadDeferredData(rawPrograms, rawPreviews){
     }catch(e){}
   })());
 
+  // 開催日タブ（何日目 / 最終日 / 中止、scripts/scrape_day_labels.py）
+  tasks.push((async function(){
+    try{
+      var dlResp=await fetch('data/schedule/day_labels.json?t='+Date.now());
+      if(dlResp.ok) globalThis._dayLabels=await dlResp.json();
+    }catch(e){}
+  })());
+
   // 潮汐
   tasks.push((async function(){
     try{
@@ -4317,6 +4381,8 @@ async function loadDeferredData(rawPrograms, rawPreviews){
 
   await Promise.allSettled(tasks);
   console.log('[PE-8] deferred fetch complete');
+  // 2026-11-20: 日目・中止・今節成績の元データが届いたので場カードを描き直す
+  try{ if(typeof renderStadiums==='function') renderStadiums(); }catch(e){}
 
   // S-05 / PR-6: DB fetch 完了時点で場別統計 / 直近フォームの縮退を可視化
   if(typeof _renderDegradedBanner === 'function') _renderDegradedBanner();
