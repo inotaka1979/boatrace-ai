@@ -164,6 +164,7 @@ function openRace(sid, rn) {
       '℃</span>' +
       '</div>';
   }
+  var _wxBar = weatherHtml; // 天気だけ（中止のレースはオッズ古さの警告を出さない）
   // FIX: オッズデータの実スクレイプ経過を詳細画面トップに警告表示
   //   "0秒前" は GitHub Pages からの fetch 時刻であり、cron が止まると
   //   JSON 内のオッズは何時間も古い可能性がある（ユーザの混乱の主因）
@@ -183,6 +184,12 @@ function openRace(sid, rn) {
           weatherHtml;
       }
     }
+  }
+  // 2026-11-20: 中止・順延のレースは展示もオッズも出ないので、その旨を先頭に出す（オッズ古さの警告は出さない）
+  if (typeof _raceCancelled === 'function' && _raceCancelled(sid, rn)) {
+    weatherHtml =
+      '<div style="background:#FFEBEE;border:2px solid #C62828;border-radius:8px;padding:10px;margin:8px 0;color:#C62828;font-weight:700;font-size:14px;text-align:center">このレースは中止になりました<br><span style="font-size:11px;font-weight:400">展示・オッズ・結果は出ません（予想は参考表示）</span></div>' +
+      _wxBar;
   }
   document.getElementById('detailWeather').innerHTML = weatherHtml;
 

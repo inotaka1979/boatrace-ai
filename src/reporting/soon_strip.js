@@ -36,6 +36,9 @@ function _soonRaces(now) {
       if (mins < 0 || mins > SOON_STRIP_WINDOW_MIN) continue;
       var res = typeof resultData !== 'undefined' && resultData && resultData[sid] && resultData[sid][rno];
       if (res && res.isFinished) continue;
+      // 2026-11-20: 中止・順延のレースは出さない（展示も発売も無い）
+      var rc = globalThis._raceCancelled;
+      if (typeof rc === 'function' && rc(sid, rno)) continue;
       out.push({ sid: parseInt(sid, 10), rno: parseInt(rno, 10), mins: mins, closedMs: ms });
     }
   }

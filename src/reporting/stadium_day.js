@@ -46,7 +46,7 @@ function _stadiumDayInfo(sid, rdDay, races) {
     !!(e && e.cancelled) ||
     (rns.length > 0 && cancelled.length === rns.length) ||
     (finished === 0 && cancelled.indexOf(firstRn) >= 0);
-  if (dayCancelled) text = '中止';
+  if (dayCancelled) text = e && e.cancelled && e.label ? e.label : '中止';
   else if (cancelled.length) text = Math.min.apply(null, cancelled) + 'R以降中止';
 
   var cls = '';
@@ -55,7 +55,23 @@ function _stadiumDayInfo(sid, rdDay, races) {
   return { text: text, cls: cls, cancelled: dayCancelled, finished: finished };
 }
 
+// このレースは行われないか（結果ページが「レース中止」、または場が全日中止・順延で未確定のレース）。
+//   まもなく締切の帯・締切前予想の自動保存・レース詳細の中止表示が使う。
+function _raceCancelled(sid, rno) {
+  var res = typeof resultData !== 'undefined' && resultData && resultData[String(sid)];
+  var r = res && res[String(rno)];
+  if (r && r.isCancelled) return true;
+  if (r && r.isFinished) return false;
+  var st = typeof programData !== 'undefined' && programData ? programData[String(sid)] : null;
+  if (!st) return false;
+  var rns = Object.keys(st).sort(function (a, b) {
+    return parseInt(a) - parseInt(b);
+  });
+  return _stadiumDayInfo(sid, '', rns).cancelled;
+}
+
 globalThis._stadiumDayInfo = _stadiumDayInfo;
+globalThis._raceCancelled = _raceCancelled;
 // rest bundle がデータ読込後に届いたとき、場カードを描き直して日目を出す
 try {
   if (typeof programData !== 'undefined' && programData && typeof renderStadiums === 'function') renderStadiums();

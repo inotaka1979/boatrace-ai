@@ -46,6 +46,14 @@ class TestTabs(unittest.TestCase):
         self.assertFalse(dl.summarize(tabs, "20261120")["final"])
         self.assertIsNone(dl.summarize(tabs, "20261125"), "今日のタブが無い = 開催していない")
 
+    def test_postponed_counts_as_cancelled(self):
+        # 2026-11-20 の戸田: 1・2R の後に打ち切り、タブは「順延」
+        html = '<ul class="tab2_tabs"><li>11月19日<span>２日目</span></li><li>11月20日<span>順延</span></li><li>11月21日<span>最終日</span></li></ul>'
+        s = dl.summarize(dl.parse_tabs(html, 2026, (11, 20)), "20261120")
+        self.assertEqual(s["label"], "順延")
+        self.assertTrue(s["cancelled"])
+        self.assertFalse(s["final"])
+
     def test_no_tabs(self):
         self.assertEqual(dl.parse_tabs("<html></html>", 2026, (11, 20)), [])
 

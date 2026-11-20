@@ -99,6 +99,7 @@
       var wtemp = w.water_temperature || w.race_water_temperature || "--";
       weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
     }
+    var _wxBar = weatherHtml;
     var _osmRace = typeof _raceOddsAgeMin === "function" && raceOdds ? _raceOddsAgeMin(raceOdds) : null;
     if (_osmRace != null || oddsData && oddsData.updated_at) {
       var _ot = _osmRace != null ? Date.now() - _osmRace * 6e4 : Date.parse(oddsData.updated_at);
@@ -109,6 +110,9 @@
           weatherHtml = '<div style="background:#FFEBEE;border:2px solid #D32F2F;border-radius:8px;padding:10px;margin:8px 0;color:#D32F2F;font-weight:700;font-size:13px;text-align:center">\u26A0 \u30AA\u30C3\u30BA\u304C ' + _hh + '\u524D\u306E\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3067\u3059<br><span style="font-size:11px;font-weight:400">\u30EC\u30FC\u30B9\u76F4\u524D\u306E\u5E02\u5834\u3068\u4E56\u96E2\u3057\u3066\u3044\u308B\u53EF\u80FD\u6027\u304C\u3042\u308A\u307E\u3059</span></div>' + weatherHtml;
         }
       }
+    }
+    if (typeof _raceCancelled === "function" && _raceCancelled(sid, rn)) {
+      weatherHtml = '<div style="background:#FFEBEE;border:2px solid #C62828;border-radius:8px;padding:10px;margin:8px 0;color:#C62828;font-weight:700;font-size:14px;text-align:center">\u3053\u306E\u30EC\u30FC\u30B9\u306F\u4E2D\u6B62\u306B\u306A\u308A\u307E\u3057\u305F<br><span style="font-size:11px;font-weight:400">\u5C55\u793A\u30FB\u30AA\u30C3\u30BA\u30FB\u7D50\u679C\u306F\u51FA\u307E\u305B\u3093\uFF08\u4E88\u60F3\u306F\u53C2\u8003\u8868\u793A\uFF09</span></div>' + _wxBar;
     }
     document.getElementById("detailWeather").innerHTML = weatherHtml;
     var resHtml = "";

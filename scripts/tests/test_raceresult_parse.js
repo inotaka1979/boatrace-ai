@@ -110,5 +110,25 @@ t('レース中止は race_cancelled（着順・決まり手なし）', () => {
   assert.ok(!('race_cancelled' in r), '通常の結果に付いた');
 });
 
+// 2026-11-20: KV に残した「レース中止」を次の run の上流データに引き継ぐ（捨てると毎 run 取り直して
+//   1 run 12 件の取り直し枠を食い潰し、他場の中止・結果が判定されなかった）
+t('mergeKVOverOpenapi が中止を引き継ぐ（確定済みの上流は上書きしない）', () => {
+  for (const fn of ['_isValidResult', 'mergeKVOverOpenapi']) vm.runInContext(extractFn(fn), ctx);
+  const up = { results: [
+    { race_stadium_number: 9, race_number: 1, race_technique_number: null, boats: [] },
+    { race_stadium_number: 2, race_number: 1, race_technique_number: 2, boats: [] },
+  ] };
+  const kv = { results: [
+    { race_stadium_number: 9, race_number: 1, race_technique_number: null, race_cancelled: true, boats: [] },
+    { race_stadium_number: 9, race_number: 2, race_technique_number: null, race_cancelled: true, boats: [] },
+    { race_stadium_number: 2, race_number: 1, race_technique_number: null, race_cancelled: true, boats: [] },
+  ] };
+  const out = JSON.parse(JSON.stringify(vm.runInContext('mergeKVOverOpenapi(UP, KV)', Object.assign(ctx, { UP: up, KV: kv }))));
+  const by = {}; out.results.forEach((r) => { by[r.race_stadium_number + '-' + r.race_number] = r; });
+  assert.strictEqual(by['9-1'].race_cancelled, true, '上流にある未確定レースへ引き継ぐ');
+  assert.strictEqual(by['9-2'].race_cancelled, true, '上流に無いレースは追加');
+  assert.ok(!by['2-1'].race_cancelled, '確定済みの上流は中止にしない');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
