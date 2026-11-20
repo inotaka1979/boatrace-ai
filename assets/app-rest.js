@@ -2311,6 +2311,8 @@
         if (mins < 0 || mins > SOON_STRIP_WINDOW_MIN) continue;
         var res = typeof resultData !== "undefined" && resultData && resultData[sid] && resultData[sid][rno];
         if (res && res.isFinished) continue;
+        var rc = globalThis._raceCancelled;
+        if (typeof rc === "function" && rc(sid, rno)) continue;
         out.push({ sid: parseInt(sid, 10), rno: parseInt(rno, 10), mins, closedMs: ms });
       }
     }
@@ -2397,14 +2399,27 @@
     }
     var firstRn = rns.length ? Math.min.apply(null, rns.map(Number)) : null;
     var dayCancelled = !!(e && e.cancelled) || rns.length > 0 && cancelled.length === rns.length || finished === 0 && cancelled.indexOf(firstRn) >= 0;
-    if (dayCancelled) text = "\u4E2D\u6B62";
+    if (dayCancelled) text = e && e.cancelled && e.label ? e.label : "\u4E2D\u6B62";
     else if (cancelled.length) text = Math.min.apply(null, cancelled) + "R\u4EE5\u964D\u4E2D\u6B62";
     var cls = "";
     if (dayCancelled || cancelled.length) cls = "day-cancel";
     else if (e && e.final || /最終/.test(text)) cls = "day-final";
     return { text, cls, cancelled: dayCancelled, finished };
   }
+  function _raceCancelled(sid, rno) {
+    var res = typeof resultData !== "undefined" && resultData && resultData[String(sid)];
+    var r = res && res[String(rno)];
+    if (r && r.isCancelled) return true;
+    if (r && r.isFinished) return false;
+    var st = typeof programData !== "undefined" && programData ? programData[String(sid)] : null;
+    if (!st) return false;
+    var rns = Object.keys(st).sort(function(a, b) {
+      return parseInt(a) - parseInt(b);
+    });
+    return _stadiumDayInfo(sid, "", rns).cancelled;
+  }
   globalThis._stadiumDayInfo = _stadiumDayInfo;
+  globalThis._raceCancelled = _raceCancelled;
   try {
     if (typeof programData !== "undefined" && programData && typeof renderStadiums === "function") renderStadiums();
   } catch (_) {
@@ -3955,6 +3970,7 @@ async function _autoSavePreClosePredictions(){
         if(ms == null || ms <= now || ms - now > AUTO_SAVE_WINDOW_MIN * 60000) continue;
         var res = resultData && resultData[sid] && resultData[sid][rn];
         if(res && (res.isFinished || res.isCancelled)) continue;
+        if(typeof _raceCancelled==='function' && _raceCancelled(sid, rn)) continue;   // 全日中止・順延
         targets.push([sid, rn]);
       }
     }

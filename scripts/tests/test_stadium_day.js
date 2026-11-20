@@ -99,6 +99,35 @@ t('1R が確定済みなら途中中止のまま', () => {
   assert.strictEqual(d.cancelled, false);
 });
 
+t('開催日タブが「順延」なら途中まで確定していても全日扱い・表記は「順延」', () => {
+  const ctx = ctxWith({
+    labels: { stadiums: { 2: { label: '順延', final: false, cancelled: true } } },
+    results: { 2: { 1: { isFinished: true }, 2: { isFinished: true } } },
+  });
+  const d = ctx._stadiumDayInfo('2', '', RNS);
+  assert.strictEqual(d.text, '順延');
+  assert.strictEqual(d.cls, 'day-cancel');
+  assert.strictEqual(d.cancelled, true);
+});
+t('_raceCancelled: レース中止 / 全日中止・順延で未確定 → true、確定済み・通常 → false', () => {
+  const ctx = ctxWith({
+    labels: { stadiums: { 2: { label: '順延', final: false, cancelled: true } } },
+    results: { 2: { 1: { isFinished: true } }, 15: { 3: { isCancelled: true } } },
+  });
+  ctx.programData = { 2: { 1: {}, 2: {}, 3: {} }, 15: { 1: {}, 2: {}, 3: {} } };
+  assert.strictEqual(ctx._raceCancelled(2, 1), false, '確定済み');
+  assert.strictEqual(ctx._raceCancelled(2, 3), true, '順延の場の未確定');
+  assert.strictEqual(ctx._raceCancelled(15, 3), true, 'レース中止');
+  assert.strictEqual(ctx._raceCancelled(15, 1), false, '通常');
+});
+t('まもなく締切の帯に中止・順延のレースを出さない', () => {
+  const ctx = ctxWith({ labels: { stadiums: { 2: { label: '順延', final: false, cancelled: true } } } });
+  const closed = (min) => { const d = new Date(Date.now() + min * 60000 + 9 * 3600000); return d.toISOString().slice(0, 19).replace('T', ' '); };
+  ctx.programData = { 2: { 5: { race_closed_at: closed(3) } }, 17: { 7: { race_closed_at: closed(4) } } };
+  const rs = ctx._soonRaces().map((x) => x.sid + '-' + x.rno);
+  assert.strictEqual(JSON.stringify(rs), JSON.stringify(['17-7']));
+});
+
 console.log('[場カード]');
 t('renderStadiums が日目のクラスと中止を出す', () => {
   const ctx = ctxWith({ labels: { stadiums: {

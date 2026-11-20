@@ -60,8 +60,9 @@ def summarize(tabs: list[dict], today: str) -> dict | None:
     for i, t in enumerate(tabs):
         if t["date"] == today:
             label = t["label"]
-            return {"label": label, "final": "最終" in label or (i == len(tabs) - 1 and "中止" not in label),
-                    "cancelled": "中止" in label, "tabs": tabs}
+            return {"label": label, "final": "最終" in label or (i == len(tabs) - 1 and "中止" not in label and "順延" not in label),
+                    # 「順延」= その日の残りのレースを行わない（途中で打ち切りになった日も）
+                    "cancelled": "中止" in label or "順延" in label, "tabs": tabs}
     return None
 
 

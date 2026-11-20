@@ -880,6 +880,22 @@ function mergeKVOverOpenapi(openapiResults, kvResults) {
   let preserved = 0, added = 0, rejected = 0;
   for (const kvr of kvResults.results) {
     if (!kvr || kvr.race_stadium_number == null || kvr.race_number == null) continue;
+    // 2026-11-20: 「レース中止」も保持する。捨てると毎 run 中止レースを取り直し、1 run 12 件の取り直し枠を
+    //   中止レースが食い潰して他場の中止・結果の判定が回ってこなかった（11/20: 津 10R 分で戸田 3R 以降が未判定）。
+    if (kvr.race_cancelled && kvr.race_technique_number == null) {
+      const ckey = `${kvr.race_stadium_number}-${kvr.race_number}`;
+      const copen = openapiByKey.get(ckey);
+      if (copen) {
+        if (copen.race_technique_number == null && !copen.race_cancelled) {
+          copen.race_cancelled = true;
+          preserved++;
+        }
+      } else {
+        openapiResults.results.push(kvr);
+        added++;
+      }
+      continue;
+    }
     if (kvr.race_technique_number == null) continue; // unfinished は無視
     // 2026-05-24: KV に bogus データ (重複艇 / 1着欠落 / boats < 3) が
     //   居座っていた場合は preserve しない (常滑 7R で観測された事故対策)。
