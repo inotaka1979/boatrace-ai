@@ -3935,6 +3935,50 @@ function _refreshTopSummary(){
   }catch(e){}
 }
 
+function _closedAtMs(s){
+  var m = s && /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  return m ? Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]-9,+m[5],+(m[6]||0)) : null;
+}
+
+async function _autoSavePreClosePredictions(){
+  if(_autoSaveBusy || !programData) return 0;
+  _autoSaveBusy = true;
+  try{
+    var today = todayStr(), now = Date.now(), targets = [];
+    for(var sid in programData){
+      for(var rn in programData[sid]){
+        var p = programData[sid][rn];
+        var rd = String(p && p.race_date || '').replace(/-/g,'');
+        if(rd && rd !== today) continue;
+        var ms = _closedAtMs(p && p.race_closed_at);
+        if(ms == null || ms <= now || ms - now > AUTO_SAVE_WINDOW_MIN * 60000) continue;
+        var res = resultData && resultData[sid] && resultData[sid][rn];
+        if(res && (res.isFinished || res.isCancelled)) continue;
+        targets.push([sid, rn]);
+      }
+    }
+    if(!targets.length) return 0;
+    var useWorker = !!_getAppWorker();
+    if(useWorker) _syncWorkerState();
+    var pending = [];
+    for(var i = 0; i < targets.length; i++){
+      try{
+        var pred = useWorker ? await predictRaceAsync(targets[i][0], parseInt(targets[i][1]))
+                             : predictRace(targets[i][0], parseInt(targets[i][1]));
+        if(pred) pending.push([targets[i][0], targets[i][1], pred]);
+      }catch(e){}
+      if(i % 2 === 1) await _yieldToMain();
+    }
+    if(!pending.length) return 0;
+    var batch = {history: safeParse('boatrace_history', []), dirty: false};
+    pending.forEach(function(x){ savePrediction(today, x[0], x[1], x[2], null, batch); });
+    if(batch.dirty) safeSet('boatrace_history', batch.history);
+    return pending.length;
+  }finally{
+    _autoSaveBusy = false;
+  }
+}
+
 async function _backfillTodayPredictions(){
   try{
     return await _backfillTodayPredictionsImpl();
@@ -4406,6 +4450,8 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   // PF-3: backfill は起動 critical path から外し、DB と学習が揃ったこの時点から少し置いて実行
   //   (成績タブを開けば即時)。2026-11-14: 待ち時間を 60 秒 → BACKFILL_DELAY_MS に短縮。
   _scheduleLazyBackfill();
+  // 2026-11-20: 締切間近のレースの予想を締切前に保存（以後は 90 秒 poll ごと）
+  try{ if(typeof _autoSavePreClosePredictions==='function') _autoSavePreClosePredictions(); }catch(e){}
 
   // バックグラウンド DB 構築（公式 DB が薄い場合）
   if(Object.keys(racerDB).length < 50){
