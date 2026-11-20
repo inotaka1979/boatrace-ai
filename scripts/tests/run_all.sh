@@ -228,6 +228,9 @@ step "Race detail: current series results" \
 # 2026-11-20: TOP の場カード「何日目 / 最終日 / 中止」
 step "TOP: stadium day label / cancelled" \
      "node scripts/tests/test_stadium_day.js"
+# 2026-11-20: 締切前予想の自動保存（全場の締切 15 分以内、事後生成を減らす）
+step "Auto-save pre-close predictions" \
+     "node scripts/tests/test_auto_save_preclose.js"
 
 # 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
 step "no-undef: app.js / worker / src (AST globals)" \

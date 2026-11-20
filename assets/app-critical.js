@@ -3272,6 +3272,15 @@ var _appWorkerCallbacks = new Map();
 //   他ページにいる間の変化は showPage('top') が戻った時に反映する。
 /* MOVED: function _refreshTopSummary */
 
+// 2026-11-20: 締切前予想の自動保存。予想が履歴に入るのは「その場の一覧を締切前に開いた時」だけで、
+//   開かなかった場・夜に開いた日のレースは確定後に作る「事後生成」になっていた（成績が楽観的に見える）。
+//   アプリを開いている間は 90 秒 poll ごとに、全場の締切 AUTO_SAVE_WINDOW_MIN 分以内・未確定のレースを
+//   予想して保存する（締切まで上書き更新、締切後は savePrediction が固定する）。保存した件数を返す。
+var AUTO_SAVE_WINDOW_MIN = 15;
+var _autoSaveBusy = false;
+/* MOVED: function _closedAtMs */
+/* MOVED: function _autoSavePreClosePredictions */
+
 // 全場の確定レースを予想 → 履歴へ。保存できた件数を返す。
 //   2026-11-14: 終わったら (成否・早期 return を問わず) その日の集計が 1 回済んだ印
 //   (_histReady) を立て、TOP のサマリーを描き直す。従来は履歴を埋めても TOP を誰も
@@ -4187,6 +4196,8 @@ setManagedInterval(async function(){
         }
       }
     }catch(e){}
+    // 2026-11-20: 全場の締切間近のレースの予想を締切前に保存（事後生成を減らす）
+    try{ if(typeof _autoSavePreClosePredictions==='function') _autoSavePreClosePredictions(); }catch(e){}
     // rt-fix3 P0-1 (2026-06-27): 一覧/詳細を閲覧中は、締切が近づくレースの live オッズを
     //   90 秒毎に継続取得する（openStadium 時の 1 回だけでは閲覧中に締切が近づくレースを
     //   取りこぼす）。_prefetchLiveOddsForUpcoming 内で 400ms stagger + 30s throttle 済。

@@ -1606,3 +1606,15 @@ install できない）を解消。
   test_scrape_all_decide の 7 時の期待値を更新。fixture `raceresult_cancelled.html`（津 1R 11/19 の縮小）。
   実ブラウザで 12 場の日目・最終日 2 場・中止（模擬）の表示を確認。critical 98,533B。
 - Worker の変更は main へのマージで deploy-worker.yml が自動デプロイ。
+
+## 修正履歴 (2026-11-20: 締切前予想の自動保存 — 事後生成を減らす)
+
+ユーザー質問「レース確定後に生成された予想がなぜよく出る？」。予想が履歴に入るのは「その場のレース一覧を締切前に
+開いた時」だけで、開かなかった場・夜に開いた日・アプリを閉じていた時間のレースは、確定後に backfill が作る
+「事後生成」になっていた（締切後のデータで作るので成績が楽観的に見える）。
+- `_autoSavePreClosePredictions`（app.js、rest）: 全場のうち締切 `AUTO_SAVE_WINDOW_MIN`(15) 分以内・未確定・未中止・
+  今日のレースを予想して保存（worker 利用、2 件ごとに yield、履歴の読み書きは 1 回）。90 秒 poll と deferred load の後から
+  typeof guard で呼ぶ。締切までは poll ごとに最新の予想へ更新され、締切後は savePrediction の lock-in で固定。二重起動しない。
+- 限界: アプリを開いていない時間帯（iPhone はバックグラウンドの PWA を止める）は保存できない。
+- テスト: test_auto_save_preclose.js（5 件）。窓・中止・日付・二重起動の mutation で失敗を確認。
+  実ブラウザで、締切 15 分以内の 3 場 × 3R が締切前に保存される（事後生成の印なし）ことを確認。
