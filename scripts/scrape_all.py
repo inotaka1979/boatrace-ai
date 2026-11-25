@@ -177,10 +177,17 @@ def _scrape_tide() -> int:
     return _run_subprocess("scrape_tide.py", timeout_sec=300)
 
 
+# backfill の subprocess timeout。スクリプト側の内部期限 (backfill_archive.BUDGET_SEC = 1200 秒) で必ず書き出すので、
+#   これは kill の最終保険。内部期限 + 取得中の 1 件 (最大 15 秒) + 書き出し より長く、job の timeout (50 分) より
+#   十分短く。2 つの値の関係は test_backfill_archive.py で固定している。
+BACKFILL_TIMEOUT_SEC = 1320
+
+
 def _backfill_archive() -> int:
     # 2026-11-20: 確定済みレースの展示・オッズを日付付きアーカイブへ後追い（scripts/backfill_archive.py）。
-    #   内部期限 150s で必ず書き出すので timeout は余裕を持たせる。
-    return _run_subprocess("backfill_archive.py", timeout_sec=240)
+    # 2026-11-26: 内部期限を 150 → 1200 秒に伸ばしたのに合わせて 240 → 1320 秒。
+    #   boatrace.jp が夜間に応答を 1 件 8〜10 秒遅らせるため、150 秒では 6〜8 レースしか取れていなかった。
+    return _run_subprocess("backfill_archive.py", timeout_sec=BACKFILL_TIMEOUT_SEC)
 
 
 def _prerender_top() -> int:

@@ -17,6 +17,15 @@
   * 取得元のブロック (403 連続) を検知したら止める（http_utils.SourceBlockDetector）。
   * 取得状況は data/_status.json の tasks.backfill に記録する。
 
+2026-11-26:
+  * 内部期限 150 → 1200 秒。boatrace.jp は夜間、応答を 1 件あたり 8〜10 秒遅らせる（docs/RUNBOOK.md §11.2）。
+    150 秒では 16〜17 件 = 6〜8 レースしか取れず、導入以来 1 run 40 レースの上限に一度も届いていなかった。
+    遅延を避ける細工（同時に何本も送る等）はしない。1 件ずつ待ち、待つ時間のほうを伸ばす。
+    1 レースは最大 3 ページ（展示 / 三連単 / 単勝）なので、40 レース × 3 ページ × 約 10 秒 = 1200 秒。
+    応答が速い晩は上限の 40 レースで 1〜2 分で終わる。
+  * 取りに行く順番を、場番号順から日付ごとの決まった擬似乱数順に（_spread）。1 run で取り切れない日に、
+    若い場番号ばかりが埋まってアーカイブ（= backtest の標本）が場で偏るのを防ぐ。
+
     python3 scripts/backfill_archive.py [--days 3] [--max-races 40]
 """
 
@@ -24,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -41,7 +51,11 @@ BASE = "https://www.boatrace.jp/owpc/pc/race"
 DATA = os.environ.get("BACKFILL_DATA_DIR", "data")
 INTERVAL = 0.5
 MAX_RACES = int(os.environ.get("BACKFILL_MAX_RACES", "40"))
-BUDGET_SEC = int(os.environ.get("BACKFILL_BUDGET_SEC", "150"))
+# 内部期限の根拠: 1 レースは最大 3 ページ（展示 / 三連単 / 単勝）、遅延時は 1 ページ約 10 秒（応答 8〜10 秒）。
+#   上限の 40 レースに届くには 40 × 3 × 10 = 1200 秒。scrape_all.BACKFILL_TIMEOUT_SEC（kill の最終保険）より短いこと。
+PAGES_PER_RACE = 3
+SLOW_SEC_PER_PAGE = 10
+BUDGET_SEC = int(os.environ.get("BACKFILL_BUDGET_SEC", "1200"))
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
@@ -167,6 +181,15 @@ def merge_previews(date: str, fetched: dict, data_dir: str = DATA) -> int:
     return added
 
 
+def _spread(date: str, keys) -> list[tuple[int, int]]:
+    """取りに行く順番: 場やレース番号に偏らない、日付ごとに決まった擬似乱数順。
+
+    同じ日付なら何度呼んでも同じ順番（run をまたいで続きから取れる。テストも再現できる）。
+    CRC のような線形の値では似た入力（同じレース番号）が固まるので、暗号学的ハッシュで混ぜる。
+    """
+    return sorted(keys, key=lambda k: (hashlib.sha256(f"{date}-{k[0]}-{k[1]}".encode()).digest(), k))
+
+
 class _Fetcher:
     def __init__(self, block: SourceBlockDetector, deadline: float):
         self.block = block
@@ -253,7 +276,7 @@ def run(days: int = 3, max_races: int = MAX_RACES, budget_sec: int = BUDGET_SEC,
         p = plan(date, data_dir)
         if only == "results":
             p["odds"], p["previews"] = [], []
-        keys = sorted(set(p["odds"]) | set(p["previews"]) | set(p["results"]))[:left]
+        keys = _spread(date, set(p["odds"]) | set(p["previews"]) | set(p["results"]))[:left]
         if not keys:
             continue
         got_odds, got_prev, got_res = {}, {}, {}
