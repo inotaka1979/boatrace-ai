@@ -12,7 +12,8 @@
 // Public: _renderRacerPage / _racerInfo / _racerSearch / _racerSearchKey / _racerRowHtml / _racerTodayLine
 
 /* global programData, escText, currentStadium, currentRace, showPage, ACTION_HANDLERS, _racerTodayIndex,
-   _racerEntryStatus, _racerDispName, _favRacers, _favIdSet, _favBtnHtml, _loadRacerProfiles */
+   _racerEntryStatus, _racerDispName, _favRacers, _favIdSet, _favBtnHtml, _loadRacerProfiles, _loadRacerExt,
+   _racerOfficialOf, _loadRacerOfficialMany */
 'use strict';
 
 var RACER_SEARCH_MAX = 50;
@@ -55,8 +56,59 @@ function _racerProgramBoat(e) {
   return null;
 }
 
+// 級。今日の出走表が一番確か。ファン手帳の「級」は次の適用期の級（10 月公表版なら翌 1/1 から）なので、
+//   適用開始より前は「前期級」が現在の級になる（2026-11-25 の出走表 583 人で、現在の級は全員 前期級 と一致し、
+//   うち 136 人は次期の級と違っていた）。
+//   戻り値: { cls: 現在の級, next: 適用開始前で級が変わる選手の来期の級（変わらなければ 0） }
+function _racerClassOf(id, p, prog, now) {
+  var X = globalThis._racerExt;
+  var e = X && X.racers ? X.racers[String(id)] : null;
+  var newCls = (p && p.classNum) || 0;
+  var start = X && X.term && X.term.year ? Date.UTC(X.term.year, X.term.half === 2 ? 6 : 0, 1) - 9 * 3600000 : null;
+  var before = start != null && (now || Date.now()) < start;
+  var cur = (prog && prog.racer_class_number) || (before && e && e.pc && e.pc[0]) || newCls || 0;
+  return { cls: cur, next: before && newCls && cur && newCls !== cur ? newCls : 0 };
+}
+
+// 今日（JST）の 'YYYY-MM-DD'。時刻は引数で受ける（実時計を直接読むと、テストが日付で結果を変える）
+function _racerIsoDay(now) {
+  return new Date((now || Date.now()) + 9 * 3600000).toISOString().slice(0, 10);
+}
+
+// 公式の出場予定のうち、まだ終わっていない最初の節（無ければ null）
+function _racerNextSeries(id, now) {
+  var o = typeof _racerOfficialOf === 'function' ? _racerOfficialOf(id) : null;
+  var list = o && o.data && Array.isArray(o.data.schedule) ? o.data.schedule : [];
+  var iso = _racerIsoDay(now);
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].to && list[i].to >= iso) return list[i];
+  }
+  return null;
+}
+
+// 'YYYY-MM-DD' → 'M/D'
+function _racerMd(d) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  return m ? parseInt(m[2], 10) + '/' + parseInt(m[3], 10) : '';
+}
+
+// 一覧の 1 行に出す「次節 12/6〜12/11 蒲郡 G1」
+function _racerNextLine(id, now) {
+  var s = _racerNextSeries(id, now);
+  if (!s) return '';
+  return (
+    '次節 ' +
+    escText(_racerMd(s.from)) +
+    '〜' +
+    escText(_racerMd(s.to)) +
+    ' ' +
+    escText(s.stadium || '') +
+    (s.grade && s.grade !== '一般' ? ' ' + escText(s.grade) : '')
+  );
+}
+
 // 選手 1 人分を、取れる所から集める（今日の出走表 > プロフィール DB > お気に入りに保存した名前）
-function _racerInfo(id, todayIdx) {
+function _racerInfo(id, todayIdx, now) {
   id = String(id);
   var P = globalThis._racerProfiles || {};
   var p = P[id] || null;
@@ -69,11 +121,15 @@ function _racerInfo(id, todayIdx) {
     })[0];
     name = fav ? fav.name : '';
   }
+  var X = globalThis._racerExt;
+  var klass = _racerClassOf(id, p, prog, now);
   return {
     id: id,
     name: _racerDispName(name) || '登録 ' + id,
     kana: p && p.kana ? _kanaFull(p.kana) : '',
-    cls: (prog && prog.racer_class_number) || (p && p.classNum) || 0,
+    cls: klass.cls,
+    nextCls: klass.next,
+    ext: X && X.racers ? X.racers[id] || null : null,
     branch: (prog && prog.racer_branch_name) || (p && p.branch) || '',
     birthplace: (prog && prog.racer_birthplace) || '',
     age: (prog && prog.racer_age) || (p && p.age) || null,
@@ -90,10 +146,13 @@ function _racerInfo(id, todayIdx) {
 var _racerSearchIdx = null;
 var _racerSearchSrc = null;
 var _racerSearchProg = null;
-function _racerSearchIndex() {
+var _racerSearchExt = null;
+function _racerSearchIndex(now) {
   var P = globalThis._racerProfiles || null;
   var prog = typeof programData !== 'undefined' ? programData : null;
-  if (_racerSearchIdx && _racerSearchSrc === P && _racerSearchProg === prog) return _racerSearchIdx;
+  var X = globalThis._racerExt || null;
+  if (_racerSearchIdx && _racerSearchSrc === P && _racerSearchProg === prog && _racerSearchExt === X)
+    return _racerSearchIdx;
   var today = _racerTodayIndex();
   var out = [];
   var seen = {};
@@ -106,7 +165,7 @@ function _racerSearchIndex() {
       id: id,
       nk: _racerSearchKey(_racerDispName(p.name)),
       kk: _racerSearchKey(p.kana),
-      cls: p.classNum || 9,
+      cls: _racerClassOf(id, p, null, now).cls || 9,
       wr: p.winRate || 0,
       today: today[id] ? 1 : 0,
     });
@@ -119,17 +178,18 @@ function _racerSearchIndex() {
   _racerSearchIdx = out;
   _racerSearchSrc = P;
   _racerSearchProg = prog;
+  _racerSearchExt = X;
   return out;
 }
 
 // 名前（漢字）・かな（ひらがな / カタカナ / 半角カナ）・登録番号の部分一致。
 //   並び: 登録番号の完全一致 → 前方一致 → 部分一致、その中で 本日出走 → 級 → 勝率。
-function _racerSearch(q) {
+function _racerSearch(q, now) {
   var key = _racerSearchKey(q);
   if (!key) return { total: 0, ids: [] };
   var isNum = /^\d+$/.test(key);
   var hits = [];
-  _racerSearchIndex().forEach(function (r) {
+  _racerSearchIndex(now).forEach(function (r) {
     var rank = -1;
     if (isNum) {
       if (r.id === key) rank = 0;
@@ -178,7 +238,7 @@ function _clsChip(cls) {
   return CLS_LABEL[cls] ? '<span class="cls-chip cls-' + cls + '">' + CLS_LABEL[cls] + '</span>' : '';
 }
 
-// opt: { wr: 名前の横に勝率を出す, noStadium, emptyToday: 出走が無いときの文 }
+// opt: { wr: 名前の横に勝率を出す, noStadium, emptyToday: 出走が無いときの文, next: 次節の行を出す（お気に入り） }
 function _racerRowHtml(info, favSet, now, opt) {
   opt = opt || {};
   var sub = [info.kana, info.branch, '登録 ' + info.id].filter(Boolean).map(escText).join('・');
@@ -201,6 +261,13 @@ function _racerRowHtml(info, favSet, now, opt) {
     sub +
     '</div>' +
     (today ? '<div class="racer-li-today">' + today + '</div>' : '') +
+    (opt.next
+      ? '<div class="racer-li-next" data-racer-next="' +
+        escText(info.id) +
+        '">' +
+        _racerNextLine(info.id, now) +
+        '</div>'
+      : '') +
     '</div>' +
     _favBtnHtml(info.id, info.name, false, !!favSet[info.id]) +
     '</div>'
@@ -221,7 +288,7 @@ function _racerFavTabHtml(now) {
   var idx = _racerTodayIndex();
   var set = _favIdSet();
   var infos = favs.map(function (f) {
-    return { info: _racerInfo(f.id, idx), ts: f.ts };
+    return { info: _racerInfo(f.id, idx, now), ts: f.ts };
   });
   // 本日出走する選手（次の締切が近い順）→ それ以外（登録の新しい順）
   function nextMs(info) {
@@ -244,9 +311,27 @@ function _racerFavTabHtml(now) {
   });
   var html = '<div class="card racer-list">';
   infos.forEach(function (x) {
-    html += _racerRowHtml(x.info, set, now, { emptyToday: '本日の出走なし' });
+    html += _racerRowHtml(x.info, set, now, { emptyToday: '本日の出走なし', next: true });
   });
+  // 次節（公式の出場予定）。まだ取っていない選手を 1 人ずつ取り、届いた行だけ書き換える
+  if (typeof _loadRacerOfficialMany === 'function') {
+    _loadRacerOfficialMany(
+      favs.map(function (f) {
+        return f.id;
+      }),
+      _racerFillNext
+    );
+  }
   return html + '</div>';
+}
+
+// 一覧に出ている選手の「次節」の行を書き換える（一覧全体は描き直さない）
+function _racerFillNext(id, now) {
+  try {
+    var els = document.querySelectorAll('[data-racer-next="' + String(id) + '"]');
+    var line = _racerNextLine(id, now);
+    for (var i = 0; i < els.length; i++) els[i].innerHTML = line;
+  } catch (_) {}
 }
 
 // 開催中の場（番号順）
@@ -289,7 +374,7 @@ function _racerTodayTabHtml(now) {
   var set = _favIdSet();
   var infos = [];
   for (var id in idx) {
-    if (String(idx[id][0].sid) === cur) infos.push(_racerInfo(id, idx));
+    if (String(idx[id][0].sid) === cur) infos.push(_racerInfo(id, idx, now));
   }
   // 級（A1 → B2）→ 全国勝率の高い順
   infos.sort(function (a, b) {
@@ -312,7 +397,7 @@ function _racerSearchResultHtml(now) {
     // 取得中でも、今日の出走表に居る選手は探せる
     _loadRacerProfiles(_racerRerender);
   }
-  var res = _racerSearch(q);
+  var res = _racerSearch(q, now);
   if (!res.total) {
     return (
       '<div class="card racer-empty">「' +
@@ -331,7 +416,7 @@ function _racerSearchResultHtml(now) {
     (res.total > res.ids.length ? '（上位 ' + res.ids.length + ' 人を表示。語を足すと絞れます）' : '') +
     '</div><div class="card racer-list">';
   res.ids.forEach(function (id) {
-    html += _racerRowHtml(_racerInfo(id, idx), set, now, { wr: true });
+    html += _racerRowHtml(_racerInfo(id, idx, now), set, now, { wr: true });
   });
   return html + '</div>';
 }
@@ -412,6 +497,8 @@ function _renderRacerPage(next, now, onlyIfChanged) {
   _racerLastHtml = html;
   // プロフィール DB が未取得なら取りに行き、届いたら描き直す（かな・支部・コース別成績が増える）
   if (!globalThis._racerProfiles) _loadRacerProfiles(_racerRerender);
+  // 追加項目（生年月日・登録期・現在の級 …）も同じ
+  if (!globalThis._racerExt && typeof _loadRacerExt === 'function') _loadRacerExt(_racerRerender);
 }
 
 // いまの状態のまま描き直す（データが届いた・登録が変わった とき。入力中の検索欄は触らない）
@@ -531,3 +618,9 @@ globalThis._racerBackLabel = _racerBackLabel;
 globalThis._racerProgramBoat = _racerProgramBoat;
 globalThis._racerClsChip = _clsChip;
 globalThis._racerUi = _racerUi;
+globalThis._racerClassOf = _racerClassOf;
+globalThis._racerNextSeries = _racerNextSeries;
+globalThis._racerNextLine = _racerNextLine;
+globalThis._racerMd = _racerMd;
+globalThis._racerIsoDay = _racerIsoDay;
+globalThis._racerFillNext = _racerFillNext;

@@ -10800,6 +10800,102 @@ async function _loadNextOpen(){
     });
   }
   globalThis._loadRacerProfiles = _loadRacerProfiles;
+  var _racerExtLoading = false;
+  function _loadRacerExt(onLoaded) {
+    if (globalThis._racerExt || _racerExtLoading || typeof fetch !== "function") return;
+    _racerExtLoading = true;
+    fetch("data/db/racer_ext.json", { cache: "no-cache" }).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(function(j) {
+      if (!j || !j.racers) return;
+      globalThis._racerExt = j;
+      if (typeof onLoaded === "function") onLoaded();
+    }).catch(function() {
+    }).then(function() {
+      _racerExtLoading = false;
+    });
+  }
+  var RACER_OFFICIAL_TTL_MS = 30 * 6e4;
+  var RACER_OFFICIAL_RETRY_MS = 3 * 6e4;
+  var RACER_OFFICIAL_TIMEOUT_MS = 1e4;
+  var RACER_OFFICIAL_BATCH_MAX = 20;
+  var RACER_OFFICIAL_BATCH_GAP_MS = 300;
+  var RACER_OFFICIAL_FAIL_RUN_MAX = 3;
+  var RACER_OFFICIAL_PAUSE_MS = 10 * 6e4;
+  var _racerOfficialCache = {};
+  var _racerOfficialFailRun = 0;
+  var _racerOfficialPausedUntil = 0;
+  function _racerOfficialOf(id) {
+    return _racerOfficialCache[String(id)] || null;
+  }
+  function _racerOfficialPaused(now) {
+    var t = now || Date.now();
+    return t < _racerOfficialPausedUntil && _racerOfficialPausedUntil - t <= RACER_OFFICIAL_PAUSE_MS;
+  }
+  function _racerOfficialNeeds(id, now) {
+    var t = now || Date.now();
+    var e = _racerOfficialCache[String(id)];
+    if (e && e.loading) return false;
+    if (_racerOfficialPaused(t)) return false;
+    if (!e) return true;
+    var age = t - e.at;
+    return age >= (e.failed ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
+  }
+  function _loadRacerOfficial(id, onLoaded, now) {
+    id = String(id == null ? "" : id);
+    if (!/^\d{4,5}$/.test(id) || !_racerOfficialNeeds(id, now)) return false;
+    var base = typeof WORKER_BASE !== "undefined" && WORKER_BASE ? WORKER_BASE : "";
+    if (!base || typeof fetch !== "function") return false;
+    var prev = _racerOfficialCache[id] && _racerOfficialCache[id].data ? _racerOfficialCache[id].data : null;
+    _racerOfficialCache[id] = { at: now || Date.now(), data: prev, loading: true, failed: false };
+    var opt = {};
+    try {
+      if (typeof capabilities !== "undefined" && capabilities && typeof capabilities.makeTimeoutSignal === "function") {
+        opt.signal = capabilities.makeTimeoutSignal(RACER_OFFICIAL_TIMEOUT_MS);
+      }
+    } catch (_) {
+    }
+    var done = function(data) {
+      var ok = !!(data && !data.error && Array.isArray(data.schedule));
+      _racerOfficialCache[id] = { at: Date.now(), data: ok ? data : prev, loading: false, failed: !ok };
+      if (ok) {
+        _racerOfficialFailRun = 0;
+      } else if (++_racerOfficialFailRun >= RACER_OFFICIAL_FAIL_RUN_MAX) {
+        _racerOfficialFailRun = 0;
+        _racerOfficialPausedUntil = Date.now() + RACER_OFFICIAL_PAUSE_MS;
+      }
+      if (typeof onLoaded === "function") onLoaded(id);
+    };
+    fetch(base + "/racer-proxy?toban=" + id, opt).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(done, function() {
+      done(null);
+    });
+    return true;
+  }
+  function _loadRacerOfficialMany(ids, onEach) {
+    var queue = (ids || []).map(String).filter(function(id) {
+      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id);
+    }).slice(0, RACER_OFFICIAL_BATCH_MAX);
+    var next = function() {
+      var id = queue.shift();
+      if (id == null) return;
+      var started = _loadRacerOfficial(id, function(rid) {
+        if (typeof onEach === "function") onEach(rid);
+        setTimeout(next, RACER_OFFICIAL_BATCH_GAP_MS);
+      });
+      if (!started) next();
+    };
+    var n = queue.length;
+    next();
+    return n;
+  }
+  globalThis._loadRacerExt = _loadRacerExt;
+  globalThis._racerOfficialOf = _racerOfficialOf;
+  globalThis._racerOfficialPaused = _racerOfficialPaused;
+  globalThis._loadRacerOfficial = _loadRacerOfficial;
+  globalThis._loadRacerOfficialMany = _loadRacerOfficialMany;
+  globalThis._racerOfficialCache = _racerOfficialCache;
 })();
 
 /* BUILD:DISCOVERY_RACER_PROFILES:END */
@@ -10836,7 +10932,37 @@ async function _loadNextOpen(){
     }
     return null;
   }
-  function _racerInfo(id, todayIdx) {
+  function _racerClassOf(id, p, prog, now) {
+    var X = globalThis._racerExt;
+    var e = X && X.racers ? X.racers[String(id)] : null;
+    var newCls = p && p.classNum || 0;
+    var start = X && X.term && X.term.year ? Date.UTC(X.term.year, X.term.half === 2 ? 6 : 0, 1) - 9 * 36e5 : null;
+    var before = start != null && (now || Date.now()) < start;
+    var cur = prog && prog.racer_class_number || before && e && e.pc && e.pc[0] || newCls || 0;
+    return { cls: cur, next: before && newCls && cur && newCls !== cur ? newCls : 0 };
+  }
+  function _racerIsoDay(now) {
+    return new Date((now || Date.now()) + 9 * 36e5).toISOString().slice(0, 10);
+  }
+  function _racerNextSeries(id, now) {
+    var o = typeof _racerOfficialOf === "function" ? _racerOfficialOf(id) : null;
+    var list = o && o.data && Array.isArray(o.data.schedule) ? o.data.schedule : [];
+    var iso = _racerIsoDay(now);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].to && list[i].to >= iso) return list[i];
+    }
+    return null;
+  }
+  function _racerMd(d) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+    return m ? parseInt(m[2], 10) + "/" + parseInt(m[3], 10) : "";
+  }
+  function _racerNextLine(id, now) {
+    var s = _racerNextSeries(id, now);
+    if (!s) return "";
+    return "\u6B21\u7BC0 " + escText(_racerMd(s.from)) + "\u301C" + escText(_racerMd(s.to)) + " " + escText(s.stadium || "") + (s.grade && s.grade !== "\u4E00\u822C" ? " " + escText(s.grade) : "");
+  }
+  function _racerInfo(id, todayIdx, now) {
     id = String(id);
     var P = globalThis._racerProfiles || {};
     var p = P[id] || null;
@@ -10849,11 +10975,15 @@ async function _loadNextOpen(){
       })[0];
       name = fav ? fav.name : "";
     }
+    var X = globalThis._racerExt;
+    var klass = _racerClassOf(id, p, prog, now);
     return {
       id,
       name: _racerDispName(name) || "\u767B\u9332 " + id,
       kana: p && p.kana ? _kanaFull(p.kana) : "",
-      cls: prog && prog.racer_class_number || p && p.classNum || 0,
+      cls: klass.cls,
+      nextCls: klass.next,
+      ext: X && X.racers ? X.racers[id] || null : null,
       branch: prog && prog.racer_branch_name || p && p.branch || "",
       birthplace: prog && prog.racer_birthplace || "",
       age: prog && prog.racer_age || p && p.age || null,
@@ -10867,10 +10997,13 @@ async function _loadNextOpen(){
   var _racerSearchIdx = null;
   var _racerSearchSrc = null;
   var _racerSearchProg = null;
-  function _racerSearchIndex() {
+  var _racerSearchExt = null;
+  function _racerSearchIndex(now) {
     var P = globalThis._racerProfiles || null;
     var prog = typeof programData !== "undefined" ? programData : null;
-    if (_racerSearchIdx && _racerSearchSrc === P && _racerSearchProg === prog) return _racerSearchIdx;
+    var X = globalThis._racerExt || null;
+    if (_racerSearchIdx && _racerSearchSrc === P && _racerSearchProg === prog && _racerSearchExt === X)
+      return _racerSearchIdx;
     var today = _racerTodayIndex();
     var out = [];
     var seen = {};
@@ -10883,7 +11016,7 @@ async function _loadNextOpen(){
         id,
         nk: _racerSearchKey(_racerDispName(p.name)),
         kk: _racerSearchKey(p.kana),
-        cls: p.classNum || 9,
+        cls: _racerClassOf(id, p, null, now).cls || 9,
         wr: p.winRate || 0,
         today: today[id] ? 1 : 0
       });
@@ -10896,14 +11029,15 @@ async function _loadNextOpen(){
     _racerSearchIdx = out;
     _racerSearchSrc = P;
     _racerSearchProg = prog;
+    _racerSearchExt = X;
     return out;
   }
-  function _racerSearch(q) {
+  function _racerSearch(q, now) {
     var key = _racerSearchKey(q);
     if (!key) return { total: 0, ids: [] };
     var isNum = /^\d+$/.test(key);
     var hits = [];
-    _racerSearchIndex().forEach(function(r) {
+    _racerSearchIndex(now).forEach(function(r) {
       var rank = -1;
       if (isNum) {
         if (r.id === key) rank = 0;
@@ -10945,7 +11079,7 @@ async function _loadNextOpen(){
     var sub = [info.kana, info.branch, "\u767B\u9332 " + info.id].filter(Boolean).map(escText).join("\u30FB");
     var wr = opt.wr && info.winRate != null ? '<span class="racer-li-wr">\u52DD\u7387 ' + Number(info.winRate).toFixed(2) + "</span>" : "";
     var today = _racerTodayLine(info.today, now, opt.noStadium) || (opt.emptyToday ? escText(opt.emptyToday) : "");
-    return '<div class="racer-li" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + escText(info.id) + '" data-arg-from="racer"><img class="racer-li-photo" src="data/photos/' + encodeURIComponent(info.id) + '.jpg" loading="lazy" alt=""><div class="racer-li-main"><div class="racer-li-name">' + escText(info.name) + " " + _clsChip(info.cls) + wr + '</div><div class="racer-li-sub">' + sub + "</div>" + (today ? '<div class="racer-li-today">' + today + "</div>" : "") + "</div>" + _favBtnHtml(info.id, info.name, false, !!favSet[info.id]) + "</div>";
+    return '<div class="racer-li" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + escText(info.id) + '" data-arg-from="racer"><img class="racer-li-photo" src="data/photos/' + encodeURIComponent(info.id) + '.jpg" loading="lazy" alt=""><div class="racer-li-main"><div class="racer-li-name">' + escText(info.name) + " " + _clsChip(info.cls) + wr + '</div><div class="racer-li-sub">' + sub + "</div>" + (today ? '<div class="racer-li-today">' + today + "</div>" : "") + (opt.next ? '<div class="racer-li-next" data-racer-next="' + escText(info.id) + '">' + _racerNextLine(info.id, now) + "</div>" : "") + "</div>" + _favBtnHtml(info.id, info.name, false, !!favSet[info.id]) + "</div>";
   }
   function _racerFavTabHtml(now) {
     var favs = _favRacers();
@@ -10955,7 +11089,7 @@ async function _loadNextOpen(){
     var idx = _racerTodayIndex();
     var set = _favIdSet();
     var infos = favs.map(function(f) {
-      return { info: _racerInfo(f.id, idx), ts: f.ts };
+      return { info: _racerInfo(f.id, idx, now), ts: f.ts };
     });
     function nextMs(info) {
       var best = null;
@@ -10977,9 +11111,25 @@ async function _loadNextOpen(){
     });
     var html = '<div class="card racer-list">';
     infos.forEach(function(x) {
-      html += _racerRowHtml(x.info, set, now, { emptyToday: "\u672C\u65E5\u306E\u51FA\u8D70\u306A\u3057" });
+      html += _racerRowHtml(x.info, set, now, { emptyToday: "\u672C\u65E5\u306E\u51FA\u8D70\u306A\u3057", next: true });
     });
+    if (typeof _loadRacerOfficialMany === "function") {
+      _loadRacerOfficialMany(
+        favs.map(function(f) {
+          return f.id;
+        }),
+        _racerFillNext
+      );
+    }
     return html + "</div>";
+  }
+  function _racerFillNext(id, now) {
+    try {
+      var els = document.querySelectorAll('[data-racer-next="' + String(id) + '"]');
+      var line = _racerNextLine(id, now);
+      for (var i = 0; i < els.length; i++) els[i].innerHTML = line;
+    } catch (_) {
+    }
   }
   function _racerActiveSids() {
     if (typeof programData === "undefined" || !programData) return [];
@@ -11007,7 +11157,7 @@ async function _loadNextOpen(){
     var set = _favIdSet();
     var infos = [];
     for (var id in idx) {
-      if (String(idx[id][0].sid) === cur) infos.push(_racerInfo(id, idx));
+      if (String(idx[id][0].sid) === cur) infos.push(_racerInfo(id, idx, now));
     }
     infos.sort(function(a, b) {
       return (a.cls || 9) - (b.cls || 9) || (b.winRate || 0) - (a.winRate || 0) || Number(a.id) - Number(b.id);
@@ -11026,7 +11176,7 @@ async function _loadNextOpen(){
     if (!globalThis._racerProfiles) {
       _loadRacerProfiles(_racerRerender);
     }
-    var res = _racerSearch(q);
+    var res = _racerSearch(q, now);
     if (!res.total) {
       return '<div class="card racer-empty">\u300C' + escText(q) + "\u300D\u306B\u5F53\u3066\u306F\u307E\u308B\u9078\u624B\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002" + (globalThis._racerProfiles ? "" : "<br>\uFF08\u5168\u9078\u624B\u306E\u540D\u7C3F\u3092\u8AAD\u307F\u8FBC\u307F\u4E2D\u3067\u3059\u3002\u5C11\u3057\u5F85\u3064\u3068\u7D50\u679C\u304C\u5897\u3048\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\uFF09") + "</div>";
     }
@@ -11034,7 +11184,7 @@ async function _loadNextOpen(){
     var set = _favIdSet();
     var html = '<div class="racer-count">' + res.total + " \u4EBA" + (res.total > res.ids.length ? "\uFF08\u4E0A\u4F4D " + res.ids.length + " \u4EBA\u3092\u8868\u793A\u3002\u8A9E\u3092\u8DB3\u3059\u3068\u7D5E\u308C\u307E\u3059\uFF09" : "") + '</div><div class="card racer-list">';
     res.ids.forEach(function(id) {
-      html += _racerRowHtml(_racerInfo(id, idx), set, now, { wr: true });
+      html += _racerRowHtml(_racerInfo(id, idx, now), set, now, { wr: true });
     });
     return html + "</div>";
   }
@@ -11082,6 +11232,7 @@ async function _loadNextOpen(){
     if (!(onlyIfChanged && html === _racerLastHtml)) view.innerHTML = html;
     _racerLastHtml = html;
     if (!globalThis._racerProfiles) _loadRacerProfiles(_racerRerender);
+    if (!globalThis._racerExt && typeof _loadRacerExt === "function") _loadRacerExt(_racerRerender);
   }
   function _racerRerender(now) {
     var view = _racerView();
@@ -11185,6 +11336,12 @@ async function _loadNextOpen(){
   globalThis._racerProgramBoat = _racerProgramBoat;
   globalThis._racerClsChip = _clsChip;
   globalThis._racerUi = _racerUi;
+  globalThis._racerClassOf = _racerClassOf;
+  globalThis._racerNextSeries = _racerNextSeries;
+  globalThis._racerNextLine = _racerNextLine;
+  globalThis._racerMd = _racerMd;
+  globalThis._racerIsoDay = _racerIsoDay;
+  globalThis._racerFillNext = _racerFillNext;
 })();
 
 /* BUILD:REPORTING_RACER_PAGE:END */
@@ -11197,6 +11354,7 @@ async function _loadNextOpen(){
   var RACER_DAY_LABELS = ["\u521D\u65E5", "2\u65E5\u76EE", "3\u65E5\u76EE", "4\u65E5\u76EE", "5\u65E5\u76EE", "6\u65E5\u76EE", "7\u65E5\u76EE"];
   var RACER_AGG_MIN = 3;
   var RACER_RECENT_MAX = 20;
+  var RACER_CLS = { 1: "A1", 2: "A2", 3: "B1", 4: "B2" };
   function _rNum(v, digits) {
     var n = Number(v);
     return v != null && v !== "" && Number.isFinite(n) ? n.toFixed(digits) : "-";
@@ -11204,21 +11362,41 @@ async function _loadNextOpen(){
   function _rPct(a, b) {
     return b > 0 ? Math.round(a / b * 100) + "%" : "-";
   }
+  function _rInt(v) {
+    var n = Number(v);
+    return v != null && v !== "" && Number.isFinite(n) ? String(Math.round(n)) : "-";
+  }
+  function _rPick(table, key) {
+    return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : "";
+  }
   function _rTile(value, label) {
     return "<div><b>" + value + "</b><span>" + label + "</span></div>";
   }
-  function _racerProfileCard(info) {
+  function _rAge(birth, now) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birth || "");
+    if (!m) return null;
+    var today = _racerIsoDay(now);
+    var age = parseInt(today.slice(0, 4), 10) - parseInt(m[1], 10) - (today.slice(5) < m[2] + "-" + m[3] ? 1 : 0);
+    return age >= 15 && age <= 90 ? age : null;
+  }
+  function _racerProfileCard(info, now) {
+    var x = info.ext || {};
     var meta = [];
-    if (info.age) meta.push(escText(info.age) + "\u6B73");
+    var born = _rYmd(x.b);
+    var age = info.prog && info.prog.racer_age || _rAge(x.b, now) || info.age;
+    if (age) meta.push(escText(age) + "\u6B73" + (born ? "\uFF08" + escText(born) + " \u751F\uFF09" : ""));
+    else if (born) meta.push(escText(born) + " \u751F");
+    if (x.h) meta.push(escText(x.h) + "cm");
     if (info.weight) meta.push(escText(Number(info.weight) % 1 ? Number(info.weight).toFixed(1) : info.weight) + "kg");
-    if (info.birthplace) meta.push(escText(info.birthplace) + "\u51FA\u8EAB");
+    if (x.bl) meta.push(escText(x.bl) + "\u578B");
+    if (info.birthplace || x.bp) meta.push(escText(info.birthplace || x.bp) + "\u51FA\u8EAB");
     var fl = "";
     if (info.prog) {
       var f = info.prog.racer_flying_count || 0;
       var l = info.prog.racer_late_count || 0;
       fl = "<br>" + (f > 0 ? '<span class="c-danger fw-700">F' + f + "</span>" : "F0") + " / L" + l + "\uFF08\u4ECA\u671F\uFF09";
     }
-    var chips = _racerClsChip(info.cls) + '<span class="chip">\u767B\u9332 ' + escText(info.id) + "</span>" + (info.branch ? '<span class="chip">' + escText(info.branch) + "\u652F\u90E8</span>" : "");
+    var chips = _racerClsChip(info.cls) + (info.nextCls ? '<span class="chip chip-next">\u6765\u671F ' + _rPick(RACER_CLS, info.nextCls) + "</span>" : "") + '<span class="chip">\u767B\u9332 ' + escText(info.id) + "</span>" + (info.branch ? '<span class="chip">' + escText(info.branch) + "\u652F\u90E8</span>" : "") + (x.ki ? '<span class="chip">' + escText(x.ki) + "\u671F</span>" : "");
     var unknown = !info.p && !info.prog;
     return '<div class="card"><div class="pf"><img class="pf-photo" src="data/photos/' + encodeURIComponent(info.id) + '.jpg" alt=""><div class="pf-main"><div class="pf-head"><div><div class="pf-name">' + escText(info.name) + "</div>" + (info.kana ? '<div class="pf-kana">' + escText(info.kana) + "</div>" : "") + "</div>" + _favBtnHtml(info.id, info.name, true) + '</div><div class="pf-chips">' + chips + '</div><div class="pf-meta">' + meta.join(" / ") + fl + "</div></div></div>" + (unknown ? '<div class="racer-note">\u3053\u306E\u9078\u624B\u306E\u6210\u7E3E\u306F\u307E\u3060\u624B\u5143\u306B\u3042\u308A\u307E\u305B\u3093\uFF08\u540D\u7C3F\u306E\u66F4\u65B0\u524D\u3001\u307E\u305F\u306F\u51FA\u8D70\u4E88\u5B9A\u306E\u7121\u3044\u9078\u624B\u3067\u3059\uFF09\u3002</div>' : "") + "</div>";
   }
@@ -11273,20 +11451,43 @@ async function _loadNextOpen(){
     });
     return '<div class="card"><div class="sec-title">\u672C\u65E5\u306E\u51FA\u8D70 <span class="sec-src">' + src + "</span></div>" + rows + _racerSeriesHtml(info) + "</div>";
   }
-  function _racerFanLine(p) {
+  function _racerFanLine(p, x) {
     if (!p || p.winRate == null) return "";
-    return "\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09: \u52DD\u7387 " + _rNum(p.winRate, 2) + " \uFF0F 2\u9023\u5BFE\u7387 " + _rNum(p.top2Rate, 1) + "% \uFF0F \u5E73\u5747ST " + _rNum(p.avgST, 2) + " \uFF0F " + (p.totalRaces || 0) + " \u8D70";
+    var X = globalThis._racerExt;
+    var t = X && X.term ? X.term : null;
+    var label = t && t.from && t.to ? _rYmd(t.from) + "\u301C" + _rYmd(t.to).replace(/^\d{4}\//, "") : "\u30D5\u30A1\u30F3\u624B\u5E33";
+    var out = "\u671F\u5225\u6210\u7E3E\uFF08" + escText(label) + "\uFF09: \u52DD\u7387 " + _rNum(p.winRate, 2) + " \uFF0F 2\u9023\u5BFE\u7387 " + _rNum(p.top2Rate, 1) + "% \uFF0F \u5E73\u5747ST " + _rNum(p.avgST, 2) + " \uFF0F " + (p.totalRaces || 0) + " \u8D70";
+    if (!x) return out;
+    if (Array.isArray(x.w) && Array.isArray(x.y)) {
+      out += "<br>1\u7740 " + _rInt(x.w[0]) + " \u56DE\u30FB2\u7740 " + _rInt(x.w[1]) + " \u56DE \uFF0F \u512A\u51FA " + _rInt(x.y[0]) + " \u56DE\u30FB\u512A\u52DD " + _rInt(x.y[1]) + " \u56DE";
+    }
+    if (Array.isArray(x.ab)) {
+      out += " \uFF0F \u80FD\u529B\u6307\u6570 " + _rNum(x.ab[0], 2) + (x.ab[1] ? "\uFF08\u524D\u671F " + _rNum(x.ab[1], 2) + "\uFF09" : "");
+    }
+    if (Array.isArray(x.fl) && (x.fl[0] > 0 || x.fl[1] > 0)) {
+      out += "<br>" + (x.fl[0] > 0 ? '<span class="c-danger">F ' + _rInt(x.fl[0]) + " \u56DE</span>" : "F 0 \u56DE") + " \uFF0F L " + _rInt(x.fl[1]) + " \u56DE\uFF08\u3053\u306E\u671F\u9593\uFF09";
+    }
+    if (Array.isArray(x.pc) && p.classNum) {
+      var hist = [x.pc[2], x.pc[1], x.pc[0], p.classNum].map(function(c) {
+        return _rPick(RACER_CLS, c);
+      }).filter(Boolean);
+      if (hist.length > 1) {
+        out += "<br>\u7D1A\u306E\u63A8\u79FB: " + hist.join(" \u2192 ") + (t && t.year ? "\uFF08" + _rInt(t.year) + "\u5E74" + (t.half === 2 ? "\u5F8C\u671F" : "\u524D\u671F") + "\uFF09" : "");
+      }
+    }
+    return out;
   }
   function _racerStatsCard(info) {
     var b = info.prog;
     var p = info.p;
     if (b) {
       var tiles = _rTile(_rNum(b.racer_national_top_1_percent, 2), "\u5168\u56FD\u52DD\u7387") + _rTile(_rNum(b.racer_national_top_2_percent, 1) + "%", "2\u9023\u5BFE\u7387") + _rTile(_rNum(b.racer_national_top_3_percent, 1) + "%", "3\u9023\u5BFE\u7387") + _rTile(_rNum(b.racer_average_start_timing, 2), "\u5E73\u5747ST") + _rTile(_rNum(b.racer_local_top_1_percent, 2), "\u5F53\u5730\u52DD\u7387") + _rTile(_rNum(b.racer_local_top_2_percent, 1) + "%", "\u5F53\u57302\u9023\u5BFE") + _rTile(escText(b.racer_assigned_motor_number || "-"), "\u30E2\u30FC\u30BF\u30FC") + _rTile(_rNum(b.racer_assigned_motor_top_2_percent, 1) + "%", "\u30E2\u30FC\u30BF\u30FC2\u9023");
-      var fan = _racerFanLine(p);
+      var fan = _racerFanLine(p, info.ext);
       return '<div class="card"><div class="sec-title">\u6210\u7E3E <span class="sec-src">\u672C\u65E5\u306E\u51FA\u8D70\u8868\u3088\u308A</span></div><div class="kv">' + tiles + "</div>" + (fan ? '<div class="racer-note">' + fan + "</div>" : "") + "</div>";
     }
     if (p && p.winRate != null) {
-      return '<div class="card"><div class="sec-title">\u6210\u7E3E <span class="sec-src">\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09</span></div><div class="kv">' + _rTile(_rNum(p.winRate, 2), "\u52DD\u7387") + _rTile(_rNum(p.top2Rate, 1) + "%", "2\u9023\u5BFE\u7387") + _rTile(_rNum(p.avgST, 2), "\u5E73\u5747ST") + _rTile(escText(p.totalRaces || 0), "\u51FA\u8D70\u6570") + "</div></div>";
+      var fan2 = info.ext ? _racerFanLine(p, info.ext) : "";
+      return '<div class="card"><div class="sec-title">\u6210\u7E3E <span class="sec-src">\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09</span></div><div class="kv">' + _rTile(_rNum(p.winRate, 2), "\u52DD\u7387") + _rTile(_rNum(p.top2Rate, 1) + "%", "2\u9023\u5BFE\u7387") + _rTile(_rNum(p.avgST, 2), "\u5E73\u5747ST") + _rTile(escText(p.totalRaces || 0), "\u51FA\u8D70\u6570") + "</div>" + (fan2 ? '<div class="racer-note">' + fan2 + "</div>" : "") + "</div>";
     }
     return "";
   }
@@ -11354,21 +11555,96 @@ async function _loadNextOpen(){
     var months = V.window && V.window.racer_months || 12;
     return '<div class="card"><div class="sec-title">\u5F53\u30A2\u30D7\u30EA\u306E\u96C6\u8A08 <span class="sec-src">\u76F4\u8FD1 ' + months + " \u304B\u6708\u30FB" + total + ' \u8D70</span></div><table class="ct"><tr><th>\u30B3\u30FC\u30B9</th><th>\u51FA\u8D70</th><th>1\u7740</th><th>2\u9023\u5BFE</th><th>3\u9023\u5BFE</th><th class="ta-l">\u52DD\u3061\u6C7A\u307E\u308A\u624B</th></tr>' + rows + "</table>" + (line ? '<div class="racer-note">' + line + "</div>" : "") + "</div>";
   }
-  function _racerFootHtml(info, hasAgg) {
+  var RACER_TIME_LABEL = { morning: "\u30E2\u30FC\u30CB\u30F3\u30B0", summer: "\u30B5\u30DE\u30FC\u30BF\u30A4\u30E0", nighter: "\u30CA\u30A4\u30BF\u30FC", midnight: "\u30DF\u30C3\u30C9\u30CA\u30A4\u30C8" };
+  var RACER_WD = ["\u65E5", "\u6708", "\u706B", "\u6C34", "\u6728", "\u91D1", "\u571F"];
+  function _rMdw(d) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+    if (!m) return "";
+    var wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+    return parseInt(m[2], 10) + "/" + parseInt(m[3], 10) + "(" + RACER_WD[wd] + ")";
+  }
+  function _rYmd(d) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+    return m ? m[1] + "/" + parseInt(m[2], 10) + "/" + parseInt(m[3], 10) : "";
+  }
+  var RACER_GRADE_CLASS = { SG: "gr-sg", PG1: "gr-pg1", G1: "gr-g1", G2: "gr-g2", G3: "gr-g3" };
+  function _rGradeChip(grade) {
+    var cls = _rPick(RACER_GRADE_CLASS, grade);
+    return cls ? '<span class="gr ' + cls + '">' + escText(grade) + "</span>" : "";
+  }
+  function _rSeriesHead(s) {
+    var series = s.series && String(s.title || "").indexOf(s.series) < 0 ? s.series : "";
+    var tags = [series, _rPick(RACER_TIME_LABEL, s.time)].filter(Boolean).map(escText).join("\u30FB");
+    return '<span class="sr-date">' + escText(_rMdw(s.from)) + (s.to && s.to !== s.from ? "\u301C<br>" + escText(_rMdw(s.to)) : "") + '</span><b class="sr-place">' + escText(s.stadium || "") + '</b><span class="sr-title">' + _rGradeChip(s.grade) + escText(s.title || "") + (tags ? ' <span class="fav-note">' + tags + "</span>" : "");
+  }
+  function _racerOfficialFor(info) {
+    if (typeof _loadRacerOfficial !== "function" || typeof _racerOfficialOf !== "function") return null;
+    _loadRacerOfficial(info.id, function() {
+      _racerRerender();
+    });
+    var o = _racerOfficialOf(info.id);
+    if (!o && typeof _racerOfficialPaused === "function" && _racerOfficialPaused()) {
+      return { data: null, loading: false, failed: true };
+    }
+    return o;
+  }
+  function _racerOfficialNote(o) {
+    if (o && o.data && o.data.found === false) return "\u516C\u5F0F\u30B5\u30A4\u30C8\u306B\u3053\u306E\u767B\u9332\u756A\u53F7\u306E\u9078\u624B\u30DA\u30FC\u30B8\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u5F15\u9000\u306A\u3069\uFF09\u3002";
+    if (!o || !o.data && o.loading) return "\u516C\u5F0F\u30B5\u30A4\u30C8\u304B\u3089\u53D6\u5F97\u4E2D\u2026";
+    if (!o.data)
+      return "\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u901A\u4FE1\u72B6\u6CC1\u304B\u3001\u516C\u5F0F\u30B5\u30A4\u30C8\u5074\u306E\u90FD\u5408\u3067\u3059\uFF09\u3002\u4E0B\u306E\u30EA\u30F3\u30AF\u304B\u3089\u516C\u5F0F\u30B5\u30A4\u30C8\u3067\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002";
+    return "";
+  }
+  function _racerScheduleCard(info, o, now) {
+    if (o === null) return "";
+    var note = _racerOfficialNote(o);
+    var rows = "";
+    if (!note) {
+      var iso = _racerIsoDay(now);
+      (Array.isArray(o.data.schedule) ? o.data.schedule : []).forEach(function(s) {
+        if (!s || s.to && s.to < iso) return;
+        rows += '<div class="sr-row">' + _rSeriesHead(s) + (s.extra ? ' <span class="fav-note">' + escText(s.extra) + "</span>" : "") + "</span></div>";
+      });
+      if (!rows) note = "\u767A\u8868\u3055\u308C\u3066\u3044\u308B\u51FA\u5834\u4E88\u5B9A\u306F\u3042\u308A\u307E\u305B\u3093\u3002";
+    }
+    return '<div class="card"><div class="sec-title">\u4ECA\u5F8C\u306E\u51FA\u5834\u4E88\u5B9A <span class="sec-src">\u516C\u5F0F\u30B5\u30A4\u30C8\uFF08\u3042\u3063\u305B\u3093\uFF09</span></div>' + (note ? '<div class="racer-note">' + note + "</div>" : rows) + "</div>";
+  }
+  function _racerBack3Card(info, o) {
+    if (o === null || !o || !o.data || o.data.found === false) return "";
+    var d = o.data;
+    var rows = "";
+    (Array.isArray(d.back3) ? d.back3 : []).forEach(function(s) {
+      if (!s) return;
+      var res = escText(s.results || "").replace(/\[1\]/g, '<b class="res-1">[1]</b>');
+      var won = /\[1\]\s*$/.test(s.results || "");
+      rows += '<div class="sr-row">' + _rSeriesHead(s) + '</span><span class="sr-res">' + (res || "-") + (won ? ' <span class="sr-won">\u512A\u52DD</span>' : "") + "</span></div>";
+    });
+    var wins = (Array.isArray(d.wins) ? d.wins : []).filter(Boolean).map(function(w) {
+      return escText(_rYmd(w.from)) + " " + escText(w.stadium || "") + " " + _rGradeChip(w.grade) + escText(w.title || "");
+    }).join("<br>");
+    if (!rows && !wins) {
+      return d.back3_ok === false ? '<div class="card"><div class="sec-title">\u904E\u53BB 3 \u7BC0</div><div class="racer-note">\u904E\u53BB 3 \u7BC0\u306F\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002</div></div>' : "";
+    }
+    return '<div class="card"><div class="sec-title">\u904E\u53BB 3 \u7BC0 <span class="sec-src">\u516C\u5F0F\u30B5\u30A4\u30C8 / [ ] \u306F\u512A\u52DD\u6226</span></div>' + (rows || '<div class="racer-note">\u904E\u53BB 3 \u7BC0\u306E\u8A18\u9332\u306F\u3042\u308A\u307E\u305B\u3093\u3002</div>') + (wins ? '<div class="racer-note">\u76F4\u8FD1\u306E\u512A\u52DD: ' + wins + "</div>" : "") + "</div>";
+  }
+  function _racerFootHtml(info, hasAgg, hasOfficial) {
     var at = globalThis._racerProfilesAt ? String(globalThis._racerProfilesAt).slice(0, 10) : "";
     var src = [];
     if (info.prog) src.push("\u672C\u65E5\u306E\u51FA\u8D70\u8868");
     if (info.p) src.push("\u30D5\u30A1\u30F3\u624B\u5E33\u306E\u671F\u5225\u6210\u7E3E" + (at ? "\uFF08" + escText(at) + " \u53D6\u5F97\uFF09" : ""));
+    if (hasOfficial) src.push("\u516C\u5F0F\u30B5\u30A4\u30C8\uFF08\u51FA\u5834\u4E88\u5B9A\u30FB\u904E\u53BB 3 \u7BC0\uFF09");
     if (hasAgg) src.push("\u5F53\u30A2\u30D7\u30EA\u306E\u96C6\u8A08");
     return '<div class="racer-foot"><a class="racer-ext" href="' + RACER_OFFICIAL_URL + encodeURIComponent(info.id) + '" target="_blank" rel="noopener noreferrer">\u516C\u5F0F\u30B5\u30A4\u30C8\u306E\u9078\u624B\u30DA\u30FC\u30B8\u3092\u958B\u304F \u2197</a>' + (src.length ? '<div class="racer-note">\u51FA\u5178: ' + src.join(" / ") + "</div>" : "") + "</div>";
   }
   function _racerDetailHtml(id, from, now) {
-    var info = _racerInfo(id);
+    var info = _racerInfo(id, null, now);
     if (typeof _racerAiMarkReset === "function") _racerAiMarkReset();
     var agg = _racerAggCard(info);
-    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info) + _racerTodayCard(info, now) + _racerStatsCard(info) + _racerCourseCard(info) + _racerRecentCard(info) + agg + _racerFootHtml(info, !!agg);
+    var official = _racerOfficialFor(info);
+    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info, now) + _racerTodayCard(info, now) + _racerScheduleCard(info, official, now) + _racerStatsCard(info) + _racerCourseCard(info) + _racerRecentCard(info) + _racerBack3Card(info, official) + agg + _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false));
   }
   globalThis._racerDetailHtml = _racerDetailHtml;
+  globalThis._rAge = _rAge;
 })();
 
 /* BUILD:REPORTING_RACER_DETAIL:END */

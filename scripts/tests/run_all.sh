@@ -236,6 +236,15 @@ step "Favorite racers: store / TOP strip / marks / entry points" \
      "node scripts/tests/test_racer_fav.js"
 step "Racer page: search / list / detail / profile loader / chunk wiring" \
      "node scripts/tests/test_racer_page.js"
+# 2026-11-25（第 2 段階）: Worker /racer-proxy（公式の選手ページ: 今後の出場予定・過去 3 節）
+step "Worker /racer-proxy: official racer page parse" \
+     "node scripts/tests/test_racer_proxy_parse.js"
+step "Worker /racer-proxy: endpoint (cache / rate cap / upstream block pause / CORS)" \
+     "node scripts/tests/test_racer_proxy_endpoint.mjs"
+# 選手ページのテストを別の日時でも走らせる（書いた日にだけ通るテストを残さない）。
+#   級の適用開始（1/1・7/1）の後、日付が変わる直前、過去の日付。
+step "Racer tests under other dates (no real-clock dependence)" \
+     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
 # 2026-11-25: 意図した見た目の変更の申告（tests/e2e/vrt-baseline-request → VRT の baseline を自動で差し替える）
 step "VRT baseline request (scripts/vrt_request.sh)" \
      "python3 -m unittest scripts.tests.test_vrt_request -v"

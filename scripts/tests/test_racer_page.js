@@ -135,6 +135,11 @@ function pageCtx(favs, opt) {
     ctx._racerProfilesAt = '2026-11-25T04:42:50Z';
   }
   ctx._racerStatsView = { racers: {}, window: { racer_months: 12 } };
+  // 第 2 段階の追加項目・公式の選手ページは、使うテストが個別に入れる（既定は「取得済みで空」/「取得のしくみ無し」）
+  ctx._racerExt = { racers: {}, term: null };
+  ctx._loadRacerOfficial = () => false;
+  ctx._racerOfficialOf = () => null;
+  ctx._loadRacerOfficialMany = () => 0;
   if (favs) ctx.localStorage.setItem('boatrace_fav_racers', JSON.stringify(favs));
   const els = {};
   ctx.document.getElementById = (id) => els[id] || (els[id] = fakeEl(id));
@@ -504,6 +509,505 @@ t('起動時の取得 (loadDeferredData) が元の形を残し、進行中かど
   const app = read('assets/app.js');
   assert.ok(/globalThis\._racerProfiles=dbData\.racers;\s*globalThis\._racerProfilesAt=dbData\.updated_at\|\|'';/.test(app));
   assert.ok(/globalThis\._racerProfilesReady=_racerDbTask;\s*tasks\.push\(_racerDbTask\);/.test(app));
+});
+
+// ───────────────────────── 第 2 段階: 追加項目・公式の出場予定 / 過去 3 節 ─────────────────────────
+function extData() {
+  return {
+    updated_at: '2026-11-25T00:00:00Z',
+    source: 'fan2610',
+    term: { year: 2027, half: 1, from: '2026-05-01', to: '2026-10-31' },
+    racers: {
+      4320: { b: '1985-03-30', s: 1, h: 171, bl: 'B', bp: '佐賀', ki: 95, w: [47, 22], y: [10, 2], pc: [1, 1, 2], ab: [75.0, 77.0], fl: [1, 0, 0, 0] },
+      4635: { b: '1986-01-02', s: 1, h: 165, bl: 'O', bp: '岡山', ki: 96, w: [10, 12], y: [0, 0], pc: [2, 3, 3], ab: [50.0, 52.5], fl: [0, 0, 0, 0] },
+    },
+  };
+}
+function official(over) {
+  return Object.assign(
+    {
+      toban: '4320',
+      found: true,
+      name: '峰 竜太',
+      schedule: [
+        { from: '2026-11-20', to: '2026-11-24', sid: 8, stadium: '常滑', grade: '一般', series: '', time: '', title: '終わった節', extra: '' },
+        { from: '2026-12-06', to: '2026-12-11', sid: 7, stadium: '蒲郡', grade: 'G1', series: '', time: 'nighter', title: 'オールジャパン竹島特別', extra: '' },
+        { from: '2026-12-29', to: '2027-01-03', sid: 23, stadium: '唐津', grade: '一般', series: 'オールレディース', time: 'morning', title: '<b>唐津</b>杯', extra: '追加' },
+      ],
+      back3: [
+        { from: '2026-11-15', to: '2026-11-20', sid: 15, stadium: '丸亀', grade: 'G1', series: '', time: 'nighter', title: '京極賞', results: '2 21322 1 [1]' },
+        { from: '2026-10-27', to: '2026-11-01', sid: 13, stadium: '尼崎', grade: 'SG', series: '', time: '', title: 'ダービー', results: '1 62351 6 22' },
+      ],
+      wins: [{ from: '2026-11-20', to: '2026-11-20', sid: 15, stadium: '丸亀', grade: 'G1', title: '京極賞' }],
+      back3_ok: true,
+    },
+    over || {}
+  );
+}
+// 公式の取得を差し替える（state: null = 未取得 / {data, loading, failed}）
+function withOfficial(ctx, state) {
+  const asked = [];
+  ctx._loadRacerOfficial = (id, cb) => {
+    asked.push({ id, cb });
+    return false;
+  };
+  ctx._racerOfficialOf = () => state;
+  return asked;
+}
+
+section('[第 2 段階: 現在の級と来期の級]');
+t('適用開始の前は「前期級」が現在の級。級が変わる選手は来期の級も返す', () => {
+  const { ctx } = pageCtx();
+  ctx._racerExt = extData();
+  const P = ctx._racerProfiles;
+  const before = Date.parse('2026-11-25T12:00:00+09:00');
+  const after = Date.parse('2027-01-01T00:00:00+09:00');
+  // 4635: 名簿の級（来期）= B1(3)、前期級 = A2(2)
+  assert.deepStrictEqual(J(ctx._racerClassOf('4635', P[4635], null, before)), { cls: 2, next: 3 });
+  assert.deepStrictEqual(J(ctx._racerClassOf('4635', P[4635], null, after)), { cls: 3, next: 0 }, '適用開始後は名簿の級');
+  assert.deepStrictEqual(J(ctx._racerClassOf('4635', P[4635], null, after - 1)), { cls: 2, next: 3 }, '12/31 23:59 (JST) まで');
+  // 4320: 変わらない
+  assert.deepStrictEqual(J(ctx._racerClassOf('4320', P[4320], null, before)), { cls: 1, next: 0 });
+  // 今日の出走表があれば、それが現在の級
+  assert.deepStrictEqual(J(ctx._racerClassOf('4635', P[4635], { racer_class_number: 2 }, before)), { cls: 2, next: 3 });
+  // 追加項目が無い（未取得・名簿に無い）ときは名簿の級のまま
+  assert.deepStrictEqual(J(ctx._racerClassOf('3941', P[3941], null, before)), { cls: 1, next: 0 });
+  ctx._racerExt = undefined;
+  assert.deepStrictEqual(J(ctx._racerClassOf('4635', P[4635], null, before)), { cls: 3, next: 0 });
+  // 後期（7/1 適用）
+  ctx._racerExt = Object.assign(extData(), { term: { year: 2027, half: 2, from: '2026-11-01', to: '2027-04-30' } });
+  assert.strictEqual(ctx._racerClassOf('4635', P[4635], null, Date.parse('2027-06-30T23:00:00+09:00')).cls, 2);
+  assert.strictEqual(ctx._racerClassOf('4635', P[4635], null, Date.parse('2027-07-01T00:00:00+09:00')).cls, 3);
+});
+t('検索の並び（級）は現在の級。追加項目が届いたら索引を作り直す', () => {
+  const { ctx } = pageCtx();
+  assert.deepStrictEqual(J(ctx._racerSearch('みね', NOW).ids), ['4320', '4635', '4237']);
+  // 峰重（来期 B1・現在 A2）と同じ前方一致に、B1 で勝率の高い選手を足す
+  ctx._racerProfiles[4700] = { name: '峰　山　　一　郎', kana: 'ﾐﾈﾔﾏ ｲﾁﾛｳ', classNum: 3, winRate: 6.5 };
+  ctx._racerProfiles = Object.assign({}, ctx._racerProfiles);
+  assert.deepStrictEqual(J(ctx._racerSearch('みね', NOW).ids), ['4320', '4700', '4635', '4237'], '追加項目なし: どちらも B1 → 勝率順');
+  ctx._racerExt = extData();
+  assert.deepStrictEqual(J(ctx._racerSearch('みね', NOW).ids), ['4320', '4635', '4700', '4237'], '現在 A2 の峰重が先');
+});
+
+section('[第 2 段階: 選手詳細の追加項目]');
+t('プロフィール: 登録期・生年月日・身長・血液型・来期の級', () => {
+  const { ctx, html } = pageCtx();
+  ctx._racerExt = extData();
+  withOfficial(ctx, null);
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  let h = html();
+  assert.ok(h.includes('<span class="chip">佐賀支部</span><span class="chip">95期</span>'), h.slice(0, 900));
+  assert.ok(h.includes('41歳（1985/3/30 生） / 171cm / 52kg / B型 / 佐賀出身'));
+  assert.ok(!h.includes('chip-next'), '級が変わらない選手には出さない');
+  ctx._renderRacerPage({ id: '4635', from: 'top' }, NOW);
+  h = html();
+  assert.ok(h.includes('<span class="cls-chip cls-2">A2</span><span class="chip chip-next">来期 B1</span>'), h.slice(0, 900));
+  assert.ok(h.includes('40歳（1986/1/2 生） / 165cm / 53kg / O型 / 岡山出身'), '出走の無い選手の出身地は追加項目から');
+});
+t('成績: 算出期間・1 着 / 2 着・優出 / 優勝・能力指数・F・級の推移', () => {
+  const { ctx, html } = pageCtx();
+  ctx._racerExt = extData();
+  withOfficial(ctx, null);
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  let h = html();
+  assert.ok(h.includes('期別成績（2026/5/1〜10/31）: 勝率 8.85 ／ 2連対率 63.3% ／ 平均ST 0.12 ／ 109 走'));
+  assert.ok(h.includes('1着 47 回・2着 22 回 ／ 優出 10 回・優勝 2 回 ／ 能力指数 75.00（前期 77.00）'));
+  assert.ok(h.includes('<span class="c-danger">F 1 回</span> ／ L 0 回（この期間）'));
+  assert.ok(h.includes('級の推移: A2 → A1 → A1 → A1（2027年前期）'));
+  // 出走の無い選手（タイルの下にも出す）。F / L が 0 なら行を出さない
+  ctx._renderRacerPage({ id: '4635', from: 'top' }, NOW);
+  h = html();
+  assert.ok(h.includes('<div><b>5.34</b><span>勝率</span></div>') && h.includes('1着 10 回・2着 12 回 ／ 優出 0 回・優勝 0 回'));
+  assert.ok(h.includes('級の推移: B1 → B1 → A2 → B1（2027年前期）') && !h.includes('（この期間）'));
+  // 追加項目が無ければ従来どおり 1 行
+  ctx._racerExt = { racers: {}, term: null };
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  h = html();
+  assert.ok(h.includes('期別成績（ファン手帳）: 勝率 8.85') && !h.includes('優出') && !h.includes('95期'));
+});
+
+section('[第 2 段階: 今後の出場予定 / 過去 3 節]');
+t('出場予定: 終わった節は出さない。グレード・時間帯・シリーズ・追加あっせん。タイトルは escape', () => {
+  const { ctx, html } = pageCtx();
+  const asked = withOfficial(ctx, { data: official(), loading: false, failed: false });
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  const card = html().split('今後の出場予定')[1].split('</div></div>')[0] + html().split('今後の出場予定')[1];
+  assert.strictEqual(asked.length, 1, '開いた時に取りに行く');
+  assert.strictEqual(asked[0].id, '4320');
+  const sched = html().split('今後の出場予定 <span')[1].split('<div class="card">')[0];
+  assert.strictEqual(sched.split('class="sr-row"').length - 1, 2, sched);
+  assert.ok(!sched.includes('終わった節'));
+  assert.ok(sched.includes('<span class="sr-date">12/6(日)〜<br>12/11(金)</span><b class="sr-place">蒲郡</b>'));
+  assert.ok(sched.includes('<span class="gr gr-g1">G1</span>オールジャパン竹島特別 <span class="fav-note">ナイター</span>'));
+  assert.ok(sched.includes('12/29(火)〜<br>1/3(日)'), '年またぎ');
+  assert.ok(sched.includes('&lt;b&gt;唐津&lt;/b&gt;杯') && !sched.includes('<b>唐津</b>杯'));
+  assert.ok(sched.includes('オールレディース・モーニング') && sched.includes('<span class="fav-note">追加</span>'));
+  assert.ok(!/gr-[a-z0-9]+">一般/.test(sched), '一般戦に印は付けない');
+  assert.ok(card.length > 0);
+  // シリーズ名が大会名に入っていれば、重ねて出さない（公式の G3 オールレディースは大会名に入っている）
+  const lady = { from: '2027-01-04', to: '2027-01-09', sid: 16, stadium: '児島', grade: 'G3', series: 'オールレディース', time: '', title: 'オールレディース 第38回瀬戸の女王決定戦', extra: '' };
+  ctx._racerOfficialOf = () => ({ data: official({ schedule: [lady] }), loading: false, failed: false });
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  const s2 = html().split('今後の出場予定 <span')[1].split('<div class="card">')[0];
+  assert.strictEqual(s2.split('オールレディース').length - 1, 1, s2);
+  assert.ok(!s2.includes('fav-note'), '時間帯も無ければ添え書き自体を出さない');
+});
+t('過去 3 節: 節間成績・優勝の印・直近の優勝', () => {
+  const { ctx, html } = pageCtx();
+  withOfficial(ctx, { data: official(), loading: false, failed: false });
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  const b = html().split('過去 3 節 <span')[1].split('<div class="racer-foot">')[0];
+  assert.strictEqual(b.split('class="sr-row"').length - 1, 2);
+  assert.ok(b.includes('<span class="sr-res">2 21322 1 <b class="res-1">[1]</b> <span class="sr-won">優勝</span></span>'), b);
+  assert.ok(b.includes('<span class="sr-res">1 62351 6 22</span>'), '優勝していない節に印を付けない');
+  assert.ok(b.includes('<span class="gr gr-sg">SG</span>ダービー'));
+  assert.ok(b.includes('直近の優勝: 2026/11/20 丸亀 <span class="gr gr-g1">G1</span>京極賞'));
+  assert.ok(html().includes('公式サイト（出場予定・過去 3 節）'), '出典に載せる');
+  // 出場予定 → 成績 … → 過去 3 節 の順
+  const h = html();
+  assert.ok(h.indexOf('本日の出走') < h.indexOf('今後の出場予定') && h.indexOf('今後の出場予定') < h.indexOf('コース別成績'));
+  assert.ok(h.indexOf('直近 20 走の着順') < h.indexOf('過去 3 節 <span'));
+});
+t('取得中 / 失敗 / 公式に選手ページが無い / 予定なし / 過去 3 節だけ失敗', () => {
+  const { ctx, html } = pageCtx();
+  const show = (state) => {
+    withOfficial(ctx, state);
+    ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+    return html();
+  };
+  let h = show({ data: null, loading: true, failed: false });
+  assert.ok(h.includes('今後の出場予定') && h.includes('公式サイトから取得中…') && !h.includes('過去 3 節'));
+  h = show({ data: null, loading: false, failed: true });
+  assert.ok(h.includes('取得できませんでした') && h.includes('下のリンクから公式サイトで確認できます') && !h.includes('過去 3 節'));
+  assert.ok(!h.includes('公式サイト（出場予定・過去 3 節）'), '出していない情報を出典に載せない');
+  h = show({ data: { toban: '4320', found: false, schedule: [], back3: [], wins: [] }, loading: false, failed: false });
+  assert.ok(h.includes('公式サイトにこの登録番号の選手ページがありません') && !h.includes('過去 3 節'));
+  h = show({ data: official({ schedule: [], back3: [], wins: [] }), loading: false, failed: false });
+  assert.ok(h.includes('発表されている出場予定はありません。') && !h.includes('sec-title">過去 3 節'));
+  h = show({ data: official({ back3: [], wins: [], back3_ok: false }), loading: false, failed: false });
+  assert.ok(h.includes('過去 3 節は取得できませんでした。') && h.includes('オールジャパン竹島特別'));
+  // 取り直しに失敗しても、前に取れた内容は出したまま
+  h = show({ data: official(), loading: false, failed: true });
+  assert.ok(h.includes('オールジャパン竹島特別') && !h.includes('取得できませんでした（'));
+  // 取得のしくみが無い（Worker の場所が分からない等）ならカードごと出さない
+  ctx._loadRacerOfficial = () => false;
+  ctx._racerOfficialOf = () => null;
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  assert.ok(!html().includes('今後の出場予定'));
+});
+t('公式の取得が終わったら描き直す（選手番号を時刻として渡さない）', () => {
+  const { ctx } = pageCtx();
+  const asked = withOfficial(ctx, { data: null, loading: true, failed: false });
+  ctx._renderRacerPage({ id: '4320', from: 'top' }, NOW);
+  const args = [];
+  ctx._racerRerender = function () {
+    args.push(Array.prototype.slice.call(arguments));
+  };
+  asked[0].cb('4320');
+  assert.deepStrictEqual(args, [[]]);
+});
+t('お気に入り一覧: 「次節」の行。まだ取っていない選手を取りに行き、届いた行だけ書き換える', () => {
+  const { ctx, html } = pageCtx([
+    { id: '4320', name: '峰 竜太', ts: 2 },
+    { id: '4635', name: '峰重 力也', ts: 1 },
+  ]);
+  const state = { 4320: { data: official(), loading: false, failed: false } };
+  ctx._racerOfficialOf = (id) => state[id] || null;
+  let batch = null;
+  ctx._loadRacerOfficialMany = (ids, onEach) => {
+    batch = { ids: J(ids), onEach };
+    return ids.length;
+  };
+  ctx._renderRacerPage(null, NOW);
+  assert.deepStrictEqual(batch.ids, ['4320', '4635']);
+  assert.ok(html().includes('<div class="racer-li-next" data-racer-next="4320">次節 12/6〜12/11 蒲郡 G1</div>'), html().slice(0, 1500));
+  assert.ok(html().includes('<div class="racer-li-next" data-racer-next="4635"></div>'));
+  // 届いた行だけ書き換える
+  const el = { innerHTML: '' };
+  ctx.document.querySelectorAll = (sel) => (sel === '[data-racer-next="4635"]' ? [el] : []);
+  state[4635] = { data: official({ schedule: [{ from: '2026-12-10', to: '2026-12-15', stadium: '大村', grade: '一般', title: 'x' }] }), loading: false, failed: false };
+  batch.onEach('4635', NOW); // 実行時は時刻なし（＝いま）で呼ばれる
+  assert.strictEqual(el.innerHTML, '次節 12/10〜12/15 大村');
+  // 本日の出走タブ・検索では取りに行かない
+  batch = null;
+  ctx.ACTION_HANDLERS.racerTab({ dataset: { argTab: 'today' } });
+  assert.strictEqual(batch, null);
+  assert.ok(!html().includes('racer-li-next'));
+});
+
+t('年齢: 出走表 > 生年月日から計算（誕生日の前後で変わる）> 名簿', () => {
+  const { ctx } = pageCtx();
+  ctx._racerExt = extData();
+  const at = (iso) => Date.parse(iso);
+  const age = (id, now) => (/(\d+)歳/.exec(ctx._racerDetailHtml(id, 'list', now)) || [])[1];
+  // 4635 は本日の出走なし。生年月日 1986-01-02、名簿の年齢は算出時点のまま
+  ctx._racerProfiles[4635].age = 40;
+  assert.strictEqual(age('4635', at('2026-11-25T14:45:00+09:00')), '40');
+  assert.strictEqual(age('4635', at('2027-01-01T23:59:00+09:00')), '40', '誕生日の前日');
+  assert.strictEqual(age('4635', at('2027-01-02T00:10:00+09:00')), '41', '誕生日（JST）に 1 歳増える。名簿の 40 のままにしない');
+  // 生年月日が無ければ名簿の年齢
+  delete ctx._racerExt.racers[4635].b;
+  assert.strictEqual(age('4635', at('2027-01-02T00:10:00+09:00')), '40');
+  // 本日出走する選手は出走表の年齢（公式）
+  const prog = ctx._racerInfo('4320', null, NOW).prog;
+  assert.ok(prog && prog.racer_age);
+  ctx._racerExt.racers[4320].b = '1970-01-01';
+  assert.strictEqual(age('4320', NOW), String(prog.racer_age));
+  // 読めない生年月日・ありえない年齢は使わない
+  for (const bad of ['1985-3-30', '85-03-30', '', null, '2030-01-01', '1900-01-01']) {
+    assert.strictEqual(ctx._rAge(bad, NOW), null, String(bad));
+  }
+  assert.strictEqual(ctx._rAge('1985-03-30', at('2026-03-29T23:00:00+09:00')), 40);
+  assert.strictEqual(ctx._rAge('1985-03-30', at('2026-03-30T00:00:00+09:00')), 41);
+});
+t('日付の境目は JST。今日が最終日の節は出し、昨日終わった節は出さない', () => {
+  const { ctx } = pageCtx();
+  const at = (iso) => Date.parse(iso);
+  assert.strictEqual(ctx._racerIsoDay(at('2026-11-25T00:30:00+09:00')), '2026-11-25', 'JST 0 時台（UTC では前日）');
+  assert.strictEqual(ctx._racerIsoDay(at('2026-11-24T23:59:00+09:00')), '2026-11-24');
+  assert.strictEqual(ctx._racerIsoDay(at('2027-01-01T00:00:00+09:00')), '2027-01-01', '年またぎ');
+  const sched = [
+    { from: '2026-11-20', to: '2026-11-24', stadium: '常滑', grade: '一般', title: '昨日まで' },
+    { from: '2026-11-22', to: '2026-11-25', stadium: '蒲郡', grade: '一般', title: '今日が最終日' },
+    { from: '2026-12-06', to: '2026-12-11', stadium: '大村', grade: 'G1', title: '来月' },
+  ];
+  ctx._racerOfficialOf = () => ({ data: official({ schedule: sched }), loading: false, failed: false });
+  const early = at('2026-11-25T00:30:00+09:00');
+  let h = ctx._racerDetailHtml('4320', 'list', early);
+  assert.ok(!h.includes('昨日まで') && h.includes('今日が最終日') && h.includes('来月'));
+  assert.strictEqual(ctx._racerNextSeries('4320', early).title, '今日が最終日');
+  // 日付が変わった直後（11/26 0:05）: 今日が最終日だった節は消える
+  const next = at('2026-11-26T00:05:00+09:00');
+  h = ctx._racerDetailHtml('4320', 'list', next);
+  assert.ok(!h.includes('今日が最終日') && h.includes('来月'));
+  assert.strictEqual(ctx._racerNextSeries('4320', next).title, '来月');
+  assert.ok(ctx._racerNextLine('4320', next).indexOf('次節 12/6〜12/11 大村 G1') === 0);
+});
+t('壊れた応答・想定外の値でも落ちず、HTML をそのまま入れない', () => {
+  const { ctx } = pageCtx();
+  const evil = '<img src=x onerror=alert(1)>';
+  const st = {
+    data: {
+      toban: '4320', found: true,
+      schedule: [
+        null, 'x', 7,
+        { from: '2026-12-06', to: '2026-12-11', stadium: evil, grade: 'constructor', series: evil, time: 'constructor', title: evil, extra: evil },
+        { from: evil, to: '2099-01-01', stadium: '蒲郡', grade: evil, time: evil, title: 't' },
+      ],
+      back3: { not: 'an array' },
+      wins: [null, { from: '2026-11-20', stadium: evil, grade: '__proto__', title: evil }],
+    },
+    loading: false, failed: false,
+  };
+  ctx._racerOfficialOf = () => st;
+  ctx._racerExt = extData();
+  ctx._racerExt.term.year = evil;
+  // 形は合っているが中身が文字列（HTML）: 数値は数値として出し、文字列は escape する
+  Object.assign(ctx._racerExt.racers[4320], { w: [evil, 1], y: [evil, evil], ab: [evil, evil], fl: [1, evil], pc: [evil, 'constructor', 2], ki: evil, b: evil, h: evil, bl: evil, bp: evil });
+  let h = '';
+  assert.doesNotThrow(() => { h = ctx._racerDetailHtml('4320', 'list', NOW); });
+  assert.ok(!h.includes('<img src=x'), 'HTML がそのまま入っている');
+  assert.ok(!/function Object|native code/.test(h), 'Object の既定の項目を拾っている');
+  assert.ok(h.includes('今後の出場予定') && h.includes('&lt;img src=x onerror=alert(1)&gt;'));
+  assert.ok(h.includes('1着 - 回・2着 1 回 ／ 優出 - 回・優勝 - 回'), '数値でない回数は - にする');
+  // 形そのものが違う（配列のはずが文字列・数値）
+  Object.assign(ctx._racerExt.racers[4320], { w: 'x', y: 5, ab: 'x', fl: 'x', pc: 'x' });
+  assert.doesNotThrow(() => { h = ctx._racerDetailHtml('4320', 'list', NOW); });
+  assert.ok(!h.includes('<img src=x') && !h.includes('undefined'));
+  // 一覧の「次節」も同じ
+  const line = ctx._racerNextLine('4320', NOW);
+  assert.ok(!line.includes('<img') && line.includes('&lt;img'));
+  // 応答そのものが配列・文字列でも落ちない
+  for (const bad of [[], 'x', 5, { schedule: 'x' }, { schedule: [], back3: 'x', wins: 5 }]) {
+    st.data = bad;
+    assert.doesNotThrow(() => ctx._racerDetailHtml('4320', 'list', NOW), JSON.stringify(bad));
+    assert.doesNotThrow(() => ctx._racerNextLine('4320', NOW), JSON.stringify(bad));
+  }
+});
+
+section('[第 2 段階: 取得（追加項目 / 公式の選手ページ）]');
+function officialCtx() {
+  const ctx = makeCtx();
+  const calls = [];
+  let pending = [];
+  ctx.fetch = (url, opt) => {
+    // 起動時の処理（番組表の取得など）も fetch を呼ぶので、/racer-proxy だけ数える
+    if (String(url).indexOf('/racer-proxy') < 0) return Promise.reject(new Error('no network in test'));
+    calls.push({ url, opt });
+    return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  };
+  const settle = async (fn) => {
+    const p = pending;
+    pending = [];
+    p.forEach(fn);
+    await tick();
+  };
+  const ok = (body) => (x) => x.resolve({ ok: true, json: () => Promise.resolve(body) });
+  return { ctx, calls, settle, ok };
+}
+t('公式: 取得中は重ねて取らない。成功は 30 分、失敗は 3 分は取り直さない', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  const done = [];
+  assert.strictEqual(ctx._loadRacerOfficial('4320', (id) => done.push(id)), true);
+  assert.strictEqual(ctx._loadRacerOfficial('4320', (id) => done.push(id)), false, '取得中');
+  // 取得中は、時間がたっても・端末の時計が戻っても重ねて取らない（応答が遅いだけで 2 本目を投げない）
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, Date.now() + 31 * 60000), false, '取得中（31 分後）');
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, Date.now() - 60000), false, '取得中（時計が戻った）');
+  assert.strictEqual(calls.length, 1);
+  assert.ok(/\/racer-proxy\?toban=4320$/.test(calls[0].url) && calls[0].url.indexOf('https://boatrace-scrape-trigger') === 0);
+  assert.strictEqual(J(ctx._racerOfficialOf('4320')).loading, true);
+  await settle(ok(official()));
+  assert.deepStrictEqual(done, ['4320']);
+  const e = ctx._racerOfficialOf('4320');
+  assert.deepStrictEqual([e.loading, e.failed, e.data.schedule.length], [false, false, 3]);
+  const t0 = Date.now();
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t0 + 29 * 60000), false);
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t0 + 31 * 60000), true);
+  // 取り直しに失敗: 前の内容は残し、3 分は取り直さない
+  await settle((x) => x.reject(new Error('offline')));
+  const f = ctx._racerOfficialOf('4320');
+  assert.deepStrictEqual([f.loading, f.failed, f.data.schedule.length], [false, true, 3]);
+  const t1 = Date.now();
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 2 * 60000), false);
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 4 * 60000), true);
+});
+t('公式: HTTP エラー・エラー応答・形の違う応答は失敗として扱う。番号が不正なら取りに行かない', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  for (const bad of ['', 'abc', '123', '123456', null]) assert.strictEqual(ctx._loadRacerOfficial(bad), false, String(bad));
+  assert.strictEqual(calls.length, 0);
+  ctx._loadRacerOfficial('5001');
+  await settle((x) => x.resolve({ ok: false, status: 502 }));
+  assert.deepStrictEqual(J(ctx._racerOfficialOf('5001')).failed, true);
+  ctx._loadRacerOfficial('5002');
+  await settle(ok({ error: 'upstream' }));
+  assert.strictEqual(ctx._racerOfficialOf('5002').failed, true);
+  // 存在しない選手（found: false）は「取れた」扱い（30 分は取り直さない）
+  ctx._loadRacerOfficial('9999');
+  await settle(ok({ toban: '9999', found: false, schedule: [], back3: [], wins: [] }));
+  assert.deepStrictEqual([ctx._racerOfficialOf('9999').failed, ctx._racerOfficialOf('9999').data.found], [false, false]);
+  ctx._loadRacerOfficial('5003');
+  await settle(ok({ hello: 1 }));
+  assert.deepStrictEqual([ctx._racerOfficialOf('5003').failed, ctx._racerOfficialOf('5003').data], [true, null]);
+});
+t('公式: 続けて 3 回失敗したら 10 分は誰の分も取りに行かない。1 回でも成功すれば数え直す', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  const failOne = async (id) => {
+    assert.strictEqual(ctx._loadRacerOfficial(id), true, id);
+    await settle((x) => x.resolve({ ok: false, status: 503 }));
+  };
+  await failOne('6001');
+  await failOne('6002');
+  ctx._loadRacerOfficial('6003');
+  await settle(ok(official({ toban: '6003' }))); // 成功 → 数え直し
+  await failOne('6004');
+  await failOne('6005');
+  assert.strictEqual(ctx._racerOfficialPaused(), false, '2 回ではまだ休止しない');
+  await failOne('6006');
+  assert.strictEqual(ctx._racerOfficialPaused(), true);
+  const n = calls.length;
+  assert.strictEqual(ctx._loadRacerOfficial('6007'), false, '休止中');
+  assert.strictEqual(ctx._racerOfficialOf('6007'), null);
+  assert.strictEqual(ctx._loadRacerOfficialMany(['6008', '6009', '6010']), 0, '一覧からも取りに行かない');
+  assert.strictEqual(ctx._loadRacerOfficial('6007', null, Date.now() + 9 * 60000), false);
+  assert.strictEqual(calls.length, n);
+  // 10 分たてば取りに行く
+  assert.strictEqual(ctx._racerOfficialPaused(Date.now() + 10 * 60000 + 1000), false);
+  assert.strictEqual(ctx._loadRacerOfficial('6007', null, Date.now() + 10 * 60000 + 1000), true);
+  assert.strictEqual(calls.length, n + 1);
+  // 端末の時計が大きく戻っても、休止したままにならない
+  assert.strictEqual(ctx._racerOfficialPaused(Date.now() - 60 * 60000), false);
+});
+t('選手詳細: 休止中でまだ取れていない選手にも「取得できませんでした」を出す（カードを黙って消さない）', () => {
+  const { ctx } = pageCtx();
+  ctx._loadRacerOfficial = () => false;
+  ctx._racerOfficialOf = () => null;
+  ctx._racerOfficialPaused = () => true;
+  let h = ctx._racerDetailHtml('4320', 'list', NOW);
+  assert.ok(h.includes('今後の出場予定') && h.includes('取得できませんでした'));
+  assert.ok(!h.includes('取得中'));
+  // 休止していない・取りに行けない（Worker の宛先が無いなど）ときは、カードごと出さない
+  ctx._racerOfficialPaused = () => false;
+  h = ctx._racerDetailHtml('4320', 'list', NOW);
+  assert.ok(!h.includes('今後の出場予定') && !h.includes('取得できませんでした'));
+});
+t('公式: 時間切れを付けて取る（capabilities.makeTimeoutSignal）', () => {
+  const { ctx, calls } = officialCtx();
+  const sig = { tag: 'signal' };
+  let ms = null;
+  // 起動時の処理も capabilities を使うので、丸ごと差し替えずに makeTimeoutSignal だけ上書きする
+  const caps = Object.create(ctx.capabilities);
+  Object.defineProperty(caps, 'makeTimeoutSignal', { value: (n) => ((ms = n), sig) });
+  ctx.capabilities = caps;
+  ctx._loadRacerOfficial('4320');
+  assert.strictEqual(ms, 10000);
+  assert.strictEqual(calls[0].opt.signal, sig);
+});
+t('公式（一覧用）: 1 人ずつ順に、最大 20 人。取得済みの選手は飛ばす', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  ctx.setTimeout = (fn) => fn(); // 間隔を待たずに次へ
+  ctx._loadRacerOfficial('4001');
+  await settle(ok(official({ toban: '4001' })));
+  calls.length = 0;
+  const ids = [];
+  for (let i = 0; i < 30; i++) ids.push(String(4001 + i));
+  const got = [];
+  const n = ctx._loadRacerOfficialMany(ids.concat(['x', '']), (id) => got.push(id));
+  assert.strictEqual(n, 20);
+  assert.strictEqual(calls.length, 1, '同時に 1 人だけ');
+  assert.ok(/toban=4002$/.test(calls[0].url), '取得済みの 4001 は飛ばす');
+  for (let i = 0; i < 25; i++) await settle(ok(official()));
+  assert.strictEqual(calls.length, 20);
+  assert.deepStrictEqual(got.slice(0, 3), ['4002', '4003', '4004']);
+  assert.strictEqual(got.length, 20);
+  assert.ok(/const|var RACER_OFFICIAL_BATCH_GAP_MS = 300/.test(read('src/discovery/racer_profiles_loader.js')));
+});
+t('追加項目: 1 回だけ取り、届いたら知らせる。失敗しても落ちない', async () => {
+  const ctx = makeCtx();
+  const urls = [];
+  ctx._racerExt = undefined;
+  ctx.fetch = (url) => {
+    urls.push(url);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(extData()) });
+  };
+  let n = 0;
+  ctx._loadRacerExt(() => n++);
+  ctx._loadRacerExt(() => n++);
+  await tick();
+  assert.deepStrictEqual(urls, ['data/db/racer_ext.json']);
+  assert.strictEqual(n, 1);
+  assert.strictEqual(ctx._racerExt.racers[4320].ki, 95);
+  ctx._loadRacerExt(() => n++);
+  await tick();
+  assert.strictEqual(urls.length, 1, '取得済みなら取りに行かない');
+  const b = makeCtx();
+  b._racerExt = undefined;
+  b.fetch = () => Promise.reject(new Error('offline'));
+  b._loadRacerExt(() => n++);
+  await tick();
+  assert.strictEqual(b._racerExt, undefined);
+});
+t('選手ページを開いたら追加項目を取りに行く（一覧でも級の表示に使う）', () => {
+  const { ctx } = pageCtx();
+  let asked = 0;
+  ctx._racerExt = undefined;
+  ctx._loadRacerExt = () => asked++;
+  ctx._renderRacerPage(null, NOW);
+  assert.strictEqual(asked, 1);
+  ctx._racerExt = extData();
+  ctx._renderRacerPage(null, NOW);
+  assert.strictEqual(asked, 1);
+});
+t('追加項目のデータ: 名簿と同じ選手を持ち、起動時に読むファイルとは別', () => {
+  const ext = JSON.parse(read('data/db/racer_ext.json'));
+  const db = JSON.parse(read('data/db/racerDB.json'));
+  assert.ok(Object.keys(ext.racers).length > 1500);
+  assert.ok(ext.term && /^\d{4}-\d{2}-\d{2}$/.test(ext.term.from) && /^\d{4}-\d{2}-\d{2}$/.test(ext.term.to));
+  const sample = ext.racers[Object.keys(ext.racers)[0]];
+  for (const k of ['b', 's', 'h', 'bl', 'ki', 'w', 'y', 'pc', 'fl']) assert.ok(k in sample, k);
+  const any = db.racers[Object.keys(db.racers)[0]];
+  assert.ok(!('ki' in any) && !('b' in any), 'racerDB.json には混ぜない');
+  assert.ok(!/racer_ext\.json/.test(read('assets/app-critical.js')) && !/racer_ext\.json/.test(read('assets/app-rest.js')), '起動時には読まない');
 });
 
 section('[配線]');

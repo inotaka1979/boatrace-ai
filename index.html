@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=5ae6efc8" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=5ae6efc8" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=dbf240fa" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=dbf240fa" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -228,6 +228,16 @@ table.ct td{padding:5px 2px;border-bottom:1px solid var(--border)}
 .racer-series{border-collapse:collapse}
 .racer-series th{font-size:11px;font-weight:400;color:var(--text-sub);padding:2px;border:1px solid var(--border);background:#F8F8F8}
 .racer-note{font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.6}
+.sr-row{display:grid;grid-template-columns:5.6em 3.4em minmax(0,1fr);gap:2px 8px;align-items:start;padding:8px 0;border-top:1px solid var(--border);font-size:13px}
+.sr-date{color:var(--text-sub);font-size:12px;white-space:nowrap;line-height:1.5}
+.sr-place{white-space:nowrap}
+.sr-title{min-width:0}
+.sr-res{grid-column:2 / -1;font-size:14px;font-weight:700;letter-spacing:1px}
+.sr-won{font-size:11px;font-weight:700;color:#fff;background:#C62828;border-radius:3px;padding:0 5px;letter-spacing:0;margin-left:4px}
+.gr{display:inline-block;font-size:10px;font-weight:700;color:#fff;border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:1px}
+.gr-sg{background:#C62828}.gr-pg1{background:#AD1457}.gr-g1{background:#D84315}.gr-g2{background:#1565C0}.gr-g3{background:#1B5E20}
+.chip-next{background:#FFF8E1;color:#8A5A00}
+.racer-li-next{font-size:12px;color:var(--text-sub)}
 .racer-foot{text-align:center;padding:8px 0 16px}
 .racer-ext{display:inline-block;min-height:44px;line-height:44px;font-size:13px;color:var(--accent)}
 
@@ -844,7 +854,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=5ae6efc8" defer></script>
-<script src="assets/app-rest.min.js?v=5ae6efc8" defer></script>
+<script src="assets/app-critical.min.js?v=dbf240fa" defer></script>
+<script src="assets/app-rest.min.js?v=dbf240fa" defer></script>
 </body>
 </html>
