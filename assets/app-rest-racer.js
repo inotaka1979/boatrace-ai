@@ -287,6 +287,28 @@
     });
     return '<div class="card"><div class="sec-title">\u672C\u65E5\u306E\u51FA\u8D70 <span class="sec-src">' + src + "</span></div>" + rows + _racerSeriesHtml(info) + "</div>";
   }
+  function _racerTomorrowCard(info, now) {
+    if (typeof _tomorrowEntriesOf !== "function") return "";
+    if (typeof _loadTomorrow === "function") {
+      _loadTomorrow(function() {
+        _racerRerender();
+      }, now);
+    }
+    var es = _tomorrowEntriesOf(info.id, now);
+    if (!es || !es.length) return "";
+    var tinfo = typeof _tomorrowInfo === "function" ? _tomorrowInfo(now) : null;
+    var e0 = es[0];
+    var src = [
+      typeof _favMdw === "function" && tinfo ? _favMdw(tinfo.date) : "",
+      typeof STADIUMS !== "undefined" && STADIUMS[e0.sid] || "\u5834" + e0.sid,
+      e0.label
+    ].filter(Boolean).map(escText).join(" ");
+    var rows = "";
+    es.forEach(function(e) {
+      rows += '<div class="fav-row tm-row"><span class="fav-time">' + escText(e.hm) + "</span><span><b>" + e.rno + 'R</b></span><span class="fav-who">' + (typeof boatBadge === "function" ? boatBadge(e.boat) : e.boat) + " " + e.boat + '\u53F7\u8247</span><span class="fav-st"></span></div>';
+    });
+    return '<div class="card"><div class="sec-title">\u660E\u65E5\u306E\u51FA\u8D70 <span class="sec-src">' + src + "</span></div>" + rows + '<div class="racer-note">\u7DE0\u5207\u4E88\u5B9A\u6642\u523B\u3002\u756A\u7D44\u306E\u5909\u66F4\u3067\u5909\u308F\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\u3002</div></div>';
+  }
   function _racerFanLine(p, x) {
     if (!p || p.winRate == null) return "";
     var X = globalThis._racerExt;
@@ -533,11 +555,12 @@
     if (typeof _racerAiMarkReset === "function") _racerAiMarkReset();
     var agg = _racerAggCard(info);
     var official = _racerOfficialFor(info);
-    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info, now) + _racerTodayCard(info, now) + _racerScheduleCard(info, official, now) + _racerStatsCard(info) + _racerCourseCard(info) + // 出走ログがあればそれを、無ければ（まだ届いていない間も）従来の「直近の着順」を出す
+    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info, now) + _racerTodayCard(info, now) + _racerTomorrowCard(info, now) + _racerScheduleCard(info, official, now) + _racerStatsCard(info) + _racerCourseCard(info) + // 出走ログがあればそれを、無ければ（まだ届いていない間も）従来の「直近の着順」を出す
     (_racerLogCard(info) || _racerRecentCard(info)) + _racerBack3Card(info, official) + agg + _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false));
   }
   globalThis._racerDetailHtml = _racerDetailHtml;
   globalThis._racerLogCard = _racerLogCard;
+  globalThis._racerTomorrowCard = _racerTomorrowCard;
   globalThis._rAge = _rAge;
 })();
 
@@ -601,10 +624,27 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
     return m ? parseInt(m[2], 10) + "/" + parseInt(m[3], 10) : "";
   }
+  function _racerTomorrowLine(id, now) {
+    var es = typeof _tomorrowEntriesOf === "function" ? _tomorrowEntriesOf(id, now) : null;
+    if (!es || !es.length) return "";
+    var parts = [];
+    var bySid = {};
+    es.forEach(function(e) {
+      if (!bySid[e.sid]) {
+        bySid[e.sid] = [];
+        parts.push(e.sid);
+      }
+      bySid[e.sid].push(e.rno + "R");
+    });
+    return "\u660E\u65E5 " + parts.map(function(sid) {
+      return escText(typeof STADIUMS !== "undefined" && STADIUMS[sid] || "\u5834" + sid) + " " + bySid[sid].join("\u30FB");
+    }).join("\u3001");
+  }
   function _racerNextLine(id, now) {
+    var tm = _racerTomorrowLine(id, now);
     var s = _racerNextSeries(id, now);
-    if (!s) return "";
-    return "\u6B21\u7BC0 " + escText(_racerMd(s.from)) + "\u301C" + escText(_racerMd(s.to)) + " " + escText(s.stadium || "") + (s.grade && s.grade !== "\u4E00\u822C" ? " " + escText(s.grade) : "");
+    if (!s) return tm;
+    return (tm ? tm + " / " : "") + "\u6B21\u7BC0 " + escText(_racerMd(s.from)) + "\u301C" + escText(_racerMd(s.to)) + " " + escText(s.stadium || "") + (s.grade && s.grade !== "\u4E00\u822C" ? " " + escText(s.grade) : "");
   }
   function _racerInfo(id, todayIdx, now) {
     id = String(id);
@@ -764,6 +804,13 @@
         }),
         _racerFillNext
       );
+    }
+    if (typeof _loadTomorrow === "function") {
+      _loadTomorrow(function() {
+        favs.forEach(function(f) {
+          _racerFillNext(f.id);
+        });
+      }, now);
     }
     return html + "</div>";
   }
@@ -986,6 +1033,7 @@
   globalThis._racerMd = _racerMd;
   globalThis._racerIsoDay = _racerIsoDay;
   globalThis._racerFillNext = _racerFillNext;
+  globalThis._racerTomorrowLine = _racerTomorrowLine;
 })();
 
 /* BUILD:REPORTING_RACER_PAGE:END */

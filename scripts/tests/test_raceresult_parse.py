@@ -164,7 +164,7 @@ class TestRaceresultNonFinishers(unittest.TestCase):
         self.assertEqual(self.out[4]["racer_out"], "転")
         self.assertEqual(self.out[3]["racer_number"], 3602)
         self.assertEqual(self.out[4]["racer_number"], 5106)
-        self.assertEqual(self.out[3]["racer_name"].replace("　", ""), "奥平拓也")
+        self.assertEqual(self.out[3]["racer_name"].replace("\u3000", ""), "奥平拓也")
 
     def test_they_get_course_and_start_timing_from_the_start_table(self):
         self.assertEqual((self.out[3]["racer_course_number"], self.out[3]["racer_start_timing"]), (3, 0.33))

@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=8b39533e" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=8b39533e" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=2cdd358c" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=2cdd358c" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -168,6 +168,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 .fav-row{display:grid;grid-template-columns:3.1em 5.6em minmax(0,1fr) auto;gap:6px;align-items:center;min-height:44px;border-top:1px solid var(--border);font-size:14px;cursor:pointer}
 .fav-row.done{color:var(--text-sub)}
 .fav-row.fav-rest{display:block;text-align:right;line-height:44px}
+.fav-sub{font-size:12px;font-weight:700;color:#8A5A00;border-top:1px solid var(--border);padding:8px 0 2px;margin-top:2px}
+.fav-sub .fav-note{font-weight:400}.fav-row.fav-tm{border-top:1px dashed var(--border)}.fav-row.tm-row{cursor:default}
 .fav-row>span{white-space:nowrap}
 .fav-who{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
 .fav-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -858,7 +860,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=8b39533e" defer></script>
-<script src="assets/app-rest.min.js?v=8b39533e" defer></script>
+<script src="assets/app-critical.min.js?v=2cdd358c" defer></script>
+<script src="assets/app-rest.min.js?v=2cdd358c" defer></script>
 </body>
 </html>

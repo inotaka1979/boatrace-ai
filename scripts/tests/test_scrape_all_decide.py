@@ -164,9 +164,24 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
         self.assertIn("results", tasks)
 
     def test_late_night_23_00_outside_window(self):
-        # 2026-11-20: 夜間はアーカイブの後追い (backfill) だけを行う（スクレイプの real-time 系は無し）
+        # 2026-11-20: 夜間はアーカイブの後追い (backfill) を行う（スクレイプの real-time 系は無し）
+        # 2026-11-26: 23 時台は翌日の出走 (tomorrow) も取る。時間のかかる backfill より先に
         tasks = self._at(23, 0)
-        self.assertEqual(tasks, ["backfill"])
+        self.assertEqual(tasks, ["tomorrow", "backfill"])
+        self.assertEqual(self._at(0, 30), ["backfill"], "日付が変わったら翌日の出走は取らない")
+
+    def test_tomorrow_runs_in_the_evening_only(self):
+        # 翌日の出走表は前日の午後〜夜に公開される。15〜23 時の run で毎回取り直す
+        for h in (15, 16, 19, 22, 23):
+            self.assertIn("tomorrow", self._at(h, 10), h)
+        for h in (0, 3, 6, 8, 12, 14):
+            self.assertNotIn("tomorrow", self._at(h, 10), h)
+
+    def test_tomorrow_comes_after_realtime_tasks_and_before_slow_ones(self):
+        tasks = self._at(22, 30)
+        for fast in ("results", "previews", "odds"):
+            self.assertLess(tasks.index(fast), tasks.index("tomorrow"), fast)
+        self.assertLess(tasks.index("tomorrow"), tasks.index("racedata"))
 
     def test_backfill_only_at_night(self):
         for h in (23, 0, 3, 6):

@@ -2184,6 +2184,124 @@
 /* BUILD:BANDIT:END */
 
 
+/* BUILD:DISCOVERY_TOMORROW:START */
+"use strict";
+(() => {
+  // ../src/discovery/tomorrow_loader.js
+  var TOMORROW_FROM_HOUR = 15;
+  var TOMORROW_TTL_MS = 10 * 6e4;
+  var TOMORROW_RETRY_MS = 3 * 6e4;
+  var TOMORROW_TIMEOUT_MS = 1e4;
+  var _tomorrow = { at: 0, data: null, loading: false, failed: false, idx: null, idxOf: null };
+  function _tmJst(now, addDays) {
+    return new Date((now || Date.now()) + 9 * 36e5 + (addDays || 0) * 864e5);
+  }
+  function _tomorrowYmd(now) {
+    var d = _tmJst(now, 1);
+    var m = d.getUTCMonth() + 1;
+    var day = d.getUTCDate();
+    return String(d.getUTCFullYear()) + (m < 10 ? "0" : "") + m + (day < 10 ? "0" : "") + day;
+  }
+  function _tmInt(v, lo, hi) {
+    return typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
+  }
+  function _tomorrowData(now) {
+    var d = _tomorrow.data;
+    return d && d.date === _tomorrowYmd(now) ? d : null;
+  }
+  function _tomorrowIndex(now) {
+    var d = _tomorrowData(now);
+    if (!d) return null;
+    if (_tomorrow.idxOf === d) return _tomorrow.idx;
+    var idx = {};
+    var st = d.stadiums && typeof d.stadiums === "object" && !Array.isArray(d.stadiums) ? d.stadiums : {};
+    Object.keys(st).forEach(function(k) {
+      var sid = Number(k);
+      var s = st[k];
+      if (!_tmInt(sid, 1, 24) || !s || !Array.isArray(s.races)) return;
+      var label = typeof s.label === "string" ? s.label.slice(0, 8) : "";
+      s.races.forEach(function(r) {
+        if (!r || !_tmInt(r.r, 1, 12) || !Array.isArray(r.b)) return;
+        var hm = typeof r.t === "string" && /^\d{2}:\d{2}$/.test(r.t) ? r.t : "";
+        r.b.forEach(function(b) {
+          if (!Array.isArray(b) || !_tmInt(b[0], 1, 6) || !_tmInt(b[1], 1e3, 99999)) return;
+          var key = String(b[1]);
+          if (!Object.prototype.hasOwnProperty.call(idx, key)) idx[key] = [];
+          idx[key].push({
+            sid,
+            rno: r.r,
+            hm,
+            boat: b[0],
+            name: typeof b[2] === "string" ? b[2].slice(0, 20) : "",
+            cls: _tmInt(b[3], 1, 4) ? b[3] : 0,
+            label
+          });
+        });
+      });
+    });
+    Object.keys(idx).forEach(function(k) {
+      idx[k].sort(function(a, b) {
+        return (a.hm || "99:99").localeCompare(b.hm || "99:99") || a.sid - b.sid || a.rno - b.rno;
+      });
+    });
+    _tomorrow.idx = idx;
+    _tomorrow.idxOf = d;
+    return idx;
+  }
+  function _tomorrowEntriesOf(id, now) {
+    var idx = _tomorrowIndex(now);
+    if (!idx) return null;
+    var key = String(id);
+    return Object.prototype.hasOwnProperty.call(idx, key) ? idx[key] : [];
+  }
+  function _tomorrowInfo(now) {
+    var d = _tomorrowData(now);
+    if (!d) return null;
+    var st = d.stadiums && typeof d.stadiums === "object" && !Array.isArray(d.stadiums) ? d.stadiums : {};
+    return { date: d.date, stadiums: Object.keys(st).length, pending: Array.isArray(d.pending) ? d.pending.length : 0 };
+  }
+  function _loadTomorrow(onLoaded, now) {
+    var t = now || Date.now();
+    if (typeof fetch !== "function" || _tomorrow.loading) return false;
+    if (_tmJst(t, 0).getUTCHours() < TOMORROW_FROM_HOUR) return false;
+    if (_tomorrow.at) {
+      var age = t - _tomorrow.at;
+      if (age >= 0 && age < (_tomorrow.failed ? TOMORROW_RETRY_MS : TOMORROW_TTL_MS)) return false;
+    }
+    _tomorrow.loading = true;
+    _tomorrow.at = t;
+    var opt = { cache: "no-cache" };
+    try {
+      if (typeof capabilities !== "undefined" && capabilities && typeof capabilities.makeTimeoutSignal === "function") {
+        opt.signal = capabilities.makeTimeoutSignal(TOMORROW_TIMEOUT_MS);
+      }
+    } catch (_) {
+    }
+    var done = function(j) {
+      var ok = !!(j && typeof j === "object" && typeof j.date === "string" && /^\d{8}$/.test(j.date));
+      _tomorrow.loading = false;
+      _tomorrow.failed = !ok;
+      _tomorrow.at = Date.now();
+      if (ok) _tomorrow.data = j;
+      if (typeof onLoaded === "function") onLoaded();
+    };
+    fetch("data/schedule/tomorrow.json", opt).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(done, function() {
+      done(null);
+    });
+    return true;
+  }
+  globalThis._loadTomorrow = _loadTomorrow;
+  globalThis._tomorrowYmd = _tomorrowYmd;
+  globalThis._tomorrowEntriesOf = _tomorrowEntriesOf;
+  globalThis._tomorrowInfo = _tomorrowInfo;
+  globalThis._tomorrow = _tomorrow;
+})();
+
+/* BUILD:DISCOVERY_TOMORROW:END */
+
+
 /* BUILD:DP_GRADIENT:START */
 "use strict";
 (() => {
@@ -2478,6 +2596,44 @@
     else if (st.kind === "cancel") cls += " c-danger";
     return '<div class="fav-row' + (st.kind === "open" ? "" : " done") + '" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + e.sid + '" data-arg-rn="' + e.rno + '"><span class="fav-time">' + escText(e.hm) + "</span><span>" + escText(name) + " <b>" + e.rno + 'R</b></span><span class="fav-who">' + (typeof boatBadge === "function" ? boatBadge(e.boat) : e.boat) + ' <span class="fav-nm">' + escText(_racerDispName(e.name)) + "</span>" + ai + '</span><span class="' + cls + '">' + escText(st.text) + "</span></div>";
   }
+  var FAV_TOMORROW_MAX = 8;
+  var FAV_WD = ["\u65E5", "\u6708", "\u706B", "\u6C34", "\u6728", "\u91D1", "\u571F"];
+  function _favMdw(ymd) {
+    var m = /^(\d{4})(\d{2})(\d{2})$/.exec(ymd || "");
+    if (!m) return "";
+    var wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+    return parseInt(m[2], 10) + "/" + parseInt(m[3], 10) + "\uFF08" + FAV_WD[wd] + "\uFF09";
+  }
+  function _favEntriesTomorrow(now) {
+    var rows = [];
+    var racers = 0;
+    if (typeof _tomorrowEntriesOf !== "function") return { rows, racers: 0 };
+    _favRacers().forEach(function(f) {
+      var es = _tomorrowEntriesOf(f.id, now) || [];
+      if (es.length) racers++;
+      es.forEach(function(e) {
+        rows.push({ id: f.id, name: e.name || f.name, e });
+      });
+    });
+    rows.sort(function(a, b) {
+      return (a.e.hm || "99:99").localeCompare(b.e.hm || "99:99") || a.e.sid - b.e.sid || a.e.rno - b.e.rno || a.e.boat - b.e.boat;
+    });
+    return { rows, racers };
+  }
+  function _favTomorrowHtml(now) {
+    var tm = _favEntriesTomorrow(now);
+    if (!tm.rows.length) return "";
+    var info = typeof _tomorrowInfo === "function" ? _tomorrowInfo(now) : null;
+    var html = '<div class="fav-sub">\u660E\u65E5 ' + escText(_favMdw(info ? info.date : "")) + " " + tm.racers + " \u4EBA\u30FB" + tm.rows.length + " \u8D70" + (info && info.pending > 0 ? '<span class="fav-note">\uFF08' + info.pending + " \u5834\u306F\u51FA\u8D70\u8868\u304C\u672A\u516C\u958B\uFF09</span>" : "") + "</div>";
+    tm.rows.slice(0, FAV_TOMORROW_MAX).forEach(function(r) {
+      var e = r.e;
+      html += '<div class="fav-row fav-tm" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + escText(r.id) + '"><span class="fav-time">' + escText(e.hm) + "</span><span>" + escText(typeof STADIUMS !== "undefined" && STADIUMS[e.sid] || "\u5834" + e.sid) + " <b>" + e.rno + 'R</b></span><span class="fav-who">' + (typeof boatBadge === "function" ? boatBadge(e.boat) : e.boat) + ' <span class="fav-nm">' + escText(_racerDispName(r.name)) + '</span></span><span class="fav-st"></span></div>';
+    });
+    if (tm.rows.length > FAV_TOMORROW_MAX) {
+      html += '<div class="fav-row fav-rest" role="button" tabindex="0" data-action="showPage" data-arg-page="racer"><span class="fav-note">\u660E\u65E5 \u307B\u304B ' + (tm.rows.length - FAV_TOMORROW_MAX) + " \u8D70\u3092\u898B\u308B \u203A</span></div>";
+    }
+    return html;
+  }
   function _favStripHtml(now) {
     if (typeof programData === "undefined" || !programData) return null;
     var favs = _favRacers();
@@ -2486,7 +2642,11 @@
       return '<div class="fav-strip fav-empty" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u3092\u767B\u9332\u3059\u308B\u3068\u3001\u672C\u65E5\u306E\u51FA\u8D70\u304C\u3053\u3053\u306B\u51FA\u307E\u3059\u3002</span>' + more + "\u9078\u624B\u3092\u63A2\u3059 \u203A</span></div>";
     }
     var t = _favEntriesToday(now);
+    var tomorrow = _favTomorrowHtml(now);
     _racerAiMarkReset();
+    if (!t.rows.length && tomorrow) {
+      return '<div class="fav-strip" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><div class="fav-title"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70\uFF08\u672C\u65E5\u306F\u306A\u3057\uFF09</span>' + more + "\u9078\u624B\u4E00\u89A7 \u203A</span></div>" + tomorrow + "</div>";
+    }
     if (!t.rows.length) {
       return '<div class="fav-strip fav-empty" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\uFF08' + favs.length + " \u4EBA\uFF09\u306E\u672C\u65E5\u306E\u51FA\u8D70\u306F\u3042\u308A\u307E\u305B\u3093\u3002</span>" + more + "\u9078\u624B\u4E00\u89A7 \u203A</span></div>";
     }
@@ -2501,7 +2661,7 @@
     if (t.rows.length > shown.length) {
       html += '<div class="fav-row fav-rest" role="button" tabindex="0" data-action="showPage" data-arg-page="racer"><span class="fav-note">\u307B\u304B ' + (t.rows.length - shown.length) + " \u8D70\u3092\u898B\u308B \u203A</span></div>";
     }
-    return html + "</div>";
+    return html + tomorrow + "</div>";
   }
   function _markFavStadiums() {
     if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
@@ -2527,6 +2687,11 @@
       if (html != null) el.innerHTML = html;
     }
     _markFavStadiums();
+    if (typeof _loadTomorrow === "function" && _favRacers().length) {
+      _loadTomorrow(function() {
+        _renderFavTop();
+      }, now);
+    }
   }
   function _markFavRaceList(sid) {
     if (typeof document === "undefined") return;
@@ -2631,6 +2796,8 @@
   globalThis._racerEntryStatus = _racerEntryStatus;
   globalThis._favInRace = _favInRace;
   globalThis._favEntriesToday = _favEntriesToday;
+  globalThis._favEntriesTomorrow = _favEntriesTomorrow;
+  globalThis._favMdw = _favMdw;
   globalThis._favStripHtml = _favStripHtml;
   globalThis._renderFavTop = _renderFavTop;
   globalThis._markFavRaceList = _markFavRaceList;
