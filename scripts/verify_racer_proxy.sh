@@ -9,6 +9,8 @@
 #      登録番号の検証で止まるので、公式サイトには取りに行かない。
 # 2) 参考（失敗させない）: 実在の 1 選手を 2 回呼び、次を記録する。
 #      - 公式サイトから取れているか（200 + found）。502 / 503 は公式側の都合なので、デプロイの失敗にはしない。
+#      - 取得にかかった秒数。edge に無い選手の初回取得は公式サイトの応答待ちで長くなる（本番で 10.9 秒を実測）。
+#        アプリが待つのは 25 秒、Worker が公式を待つのは 20 秒まで。15 秒を超えたら warning。
 #      - 2 回目が x-cache: HIT か。Cloudflare の Cache API が *.workers.dev で効くかどうかが分かる
 #        （効かなくても、ブラウザ側の保存・アプリ内の 30 分・1 分 30 人の上限で取得は抑えられる）。
 #      公式サイトへの取得は、この確認 1 回につき最大 2 選手ページ × 2 回。
@@ -25,9 +27,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # ---- 1) 経路がデプロイされていること（最大 3 回。デプロイ直後は古い版が数秒残ることがある）
+# curl は失敗しても -w の内容（http_code は 000）を出力する。念のため 1 行目だけ使い、空なら 000 にする
+first_line() { local v="${1%%$'\n'*}"; echo "${v:-$2}"; }
 code=000
 for attempt in 1 2 3; do
-  code=$(curl -sS -m 15 -o /dev/null -w "%{http_code}" "$BASE/racer-proxy?toban=abc" 2>/dev/null || echo 000)
+  code=$(first_line "$(curl -sS -m 15 -o /dev/null -w "%{http_code}" "$BASE/racer-proxy?toban=abc" 2>/dev/null || true)" 000)
   [ "$code" = "400" ] && break
   [ "$attempt" -lt 3 ] && sleep 5
 done
@@ -42,14 +46,19 @@ header() { # ファイル 名前 → 値（名前の大文字小文字は区別�
   [ -f "$1" ] || return 0
   tr -d '\r' < "$1" | awk -v k="$2" 'tolower($0) ~ "^" tolower(k) ":" { sub(/^[^:]*:[ \t]*/, ""); print; exit }'
 }
-call() { # n → "status|x-cache|cache-control"
-  local n="$1" st
-  st=$(curl -sS -m 30 -D "$TMP/h$n" -o "$TMP/b$n" -w "%{http_code}" "$BASE/racer-proxy?toban=$TOBAN" 2>/dev/null || echo 000)
-  echo "$st|$(header "$TMP/h$n" x-cache)|$(header "$TMP/h$n" cache-control)"
+SLOW_SEC=15
+call() { # n → "status|x-cache|cache-control|秒"
+  local n="$1" out st sec
+  out=$(first_line "$(curl -sS -m 40 -D "$TMP/h$n" -o "$TMP/b$n" -w "%{http_code} %{time_total}" "$BASE/racer-proxy?toban=$TOBAN" 2>/dev/null || true)" "000 0")
+  st="${out%% *}"
+  sec=$(LC_ALL=C awk -v s="${out#* }" 'BEGIN { printf "%.1f", s + 0 }')
+  echo "$st|$(header "$TMP/h$n" x-cache)|$(header "$TMP/h$n" cache-control)|$sec"
 }
+field() { echo "$1" | cut -d'|' -f"$2"; }
 r1=$(call 1)
-s1="${r1%%|*}"
-echo "1 回目: HTTP $s1 / x-cache: $(echo "$r1" | cut -d'|' -f2) / cache-control: $(echo "$r1" | cut -d'|' -f3)"
+s1="$(field "$r1" 1)"
+t1="$(field "$r1" 4)"
+echo "1 回目: HTTP $s1 (${t1} 秒) / x-cache: $(field "$r1" 2) / cache-control: $(field "$r1" 3)"
 if [ "$s1" != "200" ]; then
   echo "::warning::/racer-proxy は動いているが、公式サイトから取得できなかった (HTTP $s1: $(head -c 200 "$TMP/b1" 2>/dev/null))。公式側の都合のことがある（RUNBOOK §11.1）。デプロイは成功として扱う。"
   exit 0
@@ -65,10 +74,13 @@ try:
 except Exception as e:  # noqa: BLE001
     print(f"::warning::/racer-proxy の応答を JSON として読めない: {e}")
 PY
+if LC_ALL=C awk -v s="$t1" -v lim="$SLOW_SEC" 'BEGIN { exit !(s + 0 > lim) }'; then
+  echo "::warning::初回の取得に ${t1} 秒かかった（公式サイトの応答待ち）。アプリが待つのは 25 秒、Worker が公式を待つのは 20 秒まで。続くようなら RUNBOOK §11.1。"
+fi
 sleep 3
 r2=$(call 2)
-x2="$(echo "$r2" | cut -d'|' -f2)"
-echo "2 回目: HTTP ${r2%%|*} / x-cache: $x2 / cache-control: $(echo "$r2" | cut -d'|' -f3)"
+x2="$(field "$r2" 2)"
+echo "2 回目: HTTP $(field "$r2" 1) ($(field "$r2" 4) 秒) / x-cache: $x2 / cache-control: $(field "$r2" 3)"
 if [ "$x2" = "HIT" ]; then
   echo "✅ edge の保存が効いている (2 回目は公式サイトに取りに行っていない)"
 else

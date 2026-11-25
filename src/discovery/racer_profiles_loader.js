@@ -74,7 +74,9 @@ function _loadRacerExt(onLoaded) {
 //   失敗は 3 分覚えておく（30 秒ごとの描き直しで叩き続けない）。
 var RACER_OFFICIAL_TTL_MS = 30 * 60000;
 var RACER_OFFICIAL_RETRY_MS = 3 * 60000;
-var RACER_OFFICIAL_TIMEOUT_MS = 10000;
+// 待つ上限。公式サイトの応答が遅いと、edge に無い選手の初回取得は 10 秒を超える（本番で 10.9 秒を実測、
+//   2 回目以降は 0.1 秒）。Worker は公式への取得を 20 秒で打ち切って 502 を返すので、それより長く待つ。
+var RACER_OFFICIAL_TIMEOUT_MS = 25000;
 var RACER_OFFICIAL_BATCH_MAX = 20; // 一覧からまとめて取る人数の上限
 var RACER_OFFICIAL_BATCH_GAP_MS = 300; // 1 人ずつ、間を空けて取る
 // 続けて失敗したら（Worker の停止・公式サイトの拒否・圏外）しばらく誰の分も取りに行かない。

@@ -7,6 +7,8 @@
  *     - ブラウザに置かせる時間は「残り時間」（edge + ブラウザで古さが 2 倍にならない）
  *     - 存在しない選手は短く置く / 失敗は置かない
  *     - 公式が拒否（403 / 429）したら 10 分は取りに行かない
+ *     - アプリが待ち切れずに接続を切っても、取得と edge への保存は最後までやる（waitUntil）
+ *     - 公式への取得には時間切れを付け、アプリが待つ時間より先に打ち切る
  *     - edge に無い選手の取得は 1 分に 30 人まで（429）。edge にある分は対象外
  *     - CORS は許可したオリジンだけ
  *
@@ -38,10 +40,12 @@ globalThis.caches = {
   },
 };
 let upstream = [];
+let upstreamOpts = [];
 let respond = null;
-globalThis.fetch = async (input) => {
+globalThis.fetch = async (input, opt) => {
   const u = String(input && input.url ? input.url : input);
   upstream.push(u);
+  upstreamOpts.push(opt || {});
   return respond(u);
 };
 const page = (body, status) => new Response(body, { status: status || 200, headers: { 'content-type': 'text/html' } });
@@ -67,6 +71,7 @@ const advance = (ms) => { clock += ms; };
 let pass = 0, fail = 0;
 async function t(name, fn) {
   upstream = [];
+  upstreamOpts = [];
   respond = official;
   try { await fn(); console.log('  PASS:', name); pass++; }
   catch (e) { console.log('  FAIL:', name, '\n    ', e.message); fail++; }
@@ -218,6 +223,77 @@ await t('取得の上限: edge に無い選手は 1 分に 30 人まで。超え
   // 1 分たてば戻る
   advance(61000);
   assert.strictEqual((await get('5999')).status, 200);
+});
+
+await t('アプリが待ち切れずに切っても、取得と edge への保存を最後までやる（応答の前に waitUntil に載せる）', async () => {
+  advance(2 * 60000);
+  // 公式サイトの応答が遅い: release() するまで返らない
+  const waiting = [];
+  respond = (u) => new Promise((resolve) => waiting.push(() => resolve(official(u))));
+  const before = puts.length;
+  const res = worker.fetch(new Request('https://w.example.dev/racer-proxy?toban=6100', { headers: { origin: ORIGIN } }), {}, CTX);
+  res.catch(() => {});
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(upstream.length, 2, '公式の 2 ページを取りに行っている最中');
+  assert.strictEqual(pending.length, 1, '応答を待っている間に、もう waitUntil に載っている（取得が終わってからでは遅い）');
+  // ここでアプリが接続を切ったとする（応答は読まない）。公式が応答したら、waitUntil の仕事だけで保存まで終わる
+  const job = pending.splice(0);
+  waiting.splice(0).forEach((release) => release());
+  await Promise.all(job);
+  assert.strictEqual(puts.length, before + 1, 'edge に保存された');
+  assert.ok(/toban=6100$/.test(puts[puts.length - 1]));
+  // 次に開いた時は edge から返る（公式には取りに行かない）
+  upstream = [];
+  respond = official;
+  const again = await get('6100');
+  assert.deepStrictEqual([again.status, again.headers.get('x-cache'), upstream.length], [200, 'HIT', 0]);
+  await res; // 後始末（この環境では handler も最後まで走る）
+});
+
+await t('拒否の記録も仕事の中で行う（接続が切れた後でも、次の人の取得を止める）', async () => {
+  advance(11 * 60000);
+  const waiting = [];
+  respond = () => new Promise((resolve) => waiting.push(() => resolve(page('forbidden', 403))));
+  const res = worker.fetch(new Request('https://w.example.dev/racer-proxy?toban=6200'), {}, CTX);
+  res.catch(() => {});
+  await new Promise((r) => setTimeout(r, 20));
+  const job = pending.splice(0);
+  assert.strictEqual(job.length, 1);
+  waiting.splice(0).forEach((release) => release());
+  await Promise.all(job); // waitUntil の仕事は失敗しても reject しない（runtime に未処理の失敗を残さない）
+  upstream = [];
+  respond = official;
+  const next = await get('6201');
+  assert.deepStrictEqual([next.status, upstream.length], [503, 0]);
+  assert.strictEqual((await res).status, 502);
+  advance(10 * 60000 + 1000);
+});
+
+await t('公式への取得に時間切れを付ける。時間切れは 502（置かない・拒否扱いにしない）', async () => {
+  await get('6300');
+  assert.strictEqual(upstreamOpts.length, 2);
+  for (const o of upstreamOpts) {
+    assert.ok(o.signal && typeof o.signal.aborted === 'boolean', '時間切れの signal が無い');
+    assert.strictEqual(o.signal.aborted, false);
+  }
+  const before = puts.length;
+  respond = () => { const e = new Error('The operation was aborted due to timeout'); e.name = 'TimeoutError'; throw e; };
+  const res = await get('6301');
+  assert.strictEqual(res.status, 502);
+  assert.strictEqual(res.headers.get('cache-control'), 'no-store');
+  assert.strictEqual(puts.length, before, '置かない');
+  // 時間切れは拒否ではない: 次の選手は取りに行く
+  respond = official;
+  upstream = [];
+  const next = await get('6302');
+  assert.deepStrictEqual([next.status, upstream.length], [200, 2]);
+  // Worker が公式を待つ時間 < アプリが Worker を待つ時間（逆だと、アプリが先に切って毎回失敗に見える）
+  const src = fs.readFileSync(path.join(ROOT, 'cloudflare-worker', 'worker.js'), 'utf8');
+  const app = fs.readFileSync(path.join(ROOT, 'src', 'discovery', 'racer_profiles_loader.js'), 'utf8');
+  const workerMs = Number((/const RACER_UPSTREAM_TIMEOUT_MS = (\d+);/.exec(src) || [])[1]);
+  const appMs = Number((/var RACER_OFFICIAL_TIMEOUT_MS = (\d+);/.exec(app) || [])[1]);
+  assert.ok(workerMs >= 15000, 'Worker が公式を待つ時間が短すぎる（本番の初回取得は 10.9 秒）: ' + workerMs);
+  assert.ok(appMs >= workerMs + 3000, `アプリ ${appMs}ms は Worker ${workerMs}ms より十分長く待つこと`);
 });
 
 Date.now = realNow;
