@@ -23,7 +23,7 @@ ODDS_BASE = "https://www.boatrace.jp/owpc/pc/race"
 #   ⚠ 旧 rotation (2026-05-10) は boatrace.jp の単純な UA ブロック回避策だった。
 #   本変更でブロックが再発する可能性があるため、odds workflow の失敗を要監視。
 #   再発時は http_utils.USER_AGENT の見直し or rotation 復活で対応 (git revert 容易)。
-from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, write_source_status  # noqa: E402
+from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, timed_call, write_source_status  # noqa: E402
 USER_AGENTS = [USER_AGENT]
 OUTPUT = "data/odds/today.json"
 PREVIEWS = "data/previews/today.json"
@@ -75,9 +75,9 @@ async def fetch(session, limiter, url, retries=MAX_RETRIES, block=None):
         await limiter.acquire()
         # 2026-11-20: aiohttp は boatrace.jp に 403 で拒否されるため、共通の urllib クライアント
         #   (http_utils.fetch_once) をスレッドで呼ぶ。session 引数は互換のため残す。
-        status, text = await asyncio.to_thread(fetch_once, url, timeout=15)
+        (status, text), sec = await asyncio.to_thread(timed_call, fetch_once, url, timeout=15)
         last_status = status
-        block.record(status)
+        block.record(status, sec)
         if status == 200:
             return text
         if isinstance(status, str):

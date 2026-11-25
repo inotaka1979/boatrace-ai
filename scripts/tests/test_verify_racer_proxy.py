@@ -44,6 +44,10 @@ sys.stdout.write(str(r["status"]) + (" %.6f" % r.get("sec", 0.123456) if "time_t
 """
 
 OK_BODY = json.dumps({"toban": "4320", "found": True, "schedule": [{}, {}], "back3": [{}], "wins": [], "back3_ok": True})
+TIMED_BODY = json.dumps({
+    "toban": "4320", "found": True, "schedule": [{}], "back3": [{}], "wins": [], "back3_ok": True,
+    "timing": {"profile_ms": 9790, "back3_ms": 10471, "edge_ms": 9264, "origin_ms": 63},
+})
 
 
 def run(plan, toban=None):
@@ -64,8 +68,11 @@ def run(plan, toban=None):
 BAD = {"status": 400}
 
 
-def ok(xcache, cc="public, max-age=10800", body=OK_BODY, sec=0.123456):
-    return {"status": 200, "headers": {"X-Cache": xcache, "Cache-Control": cc}, "body": body, "sec": sec}
+def ok(xcache, cc="public, max-age=10800", body=OK_BODY, sec=0.123456, colo="NRT"):
+    headers = {"X-Cache": xcache, "Cache-Control": cc}
+    if colo:
+        headers["CF-RAY"] = "8f3a1b2c3d4e5f60-" + colo
+    return {"status": 200, "headers": headers, "body": body, "sec": sec}
 
 
 class VerifyRacerProxy(unittest.TestCase):
@@ -73,10 +80,11 @@ class VerifyRacerProxy(unittest.TestCase):
         code, out, calls = run([BAD, ok("MISS"), ok("HIT", "public, max-age=10797")])
         self.assertEqual(code, 0, out)
         self.assertIn("デプロイ済み", out)
-        self.assertIn("1 回目: HTTP 200 (0.1 秒) / x-cache: MISS / cache-control: public, max-age=10800", out)
+        self.assertIn("1 回目: HTTP 200 (0.1 秒) / x-cache: MISS / 拠点: NRT / cache-control: public, max-age=10800", out)
         self.assertIn("found=True 出場予定 2 件 / 過去 3 節 1 件", out)
-        self.assertIn("2 回目: HTTP 200 (0.1 秒) / x-cache: HIT", out)
-        self.assertIn("edge の保存が効いている", out)
+        self.assertIn("2 回目: HTTP 200 (0.1 秒) / x-cache: HIT / 拠点: NRT", out)
+        self.assertIn("edge の保存が効いている (2 回目は公式サイトに取りに行っていない)", out)
+        self.assertNotIn("3 回目", out, "HIT が出たらそこで止める")
         self.assertNotIn("::warning::", out)
         # 不正な登録番号で 1 回、実在の選手で 2 回。URL の末尾の / は重ねない
         self.assertEqual(calls, [
@@ -108,7 +116,7 @@ class VerifyRacerProxy(unittest.TestCase):
         code, out, _ = run([BAD, ok("MISS", sec=17.5), ok("HIT")])
         self.assertEqual(code, 0, out)
         self.assertIn("::warning::初回の取得に 17.5 秒かかった", out)
-        self.assertIn("edge の保存が効いている", out, "遅くても 2 回目の確認は続ける")
+        self.assertIn("edge の保存が効いている (2 回目", out, "遅くても 2 回目の確認は続ける")
         # ちょうど 15 秒は警告しない
         code, out, _ = run([BAD, ok("MISS", sec=15.0), ok("HIT")])
         self.assertNotIn("::warning::", out)
@@ -132,15 +140,72 @@ class VerifyRacerProxy(unittest.TestCase):
             self.assertIn(body, out)
             self.assertEqual(len(calls), 2, "失敗したら 2 回目は呼ばない（公式サイトを叩き直さない）")
 
-    def test_edge_cache_not_effective_is_a_notice(self):
-        code, out, _ = run([BAD, ok("MISS"), ok("MISS")])
+    def test_same_location_never_hits_is_a_warning(self):
+        # 同じ拠点が 3 回応答して 3 回とも MISS = 保存が効いていない（失敗にはしない）
+        code, out, calls = run([BAD, ok("MISS"), ok("MISS"), ok("MISS")])
         self.assertEqual(code, 0, out)
-        self.assertIn("::notice::2 回目も x-cache: MISS", out)
-        self.assertNotIn("edge の保存が効いている", out)
-        # x-cache ヘッダそのものが無い
-        code, out, _ = run([BAD, ok("MISS"), {"status": 200, "headers": {}, "body": OK_BODY}])
+        self.assertIn("::warning::同じ拠点 (NRT → NRT → NRT) で 3 回とも保存した結果が返らなかった", out)
+        self.assertNotIn("edge の保存が効いている (", out)
+        self.assertEqual(len(calls), 4, "不正な番号 1 回 + 実在の選手 3 回まで")
+        self.assertIn("3 回目: HTTP 200", out)
+
+    def test_different_locations_cannot_be_judged(self):
+        # 2026-11-25 の run 78: MISS → MISS。拠点が違えば保存は共有されないので「判定できない」と書く
+        code, out, _ = run([BAD, ok("MISS", colo="IAD"), ok("MISS", colo="EWR"), ok("MISS", colo="IAD")])
         self.assertEqual(code, 0, out)
-        self.assertIn("::notice::2 回目も x-cache: なし", out)
+        self.assertIn("::notice::呼び出しごとに Cloudflare の拠点が違った (IAD → EWR → IAD)", out)
+        self.assertIn("判定できない", out)
+        self.assertNotIn("::warning::", out)
+
+    def test_unknown_location_is_a_notice(self):
+        code, out, _ = run([BAD, ok("MISS", colo=""), ok("MISS", colo=""), {"status": 200, "headers": {}, "body": OK_BODY}])
+        self.assertEqual(code, 0, out)
+        self.assertIn("拠点: 不明", out)
+        self.assertIn("::notice::3 回とも保存した結果が返らなかった（応答した拠点は不明）", out)
+        self.assertNotIn("::warning::", out)
+        # 1 回でも拠点が分からなければ「同じ拠点」とは言わない（1 回目・途中・最後のどれが欠けても）
+        for missing in (0, 1, 2):
+            plan = [BAD] + [ok("MISS", colo="" if i == missing else "NRT") for i in range(3)]
+            code, out, _ = run(plan)
+            self.assertIn("（応答した拠点は不明）", out, f"missing={missing}")
+            self.assertNotIn("同じ拠点", out, f"missing={missing}")
+            self.assertNotIn("::warning::", out, f"missing={missing}")
+
+    def test_hit_on_third_call_counts(self):
+        code, out, calls = run([BAD, ok("MISS", colo="IAD"), ok("MISS", colo="EWR"), ok("HIT", colo="IAD")])
+        self.assertEqual(code, 0, out)
+        self.assertIn("edge の保存が効いている (3 回目は公式サイトに取りに行っていない)", out)
+        self.assertNotIn("::notice::", out)
+        self.assertEqual(len(calls), 4)
+
+    def test_already_cached_on_first_call(self):
+        # 3 時間以内に同じ拠点で取得済みなら 1 回目から HIT。それ以上は呼ばない
+        code, out, calls = run([BAD, ok("HIT", "public, max-age=9000")])
+        self.assertEqual(code, 0, out)
+        self.assertIn("edge の保存が効いている (1 回目から保存した結果が返った", out)
+        self.assertEqual(len(calls), 2)
+
+    def test_reports_where_the_time_went(self):
+        code, out, _ = run([BAD, ok("MISS", body=TIMED_BODY, sec=10.5), ok("HIT", body=TIMED_BODY)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("公式サイトの応答（Worker が測った値）: profile 9.8 秒 / back3 10.5 秒", out)
+        self.assertIn("（公式サイト自身の計測: 配信側 9.3 秒 / サーバ本体 0.1 秒）", out)
+        # 公式の計測ヘッダが無いときは、その部分を出さない
+        body = json.dumps({"found": True, "schedule": [{}], "back3": [], "timing": {"profile_ms": 400, "back3_ms": 350, "edge_ms": None, "origin_ms": None}})
+        code, out, _ = run([BAD, ok("MISS", body=body), ok("HIT", body=body)])
+        self.assertIn("profile 0.4 秒 / back3 0.", out)
+        self.assertNotIn("公式サイト自身の計測", out)
+        # timing が無い古い Worker でも落ちない
+        code, out, _ = run([BAD, ok("MISS"), ok("HIT")])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("Worker が測った値", out)
+
+    def test_timing_of_a_cached_result_is_labelled_as_stored(self):
+        # 1 回目から HIT のとき、応答に入っているのは保存した時点（最大 3 時間前）の計測。今の値として読ませない
+        code, out, _ = run([BAD, ok("HIT", "public, max-age=9000", body=TIMED_BODY)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("公式サイトの応答（保存した時点に Worker が測った値）: profile 9.8 秒", out)
+        self.assertNotIn("（Worker が測った値）", out)
 
     def test_empty_parse_result_warns_about_page_shape(self):
         empty = json.dumps({"toban": "4320", "found": True, "schedule": [], "back3": [], "wins": [], "back3_ok": True})

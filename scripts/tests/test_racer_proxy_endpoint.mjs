@@ -269,6 +269,29 @@ await t('拒否の記録も仕事の中で行う（接続が切れた後でも�
   advance(10 * 60000 + 1000);
 });
 
+await t('公式サイトの応答にかかった時間を応答に含める（遅いのがどこかを後から判別できる）', async () => {
+  // このテストは時計を固定しているので、公式の応答 1 つにつき時計を 4 秒進めて「遅い応答」を表す
+  respond = async (u) => {
+    advance(4000);
+    return new Response(/profile\?/.test(u) ? fx('racer_profile.html') : fx('racer_back3.html'), {
+      status: 200,
+      headers: { 'content-type': 'text/html', 'server-timing': 'cdn-cache; desc=MISS, edge; dur=9264, origin; dur=63' },
+    });
+  };
+  const res = await get('6400');
+  assert.strictEqual(res.status, 200);
+  const j = await res.json();
+  assert.ok(j.timing && typeof j.timing === 'object', 'timing が無い: ' + JSON.stringify(j).slice(0, 120));
+  // 2 ページは同時に取りに行く。どちらも「取りに行ってから応答が届くまで」の時間
+  assert.ok(j.timing.profile_ms >= 4000 && j.timing.profile_ms <= 8000, 'profile_ms=' + j.timing.profile_ms);
+  assert.ok(j.timing.back3_ms >= 4000 && j.timing.back3_ms <= 8000, 'back3_ms=' + j.timing.back3_ms);
+  assert.deepStrictEqual([j.timing.edge_ms, j.timing.origin_ms], [9264, 63]);
+  assert.strictEqual(j.schedule.length, 4);
+  // 保存した結果にも入る（後から開いた人の応答でも、取得した時の所要時間が分かる）
+  const again = await (await get('6400')).json();
+  assert.deepStrictEqual(again.timing, j.timing);
+});
+
 await t('公式への取得に時間切れを付ける。時間切れは 502（置かない・拒否扱いにしない）', async () => {
   await get('6300');
   assert.strictEqual(upstreamOpts.length, 2);
