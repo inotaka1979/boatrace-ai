@@ -1,0 +1,12 @@
+# 意図して見た目を変えた VRT スナップショットの申告
+#   読む側: scripts/vrt_request.sh / .github/workflows/e2e.yml（手順は docs/RUNBOOK.md §10）
+#
+# 見た目が変わるのが正しい VRT テストのタイトル（Playwright の --grep に渡す正規表現）を
+# 1 行に 1 つ書く。このファイルを変更した PR と、そのマージ（main への push）では、
+#   - 書かれたテストは比較せず撮り直す（それ以外のテストは通常どおり比較する）
+#   - マージ後、update-snapshots ジョブが baseline を撮り直して自動で commit する
+# 手元で --update-snapshots した PNG を commit してはいけない（フォントが CI と違い一致しない）。
+# 次に見た目を変えるときは下の行を書き換える（前回の分は消す。履歴は git log で追える）。
+#
+# 2026-11-25: 下メニューに「選手」を追加（6 → 7 ボタン）
+nav: bottom navigation

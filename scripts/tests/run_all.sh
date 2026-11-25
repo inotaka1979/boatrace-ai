@@ -231,6 +231,14 @@ step "TOP: stadium day label / cancelled" \
 # 2026-11-20: 締切前予想の自動保存（全場の締切 15 分以内、事後生成を減らす）
 step "Auto-save pre-close predictions" \
      "node scripts/tests/test_auto_save_preclose.js"
+# 2026-11-25: お気に入り選手（保存 / TOP の場一覧の下の出走帯 / ★）と選手ページ（一覧・検索・詳細）
+step "Favorite racers: store / TOP strip / marks / entry points" \
+     "node scripts/tests/test_racer_fav.js"
+step "Racer page: search / list / detail / profile loader / chunk wiring" \
+     "node scripts/tests/test_racer_page.js"
+# 2026-11-25: 意図した見た目の変更の申告（tests/e2e/vrt-baseline-request → VRT の baseline を自動で差し替える）
+step "VRT baseline request (scripts/vrt_request.sh)" \
+     "python3 -m unittest scripts.tests.test_vrt_request -v"
 
 # 2026-11-20: 未定義参照の静的検査（app.js / worker / src）と main→worker の state 同期の網羅性
 step "no-undef: app.js / worker / src (AST globals)" \

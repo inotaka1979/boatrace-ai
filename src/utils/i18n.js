@@ -46,6 +46,7 @@ const I18N_TABLES = {
     'page.stats': '成績',
     'page.daily': '日別',
     'page.backtest': '検証',
+    'page.racer': '選手',
     'page.settings': '設定',
     // settings
     'settings.bet_count_3': '3連単 買い目点数',
@@ -72,7 +73,7 @@ const I18N_TABLES = {
     'notify.permission_granted': '✓ 許可済',
     'notify.permission_denied': '× 拒否（ブラウザ設定で変更可）',
     'notify.permission_default': '未設定',
-    'notify.title': 'お気に入りレースの結果が確定',
+    'notify.title': '注目レースの結果が確定',
     // api
     'api.health.fail': 'API 取得失敗',
     'api.health.cached': 'キャッシュ使用中',
@@ -135,6 +136,7 @@ const I18N_TABLES = {
     'page.stats': 'Stats',
     'page.daily': 'Daily',
     'page.backtest': 'Backtest',
+    'page.racer': 'Racers',
     'page.settings': 'Settings',
     // settings
     'settings.bet_count_3': 'Trifecta # of bets',
@@ -225,6 +227,7 @@ const I18N_TABLES = {
     'page.stats': '业绩',
     'page.daily': '日报',
     'page.backtest': '回测',
+    'page.racer': '选手',
     'page.settings': '设置',
     // settings
     'settings.bet_count_3': '三连单注数',

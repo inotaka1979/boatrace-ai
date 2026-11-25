@@ -67,7 +67,7 @@
     var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
     if (closedTime) closedTime = closedTime.slice(0, 5);
     var _watched = typeof _isRaceWatched === "function" ? _isRaceWatched(sid, rn) : false;
-    var _starHtml = '<button id="raceStarBtn" aria-label="\u304A\u6C17\u306B\u5165\u308A\u5207\u66FF" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
+    var _starHtml = '<button id="raceStarBtn" aria-label="\u6CE8\u76EE\u30EC\u30FC\u30B9\u306B\u767B\u9332\u30FB\u89E3\u9664" title="\u6CE8\u76EE\u30EC\u30FC\u30B9\uFF08\u7D50\u679C\u306E\u78BA\u5B9A\u3092\u901A\u77E5\uFF09" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
     document.getElementById("detailTitle").innerHTML = name + " " + rn + "R" + (closedTime ? ' <span style="font-size:12px;color:var(--text-dim);font-weight:400">\u7DE0\u5207 ' + closedTime + "</span>" : "") + _starHtml;
     document.getElementById("detailBack").onclick = function() {
       openStadium(sid);
@@ -555,7 +555,8 @@
       stTimes.forEach(function(e, i2) {
         stRankMap[e.boat] = i2;
       });
-      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868</div>';
+      var favSet = typeof _favIdSet === "function" ? _favIdSet() : {};
+      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868<span class="sec-hint">\u9078\u624B\u540D\u3092\u62BC\u3059\u3068\u9078\u624B\u306E\u6210\u7E3E</span></div>';
       boatsHtml += '<div class="detail-table-wrap"><table class="detail-table">';
       boatsHtml += "<tr>";
       for (var bn = 1; bn <= 6; bn++) {
@@ -599,7 +600,7 @@
         var markStr = m ? ' <span style="font-size:11px;color:var(--accent)">' + m.mark + "</span>" : "";
         var rid = bt.racer_number || 0;
         var photoHtml = rid ? '<img class="racer-photo" src="data/photos/' + rid + `.jpg" loading="lazy" alt="" onerror="this.dataset.broken='1'">` : "";
-        boatsHtml += "<td>" + photoHtml + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
+        boatsHtml += (rid ? '<td class="racer-link" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + rid + '">' : "<td>") + photoHtml + (rid ? '<span class="fav-mark" data-fav-mark="' + rid + '"' + (favSet[String(rid)] ? "" : " hidden") + ">\u2605</span>" : "") + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
       }
       boatsHtml += "<th>\u9078\u624B</th></tr>";
       boatsHtml += "<tr>";

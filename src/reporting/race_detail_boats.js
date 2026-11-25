@@ -76,7 +76,9 @@ function _renderRaceDetailBoats(ctx) {
       stRankMap[e.boat] = i;
     });
 
-    boatsHtml = '<div class="section-title">出走表</div>';
+    // 2026-11-25: 選手のセルを押すと選手ページ（racer_fav.js の openRacer）。お気に入り選手には ★。
+    var favSet = typeof _favIdSet === 'function' ? _favIdSet() : {};
+    boatsHtml = '<div class="section-title">出走表<span class="sec-hint">選手名を押すと選手の成績</span></div>';
     boatsHtml += '<div class="detail-table-wrap"><table class="detail-table">';
 
     // Row 0: 枠番ヘッダー (boat colors)
@@ -149,8 +151,13 @@ function _renderRaceDetailBoats(ctx) {
           '.jpg" loading="lazy" alt="" onerror="this.dataset.broken=\'1\'">'
         : '';
       boatsHtml +=
-        '<td>' +
+        (rid
+          ? '<td class="racer-link" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + rid + '">'
+          : '<td>') +
         photoHtml +
+        (rid
+          ? '<span class="fav-mark" data-fav-mark="' + rid + '"' + (favSet[String(rid)] ? '' : ' hidden') + '>★</span>'
+          : '') +
         '<span style="font-weight:700;font-size:13px;color:' +
         nameColor +
         '">' +

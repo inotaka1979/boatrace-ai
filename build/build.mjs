@@ -141,6 +141,10 @@ async function main() {
     { marker: 'REPORTING_SOON_STRIP', src: 'reporting/soon_strip.js' }, // 2026-11-20: TOP まもなく締切 (rest bundle)
     { marker: 'REPORTING_STADIUM_DAY', src: 'reporting/stadium_day.js' }, // 2026-11-20: TOP 何日目/最終日/中止 (rest bundle)
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
+    { marker: 'REPORTING_RACER_FAV', src: 'reporting/racer_fav.js' }, // 2026-11-25: お気に入り選手 + TOP の出走帯 (rest bundle)
+    { marker: 'DISCOVERY_RACER_PROFILES', src: 'discovery/racer_profiles_loader.js' }, // 2026-11-25: 選手プロフィールの取得 (rest-racer)
+    { marker: 'REPORTING_RACER_PAGE', src: 'reporting/racer_page.js' },     // 2026-11-25: 選手一覧・検索 (rest-racer)
+    { marker: 'REPORTING_RACER_DETAIL', src: 'reporting/racer_detail.js' }, // 2026-11-25: 選手詳細 (rest-racer)
     { marker: 'REPORTING_RACE_DETAIL', src: 'reporting/race_detail.js' },     // Phase 2 完遂続編 (openRace orchestrator)
     { marker: 'DISCOVERY_RACER_STATS', src: 'discovery/racer_stats_loader.js' }, // 2026-11-20: 長期集計の取得 (rest-detail)
     { marker: 'REPORTING_RACE_DETAIL_BOATS', src: 'reporting/race_detail_boats.js' },           // Phase 2 完遂続編 (boats card)
@@ -360,6 +364,7 @@ async function main() {
   const restSrc = resolve(ROOT, 'assets/app-rest.js');
   const restStatsSrc = resolve(ROOT, 'assets/app-rest-stats.js');
   const restDetailSrc = resolve(ROOT, 'assets/app-rest-detail.js');
+  const restRacerSrc = resolve(ROOT, 'assets/app-rest-racer.js');
   if (await readFile(criticalSrc, 'utf8').then(()=>true).catch(()=>false)){
     await minifyFile(criticalSrc, resolve(ROOT, 'assets/app-critical.min.js'), 'assets/app-critical.min.js');
   }
@@ -371,6 +376,9 @@ async function main() {
   }
   if (await readFile(restDetailSrc, 'utf8').then(()=>true).catch(()=>false)){
     await minifyFile(restDetailSrc, resolve(ROOT, 'assets/app-rest-detail.min.js'), 'assets/app-rest-detail.min.js');
+  }
+  if (await readFile(restRacerSrc, 'utf8').then(()=>true).catch(()=>false)){
+    await minifyFile(restRacerSrc, resolve(ROOT, 'assets/app-rest-racer.min.js'), 'assets/app-rest-racer.min.js');
   }
 
   // P1-Q3: Bundle size budget — 配信物が予算を超えたら fail / warn
@@ -409,6 +417,9 @@ async function main() {
     //   複合チャート ~6KB) を stats sub-chunk に追加 (lazy load、起動 TBT に影響なし)。
     { path: 'assets/app-rest-stats.min.js',  max: 27000, level: 'warn' },  // 成績 + バックテスト + 日別 sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
+    // 2026-11-25: 選手ページ（一覧・検索・詳細）。初版 21.3KB。選手ページを開いた時だけ読む
+    //   （起動 TBT に影響なし）。第 2 段階（今後の出場予定・過去 3 節）の分の余裕を見て 26000。
+    { path: 'assets/app-rest-racer.min.js',  max: 26000, level: 'warn' },  // 選手ページ sub-chunk
     { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
   let budgetFail = false;
@@ -521,7 +532,8 @@ async function main() {
     // Phase 2 完遂続編: lazy sub-chunks も hash 計算に含めて更新検知
     const restStatsBuf = await readFile(resolve(ROOT, 'assets/app-rest-stats.min.js')).catch(() => Buffer.alloc(0));
     const restDetailBuf = await readFile(resolve(ROOT, 'assets/app-rest-detail.min.js')).catch(() => Buffer.alloc(0));
-    const combined = Buffer.concat([criticalBuf, restBuf, restStatsBuf, restDetailBuf]);
+    const restRacerBuf = await readFile(resolve(ROOT, 'assets/app-rest-racer.min.js')).catch(() => Buffer.alloc(0));
+    const combined = Buffer.concat([criticalBuf, restBuf, restStatsBuf, restDetailBuf, restRacerBuf]);
     const newVer = createHash('sha256').update(combined).digest('hex').slice(0, 8);
 
     // sw.js の VERSION を上書き

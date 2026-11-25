@@ -75,7 +75,8 @@ test('settings: KPI モード dropdown が描画される (P0-3)', async ({ page
   await expect(kpi).toHaveScreenshot('settings-kpi-mode.png');
 });
 
-test('nav: 5ボタン bottom navigation', async ({ page }) => {
+// タイトルは tests/e2e/vrt-baseline-request（意図した見た目の変更の申告）から参照される
+test('nav: bottom navigation', async ({ page }) => {
   const nav = page.locator('nav.nav');
   await expect(nav).toBeVisible();
   await expect(nav).toHaveScreenshot('bottom-nav.png');

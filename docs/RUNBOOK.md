@@ -266,31 +266,38 @@ VRT は「前回 commit した PNG」と現在のレンダリングを比較す�
 サイズ違い（`Expected an image 390px by 140px, received 390px by 190px` のような
 メッセージ）は要素が増減したサインで、レンダリング揺らぎではない。
 
-### 10.2 baseline の再生成（唯一の正しい手順）
+### 10.2 baseline の再生成
 
 ローカルで `--update-snapshots` して commit してはいけない。
 開発機と GitHub Actions の ubuntu-latest ではフォントとレンダリングが違い、
-ローカル生成の PNG は CI で必ず落ちる。**必ず CI 上で再生成する**:
+ローカル生成の PNG は CI で必ず落ちる。**必ず CI 上で再生成する**。
+
+#### (a) 見た目を変える PR を出すとき — 申告すれば自動（2026-11-25〜）
+
+1. 変わるのが正しい VRT テストのタイトルを `tests/e2e/vrt-baseline-request` に書いて PR に含める
+   （1 行に 1 つ。Playwright の `--grep` に渡す正規表現。前回の分は消して書き換える）
+2. その PR の `vrt` ジョブは、申告されたテストだけ比較せず撮り直し、**それ以外は通常どおり比較する**
+   （撮り直した PNG は artifact `vrt-regenerated-snapshots` で確認できる）
+3. マージすると、main への push で `update-snapshots` ジョブが申告分の baseline を撮り直し、
+   `vrt: regenerate snapshots (…)` として自動 commit + push する。手動操作は無い
+
+判定は `scripts/vrt_request.sh`（申告ファイルが「その PR / push で変更されたとき」だけ有効）。
+申告ファイルを触らない PR は、従来どおり全テストを比較する。
+
+#### (b) 申告を忘れて main が赤くなったとき — 手動
 
 1. GitHub → Actions → 「E2E (Playwright)」
-2. 「Run workflow」→ ブランチに `main` を選んで実行（`workflow_dispatch` 限定の
-   `update-snapshots` ジョブが走る）
+2. 「Run workflow」→ ブランチに `main` を選んで実行（`update-snapshots` ジョブが全スナップショットを撮り直す）
 3. ジョブが `tests/e2e/screens.vrt.spec.mjs-snapshots/` を再生成し、
    `vrt: regenerate snapshots (…)` として自動 commit + push する
-4. 以降の PR は本物の退行だけが赤くなる
 
-### 10.3 既知の負債（2026-08-11 時点）
+### 10.3 経緯
 
-baseline の最終再生成は `88460479` (2026-05-10)。それ以降に入った
-**意図的な** UI 変更が未反映のため、`main` を含む全 run で同じ 2 件が赤い:
-
-| テスト | 差分の原因 |
-|---|---|
-| `races page: レース一覧 page wrapper layout` | 2026-07-22 の `#racesViewToggle`（🎯AI予想 / 🏁結果一覧 トグル）追加で `#pageRaces` が 140px → 190px |
-| `nav: 5ボタン bottom navigation` | Epic 22/25 の i18n 導入による nav ラベル変更 |
-
-**恒常的に赤い＝本物の退行が混ざっても気付けない**状態なので、
-10.2 の再生成を一度実施して解消することを推奨する（所要 1 分、user 操作のみ）。
+- 2026-05-10 (`88460479`) 以降、意図した UI 変更（`#racesViewToggle` の追加、i18n による nav ラベル変更）が
+  baseline に反映されず、main を含む全 run で同じ 2 件が 3 か月赤いままだった。
+  **恒常的に赤い＝本物の退行が混ざっても気付けない**。2026-08-11 (`bb5ee1c7`) に (b) の手順で解消。
+- 2026-11-25: 下メニューに「選手」を追加（6 → 7 ボタン）。同じことを繰り返さないよう (a) の申告方式を追加し、
+  この変更自体を最初の申告にした（テスト `nav: bottom navigation`）。
 
 ## 11. boatrace.jp からデータが取れない（issue `source-blocked`）
 

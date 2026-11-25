@@ -6,7 +6,7 @@
 // 依存: stopOddsAutoRefresh / startOddsAutoRefresh / renderStats / loadSettings /
 //       _persistNavState / currentStadium / currentRace
 //
-// Public: showPage, _ensureStatsChunk, _ensureRaceDetailChunk
+// Public: showPage, _ensureStatsChunk, _ensureRaceDetailChunk, _ensureRacerChunk
 
 'use strict';
 
@@ -14,6 +14,7 @@
 // Lazy sub-chunk loader (Phase 2 完遂続編)
 //   - stats:  成績タブ / バックテストタブ open 時 (app-rest-stats.min.js)
 //   - detail: レース詳細ページ open 時 (app-rest-detail.min.js)
+//   - racer:  選手ページ open 時 (app-rest-racer.min.js、2026-11-25)
 // 起動時 rest bundle を ~50KB 縮小 (TBT/LCP 改善)。SW cache 後は 2 回目以降即時。
 // ─────────────────────────────────────────────
 
@@ -21,6 +22,7 @@
 var _chunkStates = {
   stats: { loaded: false, promise: null },
   detail: { loaded: false, promise: null },
+  racer: { loaded: false, promise: null },
 };
 
 /**
@@ -66,6 +68,11 @@ function _ensureStatsChunk() {
 
 function _ensureRaceDetailChunk() {
   return _loadChunk('detail', 'app-rest-detail.min.js');
+}
+
+// 選手ページ。今節成績の組み立て (_seriesSlotsFor) と長期集計の取得は detail chunk にあるので一緒に読む。
+function _ensureRacerChunk() {
+  return Promise.all([_ensureRaceDetailChunk(), _loadChunk('racer', 'app-rest-racer.min.js')]);
 }
 
 // stats chunk を load して指定 render 関数を呼ぶ (stats / daily 共通)
@@ -133,6 +140,12 @@ function showPage(page) {
     document.getElementById('pageSettings').classList.add('active');
     _setActive('navSettings');
     loadSettings();
+  } else if (page === 'racer') {
+    // 2026-11-25: 選手（お気に入り / 本日の出走 / 検索 / 選手詳細）。描画は rest の racer_fav.js が
+    //   chunk を読み込んでから行う。
+    document.getElementById('pageRacer').classList.add('active');
+    _setActive('navRacer');
+    if (typeof _onShowRacerPage === 'function') _onShowRacerPage();
   }
   window.scrollTo(0, 0);
   // P0-5: ナビ状態を sessionStorage に保存（PWA 自動更新リロード後の位置復元用）
@@ -145,3 +158,4 @@ function showPage(page) {
 globalThis.showPage = showPage;
 globalThis._ensureStatsChunk = _ensureStatsChunk;
 globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;
+globalThis._ensureRacerChunk = _ensureRacerChunk;
