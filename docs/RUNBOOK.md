@@ -323,7 +323,10 @@ scrape-all の「Source health alert」が、各 scraper の記録（`data/_stat
 （2026-11-25）。取れないときは選手詳細に「取得できませんでした」と出るだけで、ほかの表示には影響しない
 （プロフィール・成績・コース別はファン手帳と出走表から出す）。
 
-- 確認: `curl -i "https://boatrace-scrape-trigger.<account>.workers.dev/racer-proxy?toban=4320"`
+- まとめて確認: `bash scripts/verify_racer_proxy.sh https://boatrace-scrape-trigger.<account>.workers.dev`
+  （デプロイのたびに deploy-worker.yml の「Verify /racer-proxy」が同じものを実行し、結果をログに残す。
+  経路がデプロイされていなければ失敗、公式から取れない・edge の保存が効かない は記録だけ）
+- 個別に確認: `curl -i "https://boatrace-scrape-trigger.<account>.workers.dev/racer-proxy?toban=4320"`
   - `200` + `x-cache: MISS / HIT` … 正常。`found: false` は公式に選手ページが無い登録番号（引退など）。
   - `502 {"error":"upstream"}` … 公式が 5xx / 通信失敗。置かずに返すので、次の人が取り直す。
   - `503 {"error":"blocked"}` … 公式が 403 / 429 を返したので、その isolate は 10 分取りに行かない

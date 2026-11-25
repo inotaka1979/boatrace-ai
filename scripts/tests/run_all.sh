@@ -241,6 +241,9 @@ step "Worker /racer-proxy: official racer page parse" \
      "node scripts/tests/test_racer_proxy_parse.js"
 step "Worker /racer-proxy: endpoint (cache / rate cap / upstream block pause / CORS)" \
      "node scripts/tests/test_racer_proxy_endpoint.mjs"
+# 2026-11-25: デプロイ後の /racer-proxy の確認（deploy-worker.yml から呼ぶ scripts/verify_racer_proxy.sh）
+step "Post-deploy check of /racer-proxy (scripts/verify_racer_proxy.sh)" \
+     "python3 -m unittest scripts.tests.test_verify_racer_proxy"
 # 選手ページのテストを別の日時でも走らせる（書いた日にだけ通るテストを残さない）。
 #   級の適用開始（1/1・7/1）の後、日付が変わる直前、過去の日付。
 step "Racer tests under other dates (no real-clock dependence)" \
