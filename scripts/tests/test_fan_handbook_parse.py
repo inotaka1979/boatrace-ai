@@ -16,7 +16,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from build_db import fan_handbook_urls, parse_fan_handbook  # noqa: E402
+import build_db  # noqa: E402
+from build_db import fan_handbook_urls, parse_fan_handbook, parse_fan_handbook_ext  # noqa: E402
 
 
 def _build_fan_record(
@@ -117,6 +118,180 @@ class TestFanHandbookParse(unittest.TestCase):
         line = _build_fan_record(name='山田太郎', age=30)
         r = parse_fan_handbook(line + b'\n')['4444']
         self.assertEqual(r.get('age'), 30)   # ずれていれば異なる値が読まれる
+
+
+def _build_full_record(
+    toban: str = '4320',
+    name: str = '峰　　　　竜　太',
+    nengo: str = 'S',
+    birth: str = '600330',       # 昭和 60 年 3 月 30 日
+    sex: str = '1',
+    height: str = '171',
+    blood: str = 'B ',
+    first: int = 47,
+    second: int = 22,
+    yusyutsu: int = 10,
+    yusyo: int = 2,
+    classes: tuple = ('A1', 'A1', 'A2'),
+    prev_ability: int = 7700,
+    cur_ability: int = 7500,
+    year: str = '2027',
+    half: str = '1',
+    d_from: str = '20260501',
+    d_to: str = '20261031',
+    ki: int = 95,
+    flks: tuple = ((1, 0, 0, 0, 0, 0, 0, 0),) + ((0, 0, 0, 0, 0, 0, 0, 0),) * 5,   # コース別 F L0 L1 K0 K1 S0 S1 S2
+    no_course: tuple = (0, 0, 0, 0),   # コースなし L0 L1 K0 K1
+    birthplace: str = '佐　賀',
+) -> bytes:
+    """ファン手帳の 1 行（416 bytes）を、公表レイアウトどおりに組み立てる。"""
+    def b(s: str, n: int) -> bytes:
+        v = s.encode('shift_jis', errors='replace')
+        assert len(v) <= n, (s, n)
+        return v.ljust(n, b' ')
+
+    line = b(toban, 4) + b(name, 16) + b('ﾐﾈ ﾘｭｳﾀ', 15) + b('佐賀', 4) + b('A1', 2)
+    line += b(nengo, 1) + b(birth, 6) + b(sex, 1) + b('41', 2) + b(height, 3) + b('52', 2) + b(blood, 2)
+    line += b('0885', 4) + b('0633', 4) + b(f'{first:03d}', 3) + b(f'{second:03d}', 3) + b('109', 3)
+    line += b(f'{yusyutsu:02d}', 2) + b(f'{yusyo:02d}', 2) + b('012', 3)
+    for _ in range(6):
+        line += b('020', 3) + b('0500', 4) + b('013', 3) + b('270', 3)
+    assert len(line) == 160, len(line)
+    for c in classes:
+        line += b(c, 2)
+    line += b(f'{prev_ability:04d}', 4) + b(f'{cur_ability:04d}', 4)
+    line += b(year, 4) + b(half, 1) + b(d_from, 8) + b(d_to, 8) + b(f'{ki:03d}', 3)
+    assert len(line) == 198, len(line)
+    for c in range(6):
+        line += b''.join(b(f'{n:03d}', 3) for n in (5, 4, 3, 2, 1, 0))
+        line += b''.join(b(f'{n:02d}', 2) for n in flks[c])
+    assert len(line) == 402, len(line)
+    line += b''.join(b(f'{n:02d}', 2) for n in no_course)
+    line += b(birthplace, 6)
+    assert len(line) == 416, len(line)
+    return line
+
+
+class TestFanHandbookExt(unittest.TestCase):
+    """2026-11-25: 選手ページ用の追加項目（parse_fan_handbook が読み飛ばしている欄）。"""
+
+    def test_all_fields(self):
+        out = parse_fan_handbook_ext(_build_full_record() + b'\r\n')
+        self.assertEqual(out['term'], {'year': 2027, 'half': 1, 'from': '2026-05-01', 'to': '2026-10-31'})
+        self.assertEqual(out['racers']['4320'], {
+            'b': '1985-03-30', 's': 1, 'h': 171, 'bl': 'B', 'bp': '佐賀', 'ki': 95,
+            'w': [47, 22], 'y': [10, 2], 'pc': [1, 1, 2], 'ab': [75.0, 77.0], 'fl': [1, 0, 0, 0],
+        })
+
+    def test_same_record_feeds_both_parsers(self):
+        # 同じ行を既存パーサも読める（レイアウトの解釈が食い違っていない）
+        line = _build_full_record() + b'\n'
+        base = parse_fan_handbook(line)['4320']
+        self.assertEqual((base['classNum'], base['age'], base['weight'], base['totalRaces']), (1, 41, 52, 109))
+        self.assertAlmostEqual(base['winRate'], 8.85)
+        self.assertEqual(base['courseStats']['1']['places'], [5, 4, 3, 2, 1, 0])
+        self.assertNotIn('b', base)   # 追加項目は racerDB.json に混ぜない
+
+    def test_japanese_era_to_gregorian(self):
+        for nengo, ymd, want in (('S', '240426', '1949-04-26'), ('H', '010108', '1989-01-08'),
+                                 ('H', '210924', '2009-09-24'), ('R', '020501', '2020-05-01')):
+            r = parse_fan_handbook_ext(_build_full_record(nengo=nengo, birth=ymd))['racers']['4320']
+            self.assertEqual(r.get('b'), want, (nengo, ymd))
+
+    def test_unreadable_values_are_omitted_not_guessed(self):
+        r = parse_fan_handbook_ext(_build_full_record(
+            nengo='X', birth='600330', sex='9', height='000', blood='??', classes=('A1', 'XX', '  '),
+            prev_ability=0, cur_ability=0, ki=0, birthplace='      ',
+        ))['racers']['4320']
+        for key in ('b', 's', 'h', 'bl', 'bp', 'ki', 'ab'):
+            self.assertNotIn(key, r, key)
+        self.assertEqual(r['pc'], [1, 0, 0])
+        bad_date = parse_fan_handbook_ext(_build_full_record(birth='601340'))['racers']['4320']
+        self.assertNotIn('b', bad_date)   # 13 月 40 日
+
+    def test_fl_counts_sum_all_courses_and_no_course(self):
+        flks = (
+            (1, 0, 1, 0, 0, 0, 0, 0),   # 1 コース: F1, L1(責任) 1
+            (0, 1, 0, 1, 1, 0, 0, 0),   # 2 コース: L0 1, K0 1, K1 1
+            (1, 0, 0, 0, 0, 1, 1, 1),   # 3 コース: F1, S0 S1 S2 各 1
+        ) + ((0,) * 8,) * 3
+        r = parse_fan_handbook_ext(_build_full_record(flks=flks, no_course=(1, 0, 0, 2)))['racers']['4320']
+        self.assertEqual(r['fl'], [2, 3, 4, 3])   # F=2, L=1+1+1, K=1+1+2, S=3
+
+    def test_kanji_name_does_not_shift_later_fields(self):
+        r = parse_fan_handbook_ext(_build_full_record(name='堀之内　　紀代子', ki=83, birthplace='岡　山'))['racers']['4320']
+        self.assertEqual((r['ki'], r['bp'], r['h']), (83, '岡山', 171))
+
+    def test_short_or_non_numeric_lines_are_skipped(self):
+        raw = b'4320' + b' ' * 300 + b'\n' + _build_full_record(toban='ABCD') + b'\n' + _build_full_record(toban='5001') + b'\n'
+        out = parse_fan_handbook_ext(raw)
+        self.assertEqual(list(out['racers']), ['5001'])
+
+    def test_term_is_the_majority_and_none_when_unreadable(self):
+        raw = b'\n'.join([
+            _build_full_record(toban='5001'), _build_full_record(toban='5002'),
+            _build_full_record(toban='5003', d_from='20251101', d_to='20260430', year='2026', half='2'),
+        ])
+        self.assertEqual(parse_fan_handbook_ext(raw)['term']['from'], '2026-05-01')
+        none = parse_fan_handbook_ext(_build_full_record(d_from='        ', d_to='        '))
+        self.assertIsNone(none['term'])
+        self.assertEqual(parse_fan_handbook_ext(b'')['racers'], {})
+
+
+class TestBuildDbWritesExtFile(unittest.TestCase):
+    """main(): racer_ext.json を別ファイルに書き、racerDB.json には追加項目を混ぜない。"""
+
+    def _run_main(self, fan_bytes, tmp):
+        import json
+        saved = (build_db.download, build_db.extract_lzh_bytes, build_db.OUTPUT_RACER, build_db.OUTPUT_STADIUM,
+                 build_db.OUTPUT_RACER_EXT, sys.argv)
+        build_db.download = lambda url: b'lzh'
+        build_db.extract_lzh_bytes = lambda data: fan_bytes
+        build_db.OUTPUT_RACER = os.path.join(tmp, 'db', 'racerDB.json')
+        build_db.OUTPUT_STADIUM = os.path.join(tmp, 'db', 'stadiumDB.json')
+        build_db.OUTPUT_RACER_EXT = os.path.join(tmp, 'db', 'racer_ext.json')
+        sys.argv = ['build_db.py']
+        try:
+            rc = build_db.main()
+        finally:
+            (build_db.download, build_db.extract_lzh_bytes, build_db.OUTPUT_RACER, build_db.OUTPUT_STADIUM,
+             build_db.OUTPUT_RACER_EXT, sys.argv) = saved
+
+        def load(name):
+            path = os.path.join(tmp, 'db', name)
+            if not os.path.exists(path):
+                return None
+            with open(path, encoding='utf-8') as f:
+                return json.load(f)
+        return rc, load('racerDB.json'), load('racer_ext.json')
+
+    def test_writes_ext_separately(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = _build_full_record(toban='4320') + b'\n' + _build_full_record(toban='5001', ki=120) + b'\n'
+            rc, db, ext = self._run_main(raw, tmp)
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(ext['racers']), ['4320', '5001'])
+        self.assertEqual(ext['racers']['5001']['ki'], 120)
+        self.assertEqual(ext['term']['to'], '2026-10-31')
+        self.assertRegex(ext['source'], r'^fan\d{4}$')
+        self.assertTrue(ext['updated_at'])
+        # racerDB.json の形は従来どおり（起動のたびに読むファイルを太らせない）
+        self.assertEqual(sorted(db['racers']['4320']), sorted([
+            'name', 'kana', 'branch', 'classNum', 'age', 'weight', 'winRate', 'top2Rate', 'avgST',
+            'totalRaces', 'courseStats', 'recentResults']))
+
+    def test_keeps_existing_ext_when_nothing_parsed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'db'))
+            with open(os.path.join(tmp, 'db', 'racer_ext.json'), 'w', encoding='utf-8') as f:
+                f.write('{"racers": {"1": {"ki": 1}}}')
+            # 既存パーサは読めるが（200 bytes 以上）、追加項目の欄まで届かない短い行
+            rc, db, ext = self._run_main(_build_fan_record()[:300] + b'\n', tmp)
+        self.assertEqual(rc, 0)
+        self.assertIn('4444', db['racers'])
+        self.assertEqual(ext, {'racers': {'1': {'ki': 1}}})   # 空で上書きしない
 
 
 class TestFanHandbookUrls(unittest.TestCase):

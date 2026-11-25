@@ -21,6 +21,7 @@
 //   GET /api/results    — results
 //   GET /api/refresh-now — 手動 refresh トリガ (デバッグ用)
 //   GET /odds-proxy     — boatrace.jp odds CORS pass-through
+//   GET /racer-proxy    — 選手の今後の出場予定・過去 3 節（公式の選手ページ、edge に 3 時間）
 // =============================================================================
 
 const UPSTREAM = {
@@ -1267,6 +1268,179 @@ async function serveFromKV(env, kind, ctx) {
   }
 }
 
+// -----------------------------------------------------------------------
+// 選手の公式ページ（今後の出場予定 / 過去 3 節 / 直近の優勝）— /racer-proxy (2026-11-25)
+//   アプリの選手詳細を開いた時だけ呼ばれる。出場予定は日単位でしか変わらないので、選手 1 人の結果を
+//   edge に 3 時間置く（boatrace.jp への取得は、選手 1 人につき 3 時間に 2 ページまで）。
+//   プロフィールの固定項目（生年月日・登録期など）はファン手帳から取るので（scripts/build_db.py の
+//   racer_ext.json）、ここでは名前と見出しの項目を参考として返すだけ。
+// -----------------------------------------------------------------------
+const RACER_PROXY_TTL_SEC = 3 * 3600;
+const RACER_PROXY_MISS_TTL_SEC = 600; // 「データが存在しない」選手番号（引退・誤り）は短めに置く
+// edge に無い選手の取得は、この isolate で 1 分に RACER_PROXY_MAX_PER_MIN 人まで。
+//   誰でも呼べる口なので、選手番号を総なめにして boatrace.jp へ大量に取りに行かせる使い方を抑える
+//   （アプリの使い方は、選手詳細を開いた 1 人 + お気に入り一覧の最大 20 人を 0.3 秒おき）。
+const RACER_PROXY_MAX_PER_MIN = 30;
+let _racerScrapeLog = [];
+function racerScrapeAllowed(nowMs) {
+  _racerScrapeLog = _racerScrapeLog.filter((t) => nowMs - t < 60000 && nowMs >= t);
+  if (_racerScrapeLog.length >= RACER_PROXY_MAX_PER_MIN) return false;
+  _racerScrapeLog.push(nowMs);
+  return true;
+}
+// boatrace.jp が拒否（403）・混雑（429）を返したら、この isolate では 10 分取りに行かない。
+//   拒否されている間に、選手を開くたびに叩き続けない（scripts/http_utils.py の SourceBlockDetector と同じ考え方）。
+//   edge に置いてある選手はその間も返す。
+const RACER_PROXY_BLOCK_PAUSE_MS = 10 * 60000;
+let _racerBlockedUntil = 0;
+const RACER_PROFILE_KEYS = {
+  '登録番号': 'toban', '生年月日': 'birth', '身長': 'height', '体重': 'weight', '血液型': 'blood',
+  '支部': 'branch', '出身地': 'birthplace', '登録期': 'ki', '級別': 'cls',
+};
+
+// 全角の英数・記号 → 半角、全角空白 → 半角空白（タイトルと節間成績を詰めて返す）
+function zenToHan(s) {
+  return String(s == null ? '' : s)
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, ' ');
+}
+
+// 見出し（title9_mainLabel）の直後の <table> … </table>。次の見出しより後ろの表は拾わない。
+function racerSectionTable(html, label) {
+  const i = html.indexOf('title9_mainLabel">' + label + '<');
+  if (i < 0) return '';
+  const t0 = html.indexOf('<table', i);
+  if (t0 < 0) return '';
+  const next = html.indexOf('title9_mainLabel">', i + 20);
+  if (next >= 0 && t0 > next) return '';
+  const t1 = html.indexOf('</table>', t0);
+  return t1 < 0 ? '' : html.slice(t0, t1);
+}
+
+// 表の本体の行 → セル（属性と中身）の配列
+function racerTableRows(tableHtml) {
+  const rows = [];
+  const body = String(tableHtml || '').replace(/<thead[\s\S]*?<\/thead>/gi, '');
+  const trRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while ((m = trRe.exec(body)) !== null) {
+    const cells = [];
+    const tdRe = /<td\b([^>]*)>([\s\S]*?)<\/td>/gi;
+    let c;
+    while ((c = tdRe.exec(m[1])) !== null) cells.push({ attr: c[1] || '', html: c[2] || '' });
+    if (cells.length) rows.push(cells);
+  }
+  return rows;
+}
+
+// 出場予定 / 過去 3 節 / 優勝情報で共通の先頭 5 列: 期間・場・グレード・時間帯・タイトル
+function racerSeriesCells(cells) {
+  const dates = ((cells[0] ? cells[0].html : '').match(/\d{4}\/\d{2}\/\d{2}/g) || []).map((d) => d.replace(/\//g, '-'));
+  if (!dates.length) return null;
+  const placeHtml = cells[1] ? cells[1].html : '';
+  const titleHtml = cells[4] ? cells[4].html : '';
+  const jcd = (/[?&;]jcd=(\d{1,2})/.exec(titleHtml) || /text_place1_(\d{2})/.exec(placeHtml) || [])[1];
+  const sid = jcd ? parseInt(jcd, 10) : 0;
+  const marks = (cells[2] ? cells[2].attr : '') + ' ' + (cells[3] ? cells[3].attr : '');
+  const g = /is-(SG|G1|G2|G3|ippan)([ab])?/.exec(marks);
+  // G1a は PG1（プレミアム G1）。BBC トーナメント・クイーンズクライマックス等
+  const grade = !g ? '' : g[1] === 'ippan' ? '一般' : g[1] === 'G1' && g[2] === 'a' ? 'PG1' : g[1];
+  const series = /is-lady/.test(marks) ? 'オールレディース' : /is-venus/.test(marks) ? 'ヴィーナス' : /is-rookie/.test(marks) ? 'ルーキー' : '';
+  return {
+    from: dates[0],
+    to: dates[dates.length - 1],
+    sid: sid >= 1 && sid <= 24 ? sid : null,
+    stadium: (/alt="([^"]*)"/.exec(placeHtml) || [])[1] || '',
+    grade,
+    series,
+    time: (/is-(morning|summer|nighter|midnight)/.exec(marks) || [])[1] || '',
+    title: zenToHan(stripTags(titleHtml)),
+  };
+}
+
+// /owpc/pc/data/racersearch/profile — 名前・見出しの項目・出場予定
+function parseRacerProfileHTML(html) {
+  const out = { found: false, name: '', kana: '', profile: {}, schedule: [] };
+  const nm = /class="racer1_bodyName"[^>]*>([\s\S]*?)<\/p>/.exec(html || '');
+  if (!nm) return out; // 「データが存在しないのでページを表示できません」
+  out.found = true;
+  out.name = stripTags(nm[1]).replace(/[\s　]+/g, ' ').trim();
+  const kn = /class="racer1_bodyKana"[^>]*>([\s\S]*?)<\/p>/.exec(html);
+  out.kana = kn ? stripTags(kn[1]).replace(/[\s　]+/g, ' ').trim() : '';
+  const dl = /<dl class="list3">([\s\S]*?)<\/dl>/.exec(html);
+  if (dl) {
+    const re = /<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/g;
+    let m;
+    while ((m = re.exec(dl[1])) !== null) {
+      const k = RACER_PROFILE_KEYS[stripTags(m[1])];
+      if (k) out.profile[k] = stripTags(m[2]);
+    }
+  }
+  racerTableRows(racerSectionTable(html, '出場予定')).forEach((cells) => {
+    const s = racerSeriesCells(cells);
+    if (!s) return;
+    s.extra = cells[5] ? stripTags(cells[5].html) : ''; // 追加あっせん
+    out.schedule.push(s);
+  });
+  return out;
+}
+
+// /owpc/pc/data/racersearch/back3 — 過去 3 節成績（[ ] は優勝戦）と直近の優勝
+function parseRacerBack3HTML(html) {
+  const out = { back3: [], wins: [] };
+  racerTableRows(racerSectionTable(html || '', '過去3節成績')).forEach((cells) => {
+    const s = racerSeriesCells(cells);
+    if (!s) return;
+    // 着順のリンクの文字だけ残す（全角 → 半角）。日の区切りの全角空白は半角空白 1 つにする
+    s.results = zenToHan((cells[5] ? cells[5].html : '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' '))
+      .replace(/\s+/g, ' ')
+      .trim();
+    out.back3.push(s);
+  });
+  racerTableRows(racerSectionTable(html || '', '直近の優勝情報')).forEach((cells) => {
+    const s = racerSeriesCells(cells);
+    if (s) out.wins.push(s);
+  });
+  return out;
+}
+
+async function scrapeRacerOfficial(toban) {
+  const base = 'https://www.boatrace.jp/owpc/pc/data/racersearch/';
+  const opt = {
+    headers: { 'User-Agent': 'Mozilla/5.0 boatrace-scrape-worker/1.2' },
+    cf: { cacheTtl: 3600, cacheEverything: true },
+  };
+  const [pRes, bRes] = await Promise.all([
+    fetch(`${base}profile?toban=${toban}`, opt),
+    fetch(`${base}back3?toban=${toban}`, opt),
+  ]);
+  if (!pRes.ok) {
+    const err = new Error(`racer profile ${pRes.status}`);
+    err.blocked = pRes.status === 403 || pRes.status === 429;
+    throw err;
+  }
+  const prof = parseRacerProfileHTML(await pRes.text());
+  // 過去 3 節は取れなくても出場予定は返す（back3_ok で区別できる）
+  let back = { back3: [], wins: [] };
+  let backOk = false;
+  if (bRes.ok) {
+    back = parseRacerBack3HTML(await bRes.text());
+    backOk = true;
+  }
+  return {
+    toban: String(toban),
+    found: prof.found,
+    name: prof.name,
+    kana: prof.kana,
+    profile: prof.profile,
+    schedule: prof.schedule,
+    back3: back.back3,
+    wins: back.wins,
+    back3_ok: backOk,
+    fetched_at: new Date().toISOString(),
+  };
+}
+
 export default {
   async scheduled(event, env, ctx) {
     // D1a (2026-05-17): 24/7 動作。cron 側で頻度を分岐するので時間外スキップは不要。
@@ -1705,6 +1879,62 @@ export default {
         });
       } catch (e) {
         return new Response(`error: ${e.message}`, { status: 502, headers: CORS });
+      }
+    }
+    // 選手の今後の出場予定・過去 3 節（公式の選手ページ、2026-11-25）。
+    //   アプリの選手詳細を開いた時だけ呼ばれる。結果は edge に置く（上の RACER_PROXY_TTL_SEC）。
+    if (url.pathname === '/racer-proxy') {
+      const toban = url.searchParams.get('toban') || '';
+      if (!/^\d{4,5}$/.test(toban)) return new Response('bad params', { status: 400, headers: CORS });
+      const cacheKey = new Request(`https://racer-proxy-cache.invalid/v1?toban=${toban}`);
+      const cache = caches.default;
+      try {
+        const hit = await cache.match(cacheKey);
+        if (hit) {
+          const h = new Headers(hit.headers);
+          h.set('x-cache', 'HIT');
+          // ブラウザには残り時間だけ置かせる（edge の 3 時間 + ブラウザの 3 時間で 6 時間古くなるのを防ぐ）
+          const left = Math.round(((Number(h.get('x-racer-expires')) || 0) - Date.now()) / 1000);
+          h.set('cache-control', `public, max-age=${Math.max(60, Math.min(RACER_PROXY_TTL_SEC, left))}`);
+          return new Response(hit.body, { status: hit.status, headers: h });
+        }
+      } catch (_) { /* cache miss と同じ扱い */ }
+      const noStore = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS };
+      if (Date.now() < _racerBlockedUntil) {
+        const wait = Math.max(1, Math.ceil((_racerBlockedUntil - Date.now()) / 1000));
+        return new Response(JSON.stringify({ error: 'blocked' }), {
+          status: 503,
+          headers: { ...noStore, 'retry-after': String(wait) },
+        });
+      }
+      if (!racerScrapeAllowed(Date.now())) {
+        return new Response(JSON.stringify({ error: 'busy' }), {
+          status: 429,
+          headers: { ...noStore, 'retry-after': '60' },
+        });
+      }
+      try {
+        const data = await scrapeRacerOfficial(toban);
+        const ttl = data.found ? RACER_PROXY_TTL_SEC : RACER_PROXY_MISS_TTL_SEC;
+        const out = new Response(JSON.stringify(data), {
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': `public, max-age=${ttl}`,
+            'x-cache': 'MISS',
+            'x-racer-expires': String(Date.now() + ttl * 1000),
+            ...CORS,
+          },
+        });
+        if (ctx && typeof ctx.waitUntil === 'function') {
+          try { ctx.waitUntil(cache.put(cacheKey, out.clone())); } catch (_) { /* cache は best effort */ }
+        }
+        return out;
+      } catch (e) {
+        if (e && e.blocked) _racerBlockedUntil = Date.now() + RACER_PROXY_BLOCK_PAUSE_MS;
+        return jsonResponse(
+          { error: 'upstream', message: String((e && e.message) || e).slice(0, 120) },
+          { status: 502, cacheControl: 'no-store' }
+        );
       }
     }
     return new Response('boatrace-scrape-trigger (scrape-engine-v3)\n', { headers: CORS });

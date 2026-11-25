@@ -8,20 +8,24 @@
 //   5. 直近の着順
 //   6. 当アプリの集計（直近 12 か月: コース別の着と勝ち決まり手、本番 ST）
 //   7. 公式サイトの選手ページへのリンク
+// 2026-11-25（第 2 段階）:
+//   - プロフィールに 生年月日・身長・血液型・登録期・来期の級、成績に 1 着 / 2 着回数・優出 / 優勝・能力指数・
+//     級の推移（ファン手帳の追加項目 data/db/racer_ext.json）
+//   - 今後の出場予定・過去 3 節・直近の優勝（公式の選手ページ。Worker /racer-proxy 経由で、開いた時だけ取得）
 // 項目は「取れているものだけ」出す（出走の無い日は 2 と出走表由来の数字が無い、名簿に無い選手は 3〜5 が無い）。
 //
 // Public: _racerDetailHtml
 
 /* global programData, escText, boatBadge, renderSeriesCell, getRaceDataForRace, _seriesSlotsFor, _stadiumDayInfo,
    _racerInfo, _racerBackLabel, _racerClsChip, _favBtnHtml, _racerEntryStatus, _racerAiMark, _racerAiMarkReset,
-   _loadRacerStatsView,
-   _racerRerender */
+   _loadRacerStatsView, _racerRerender, _racerOfficialOf, _loadRacerOfficial, _racerOfficialPaused, _racerIsoDay */
 'use strict';
 
 var RACER_OFFICIAL_URL = 'https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=';
 var RACER_DAY_LABELS = ['初日', '2日目', '3日目', '4日目', '5日目', '6日目', '7日目'];
 var RACER_AGG_MIN = 3; // 当アプリの集計を出す最少出走数
 var RACER_RECENT_MAX = 20; // 直近の着順に並べる数
+var RACER_CLS = { 1: 'A1', 2: 'A2', 3: 'B1', 4: 'B2' };
 
 function _rNum(v, digits) {
   var n = Number(v);
@@ -30,16 +34,41 @@ function _rNum(v, digits) {
 function _rPct(a, b) {
   return b > 0 ? Math.round((a / b) * 100) + '%' : '-';
 }
+// 回数など整数の表示。数値でなければ '-'
+function _rInt(v) {
+  var n = Number(v);
+  return v != null && v !== '' && Number.isFinite(n) ? String(Math.round(n)) : '-';
+}
+// 決まった名前だけを引く表（'constructor' のような名前で Object の既定の項目を拾わない）
+function _rPick(table, key) {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : '';
+}
 function _rTile(value, label) {
   return '<div><b>' + value + '</b><span>' + label + '</span></div>';
 }
 
+// 生年月日 'YYYY-MM-DD' と今日（JST）から満年齢。読めなければ null
+function _rAge(birth, now) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birth || '');
+  if (!m) return null;
+  var today = _racerIsoDay(now);
+  var age = parseInt(today.slice(0, 4), 10) - parseInt(m[1], 10) - (today.slice(5) < m[2] + '-' + m[3] ? 1 : 0);
+  return age >= 15 && age <= 90 ? age : null;
+}
+
 // ─── 1. プロフィール ───────────────────────────────────────
-function _racerProfileCard(info) {
+function _racerProfileCard(info, now) {
+  var x = info.ext || {};
   var meta = [];
-  if (info.age) meta.push(escText(info.age) + '歳');
+  var born = _rYmd(x.b);
+  // 年齢: 今日の出走表 > 生年月日から計算 > 名簿（名簿の年齢は算出時点のもので、誕生日を過ぎると 1 歳ずれる）
+  var age = (info.prog && info.prog.racer_age) || _rAge(x.b, now) || info.age;
+  if (age) meta.push(escText(age) + '歳' + (born ? '（' + escText(born) + ' 生）' : ''));
+  else if (born) meta.push(escText(born) + ' 生');
+  if (x.h) meta.push(escText(x.h) + 'cm');
   if (info.weight) meta.push(escText(Number(info.weight) % 1 ? Number(info.weight).toFixed(1) : info.weight) + 'kg');
-  if (info.birthplace) meta.push(escText(info.birthplace) + '出身');
+  if (x.bl) meta.push(escText(x.bl) + '型');
+  if (info.birthplace || x.bp) meta.push(escText(info.birthplace || x.bp) + '出身');
   var fl = '';
   if (info.prog) {
     var f = info.prog.racer_flying_count || 0;
@@ -48,10 +77,12 @@ function _racerProfileCard(info) {
   }
   var chips =
     _racerClsChip(info.cls) +
+    (info.nextCls ? '<span class="chip chip-next">来期 ' + _rPick(RACER_CLS, info.nextCls) + '</span>' : '') +
     '<span class="chip">登録 ' +
     escText(info.id) +
     '</span>' +
-    (info.branch ? '<span class="chip">' + escText(info.branch) + '支部</span>' : '');
+    (info.branch ? '<span class="chip">' + escText(info.branch) + '支部</span>' : '') +
+    (x.ki ? '<span class="chip">' + escText(x.ki) + '期</span>' : '');
   var unknown = !info.p && !info.prog;
   return (
     '<div class="card"><div class="pf"><img class="pf-photo" src="data/photos/' +
@@ -175,10 +206,16 @@ function _racerTodayCard(info, now) {
 }
 
 // ─── 3. 成績 ─────────────────────────────────────────────
-function _racerFanLine(p) {
+// ファン手帳の期別成績。追加項目 (racer_ext.json) があれば算出期間・1 着 / 2 着・優出 / 優勝・能力指数・級の推移も出す
+function _racerFanLine(p, x) {
   if (!p || p.winRate == null) return '';
-  return (
-    '期別成績（ファン手帳）: 勝率 ' +
+  var X = globalThis._racerExt;
+  var t = X && X.term ? X.term : null;
+  var label = t && t.from && t.to ? _rYmd(t.from) + '〜' + _rYmd(t.to).replace(/^\d{4}\//, '') : 'ファン手帳';
+  var out =
+    '期別成績（' +
+    escText(label) +
+    '）: 勝率 ' +
     _rNum(p.winRate, 2) +
     ' ／ 2連対率 ' +
     _rNum(p.top2Rate, 1) +
@@ -186,8 +223,46 @@ function _racerFanLine(p) {
     _rNum(p.avgST, 2) +
     ' ／ ' +
     (p.totalRaces || 0) +
-    ' 走'
-  );
+    ' 走';
+  if (!x) return out;
+  if (Array.isArray(x.w) && Array.isArray(x.y)) {
+    out +=
+      '<br>1着 ' +
+      _rInt(x.w[0]) +
+      ' 回・2着 ' +
+      _rInt(x.w[1]) +
+      ' 回 ／ 優出 ' +
+      _rInt(x.y[0]) +
+      ' 回・優勝 ' +
+      _rInt(x.y[1]) +
+      ' 回';
+  }
+  if (Array.isArray(x.ab)) {
+    out += ' ／ 能力指数 ' + _rNum(x.ab[0], 2) + (x.ab[1] ? '（前期 ' + _rNum(x.ab[1], 2) + '）' : '');
+  }
+  if (Array.isArray(x.fl) && (x.fl[0] > 0 || x.fl[1] > 0)) {
+    out +=
+      '<br>' +
+      (x.fl[0] > 0 ? '<span class="c-danger">F ' + _rInt(x.fl[0]) + ' 回</span>' : 'F 0 回') +
+      ' ／ L ' +
+      _rInt(x.fl[1]) +
+      ' 回（この期間）';
+  }
+  // 級の推移: 前々々期 → 前々期 → 前期 → この成績で決まった級（適用期を添える）
+  if (Array.isArray(x.pc) && p.classNum) {
+    var hist = [x.pc[2], x.pc[1], x.pc[0], p.classNum]
+      .map(function (c) {
+        return _rPick(RACER_CLS, c);
+      })
+      .filter(Boolean);
+    if (hist.length > 1) {
+      out +=
+        '<br>級の推移: ' +
+        hist.join(' → ') +
+        (t && t.year ? '（' + _rInt(t.year) + '年' + (t.half === 2 ? '後期' : '前期') + '）' : '');
+    }
+  }
+  return out;
 }
 
 function _racerStatsCard(info) {
@@ -203,7 +278,7 @@ function _racerStatsCard(info) {
       _rTile(_rNum(b.racer_local_top_2_percent, 1) + '%', '当地2連対') +
       _rTile(escText(b.racer_assigned_motor_number || '-'), 'モーター') +
       _rTile(_rNum(b.racer_assigned_motor_top_2_percent, 1) + '%', 'モーター2連');
-    var fan = _racerFanLine(p);
+    var fan = _racerFanLine(p, info.ext);
     return (
       '<div class="card"><div class="sec-title">成績 <span class="sec-src">本日の出走表より</span></div><div class="kv">' +
       tiles +
@@ -213,13 +288,16 @@ function _racerStatsCard(info) {
     );
   }
   if (p && p.winRate != null) {
+    var fan2 = info.ext ? _racerFanLine(p, info.ext) : '';
     return (
       '<div class="card"><div class="sec-title">成績 <span class="sec-src">期別成績（ファン手帳）</span></div><div class="kv">' +
       _rTile(_rNum(p.winRate, 2), '勝率') +
       _rTile(_rNum(p.top2Rate, 1) + '%', '2連対率') +
       _rTile(_rNum(p.avgST, 2), '平均ST') +
       _rTile(escText(p.totalRaces || 0), '出走数') +
-      '</div></div>'
+      '</div>' +
+      (fan2 ? '<div class="racer-note">' + fan2 + '</div>' : '') +
+      '</div>'
     );
   }
   return '';
@@ -354,13 +432,137 @@ function _racerAggCard(info) {
   );
 }
 
+// ─── 公式の出場予定 / 過去 3 節（Worker /racer-proxy。取得は discovery 層） ──────────────────────
+var RACER_TIME_LABEL = { morning: 'モーニング', summer: 'サマータイム', nighter: 'ナイター', midnight: 'ミッドナイト' };
+var RACER_WD = ['日', '月', '火', '水', '木', '金', '土'];
+
+// 'YYYY-MM-DD' → 'M/D(曜)'
+function _rMdw(d) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  if (!m) return '';
+  var wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+  return parseInt(m[2], 10) + '/' + parseInt(m[3], 10) + '(' + RACER_WD[wd] + ')';
+}
+// 'YYYY-MM-DD' → 'YYYY/M/D'
+function _rYmd(d) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  return m ? m[1] + '/' + parseInt(m[2], 10) + '/' + parseInt(m[3], 10) : '';
+}
+var RACER_GRADE_CLASS = { SG: 'gr-sg', PG1: 'gr-pg1', G1: 'gr-g1', G2: 'gr-g2', G3: 'gr-g3' };
+function _rGradeChip(grade) {
+  var cls = _rPick(RACER_GRADE_CLASS, grade);
+  return cls ? '<span class="gr ' + cls + '">' + escText(grade) + '</span>' : '';
+}
+// 期間・場・グレード・タイトル（出場予定と過去 3 節で共通）
+function _rSeriesHead(s) {
+  // シリーズ名（オールレディース等）は、大会名に含まれていれば重ねて出さない
+  var series = s.series && String(s.title || '').indexOf(s.series) < 0 ? s.series : '';
+  var tags = [series, _rPick(RACER_TIME_LABEL, s.time)].filter(Boolean).map(escText).join('・');
+  return (
+    '<span class="sr-date">' +
+    escText(_rMdw(s.from)) +
+    (s.to && s.to !== s.from ? '〜<br>' + escText(_rMdw(s.to)) : '') +
+    '</span><b class="sr-place">' +
+    escText(s.stadium || '') +
+    '</b><span class="sr-title">' +
+    _rGradeChip(s.grade) +
+    escText(s.title || '') +
+    (tags ? ' <span class="fav-note">' + tags + '</span>' : '')
+  );
+}
+
+// 取得の状態を見て、まだなら取りに行く（終わったら描き直す）。戻り値は _racerOfficialOf と同じ形
+function _racerOfficialFor(info) {
+  if (typeof _loadRacerOfficial !== 'function' || typeof _racerOfficialOf !== 'function') return null;
+  _loadRacerOfficial(info.id, function () {
+    _racerRerender();
+  });
+  var o = _racerOfficialOf(info.id);
+  // 続けて失敗して休止中（loader）で、この選手はまだ取れていない → 失敗として見せる（カードを黙って消さない）
+  if (!o && typeof _racerOfficialPaused === 'function' && _racerOfficialPaused()) {
+    return { data: null, loading: false, failed: true };
+  }
+  return o;
+}
+
+function _racerOfficialNote(o) {
+  if (o && o.data && o.data.found === false) return '公式サイトにこの登録番号の選手ページがありません（引退など）。';
+  if (!o || (!o.data && o.loading)) return '公式サイトから取得中…';
+  if (!o.data)
+    return '取得できませんでした（通信状況か、公式サイト側の都合です）。下のリンクから公式サイトで確認できます。';
+  return '';
+}
+
+// 今後の出場予定
+function _racerScheduleCard(info, o, now) {
+  if (o === null) return '';
+  var note = _racerOfficialNote(o);
+  var rows = '';
+  if (!note) {
+    var iso = _racerIsoDay(now);
+    (Array.isArray(o.data.schedule) ? o.data.schedule : []).forEach(function (s) {
+      if (!s || (s.to && s.to < iso)) return; // 取得後に終わった節は出さない
+      rows +=
+        '<div class="sr-row">' +
+        _rSeriesHead(s) +
+        (s.extra ? ' <span class="fav-note">' + escText(s.extra) + '</span>' : '') +
+        '</span></div>';
+    });
+    if (!rows) note = '発表されている出場予定はありません。';
+  }
+  return (
+    '<div class="card"><div class="sec-title">今後の出場予定 <span class="sec-src">公式サイト（あっせん）</span></div>' +
+    (note ? '<div class="racer-note">' + note + '</div>' : rows) +
+    '</div>'
+  );
+}
+
+// 過去 3 節（[ ] は優勝戦）と直近の優勝
+function _racerBack3Card(info, o) {
+  if (o === null || !o || !o.data || o.data.found === false) return ''; // 状態の説明は出場予定のカードに出す
+  var d = o.data;
+  var rows = '';
+  (Array.isArray(d.back3) ? d.back3 : []).forEach(function (s) {
+    if (!s) return;
+    var res = escText(s.results || '').replace(/\[1\]/g, '<b class="res-1">[1]</b>');
+    var won = /\[1\]\s*$/.test(s.results || '');
+    rows +=
+      '<div class="sr-row">' +
+      _rSeriesHead(s) +
+      '</span><span class="sr-res">' +
+      (res || '-') +
+      (won ? ' <span class="sr-won">優勝</span>' : '') +
+      '</span></div>';
+  });
+  var wins = (Array.isArray(d.wins) ? d.wins : [])
+    .filter(Boolean)
+    .map(function (w) {
+      return (
+        escText(_rYmd(w.from)) + ' ' + escText(w.stadium || '') + ' ' + _rGradeChip(w.grade) + escText(w.title || '')
+      );
+    })
+    .join('<br>');
+  if (!rows && !wins) {
+    return d.back3_ok === false
+      ? '<div class="card"><div class="sec-title">過去 3 節</div><div class="racer-note">過去 3 節は取得できませんでした。</div></div>'
+      : '';
+  }
+  return (
+    '<div class="card"><div class="sec-title">過去 3 節 <span class="sec-src">公式サイト / [ ] は優勝戦</span></div>' +
+    (rows || '<div class="racer-note">過去 3 節の記録はありません。</div>') +
+    (wins ? '<div class="racer-note">直近の優勝: ' + wins + '</div>' : '') +
+    '</div>'
+  );
+}
+
 // ─── 7. 出典 ─────────────────────────────────────────────
 // 実際に画面へ出した情報の出どころだけを並べる
-function _racerFootHtml(info, hasAgg) {
+function _racerFootHtml(info, hasAgg, hasOfficial) {
   var at = globalThis._racerProfilesAt ? String(globalThis._racerProfilesAt).slice(0, 10) : '';
   var src = [];
   if (info.prog) src.push('本日の出走表');
   if (info.p) src.push('ファン手帳の期別成績' + (at ? '（' + escText(at) + ' 取得）' : ''));
+  if (hasOfficial) src.push('公式サイト（出場予定・過去 3 節）');
   if (hasAgg) src.push('当アプリの集計');
   return (
     '<div class="racer-foot"><a class="racer-ext" href="' +
@@ -373,21 +575,25 @@ function _racerFootHtml(info, hasAgg) {
 }
 
 function _racerDetailHtml(id, from, now) {
-  var info = _racerInfo(id);
+  var info = _racerInfo(id, null, now);
   if (typeof _racerAiMarkReset === 'function') _racerAiMarkReset(); // AI の印は描画のたびに計算し直す
   var agg = _racerAggCard(info);
+  var official = _racerOfficialFor(info);
   return (
     '<button type="button" class="back-btn" data-action="racerBack">' +
     escText(_racerBackLabel(from)) +
     '</button>' +
-    _racerProfileCard(info) +
+    _racerProfileCard(info, now) +
     _racerTodayCard(info, now) +
+    _racerScheduleCard(info, official, now) +
     _racerStatsCard(info) +
     _racerCourseCard(info) +
     _racerRecentCard(info) +
+    _racerBack3Card(info, official) +
     agg +
-    _racerFootHtml(info, !!agg)
+    _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false))
   );
 }
 
 globalThis._racerDetailHtml = _racerDetailHtml;
+globalThis._rAge = _rAge;

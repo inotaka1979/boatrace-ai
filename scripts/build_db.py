@@ -40,6 +40,9 @@ from io_utils import atomic_write_json  # FIX: 5MB+ DB の途中切れ破損防�
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BoatRaceOracle/1.0; +https://github.com/inotaka1979/boatrace-ai)"}
 OUTPUT_RACER = "data/db/racerDB.json"
 OUTPUT_STADIUM = "data/db/stadiumDB.json"
+# 2026-11-25: 選手ページ用のプロフィール追加項目（生年月日・身長・血液型・登録期・優出 / 優勝・能力指数 …）。
+#   racerDB.json はアプリが起動のたびに読むので太らせない。選手詳細を開いた時だけ読む別ファイルにする。
+OUTPUT_RACER_EXT = "data/db/racer_ext.json"
 INTERVAL = 3
 
 # ファン手帳URL（B-02 2026-07-26: 期をハードコードせず現在日付から算出）
@@ -281,6 +284,128 @@ def parse_fan_handbook(text_or_bytes: bytes | str) -> dict[str, dict]:
     return racers
 
 
+# ---------------------------------------------------------------------------
+# 2026-11-25: ファン手帳のうち parse_fan_handbook が読み飛ばしている項目（選手ページ用）
+#   1 レコード 416 bytes の固定長（Shift-JIS のバイト位置）。parse_fan_handbook と同じ並び:
+#     0 登番(4) 名前(16) かな(15) 支部(4) 級(2) | 41 年号(1) 生年月日(6) 性別(1) 年齢(2) 身長(3) 体重(2) 血液型(2)
+#     58 勝率(4) 複勝率(4) 1着回数(3) 2着回数(3) 出走回数(3) 優出(2) 優勝(2) 平均ST(3)
+#     82 コース別 6 × [進入(3) 複勝率(4) 平均ST(3) ST順(3)]
+#     160 前期級(2) 前々期級(2) 前々々期級(2) 前期能力指数(4) 今期能力指数(4) 年(4) 期(1) 算出期間自(8) 至(8) 養成期(3)
+#     198 コース別 6 × [1〜6着(3×6) F L0 L1 K0 K1 S0 S1 S2 (2×8)]
+#     402 コースなし L0 L1 K0 K1 (2×4) | 410 出身地(6)
+_FAN_EXT_MIN_LEN = 416
+_FAN_NENGO_BASE = {"S": 1925, "H": 1988, "R": 2018}  # 昭和 / 平成 / 令和（元年 = base + 1）
+_FAN_CLASS_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4}
+
+
+def _fan_int(b: bytes) -> int:
+    try:
+        return int(b.decode("ascii", errors="replace").strip() or 0)
+    except ValueError:
+        return 0
+
+
+def _fan_ymd(b: bytes) -> str:
+    """'20260501' → '2026-05-01'（日付として読めなければ空文字）。"""
+    t = b.decode("ascii", errors="replace").strip()
+    if len(t) != 8 or not t.isdigit():
+        return ""
+    try:
+        return datetime.date(int(t[:4]), int(t[4:6]), int(t[6:8])).isoformat()
+    except ValueError:
+        return ""
+
+
+def _fan_birth(nengo: bytes, ymd: bytes) -> str:
+    """年号 + 'YYMMDD'（和暦）→ 西暦 'YYYY-MM-DD'。読めなければ空文字。"""
+    base = _FAN_NENGO_BASE.get(nengo.decode("ascii", errors="replace").strip().upper())
+    t = ymd.decode("ascii", errors="replace").strip()
+    if base is None or len(t) != 6 or not t.isdigit():
+        return ""
+    try:
+        return datetime.date(base + int(t[:2]), int(t[2:4]), int(t[4:6])).isoformat()
+    except ValueError:
+        return ""
+
+
+def parse_fan_handbook_ext(raw: bytes) -> dict:
+    """ファン手帳から選手ページ用の追加項目を取り出す。
+
+    Args:
+        raw: 解凍済みのファン手帳（Shift-JIS の bytes）
+
+    Returns:
+        {"term": {"year", "half", "from", "to"} | None, "racers": {登番: {...}}}
+        racers の各値（キーは短縮。アプリは選手詳細を開いた時だけ読む）:
+            b  生年月日 (YYYY-MM-DD)      s  性別 (1 = 男, 2 = 女)
+            h  身長 cm                    bl 血液型
+            bp 出身地                     ki 登録期（養成期）
+            w  [1 着回数, 2 着回数]       y  [優出回数, 優勝回数]
+            pc [前期, 前々期, 前々々期] の級 (1 = A1 … 4 = B2、不明は 0)
+            ab [今期, 前期] の能力指数
+            fl [F, L, K（欠場）, S（失格）] の回数（算出期間中、全コース計）
+        値が読めない項目は入れない。
+    """
+    racers: dict[str, dict] = {}
+    terms: dict[tuple, int] = {}
+    for line in raw.replace(b"\r\n", b"\n").split(b"\n"):
+        if len(line) < _FAN_EXT_MIN_LEN:
+            continue
+        toban = line[0:4].decode("ascii", errors="replace")
+        if not toban.isdigit():
+            continue
+        e: dict = {}
+        birth = _fan_birth(line[41:42], line[42:48])
+        if birth:
+            e["b"] = birth
+        sex = _fan_int(line[48:49])
+        if sex in (1, 2):
+            e["s"] = sex
+        height = _fan_int(line[51:54])
+        if 100 <= height <= 220:
+            e["h"] = height
+        blood = line[56:58].decode("ascii", errors="replace").strip().upper()
+        if blood in ("A", "B", "O", "AB"):
+            e["bl"] = blood
+        birthplace = line[410:416].decode("shift_jis", errors="replace").replace("\u3000", "").strip()
+        if birthplace and "\ufffd" not in birthplace:
+            e["bp"] = birthplace
+        ki = _fan_int(line[195:198])
+        if ki > 0:
+            e["ki"] = ki
+        e["w"] = [_fan_int(line[66:69]), _fan_int(line[69:72])]
+        e["y"] = [_fan_int(line[75:77]), _fan_int(line[77:79])]
+        e["pc"] = [
+            _FAN_CLASS_NUM.get(line[160 + i * 2 : 162 + i * 2].decode("ascii", errors="replace").strip(), 0)
+            for i in range(3)
+        ]
+        prev_ab, cur_ab = _fan_int(line[166:170]), _fan_int(line[170:174])
+        if prev_ab or cur_ab:
+            e["ab"] = [cur_ab / 100.0, prev_ab / 100.0]
+        f = l = k = s_ = 0
+        for c in range(6):
+            base = 198 + c * 34 + 18  # 着順 6 × 3 bytes の後ろ
+            f += _fan_int(line[base : base + 2])
+            l += _fan_int(line[base + 2 : base + 4]) + _fan_int(line[base + 4 : base + 6])
+            k += _fan_int(line[base + 6 : base + 8]) + _fan_int(line[base + 8 : base + 10])
+            s_ += sum(_fan_int(line[base + 10 + j * 2 : base + 12 + j * 2]) for j in range(3))
+        # コースなし（スタートしなかった）分の L / K
+        l += _fan_int(line[402:404]) + _fan_int(line[404:406])
+        k += _fan_int(line[406:408]) + _fan_int(line[408:410])
+        e["fl"] = [f, l, k, s_]
+        racers[toban] = e
+
+        term = (_fan_int(line[174:178]), _fan_int(line[178:179]), _fan_ymd(line[179:187]), _fan_ymd(line[187:195]))
+        if term[0] and term[2] and term[3]:
+            terms[term] = terms.get(term, 0) + 1
+
+    term_out = None
+    if terms:
+        year, half, d_from, d_to = max(terms.items(), key=lambda kv: kv[1])[0]
+        term_out = {"year": year, "half": half, "from": d_from, "to": d_to}
+    return {"term": term_out, "racers": racers}
+
+
 def parse_results_text(text: str, racers: dict, stadium_stats: dict) -> None:
     """競走成績テキストから直近成績と場別統計を in-place 更新する。
 
@@ -366,6 +491,8 @@ def main() -> int:
     # B-02 (2026-07-26): 現在日付から採用期を算出し、新しい順に fallback。
     #   どの URL を採用したかは silent success 撲滅のため必ず stdout に出す。
     racers = {}
+    fan_bytes = b""
+    fan_source = ""
     for url in fan_handbook_urls():
         try:
             fan_data = download(url)
@@ -374,6 +501,7 @@ def main() -> int:
             racers = parse_fan_handbook(fan_bytes)
             print(f"  ファン手帳: {url} → {len(racers)}選手")
             if racers:
+                fan_source = url.rsplit("/", 1)[-1].split(".")[0]  # fan2610
                 break
         except Exception as e:
             print(f"  ファン手帳 skip {url}: {type(e).__name__}: {e}")
@@ -437,6 +565,20 @@ def main() -> int:
     # FIX: 5MB+ の racerDB.json を途中切れで破損させないよう atomic 書込
     atomic_write_json(OUTPUT_RACER, racer_out)
     atomic_write_json(OUTPUT_STADIUM, stadium_out)
+
+    # 2026-11-25: 選手ページ用の追加項目。取れなかったときは既存ファイルを残す（空で上書きしない）。
+    try:
+        ext = parse_fan_handbook_ext(fan_bytes)
+        if ext["racers"]:
+            atomic_write_json(
+                OUTPUT_RACER_EXT,
+                {"updated_at": now, "source": fan_source, "term": ext["term"], "racers": ext["racers"]},
+            )
+            print(f"  選手の追加項目: {len(ext['racers'])}選手 (term={ext['term']})")
+        else:
+            print("::warning::ファン手帳から追加項目を取り出せませんでした — 既存 racer_ext.json を保持します")
+    except Exception as e:
+        print(f"::warning::racer_ext.json の生成に失敗（既存を保持）: {type(e).__name__}: {e}")
 
     print(f"=== 完了: {len(racers)}選手, {len(stadiums)}場 ===")
     return 0

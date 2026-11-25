@@ -417,9 +417,10 @@ async function main() {
     //   複合チャート ~6KB) を stats sub-chunk に追加 (lazy load、起動 TBT に影響なし)。
     { path: 'assets/app-rest-stats.min.js',  max: 27000, level: 'warn' },  // 成績 + バックテスト + 日別 sub-chunk
     { path: 'assets/app-rest-detail.min.js', max: 30000, level: 'warn' },  // レース詳細 sub-chunk
-    // 2026-11-25: 選手ページ（一覧・検索・詳細）。初版 21.3KB。選手ページを開いた時だけ読む
-    //   （起動 TBT に影響なし）。第 2 段階（今後の出場予定・過去 3 節）の分の余裕を見て 26000。
-    { path: 'assets/app-rest-racer.min.js',  max: 26000, level: 'warn' },  // 選手ページ sub-chunk
+    // 2026-11-25: 選手ページ（一覧・検索・詳細）。選手ページを開いた時だけ読む（起動 TBT に影響なし）。
+    //   第 1 段階 21.3KB → 第 2 段階（追加プロフィール・今後の出場予定・過去 3 節・現在 / 来期の級）で 30.6KB。
+    //   第 1 段階で見込んだ 26000 では足りなかったので 32000 に（見込み違い。実寸に合わせた）。
+    { path: 'assets/app-rest-racer.min.js',  max: 32000, level: 'warn' },  // 選手ページ sub-chunk
     { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
   let budgetFail = false;
