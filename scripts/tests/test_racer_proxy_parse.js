@@ -46,7 +46,7 @@ vm.runInContext(extractConst('RACER_PROFILE_KEYS'), ctx);
 vm.runInContext(extractConst('RACER_PROXY_MAX_PER_MIN'), ctx);
 vm.runInContext('var _racerScrapeLog = [];', ctx);
 for (const fn of ['stripTags', 'zenToHan', 'racerSectionTable', 'racerTableRows', 'racerSeriesCells',
-  'parseRacerProfileHTML', 'parseRacerBack3HTML', 'scrapeRacerOfficial', 'racerScrapeAllowed']) {
+  'parseRacerProfileHTML', 'parseRacerBack3HTML', 'racerUpstreamTiming', 'scrapeRacerOfficial', 'racerScrapeAllowed']) {
   vm.runInContext(extractFn(fn), ctx);
 }
 
@@ -166,6 +166,27 @@ t('scrapeRacerOfficial: 2 ページを取り、過去 3 節が取れなくても
   ctx.__fetch = () => res(true, fx('racer_notfound.html'));
   r = J(await ctx.scrapeRacerOfficial('9999'));
   assert.deepStrictEqual([r.found, r.schedule, r.back3], [false, [], []]);
+});
+t('公式サイトの応答時間: Worker が測った値と、公式サイト自身の計測（Server-Timing）を返す', async () => {
+  const H = (v) => ({ headers: { get: (k) => (k.toLowerCase() === 'server-timing' ? v : null) } });
+  // 2026-11-25 06:05 JST に実際に返ってきた値（複数の Server-Timing ヘッダは ", " でつながる）
+  const real = 'cdn-cache; desc=MISS, edge; dur=9264, origin; dur=63, ak_p; desc="1795640819720_388045064_1875055393_931023_21172_20_80_15";dur=1';
+  assert.deepStrictEqual(J(ctx.racerUpstreamTiming(H(real))), { edge_ms: 9264, origin_ms: 63 });
+  assert.deepStrictEqual(J(ctx.racerUpstreamTiming(H('origin;dur=20.6,edge;dur=8138.4'))), { edge_ms: 8138, origin_ms: 21 });
+  assert.deepStrictEqual(J(ctx.racerUpstreamTiming(H('cdn-cache; desc=HIT, edge; dur=1'))), { edge_ms: 1, origin_ms: null });
+  // 無い・読めない・別の名前に引きずられない
+  for (const bad of [null, '', 'edge', 'edge; desc=x', 'xedge; dur=5', 'edge; dur=abc', 'knowledge; dur=7']) {
+    assert.deepStrictEqual(J(ctx.racerUpstreamTiming(H(bad))), { edge_ms: null, origin_ms: null }, String(bad));
+  }
+  assert.deepStrictEqual(J(ctx.racerUpstreamTiming(null)), { edge_ms: null, origin_ms: null });
+  assert.deepStrictEqual(J(ctx.racerUpstreamTiming({})), { edge_ms: null, origin_ms: null });
+  // scrapeRacerOfficial の結果に入る
+  const res = (text, st) => ({ ok: true, status: 200, text: async () => text, headers: { get: (k) => (k === 'server-timing' ? st : null) } });
+  ctx.__fetch = (url) => (/profile\?/.test(url) ? res(fx('racer_profile.html'), real) : res(fx('racer_back3.html'), ''));
+  const r = J(await ctx.scrapeRacerOfficial('4320'));
+  assert.deepStrictEqual([r.timing.edge_ms, r.timing.origin_ms], [9264, 63]);
+  assert.ok(Number.isFinite(r.timing.profile_ms) && r.timing.profile_ms >= 0 && Number.isFinite(r.timing.back3_ms) && r.timing.back3_ms >= 0);
+  assert.strictEqual(r.schedule.length, 4, '計測を足しても中身は変わらない');
 });
 t('取得の上限: edge に無い選手は 1 分に 30 人まで（総なめの抑止）。1 分たてば戻る', () => {
   const t0 = 1_800_000_000_000;

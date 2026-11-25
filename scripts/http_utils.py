@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -69,6 +70,11 @@ class SourceBlockDetector:
 
     1 件でも 200 が返れば判定しない（個別ページの 403 で全体を止めない）。
     スレッド並列の scraper からも使えるよう lock で保護する。
+
+    2026-11-26: 取れたリクエスト (200) の応答時間も集計する（``record`` の第 2 引数、秒）。
+    boatrace.jp は夜間、自動取得への応答を 1 件あたり 8〜10 秒遅らせる（拒否ではなく 200 が返るので、
+    403 を数えるブロック検知には掛からない）。「止められてはいないが遅い」状態を data/_status.json に
+    残すため。測っていない scraper では ``stats()`` の形は従来どおり。
     """
 
     def __init__(self, threshold: int = SOURCE_BLOCK_THRESHOLD):
@@ -76,13 +82,25 @@ class SourceBlockDetector:
         self.ok = 0
         self.forbidden = 0
         self._streak = 0
+        self._timed = 0
+        self._total_sec = 0.0
+        self._max_sec = 0.0
         self._lock = threading.Lock()
 
-    def record(self, status: int | str | None) -> None:
+    def record(self, status: int | str | None, elapsed: float | None = None) -> None:
         with self._lock:
             if status == 200:
                 self.ok += 1
                 self._streak = 0
+                if (
+                    isinstance(elapsed, (int, float))
+                    and not isinstance(elapsed, bool)
+                    and math.isfinite(elapsed)
+                    and elapsed >= 0
+                ):
+                    self._timed += 1
+                    self._total_sec += elapsed
+                    self._max_sec = max(self._max_sec, elapsed)
             elif status == 403:
                 self.forbidden += 1
                 self._streak += 1
@@ -93,7 +111,25 @@ class SourceBlockDetector:
             return self.ok == 0 and self._streak >= self.threshold
 
     def stats(self) -> dict[str, Any]:
-        return {"ok": self.ok, "http_403": self.forbidden, "blocked": self.blocked}
+        out: dict[str, Any] = {"ok": self.ok, "http_403": self.forbidden, "blocked": self.blocked}
+        with self._lock:
+            if self._timed:
+                # 取れたリクエスト 1 件あたりの応答時間（ミリ秒）。再試行を含む呼び出しはその合計
+                out["avg_ms"] = round(self._total_sec / self._timed * 1000)
+                out["max_ms"] = round(self._max_sec * 1000)
+        return out
+
+
+def timed_call(fn, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+    """``fn(*args, **kwargs)`` を呼び、``(戻り値, 経過秒)`` を返す。例外はそのまま上げる。
+
+    scraper が 1 リクエストの応答時間を測って ``SourceBlockDetector.record`` に渡すのに使う。
+    ``await asyncio.to_thread(timed_call, fetch_once, url, ...)`` とすれば、スレッドの順番待ちを含まない
+    （リクエストそのものの）時間になる。
+    """
+    t0 = time.monotonic()
+    out = fn(*args, **kwargs)
+    return out, time.monotonic() - t0
 
 
 SOURCE_STATUS_PATH = "data/_status.json"

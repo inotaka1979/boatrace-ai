@@ -123,6 +123,8 @@ jobs:
           LABEL=source-blocked
           verdict=$(python3 scripts/source_health.py data/_status.json)
           echo "source health: $verdict"
+          # 2026-11-26: 応答が遅いタスクはログに残すだけ（issue は開かない。夜間は毎晩遅い、RUNBOOK §11.2）
+          printf '%s' "$verdict" | python3 -c 'import json,sys; [print("::notice::boatrace.jp " + n) for n in json.load(sys.stdin).get("notes", [])]' || true
           state=$(printf '%s' "$verdict" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
           lines=$(printf '%s' "$verdict" | python3 -c 'import json,sys; print("\n".join("- " + l for l in json.load(sys.stdin)["lines"]))')
           existing=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo "")

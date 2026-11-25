@@ -1407,6 +1407,20 @@ function parseRacerBack3HTML(html) {
   return out;
 }
 
+// 公式サイトが応答に付ける計測値（Server-Timing: edge = 配信側 (CDN) で費やした時間、origin = サーバ本体）。
+//   2026-11-26 の早朝 (JST)、どのページも応答に 8〜10 秒かかり、この値は edge 8〜10 秒 / origin 0.01〜0.06 秒だった
+//   （遅延は公式の配信側。避ける細工はしない、docs/RUNBOOK.md §11.2）。無ければ null。
+function racerUpstreamTiming(res) {
+  let v = '';
+  try { v = (res && res.headers && res.headers.get('server-timing')) || ''; } catch (_) { v = ''; }
+  const pick = (name) => {
+    const m = new RegExp('(?:^|,)\\s*' + name + '\\s*;[^,]*?dur=([0-9.]+)', 'i').exec(v);
+    const n = m ? Number(m[1]) : NaN;
+    return Number.isFinite(n) ? Math.round(n) : null;
+  };
+  return { edge_ms: pick('edge'), origin_ms: pick('origin') };
+}
+
 async function scrapeRacerOfficial(toban) {
   const base = 'https://www.boatrace.jp/owpc/pc/data/racersearch/';
   const opt = {
@@ -1416,15 +1430,21 @@ async function scrapeRacerOfficial(toban) {
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
     opt.signal = AbortSignal.timeout(RACER_UPSTREAM_TIMEOUT_MS);
   }
-  const [pRes, bRes] = await Promise.all([
-    fetch(`${base}profile?toban=${toban}`, opt),
-    fetch(`${base}back3?toban=${toban}`, opt),
-  ]);
+  // 公式サイトの応答にかかった時間を測る（応答の先頭が届くまで）。遅いのがどこかを後から判別できるようにする。
+  const t0 = Date.now();
+  const timed = async (u) => {
+    const res = await fetch(u, opt);
+    return { res, ms: Date.now() - t0 };
+  };
+  const [p, b] = await Promise.all([timed(`${base}profile?toban=${toban}`), timed(`${base}back3?toban=${toban}`)]);
+  const pRes = p.res;
+  const bRes = b.res;
   if (!pRes.ok) {
     const err = new Error(`racer profile ${pRes.status}`);
     err.blocked = pRes.status === 403 || pRes.status === 429;
     throw err;
   }
+  const timing = { profile_ms: p.ms, back3_ms: b.ms, ...racerUpstreamTiming(pRes) };
   const prof = parseRacerProfileHTML(await pRes.text());
   // 過去 3 節は取れなくても出場予定は返す（back3_ok で区別できる）
   let back = { back3: [], wins: [] };
@@ -1443,6 +1463,7 @@ async function scrapeRacerOfficial(toban) {
     back3: back.back3,
     wins: back.wins,
     back3_ok: backOk,
+    timing,
     fetched_at: new Date().toISOString(),
   };
 }

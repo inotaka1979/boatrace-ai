@@ -31,7 +31,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from http_utils import SourceBlockDetector, fetch_once, write_source_status  # noqa: E402
+from http_utils import SourceBlockDetector, fetch_once, timed_call, write_source_status  # noqa: E402
 from io_utils import atomic_write_json  # noqa: E402
 import scrape_odds_fast as odds_mod  # noqa: E402
 import scrape_previews as prev_mod  # noqa: E402
@@ -181,9 +181,9 @@ class _Fetcher:
         if wait > 0:
             time.sleep(wait)
         self._last = time.monotonic()
-        status, text = fetch_once(url, timeout=15)
+        (status, text), sec = timed_call(fetch_once, url, timeout=15)
         self.requests += 1
-        self.block.record(status)
+        self.block.record(status, sec)
         if status == 403:
             log.warning("HTTP 403 for %s", url)
         return text if status == 200 else None

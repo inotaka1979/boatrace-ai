@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from io_utils import atomic_write_json  # P2 D-01
 from time_utils import utc_iso_seconds  # P2 D-02 / D-10
 from programs_source import load_local_official_programs  # 公式移行 Phase 2
-from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, write_source_status  # noqa: E402
+from http_utils import USER_AGENT, SourceBlockDetector, fetch_once, timed_call, write_source_status  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 定数
@@ -488,8 +488,10 @@ async def fetch_with_retry(session, url, limiter, retries=MAX_RETRIES):
         await limiter.acquire()
         # aiohttp は boatrace.jp に 403 で拒否されるため共通の urllib クライアントを使う
         #   (http_utils.fetch_once の説明を参照)。
-        status, text = await asyncio.to_thread(fetch_once, url, timeout=REQUEST_TIMEOUT, headers=HEADERS)
-        BLOCK.record(status)
+        (status, text), sec = await asyncio.to_thread(
+            timed_call, fetch_once, url, timeout=REQUEST_TIMEOUT, headers=HEADERS
+        )
+        BLOCK.record(status, sec)
         if status == 200:
             return text
         elif status == 404:
