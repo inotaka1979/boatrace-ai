@@ -167,6 +167,9 @@ function _applyRacesView(sid, predictHtml) {
   var el = document.getElementById('racesList');
   if (!el) return;
   el.innerHTML = _getRacesView() === 'results' ? _renderStadiumResultsHtml(sid) : predictHtml;
+  // 2026-11-25: お気に入り選手の名前に ★（racer_fav.js。結果一覧ビューには選手セルが無いので何もしない）
+  var markFav = globalThis._markFavRaceList;
+  if (typeof markFav === 'function') markFav(sid);
 }
 
 // globalThis export

@@ -1644,3 +1644,60 @@ TOP は「1R以降中止」・次レース欄は「11R ◯時◯分」になっ�
 - テスト: test_day_labels.py（順延 1 件）、test_stadium_day.js（順延・_raceCancelled・帯の 3 件）、
   test_raceresult_parse.js（Worker の中止引き継ぎ 1 件）。Worker の引き継ぎと帯の除外は mutation で失敗を確認。
   今日の開催日タブを取り直し（戸田 順延 / 津 中止）。
+
+## 修正履歴 (2026-11-25: 選手機能 第 1 段階 — お気に入り選手 / 選手タブ / 選手詳細)
+
+ユーザー要望「選手情報を充実させたい。選手選択で詳細情報が見れたり、お気に入り登録して出走情報が見れたり」。
+提案（3 段階）のうち第 1 段階。新しいデータ取得は無く、既にある番組表・`data/db/racerDB.json`・今節成績・
+顔写真（`data/photos/`）・長期集計（`racer_stats_view.json`）だけで作った。
+
+### 画面
+- **お気に入り選手**（★）: `localStorage boatrace_fav_racers = [{id, name, ts}]`、最大 100 人。
+  TOP の**場一覧の下**に「お気に入り選手の出走」（締切前 = 近い順 → 結果待ち → 確定 = 新しい順、最大 12 行、
+  行を押すとレース詳細）。未登録・本日出走なしのときは 1 行の案内。場カード / レース一覧の選手名 /
+  まもなく締切 / 出走表に ★。
+- **下メニュー「選手」**（7 個目）: ★ お気に入り / 本日の出走（場で絞る、級 → 全国勝率の順）/ 検索
+  （漢字・ひらがな・カタカナ・半角カナ・登録番号。全 1,659 人 + 当日の出走表）。
+- **選手詳細**: 出走表の選手セル・一覧・検索から開く。プロフィール（写真・かな・級・登録番号・支部・年齢・体重・
+  出身・F/L）、本日の出走（AI の印・着順、押すとレース詳細）、今節成績、成績（出走表の全国 / 当地 / モーター、
+  ファン手帳の期別）、コース別成績（1 着率・2 連対・3 連対・平均 ST・ST 順）、直近 20 走の着順、当アプリの集計
+  （3 走以上）、公式サイトの選手ページへのリンク。
+- 既存のレース単位の ⭐（`boatrace_watched`）は呼び名を「お気に入り」→「**注目レース**」に（選手の ★ と区別）。
+
+### 実装
+- `src/reporting/racer_fav.js`（rest）: 保存・本日の出走の索引（`_racerTodayIndex`）・1 走の状態
+  （`_racerEntryStatus`）・TOP の帯・★・`openRacer` / `_onShowRacerPage`。critical からは typeof guard で呼ぶ
+  （`renderStadiums` の最後、`showPage('racer')`）。`data-action` のハンドラは読込時に `ACTION_HANDLERS` へ足す
+  （critical の予算を使わない）。AI の印は描画ごとに計算し直す（起動直後の結果を残さない）。
+- 新しい lazy chunk **`app-rest-racer`**（21.3KB、選手ページを開いた時だけ読む。今節成績の組み立てを借りるので
+  detail chunk も一緒に読む）: `src/reporting/racer_page.js`（一覧・検索・画面の切替）、
+  `src/reporting/racer_detail.js`（詳細）、`src/discovery/racer_profiles_loader.js`（プロフィールの取得）。
+- `loadDeferredData` が racerDB の元の形を `globalThis._racerProfiles` に残す（予測用の racerDB は予測に使う項目しか
+  残さない）。取得の promise を `_racerProfilesReady` に公開し、選手ページは起動時の取得を待つ（二重に落とさない）。
+- 写真の読込失敗と検索入力は入れ物の listener で受ける（CSP の `script-src` に `unsafe-inline` が無く、inline
+  handler は動かない）。選手ページを開いている間は 30 秒ごとに描き直す（中身が同じなら DOM を触らない）。
+- critical: 98,665B → 99,056B（+391B: ルーティングと chunk 読込、i18n キー）。
+
+### 見つけて直した既存の不具合
+- **設定ページの中身が全ページの下に出ていた**: `index.html` の設定カードの途中に余分な閉じタグがあり、
+  「DB情報を読込中...」のカードとフッタ（年齢制限・相談窓口・リセット）が `#pageSettings` の外にはみ出して、
+  TOP を含む全ページの下に出ていた（DB 情報は設定を開くまで「読込中」のまま）。DB 情報を設定ページの中に戻し、
+  フッタは意図して全ページ共通にした。
+
+### VRT の基準画像を自動で差し替える
+- 下メニューが 6 → 7 個になり `bottom-nav` の基準画像が変わる。これまでは「マージ後に Actions の画面から手動実行」で、
+  忘れると main の VRT が赤いまま残った（FA-9、3 か月）。`tests/e2e/vrt-baseline-request` に「変わるのが正しい
+  テストのタイトル」を書くと、その PR では申告分だけ比較せず撮り直し（それ以外は通常どおり比較）、マージ後に
+  `update-snapshots` ジョブが baseline を自動で commit する（`scripts/vrt_request.sh`、RUNBOOK §10.2）。
+
+### 検証
+- `test_racer_fav.js`（26 件）、`test_racer_page.js`（29 件）、`test_vrt_request.py`（11 件）。コードを 1 か所ずつ壊す
+  mutation 31 通りすべてでテストが失敗することを確認。
+- 実ブラウザ (Chromium、時刻を 11/25 14:45 に固定): TOP → 選手タブ → 検索 → 詳細 → 戻る、出走表 → 選手 → 戻る、
+  ★ の登録・解除の反映、未登録 / 出走なし / 名簿に無い選手、幅 320px で横にはみ出さないこと。
+  お気に入り 98 人でも TOP の帯の描画は 3ms 弱。smoke（Chromium）5/5。
+
+### 第 2 段階（未着手）
+- 今後の出場予定・過去 3 節（公式の選手ページ、Worker 経由で必要な時だけ取得）。
+- 登録期・身長・血液型・生年月日・優出 / 優勝・能力指数は**ファン手帳に載っている**（`build_db.py` が読み飛ばして
+  いる）ので、公式ページを選手ごとに取りに行かず `build_db.py` の取り込みを広げる。

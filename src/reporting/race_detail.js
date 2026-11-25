@@ -87,10 +87,11 @@ function openRace(sid, rn) {
   var closedAt = race ? race.race_closed_at || '' : '';
   var closedTime = closedAt ? closedAt.split(' ')[1] || '' : '';
   if (closedTime) closedTime = closedTime.slice(0, 5);
-  // P2-2: お気に入り（⭐）状態をタイトル横に表示し、トグル可能に
+  // P2-2: 注目レース（⭐）の状態をタイトル横に表示し、切り替えられるようにする。
+  //   2026-11-25: 呼び名を「お気に入り」→「注目レース」に。選手の ★（お気に入り選手、racer_fav.js）と区別する。
   var _watched = typeof _isRaceWatched === 'function' ? _isRaceWatched(sid, rn) : false;
   var _starHtml =
-    '<button id="raceStarBtn" aria-label="お気に入り切替" ' +
+    '<button id="raceStarBtn" aria-label="注目レースに登録・解除" title="注目レース（結果の確定を通知）" ' +
     'style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" ' +
     'data-action="toggleRaceWatched" data-arg-sid="' +
     sid +

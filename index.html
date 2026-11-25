@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=1fba21c3" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=1fba21c3" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=5ae6efc8" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=5ae6efc8" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -159,6 +159,77 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 .summary-bar{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;display:flex;justify-content:space-around;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
 .summary-item .s-num{font-weight:700;font-size:18px}
 .summary-item .s-label{font-size:12px;color:var(--text-sub)}
+
+/* お気に入り選手 / 選手ページ (2026-11-25、src/reporting/racer_fav.js・racer_page.js・racer_detail.js) */
+.fav-strip{background:var(--card-bg);border:1px solid var(--border);border-left:4px solid #E0A800;border-radius:8px;padding:8px 10px;margin-top:10px}
+.fav-strip.fav-empty{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--text-sub)}
+.fav-title{font-size:13px;font-weight:700;color:#8A5A00;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fav-more{font-size:13px;font-weight:400;color:var(--accent);cursor:pointer;white-space:nowrap;min-height:44px;display:inline-flex;align-items:center}
+.fav-row{display:grid;grid-template-columns:3.1em 5.6em minmax(0,1fr) auto;gap:6px;align-items:center;min-height:44px;border-top:1px solid var(--border);font-size:14px;cursor:pointer}
+.fav-row.done{color:var(--text-sub)}
+.fav-row.fav-rest{display:block;text-align:right;line-height:44px}
+.fav-row>span{white-space:nowrap}
+.fav-who{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+.fav-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fav-note{font-size:12px;color:var(--text-sub);white-space:nowrap}
+.fav-st{font-weight:700;font-size:13px;white-space:nowrap;text-align:right}
+.fav-mark{color:#B8860B}
+.res-1{color:#C62828}.res-2{color:#1565C0}.res-3{color:#2E7D32}
+.stadium-card.has-fav::before{content:"★";position:absolute;top:3px;left:4px;font-size:12px;line-height:1;color:#FFD54F}
+.racer-cell.fav-racer::before{content:"★";color:#B8860B}
+.racer-link{cursor:pointer}
+.sec-hint{font-size:11px;font-weight:400;color:var(--text-sub);margin-left:6px}
+.racer-tabs{display:flex;gap:6px;margin-bottom:8px}
+.racer-tab{flex:1;min-height:44px;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid var(--border);background:var(--card-bg);color:var(--text-sub);border-radius:8px;cursor:pointer}
+.racer-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.racer-sids{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.racer-sid{min-height:36px;padding:4px 10px;font-size:13px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);border-radius:18px;cursor:pointer}
+.racer-sid.active{background:var(--header-bg);color:#fff;border-color:var(--header-bg);font-weight:700}
+.racer-count{font-size:12px;color:var(--text-sub);margin:0 2px 6px}
+.racer-search{width:100%;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:16px;margin-bottom:8px;background:var(--card-bg);color:var(--text)}
+.racer-list{padding:2px 10px}
+.racer-li{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:64px;padding:6px 0;border-top:1px solid var(--border);cursor:pointer}
+.racer-li:first-child{border-top:0}
+.racer-li-photo{width:40px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);background:#F0F0F0}
+.racer-li-photo[data-broken="1"],.pf-photo[data-broken="1"]{visibility:hidden}
+.racer-li-name{font-weight:700;font-size:15px}
+.racer-li-wr{font-size:12px;font-weight:400;color:var(--text-sub);margin-left:6px;white-space:nowrap}
+.racer-li-sub{font-size:12px;color:var(--text-sub)}
+.racer-li-today{font-size:12px}
+.racer-empty{font-size:13px;line-height:1.7;color:var(--text-sub)}
+.cls-chip{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:3px;padding:0 5px;vertical-align:1px}
+.cls-1{background:#C62828}.cls-2{background:#D84315}.cls-3{background:#1565C0}.cls-4{background:#616161}
+.fav-btn{border:1px solid var(--border);background:var(--card-bg);color:var(--text-sub);border-radius:18px;padding:6px 12px;min-height:36px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}
+.fav-btn.on{border-color:#E0A800;background:#FFF8E1;color:#8A5A00}
+.fav-btn-s{min-width:44px;min-height:44px;font-size:18px;padding:0;border-radius:22px}
+.pf{display:flex;gap:12px;align-items:flex-start}
+.pf-photo{width:78px;height:104px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:#F0F0F0;flex-shrink:0}
+.pf-main{flex:1;min-width:0}
+.pf-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.pf-name{font-size:20px;font-weight:700;line-height:1.2}
+.pf-kana{font-size:12px;color:var(--text-sub)}
+.pf-chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:6px}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:10px;background:#EEF3F8;color:var(--text)}
+.pf-meta{font-size:12px;color:var(--text-sub);line-height:1.6}
+.sec-title{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;white-space:nowrap}
+.sec-src{font-size:11px;font-weight:400;color:var(--text-sub);text-align:right;white-space:normal;min-width:0}
+.sec-sub{font-size:12px;font-weight:700;margin:10px 0 4px}
+.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.kv div{background:#F6F8FA;border-radius:6px;padding:6px 2px}
+.kv b{display:block;font-size:16px}
+.kv span{font-size:11px;color:var(--text-sub)}
+table.ct{width:100%;border-collapse:collapse;font-size:13px;text-align:center}
+table.ct th{font-weight:400;color:var(--text-sub);font-size:11px;padding:3px 2px;border-bottom:1px solid var(--border)}
+table.ct td{padding:5px 2px;border-bottom:1px solid var(--border)}
+.bar{height:6px;border-radius:3px;background:#E3EAF2;overflow:hidden;margin-top:2px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.pl{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:4px;font-size:13px;font-weight:700;margin:0 3px 3px 0;background:#F0F2F5}
+.pl-1{background:#C62828;color:#fff}.pl-2{background:#1565C0;color:#fff}.pl-3{background:#2E7D32;color:#fff}
+.racer-series{border-collapse:collapse}
+.racer-series th{font-size:11px;font-weight:400;color:var(--text-sub);padding:2px;border:1px solid var(--border);background:#F8F8F8}
+.racer-note{font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.6}
+.racer-foot{text-align:center;padding:8px 0 16px}
+.racer-ext{display:inline-block;min-height:44px;line-height:44px;font-size:13px;color:var(--accent)}
 
 /* Race List Table */
 .race-table{width:100%;border-collapse:collapse;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
@@ -489,6 +560,8 @@ button.action-btn:active{background:#F0F0F0}
   <!-- prerendered at 2026-09-01T12:35:50+09:00 (12/24 active stadiums) -->
 <div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-05" aria-label="桐生 次節（次回開催 9/5(土)）" aria-disabled="true"><span class="stadium-name">桐生</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/5(土)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-03" aria-label="戸田 次節（次回開催 9/3(木)）" aria-disabled="true"><span class="stadium-name">戸田</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/3(木)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-05" aria-label="江戸川 次節（次回開催 9/5(土)）" aria-disabled="true"><span class="stadium-name">江戸川</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/5(土)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-05" aria-label="平和島 次節（次回開催 9/5(土)）" aria-disabled="true"><span class="stadium-name">平和島</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/5(土)</span></div><div class="stadium-card active-stadium" data-sid="5" data-hydrated="true" role="button" tabindex="0" aria-label="多摩川 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="5"><span class="stadium-grade grade-g3">G3</span><span class="stadium-name">多摩川</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="6" data-hydrated="true" role="button" tabindex="0" aria-label="浜名湖 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="6"><span class="stadium-grade grade-g3">G3</span><span class="stadium-name">浜名湖</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="7" data-hydrated="true" role="button" tabindex="0" aria-label="蒲郡 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="7"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">蒲郡</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="8" data-hydrated="true" role="button" tabindex="0" aria-label="常滑 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="8"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">常滑</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-03" aria-label="津 次節（次回開催 9/3(木)）" aria-disabled="true"><span class="stadium-name">津</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/3(木)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-03" aria-label="三国 次節（次回開催 9/3(木)）" aria-disabled="true"><span class="stadium-name">三国</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/3(木)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-04" aria-label="びわこ 次節（次回開催 9/4(金)）" aria-disabled="true"><span class="stadium-name">びわこ</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/4(金)</span></div><div class="stadium-card active-stadium" data-sid="12" data-hydrated="true" role="button" tabindex="0" aria-label="住之江 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="12"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">住之江</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="13" data-hydrated="true" role="button" tabindex="0" aria-label="尼崎 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="13"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">尼崎</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-06" aria-label="鳴門 次節（次回開催 9/6(日)）" aria-disabled="true"><span class="stadium-name">鳴門</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/6(日)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-17" aria-label="丸亀 次節（次回開催 9/17(木)）" aria-disabled="true"><span class="stadium-name">丸亀</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/17(木)</span></div><div class="stadium-card active-stadium" data-sid="16" data-hydrated="true" role="button" tabindex="0" aria-label="児島 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="16"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">児島</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-02" aria-label="宮島 次節（次回開催 9/2(水)）" aria-disabled="true"><span class="stadium-name">宮島</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/2(水)</span></div><div class="stadium-card active-stadium" data-sid="18" data-hydrated="true" role="button" tabindex="0" aria-label="徳山 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="18"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">徳山</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="19" data-hydrated="true" role="button" tabindex="0" aria-label="下関 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="19"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">下関</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="20" data-hydrated="true" role="button" tabindex="0" aria-label="若松 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="20"><span class="stadium-grade grade-g3">G3</span><span class="stadium-name">若松</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card active-stadium" data-sid="21" data-hydrated="true" role="button" tabindex="0" aria-label="芦屋 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="21"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">芦屋</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-02" aria-label="福岡 次節（次回開催 9/2(水)）" aria-disabled="true"><span class="stadium-name">福岡</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/2(水)</span></div><div class="stadium-card inactive-stadium" data-hydrated="true" data-next-open="2026-09-16" aria-label="唐津 次節（次回開催 9/16(水)）" aria-disabled="true"><span class="stadium-name">唐津</span><span class="stadium-status">次節</span><span class="stadium-next-date">9/16(水)</span></div><div class="stadium-card active-stadium" data-sid="24" data-hydrated="true" role="button" tabindex="0" aria-label="大村 開催中 0/12R 次は1R" data-action="openStadium" data-arg-sid="24"><span class="stadium-grade grade-general">一般</span><span class="stadium-name">大村</span><span class="stadium-status">0/12R</span><span class="stadium-day">&nbsp;</span><span class="stadium-day">1R</span></div>
   <!-- PRERENDER:STADIUMS:END --></div>
+  <!-- 2026-11-25: お気に入り選手の出走（場一覧の下、src/reporting/racer_fav.js） -->
+  <div id="favStrip"></div>
   <div class="footer-note">予想は統計モデルによる参考情報です。的中を保証するものではありません。</div>
 </div>
 
@@ -530,6 +603,11 @@ button.action-btn:active{background:#F0F0F0}
   <section class="detail-tab-section" data-detail-section="odds" role="tabpanel">
     <div id="detailOdds"></div>
   </section>
+</div>
+
+<!-- Screen: Racer (2026-11-25 選手: お気に入り / 本日の出走 / 検索 / 選手詳細。中身は lazy chunk app-rest-racer が描く) -->
+<div class="page" id="pageRacer">
+  <div id="racerView"><div class="card">読込中...</div></div>
 </div>
 
 <!-- Screen 4: Stats -->
@@ -714,7 +792,6 @@ button.action-btn:active{background:#F0F0F0}
       <span><button class="action-btn" data-action="shareLearnedWeights">学習結果を共有</button>
             <span class="status-inline">DP noise 加算済 / GitHub Issue で公開</span></span>
     </div>
-  </div>
     <div class="setting-row"><span class="setting-label">データキャッシュ</span><button class="action-btn" data-action="clearCache">クリア</button></div>
     <!-- Epic 28: 容量超過時の緊急クリア (bc_* + 破損 + diag を全削除) -->
     <div class="setting-row"><span class="setting-label">容量緊急解放</span><button class="action-btn" data-action="emergencyStorageCleanup">実行</button></div>
@@ -732,14 +809,19 @@ button.action-btn:active{background:#F0F0F0}
   <div class="card">
     <div class="db-info" id="dbInfo">DB情報を読込中...</div>
   </div>
-  <div class="footer-note">BoatRace AI v2.0<br>Boatrace Open API使用 (非公式)<br>予想は参考情報であり、的中を保証するものではありません。<br>
+</div>
+
+<!-- 全ページ共通のフッタ（年齢制限・依存症相談窓口・リセット）。
+     2026-11-25: 設定カードの途中に余分な閉じタグがあり、「DB情報」のカードとこのフッタが設定ページの外に
+     はみ出して全ページの下に出ていた（「DB情報を読込中...」が TOP などに出たままになる）。
+     DB情報は設定ページの中に戻し、フッタは意図して全ページに出す。 -->
+<div class="footer-note">BoatRace AI v2.0<br>Boatrace Open API使用 (非公式)<br>予想は参考情報であり、的中を保証するものではありません。<br>
     <!-- A-07 (2026-07-26): 公営競技の年齢制限とギャンブル依存症相談窓口の明示 -->
     <span style="display:block;margin-top:6px">20歳未満の方は舟券を購入できません。</span>
     <span style="display:block">ギャンブル等依存症でお困りの方は <a href="https://www.mhlw.go.jp/kesshou/" rel="noopener noreferrer" target="_blank" style="color:var(--text-sub)">相談窓口</a> へ。</span>
     <!-- Path B (2026-05-16): kill switch リンク。JS が halt しても href 動作だけは生きる。
          クエリ ?reset=1 を受けると app-critical.js boot で SW unregister + caches.delete を実行。 -->
     <a href="?reset=1" style="display:inline-block;margin-top:8px;padding:6px 12px;background:#FAFAFA;border:1px solid #DDD;border-radius:6px;color:#666;text-decoration:none;font-size:12px" aria-label="アプリのキャッシュをクリアして再読込">🔄 アプリをリセット</a>
-  </div>
 </div>
 
 <!-- Navigation - 5 tabs (X7: バックテスト追加) -->
@@ -749,6 +831,7 @@ button.action-btn:active{background:#F0F0F0}
   <button class="nav-btn" data-action="showPage" data-arg-page="stats" id="navStats"><span class="nav-icon" aria-hidden="true">📊</span><span data-i18n="page.stats">成績</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="daily" id="navDaily"><span class="nav-icon" aria-hidden="true">📅</span><span data-i18n="page.daily">日別</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="backtest" id="navBacktest"><span class="nav-icon" aria-hidden="true">🧪</span><span data-i18n="page.backtest">検証</span></button>
+  <button class="nav-btn" data-action="showPage" data-arg-page="racer" id="navRacer"><span class="nav-icon" aria-hidden="true">👤</span><span data-i18n="page.racer">選手</span></button>
   <button class="nav-btn" data-action="showPage" data-arg-page="settings" id="navSettings"><span class="nav-icon" aria-hidden="true">⚙️</span><span data-i18n="page.settings">設定</span></button>
   <button class="nav-btn" data-action="forceRefresh" id="navRefresh"><span class="nav-icon" aria-hidden="true">🔄</span><span data-i18n="common.refresh">更新</span></button>
 </nav>
@@ -761,7 +844,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=1fba21c3" defer></script>
-<script src="assets/app-rest.min.js?v=1fba21c3" defer></script>
+<script src="assets/app-critical.min.js?v=5ae6efc8" defer></script>
+<script src="assets/app-rest.min.js?v=5ae6efc8" defer></script>
 </body>
 </html>

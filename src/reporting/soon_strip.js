@@ -72,6 +72,9 @@ function _renderSoonStrip(now) {
     var name = (typeof STADIUMS !== 'undefined' && STADIUMS[r.sid]) || '場' + r.sid;
     var mark = _soonTopMark(r.sid, r.rno);
     var urgent = r.mins <= 5;
+    // 2026-11-25: お気に入り選手が出るレースに ★（racer_fav.js）
+    var favIn = globalThis._favInRace;
+    var fav = typeof favIn === 'function' && favIn(r.sid, r.rno);
     html +=
       '<div class="soon-row" role="button" tabindex="0" data-action="openRace" data-arg-sid="' +
       r.sid +
@@ -81,7 +84,9 @@ function _renderSoonStrip(now) {
       escText(name) +
       ' ' +
       r.rno +
-      'R</span><span class="soon-mins' +
+      'R' +
+      (fav ? ' <span class="fav-mark" title="お気に入り選手が出走">★</span>' : '') +
+      '</span><span class="soon-mins' +
       (urgent ? ' soon-urgent' : '') +
       '">あと ' +
       r.mins +

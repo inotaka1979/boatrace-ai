@@ -3166,6 +3166,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "page.stats": "\u6210\u7E3E",
       "page.daily": "\u65E5\u5225",
       "page.backtest": "\u691C\u8A3C",
+      "page.racer": "\u9078\u624B",
       "page.settings": "\u8A2D\u5B9A",
       // settings
       "settings.bet_count_3": "3\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
@@ -3192,7 +3193,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "notify.permission_granted": "\u2713 \u8A31\u53EF\u6E08",
       "notify.permission_denied": "\xD7 \u62D2\u5426\uFF08\u30D6\u30E9\u30A6\u30B6\u8A2D\u5B9A\u3067\u5909\u66F4\u53EF\uFF09",
       "notify.permission_default": "\u672A\u8A2D\u5B9A",
-      "notify.title": "\u304A\u6C17\u306B\u5165\u308A\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u304C\u78BA\u5B9A",
+      "notify.title": "\u6CE8\u76EE\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u304C\u78BA\u5B9A",
       // api
       "api.health.fail": "API \u53D6\u5F97\u5931\u6557",
       "api.health.cached": "\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D",
@@ -3255,6 +3256,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "page.stats": "Stats",
       "page.daily": "Daily",
       "page.backtest": "Backtest",
+      "page.racer": "Racers",
       "page.settings": "Settings",
       // settings
       "settings.bet_count_3": "Trifecta # of bets",
@@ -3345,6 +3347,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       "page.stats": "\u4E1A\u7EE9",
       "page.daily": "\u65E5\u62A5",
       "page.backtest": "\u56DE\u6D4B",
+      "page.racer": "\u9009\u624B",
       "page.settings": "\u8BBE\u7F6E",
       // settings
       "settings.bet_count_3": "\u4E09\u8FDE\u5355\u6CE8\u6570",
@@ -8104,12 +8107,17 @@ async function loadDeferredData(rawPrograms, rawPreviews){
   })());
 
   // 選手 DB（推奨: 予測詳細時にだけ必要、最大 ~5MB）
-  tasks.push((async function(){
+  //   2026-11-25: 予測用の racerDB には予測に使う項目しか残さないので、選手ページ用に元の形
+  //   （かな・支部・期別勝率・コース別の着順分布）を _racerProfiles に残す。取得中かどうかを
+  //   選手ページ (discovery/racer_profiles_loader.js) が見られるよう promise も公開する。
+  var _racerDbTask=(async function(){
     try{
       var dbResp=await fetch('data/db/racerDB.json?t='+Date.now());
       if(!dbResp.ok) return;
       var dbData=await dbResp.json();
       if(!dbData.racers) return;
+      globalThis._racerProfiles=dbData.racers;
+      globalThis._racerProfilesAt=dbData.updated_at||'';
       for(var rn in dbData.racers){
         var r=dbData.racers[rn];
         if(!racerDB[rn]) racerDB[rn]={courseStats:{},courseStyle:{},recentResults:[],lastUpdated:''};
@@ -8138,7 +8146,9 @@ async function loadDeferredData(rawPrograms, rawPreviews){
       //   saveDB() 経由に統一 → IDB 優先 / IDB 不可なら safeSet で LS fallback。
       try { saveDB(); } catch(e){ console.warn('[PE-8] saveDB failed:', e.message); }
     }catch(e){console.warn('[PE-8] racerDB skip:', e.message);}
-  })());
+  })();
+  globalThis._racerProfilesReady=_racerDbTask;
+  tasks.push(_racerDbTask);
 
   // 場別統計 DB
   tasks.push((async function(){
@@ -8437,7 +8447,8 @@ function racerBadges(boat,form,divergence){
   // ../src/reporting/page_router.js
   var _chunkStates = {
     stats: { loaded: false, promise: null },
-    detail: { loaded: false, promise: null }
+    detail: { loaded: false, promise: null },
+    racer: { loaded: false, promise: null }
   };
   function _loadChunk(stateKey, filename) {
     var st = _chunkStates[stateKey];
@@ -8476,6 +8487,9 @@ function racerBadges(boat,form,divergence){
   }
   function _ensureRaceDetailChunk() {
     return _loadChunk("detail", "app-rest-detail.min.js");
+  }
+  function _ensureRacerChunk() {
+    return Promise.all([_ensureRaceDetailChunk(), _loadChunk("racer", "app-rest-racer.min.js")]);
   }
   function _openStatsChunkPage(renderName) {
     _ensureStatsChunk().then(
@@ -8540,6 +8554,10 @@ function racerBadges(boat,form,divergence){
       document.getElementById("pageSettings").classList.add("active");
       _setActive("navSettings");
       loadSettings();
+    } else if (page === "racer") {
+      document.getElementById("pageRacer").classList.add("active");
+      _setActive("navRacer");
+      if (typeof _onShowRacerPage === "function") _onShowRacerPage();
     }
     window.scrollTo(0, 0);
     try {
@@ -8550,6 +8568,7 @@ function racerBadges(boat,form,divergence){
   globalThis.showPage = showPage;
   globalThis._ensureStatsChunk = _ensureStatsChunk;
   globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;
+  globalThis._ensureRacerChunk = _ensureRacerChunk;
 })();
 
 /* BUILD:REPORTING_PAGE_ROUTER:END */
@@ -8645,6 +8664,7 @@ function racerBadges(boat,form,divergence){
       }
     }
     list.innerHTML = html;
+    if (typeof _renderFavTop === "function") _renderFavTop();
   }
   function openStadium(sid) {
     if (typeof predictRace !== "function" || typeof savePrediction !== "function") {
@@ -8915,7 +8935,9 @@ function racerBadges(boat,form,divergence){
       var name = typeof STADIUMS !== "undefined" && STADIUMS[r.sid] || "\u5834" + r.sid;
       var mark = _soonTopMark(r.sid, r.rno);
       var urgent = r.mins <= 5;
-      html += '<div class="soon-row" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + r.sid + '" data-arg-rn="' + r.rno + '"><span class="soon-name">' + escText(name) + " " + r.rno + 'R</span><span class="soon-mins' + (urgent ? " soon-urgent" : "") + '">\u3042\u3068 ' + r.mins + ' \u5206</span><span class="soon-mark">' + (mark ? "\u25CE" + mark : "") + "</span></div>";
+      var favIn = globalThis._favInRace;
+      var fav = typeof favIn === "function" && favIn(r.sid, r.rno);
+      html += '<div class="soon-row" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + r.sid + '" data-arg-rn="' + r.rno + '"><span class="soon-name">' + escText(name) + " " + r.rno + "R" + (fav ? ' <span class="fav-mark" title="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u304C\u51FA\u8D70">\u2605</span>' : "") + '</span><span class="soon-mins' + (urgent ? " soon-urgent" : "") + '">\u3042\u3068 ' + r.mins + ' \u5206</span><span class="soon-mark">' + (mark ? "\u25CE" + mark : "") + "</span></div>";
     });
     html += "</div>";
     el.innerHTML = html;
@@ -9093,6 +9115,8 @@ function racerBadges(boat,form,divergence){
     var el = document.getElementById("racesList");
     if (!el) return;
     el.innerHTML = _getRacesView() === "results" ? _renderStadiumResultsHtml(sid) : predictHtml;
+    var markFav = globalThis._markFavRaceList;
+    if (typeof markFav === "function") markFav(sid);
   }
   globalThis._applyRacesView = _applyRacesView;
   globalThis._getRacesView = _getRacesView;
@@ -9103,8 +9127,372 @@ function racerBadges(boat,form,divergence){
 
 /* BUILD:REPORTING_STADIUM_RESULTS:END */
 
+/* BUILD:REPORTING_RACER_FAV:START */
+"use strict";
+(() => {
+  // ../src/reporting/racer_fav.js
+  var FAV_RACER_KEY = "boatrace_fav_racers";
+  var FAV_RACER_MAX = 100;
+  var FAV_STRIP_MAX = 12;
+  var FAV_STRIP_MARK_MAX = 6;
+  var FAV_SOON_MIN = 60;
+  function _favRacers() {
+    var raw = typeof safeParse === "function" ? safeParse(FAV_RACER_KEY, []) : [];
+    if (!Array.isArray(raw)) return [];
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var e = raw[i];
+      var id = e && e.id != null ? String(e.id) : "";
+      if (!/^\d{1,6}$/.test(id) || seen[id]) continue;
+      seen[id] = 1;
+      out.push({ id, name: typeof e.name === "string" ? e.name : "", ts: Number(e.ts) || 0 });
+    }
+    return out;
+  }
+  function _favIdSet() {
+    var set = {};
+    _favRacers().forEach(function(e) {
+      set[e.id] = 1;
+    });
+    return set;
+  }
+  function _isFavRacer(id) {
+    return !!_favIdSet()[String(id)];
+  }
+  function _toggleFavRacer(id, name) {
+    id = String(id == null ? "" : id);
+    if (!/^\d{1,6}$/.test(id)) return false;
+    var arr = _favRacers();
+    var idx = -1;
+    for (var i = 0; i < arr.length; i++) if (arr[i].id === id) idx = i;
+    var on;
+    if (idx >= 0) {
+      arr.splice(idx, 1);
+      on = false;
+    } else {
+      if (arr.length >= FAV_RACER_MAX) {
+        try {
+          alert("\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306F " + FAV_RACER_MAX + " \u4EBA\u307E\u3067\u3067\u3059\u3002\u4E0D\u8981\u306A\u9078\u624B\u3092\u5916\u3057\u3066\u304B\u3089\u767B\u9332\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+        } catch (_) {
+        }
+        return false;
+      }
+      arr.push({ id, name: _racerDispName(name), ts: Date.now() });
+      on = true;
+    }
+    if (typeof safeSet === "function") safeSet(FAV_RACER_KEY, arr);
+    _syncFavUi(id, on);
+    return on;
+  }
+  function _racerDispName(n) {
+    var s = String(n == null ? "" : n);
+    if (s.length === 8 && s.indexOf("\u3000") >= 0) {
+      var fam = s.slice(0, 4).replace(/[\s　]/g, "");
+      var giv = s.slice(4).replace(/[\s　]/g, "");
+      return giv ? fam + " " + giv : fam;
+    }
+    return s.replace(/[\s　]+/g, " ").trim();
+  }
+  function _favClosedMs(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s || "");
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]) : null;
+  }
+  function _racerTodayIndex() {
+    var idx = {};
+    if (typeof programData === "undefined" || !programData) return idx;
+    for (var sid in programData) {
+      var st = programData[sid];
+      for (var rno in st) {
+        var race = st[rno];
+        if (!race || !Array.isArray(race.boats)) continue;
+        var ms = _favClosedMs(race.race_closed_at);
+        var hm = race.race_closed_at ? (String(race.race_closed_at).split(" ")[1] || "").slice(0, 5) : "";
+        for (var i = 0; i < race.boats.length; i++) {
+          var b = race.boats[i];
+          if (!b || !b.racer_number || !b.racer_boat_number) continue;
+          var id = String(b.racer_number);
+          (idx[id] || (idx[id] = [])).push({
+            id,
+            sid: parseInt(sid, 10),
+            rno: parseInt(rno, 10),
+            boat: b.racer_boat_number,
+            closedMs: ms,
+            hm,
+            name: b.racer_name || "",
+            cls: b.racer_class_number || 0
+          });
+        }
+      }
+    }
+    for (var k in idx)
+      idx[k].sort(function(a, b2) {
+        return a.rno - b2.rno;
+      });
+    return idx;
+  }
+  function _racerEntryStatus(e, now) {
+    var t = now || Date.now();
+    var res = typeof resultData !== "undefined" && resultData && resultData[e.sid] ? resultData[e.sid][e.rno] : null;
+    if (res && res.isCancelled) return { kind: "cancel", text: "\u4E2D\u6B62" };
+    if (res && res.isFinished) {
+      var rr = (res.results || []).filter(function(x) {
+        return x && x.racer_boat_number === e.boat;
+      })[0];
+      var p = rr && rr.place >= 1 && rr.place <= 6 ? rr.place : null;
+      return { kind: "done", place: p, text: p ? p + "\u7740" : "\u7740\u9806\u306A\u3057" };
+    }
+    var rc = globalThis._raceCancelled;
+    if (typeof rc === "function" && rc(e.sid, e.rno)) return { kind: "cancel", text: "\u4E2D\u6B62" };
+    if (e.closedMs == null) return { kind: "open", mins: null, text: "" };
+    var mins = Math.floor((e.closedMs - t) / 6e4);
+    if (mins < 0) return { kind: "wait", text: "\u7D50\u679C\u5F85\u3061" };
+    return { kind: "open", mins, text: mins <= FAV_SOON_MIN ? "\u3042\u3068 " + mins + " \u5206" : "" };
+  }
+  function _favInRace(sid, rno) {
+    var race = typeof programData !== "undefined" && programData && programData[sid] ? programData[sid][rno] : null;
+    if (!race || !Array.isArray(race.boats)) return false;
+    var fav = _favIdSet();
+    return race.boats.some(function(b) {
+      return b && fav[String(b.racer_number)];
+    });
+  }
+  var _favMarkMemo = {};
+  function _racerAiMarkReset() {
+    _favMarkMemo = {};
+  }
+  function _racerAiMark(sid, rno, boat) {
+    var key = sid + "_" + rno;
+    var marks = _favMarkMemo[key];
+    if (marks === void 0) {
+      marks = null;
+      try {
+        var p = typeof predictRace === "function" ? predictRace(sid, rno) : null;
+        marks = p && Array.isArray(p.marks) ? p.marks : null;
+      } catch (_) {
+        marks = null;
+      }
+      _favMarkMemo[key] = marks;
+    }
+    if (!marks) return null;
+    for (var i = 0; i < marks.length; i++) {
+      if (marks[i] && marks[i].boat === boat) return { mark: marks[i].mark || "", prob: marks[i].prob };
+    }
+    return null;
+  }
+  var _FAV_KIND_ORDER = { open: 0, wait: 1, done: 2, cancel: 2 };
+  function _favEntriesToday(now) {
+    var idx = _racerTodayIndex();
+    var rows = [];
+    var racers = 0;
+    _favRacers().forEach(function(f) {
+      var es = idx[f.id];
+      if (!es) return;
+      racers++;
+      es.forEach(function(e) {
+        rows.push({ e, st: _racerEntryStatus(e, now) });
+      });
+    });
+    rows.sort(function(a, b) {
+      var ga = _FAV_KIND_ORDER[a.st.kind];
+      var gb = _FAV_KIND_ORDER[b.st.kind];
+      if (ga !== gb) return ga - gb;
+      var d = (a.e.closedMs || 0) - (b.e.closedMs || 0);
+      return (ga === 2 ? -d : d) || a.e.sid - b.e.sid || a.e.boat - b.e.boat;
+    });
+    return { rows, racers };
+  }
+  function _favRowHtml(r, withMark) {
+    var e = r.e;
+    var st = r.st;
+    var name = typeof STADIUMS !== "undefined" && STADIUMS[e.sid] || "\u5834" + e.sid;
+    var ai = "";
+    if (withMark && st.kind === "open") {
+      var mk = _racerAiMark(e.sid, e.rno, e.boat);
+      if (mk && mk.mark)
+        ai = ' <span class="fav-note">' + escText(mk.mark) + (typeof mk.prob === "number" ? " " + Math.round(mk.prob * 100) + "%" : "") + "</span>";
+    }
+    var cls = "fav-st";
+    if (st.kind === "done" && st.place && st.place <= 3) cls += " res-" + st.place;
+    else if (st.kind === "open" && st.mins != null && st.mins <= 5) cls += " soon-urgent";
+    else if (st.kind === "cancel") cls += " c-danger";
+    return '<div class="fav-row' + (st.kind === "open" ? "" : " done") + '" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + e.sid + '" data-arg-rn="' + e.rno + '"><span class="fav-time">' + escText(e.hm) + "</span><span>" + escText(name) + " <b>" + e.rno + 'R</b></span><span class="fav-who">' + (typeof boatBadge === "function" ? boatBadge(e.boat) : e.boat) + ' <span class="fav-nm">' + escText(_racerDispName(e.name)) + "</span>" + ai + '</span><span class="' + cls + '">' + escText(st.text) + "</span></div>";
+  }
+  function _favStripHtml(now) {
+    if (typeof programData === "undefined" || !programData) return null;
+    var favs = _favRacers();
+    var more = '<span class="fav-more" role="button" tabindex="0" data-action="showPage" data-arg-page="racer">';
+    if (!favs.length) {
+      return '<div class="fav-strip fav-empty" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u3092\u767B\u9332\u3059\u308B\u3068\u3001\u672C\u65E5\u306E\u51FA\u8D70\u304C\u3053\u3053\u306B\u51FA\u307E\u3059\u3002</span>' + more + "\u9078\u624B\u3092\u63A2\u3059 \u203A</span></div>";
+    }
+    var t = _favEntriesToday(now);
+    _racerAiMarkReset();
+    if (!t.rows.length) {
+      return '<div class="fav-strip fav-empty" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\uFF08' + favs.length + " \u4EBA\uFF09\u306E\u672C\u65E5\u306E\u51FA\u8D70\u306F\u3042\u308A\u307E\u305B\u3093\u3002</span>" + more + "\u9078\u624B\u4E00\u89A7 \u203A</span></div>";
+    }
+    var html = '<div class="fav-strip" role="region" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70"><div class="fav-title"><span><span class="fav-mark">\u2605</span> \u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u51FA\u8D70\uFF08\u672C\u65E5 ' + t.racers + " \u4EBA\u30FB" + t.rows.length + " \u8D70\uFF09</span>" + more + "\u9078\u624B\u4E00\u89A7 \u203A</span></div>";
+    var shown = t.rows.slice(0, FAV_STRIP_MAX);
+    var marks = 0;
+    shown.forEach(function(r) {
+      var withMark = r.st.kind === "open" && marks < FAV_STRIP_MARK_MAX;
+      if (withMark) marks++;
+      html += _favRowHtml(r, withMark);
+    });
+    if (t.rows.length > shown.length) {
+      html += '<div class="fav-row fav-rest" role="button" tabindex="0" data-action="showPage" data-arg-page="racer"><span class="fav-note">\u307B\u304B ' + (t.rows.length - shown.length) + " \u8D70\u3092\u898B\u308B \u203A</span></div>";
+    }
+    return html + "</div>";
+  }
+  function _markFavStadiums() {
+    if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
+    var idx = _racerTodayIndex();
+    var sids = {};
+    _favRacers().forEach(function(f) {
+      (idx[f.id] || []).forEach(function(e) {
+        sids[e.sid] = 1;
+      });
+    });
+    var cards = document.querySelectorAll("#stadiumList .stadium-card");
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var sid = c.getAttribute ? c.getAttribute("data-sid") : null;
+      if (c.classList) c.classList.toggle("has-fav", !!(sid && sids[sid]));
+    }
+  }
+  function _renderFavTop(now) {
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("favStrip");
+    if (el) {
+      var html = _favStripHtml(now);
+      if (html != null) el.innerHTML = html;
+    }
+    _markFavStadiums();
+  }
+  function _markFavRaceList(sid) {
+    if (typeof document === "undefined") return;
+    var list = document.getElementById("racesList");
+    var st = typeof programData !== "undefined" && programData ? programData[sid] : null;
+    if (!list || !st || typeof list.querySelectorAll !== "function") return;
+    var fav = _favIdSet();
+    var rows = list.querySelectorAll("tr[data-arg-rn]");
+    for (var i = 0; i < rows.length; i++) {
+      var race = st[rows[i].getAttribute("data-arg-rn")];
+      var tds = rows[i].children || [];
+      if (!race || !Array.isArray(race.boats)) continue;
+      for (var j = 0; j < race.boats.length; j++) {
+        var b = race.boats[j];
+        var td = b ? tds[b.racer_boat_number] : null;
+        if (td && td.classList && td.classList.contains("racer-cell")) {
+          td.classList.toggle("fav-racer", !!fav[String(b.racer_number)]);
+        }
+      }
+    }
+  }
+  function _syncFavUi(id, on) {
+    if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
+    try {
+      var btns = document.querySelectorAll('[data-fav-id="' + id + '"]');
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (b.classList) b.classList.toggle("on", on);
+        if (b.setAttribute) b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.textContent = b.getAttribute && b.getAttribute("data-fav-style") === "full" ? on ? "\u2605 \u767B\u9332\u6E08\u307F" : "\u2606 \u304A\u6C17\u306B\u5165\u308A\u306B\u767B\u9332" : on ? "\u2605" : "\u2606";
+      }
+      var marks = document.querySelectorAll('[data-fav-mark="' + id + '"]');
+      for (var k = 0; k < marks.length; k++) marks[k].hidden = !on;
+      _renderFavTop();
+      if (typeof currentStadium !== "undefined" && currentStadium) _markFavRaceList(currentStadium);
+      var hook = globalThis._onFavRacerChanged;
+      if (typeof hook === "function") hook(id, on);
+    } catch (_) {
+    }
+  }
+  function _favBtnHtml(id, name, full, on) {
+    if (on == null) on = _isFavRacer(id);
+    return '<button type="button" class="fav-btn' + (on ? " on" : "") + (full ? "" : " fav-btn-s") + '" data-action="toggleFavRacer" data-arg-id="' + escText(id) + '" data-arg-name="' + escText(_racerDispName(name)) + '" data-fav-id="' + escText(id) + '"' + (full ? ' data-fav-style="full"' : "") + ' aria-pressed="' + (on ? "true" : "false") + '" aria-label="\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306B\u767B\u9332\u30FB\u89E3\u9664">' + (full ? on ? "\u2605 \u767B\u9332\u6E08\u307F" : "\u2606 \u304A\u6C17\u306B\u5165\u308A\u306B\u767B\u9332" : on ? "\u2605" : "\u2606") + "</button>";
+  }
+  var _racerNext = null;
+  function _activePageKey() {
+    try {
+      var p = document.querySelector(".page.active");
+      var id = p && p.id ? String(p.id) : "";
+      return id.indexOf("page") === 0 ? id.charAt(4).toLowerCase() + id.slice(5) : "top";
+    } catch (_) {
+      return "top";
+    }
+  }
+  function openRacer(id, from) {
+    if (id == null || id === "") return;
+    _racerNext = { id: String(id), from: from || _activePageKey() };
+    if (typeof showPage === "function") showPage("racer");
+  }
+  function _onShowRacerPage() {
+    var next = _racerNext;
+    _racerNext = null;
+    var render = function() {
+      var f = globalThis._renderRacerPage;
+      if (typeof f === "function") f(next);
+    };
+    if (typeof globalThis._renderRacerPage === "function") return render();
+    var view = typeof document !== "undefined" ? document.getElementById("racerView") : null;
+    if (view && !view.innerHTML) view.innerHTML = '<div class="card">\u8AAD\u8FBC\u4E2D...</div>';
+    if (typeof _ensureRacerChunk !== "function") return void 0;
+    return _ensureRacerChunk().then(render, function(err) {
+      if (view)
+        view.innerHTML = '<div class="card">\u9078\u624B\u30DA\u30FC\u30B8\u306E\u8AAD\u8FBC\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002\u901A\u4FE1\u72B6\u6CC1\u3092\u78BA\u8A8D\u3057\u3066\u3001\u4E0B\u306E\u300C\u9078\u624B\u300D\u3092\u3082\u3046\u4E00\u5EA6\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002</div>';
+      try {
+        reportError({ type: "chunk-load", msg: String(err) });
+      } catch (_) {
+      }
+    });
+  }
+  if (typeof ACTION_HANDLERS === "object" && ACTION_HANDLERS) {
+    ACTION_HANDLERS.openRacer = function(el) {
+      openRacer(el.dataset.argId, el.dataset.argFrom);
+    };
+    ACTION_HANDLERS.toggleFavRacer = function(el) {
+      _toggleFavRacer(el.dataset.argId, el.dataset.argName);
+    };
+  }
+  if (typeof setInterval === "function" && typeof document !== "undefined") {
+    setInterval(function() {
+      try {
+        var top = document.getElementById("pageTop");
+        if (top && top.classList && top.classList.contains("active") && !document.hidden) _renderFavTop();
+      } catch (_) {
+      }
+    }, 3e4);
+  }
+  globalThis._favRacers = _favRacers;
+  globalThis._favIdSet = _favIdSet;
+  globalThis._isFavRacer = _isFavRacer;
+  globalThis._toggleFavRacer = _toggleFavRacer;
+  globalThis._racerTodayIndex = _racerTodayIndex;
+  globalThis._racerEntryStatus = _racerEntryStatus;
+  globalThis._favInRace = _favInRace;
+  globalThis._favEntriesToday = _favEntriesToday;
+  globalThis._favStripHtml = _favStripHtml;
+  globalThis._renderFavTop = _renderFavTop;
+  globalThis._markFavRaceList = _markFavRaceList;
+  globalThis._racerDispName = _racerDispName;
+  globalThis._racerAiMark = _racerAiMark;
+  globalThis._racerAiMarkReset = _racerAiMarkReset;
+  globalThis._favBtnHtml = _favBtnHtml;
+  globalThis.openRacer = openRacer;
+  globalThis._onShowRacerPage = _onShowRacerPage;
+  try {
+    if (typeof programData !== "undefined" && programData) _renderFavTop();
+    _pr = typeof document !== "undefined" ? document.getElementById("pageRacer") : null;
+    if (_pr && _pr.classList && _pr.classList.contains("active")) _onShowRacerPage();
+  } catch (_) {
+  }
+  var _pr;
+})();
+
+/* BUILD:REPORTING_RACER_FAV:END */
+
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
-//   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約
+//   トリガ: loadAllData 完了後、注目レース（boatrace_watched）の確定レースを 1 通知に集約
 //   許可: ユーザが明示的に「許可リクエスト」ボタンを押した時のみ requestPermission
 function _enableNotifyPermission(){
   if(!capabilities.has('notification')){
@@ -9150,7 +9538,7 @@ function _maybeNotifyNewResults(){
   }).join(' / ');
   var more = newlyFinished.length > 3 ? ' 他' + (newlyFinished.length - 3) + '件' : '';
   try {
-    var notif = new Notification('お気に入りレースの結果が確定', {
+    var notif = new Notification('注目レースの結果が確定', {
       body: sample + more,
       icon: 'icon-192.png',
       badge: 'icon-192.png',
@@ -9168,7 +9556,8 @@ function _maybeNotifyNewResults(){
   try { localStorage.setItem('boatrace_notify_last_seen', String(now)); } catch(_){}
 }
 
-// P2-2: お気に入りレース管理（注目したいレースを localStorage に記録）
+// P2-2: 注目レースの管理（注目したいレースを localStorage に記録）。
+//   2026-11-25: 呼び名を「お気に入りレース」→「注目レース」に（選手の ★ = お気に入り選手 と区別）
 //   key: boatrace_watched = [{sid, race, ts}]、上限 100 件のリングバッファ
 var _WATCHED_KEY = 'boatrace_watched';
 var _WATCHED_MAX = 100;
@@ -9243,7 +9632,7 @@ function _restoreNavState(){
     try {
       if(st.page === 'races' && st.sid){ openStadium(st.sid); }
       else if(st.page === 'detail' && st.sid && st.rn){ openRace(st.sid, st.rn); }
-      else if(st.page === 'stats' || st.page === 'settings' || st.page === 'backtest'){ showPage(st.page); }
+      else if(st.page === 'stats' || st.page === 'settings' || st.page === 'backtest' || st.page === 'racer'){ showPage(st.page); }
     } catch(e) {
       try{ reportError({type:'warn', msg:'_restoreNavState failed: '+e.message}); }catch(_){}
     }
@@ -9347,7 +9736,7 @@ async function _loadNextOpen(){
     var closedTime = closedAt ? closedAt.split(" ")[1] || "" : "";
     if (closedTime) closedTime = closedTime.slice(0, 5);
     var _watched = typeof _isRaceWatched === "function" ? _isRaceWatched(sid, rn) : false;
-    var _starHtml = '<button id="raceStarBtn" aria-label="\u304A\u6C17\u306B\u5165\u308A\u5207\u66FF" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
+    var _starHtml = '<button id="raceStarBtn" aria-label="\u6CE8\u76EE\u30EC\u30FC\u30B9\u306B\u767B\u9332\u30FB\u89E3\u9664" title="\u6CE8\u76EE\u30EC\u30FC\u30B9\uFF08\u7D50\u679C\u306E\u78BA\u5B9A\u3092\u901A\u77E5\uFF09" style="margin-left:8px;background:transparent;border:0;font-size:18px;cursor:pointer;padding:0 4px" data-action="toggleRaceWatched" data-arg-sid="' + sid + '" data-arg-rn="' + rn + '">' + (_watched ? "\u2B50" : "\u2606") + "</button>";
     document.getElementById("detailTitle").innerHTML = name + " " + rn + "R" + (closedTime ? ' <span style="font-size:12px;color:var(--text-dim);font-weight:400">\u7DE0\u5207 ' + closedTime + "</span>" : "") + _starHtml;
     document.getElementById("detailBack").onclick = function() {
       openStadium(sid);
@@ -9685,7 +10074,8 @@ async function _loadNextOpen(){
       stTimes.forEach(function(e, i2) {
         stRankMap[e.boat] = i2;
       });
-      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868</div>';
+      var favSet = typeof _favIdSet === "function" ? _favIdSet() : {};
+      boatsHtml = '<div class="section-title">\u51FA\u8D70\u8868<span class="sec-hint">\u9078\u624B\u540D\u3092\u62BC\u3059\u3068\u9078\u624B\u306E\u6210\u7E3E</span></div>';
       boatsHtml += '<div class="detail-table-wrap"><table class="detail-table">';
       boatsHtml += "<tr>";
       for (var bn = 1; bn <= 6; bn++) {
@@ -9729,7 +10119,7 @@ async function _loadNextOpen(){
         var markStr = m ? ' <span style="font-size:11px;color:var(--accent)">' + m.mark + "</span>" : "";
         var rid = bt.racer_number || 0;
         var photoHtml = rid ? '<img class="racer-photo" src="data/photos/' + rid + `.jpg" loading="lazy" alt="" onerror="this.dataset.broken='1'">` : "";
-        boatsHtml += "<td>" + photoHtml + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
+        boatsHtml += (rid ? '<td class="racer-link" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + rid + '">' : "<td>") + photoHtml + (rid ? '<span class="fav-mark" data-fav-mark="' + rid + '"' + (favSet[String(rid)] ? "" : " hidden") + ">\u2605</span>" : "") + '<span style="font-weight:700;font-size:13px;color:' + nameColor + '">' + escText(bt.racer_name || "") + "</span>" + markStr + "</td>";
       }
       boatsHtml += "<th>\u9078\u624B</th></tr>";
       boatsHtml += "<tr>";
@@ -10381,6 +10771,607 @@ async function _loadNextOpen(){
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL_BETS:END */
+
+// 2026-11-25: 選手ページ（lazy chunk app-rest-racer。scripts/split_app.py の REST_RACER_BUILD_MARKERS）
+/* BUILD:DISCOVERY_RACER_PROFILES:START */
+"use strict";
+(() => {
+  // ../src/discovery/racer_profiles_loader.js
+  var _racerProfilesLoading = false;
+  function _loadRacerProfiles(onLoaded) {
+    if (globalThis._racerProfiles || _racerProfilesLoading) return;
+    _racerProfilesLoading = true;
+    var startup = globalThis._racerProfilesReady;
+    var wait = startup && typeof startup.then === "function" ? startup : Promise.resolve();
+    wait.then(function() {
+      if (globalThis._racerProfiles || typeof fetch !== "function") return null;
+      return fetch("data/db/racerDB.json", { cache: "no-cache" }).then(function(r) {
+        return r.ok ? r.json() : null;
+      });
+    }).then(function(j) {
+      if (j && j.racers && !globalThis._racerProfiles) {
+        globalThis._racerProfiles = j.racers;
+        globalThis._racerProfilesAt = j.updated_at || "";
+      }
+      if (globalThis._racerProfiles && typeof onLoaded === "function") onLoaded();
+    }).catch(function() {
+    }).then(function() {
+      _racerProfilesLoading = false;
+    });
+  }
+  globalThis._loadRacerProfiles = _loadRacerProfiles;
+})();
+
+/* BUILD:DISCOVERY_RACER_PROFILES:END */
+
+/* BUILD:REPORTING_RACER_PAGE:START */
+"use strict";
+(() => {
+  // ../src/reporting/racer_page.js
+  var RACER_SEARCH_MAX = 50;
+  var CLS_LABEL = { 1: "A1", 2: "A2", 3: "B1", 4: "B2" };
+  var _racerUi = { view: "list", tab: "", sid: "", q: "", id: "", from: "top", scroll: 0 };
+  function _racerSearchKey(s) {
+    s = String(s == null ? "" : s);
+    try {
+      s = s.normalize("NFKC");
+    } catch (_) {
+    }
+    return s.replace(/[ぁ-ゖ]/g, function(c) {
+      return String.fromCharCode(c.charCodeAt(0) + 96);
+    }).replace(/[\s　]/g, "").toLowerCase();
+  }
+  function _kanaFull(s) {
+    try {
+      return String(s || "").normalize("NFKC");
+    } catch (_) {
+      return String(s || "");
+    }
+  }
+  function _racerProgramBoat(e) {
+    var race = typeof programData !== "undefined" && programData && programData[e.sid] ? programData[e.sid][e.rno] : null;
+    if (!race || !Array.isArray(race.boats)) return null;
+    for (var i = 0; i < race.boats.length; i++) {
+      if (race.boats[i] && String(race.boats[i].racer_number) === String(e.id)) return race.boats[i];
+    }
+    return null;
+  }
+  function _racerInfo(id, todayIdx) {
+    id = String(id);
+    var P = globalThis._racerProfiles || {};
+    var p = P[id] || null;
+    var today = (todayIdx || _racerTodayIndex())[id] || [];
+    var prog = today.length ? _racerProgramBoat(today[0]) : null;
+    var name = prog && prog.racer_name ? prog.racer_name : p && p.name ? p.name : "";
+    if (!name) {
+      var fav = _favRacers().filter(function(f) {
+        return f.id === id;
+      })[0];
+      name = fav ? fav.name : "";
+    }
+    return {
+      id,
+      name: _racerDispName(name) || "\u767B\u9332 " + id,
+      kana: p && p.kana ? _kanaFull(p.kana) : "",
+      cls: prog && prog.racer_class_number || p && p.classNum || 0,
+      branch: prog && prog.racer_branch_name || p && p.branch || "",
+      birthplace: prog && prog.racer_birthplace || "",
+      age: prog && prog.racer_age || p && p.age || null,
+      weight: prog && prog.racer_weight || p && p.weight || null,
+      winRate: prog && prog.racer_national_top_1_percent != null ? prog.racer_national_top_1_percent : p ? p.winRate : null,
+      p,
+      prog,
+      today
+    };
+  }
+  var _racerSearchIdx = null;
+  var _racerSearchSrc = null;
+  var _racerSearchProg = null;
+  function _racerSearchIndex() {
+    var P = globalThis._racerProfiles || null;
+    var prog = typeof programData !== "undefined" ? programData : null;
+    if (_racerSearchIdx && _racerSearchSrc === P && _racerSearchProg === prog) return _racerSearchIdx;
+    var today = _racerTodayIndex();
+    var out = [];
+    var seen = {};
+    var id;
+    for (id in P || {}) {
+      var p = P[id];
+      if (!p || !p.name) continue;
+      seen[id] = 1;
+      out.push({
+        id,
+        nk: _racerSearchKey(_racerDispName(p.name)),
+        kk: _racerSearchKey(p.kana),
+        cls: p.classNum || 9,
+        wr: p.winRate || 0,
+        today: today[id] ? 1 : 0
+      });
+    }
+    for (id in today) {
+      if (seen[id]) continue;
+      var e = today[id][0];
+      out.push({ id, nk: _racerSearchKey(e.name), kk: "", cls: e.cls || 9, wr: 0, today: 1 });
+    }
+    _racerSearchIdx = out;
+    _racerSearchSrc = P;
+    _racerSearchProg = prog;
+    return out;
+  }
+  function _racerSearch(q) {
+    var key = _racerSearchKey(q);
+    if (!key) return { total: 0, ids: [] };
+    var isNum = /^\d+$/.test(key);
+    var hits = [];
+    _racerSearchIndex().forEach(function(r) {
+      var rank = -1;
+      if (isNum) {
+        if (r.id === key) rank = 0;
+        else if (r.id.indexOf(key) === 0) rank = 1;
+        else if (r.id.indexOf(key) > 0) rank = 2;
+      } else {
+        var a = r.nk.indexOf(key);
+        var b = r.kk.indexOf(key);
+        if (a === 0 || b === 0) rank = 1;
+        else if (a > 0 || b > 0) rank = 2;
+      }
+      if (rank >= 0) hits.push({ r, rank });
+    });
+    hits.sort(function(x, y) {
+      return x.rank - y.rank || y.r.today - x.r.today || x.r.cls - y.r.cls || y.r.wr - x.r.wr || Number(x.r.id) - Number(y.r.id);
+    });
+    return {
+      total: hits.length,
+      ids: hits.slice(0, RACER_SEARCH_MAX).map(function(h) {
+        return h.r.id;
+      })
+    };
+  }
+  function _racerTodayLine(entries, now, noStadium) {
+    if (!entries || !entries.length) return "";
+    var parts = entries.map(function(e) {
+      var st = _racerEntryStatus(e, now);
+      if (st.kind === "open") return "<b>" + e.rno + "R " + escText(e.hm) + "</b>";
+      return e.rno + "R\uFF08" + escText(st.text) + "\uFF09";
+    });
+    var name = typeof STADIUMS !== "undefined" && STADIUMS[entries[0].sid] || "\u5834" + entries[0].sid;
+    return (noStadium ? "" : "\u672C\u65E5 " + escText(name) + " ") + parts.join("\u30FB");
+  }
+  function _clsChip(cls) {
+    return CLS_LABEL[cls] ? '<span class="cls-chip cls-' + cls + '">' + CLS_LABEL[cls] + "</span>" : "";
+  }
+  function _racerRowHtml(info, favSet, now, opt) {
+    opt = opt || {};
+    var sub = [info.kana, info.branch, "\u767B\u9332 " + info.id].filter(Boolean).map(escText).join("\u30FB");
+    var wr = opt.wr && info.winRate != null ? '<span class="racer-li-wr">\u52DD\u7387 ' + Number(info.winRate).toFixed(2) + "</span>" : "";
+    var today = _racerTodayLine(info.today, now, opt.noStadium) || (opt.emptyToday ? escText(opt.emptyToday) : "");
+    return '<div class="racer-li" role="button" tabindex="0" data-action="openRacer" data-arg-id="' + escText(info.id) + '" data-arg-from="racer"><img class="racer-li-photo" src="data/photos/' + encodeURIComponent(info.id) + '.jpg" loading="lazy" alt=""><div class="racer-li-main"><div class="racer-li-name">' + escText(info.name) + " " + _clsChip(info.cls) + wr + '</div><div class="racer-li-sub">' + sub + "</div>" + (today ? '<div class="racer-li-today">' + today + "</div>" : "") + "</div>" + _favBtnHtml(info.id, info.name, false, !!favSet[info.id]) + "</div>";
+  }
+  function _racerFavTabHtml(now) {
+    var favs = _favRacers();
+    if (!favs.length) {
+      return '<div class="card racer-empty"><b>\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306F\u307E\u3060\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002</b><br>\u300C\u672C\u65E5\u306E\u51FA\u8D70\u300D\u3084\u300C\u691C\u7D22\u300D\u3067\u9078\u624B\u3092\u63A2\u3057\u3066 \u2606 \u3092\u62BC\u3059\u3068\u767B\u9332\u3067\u304D\u307E\u3059\u3002\u30EC\u30FC\u30B9\u8A73\u7D30\u306E\u51FA\u8D70\u8868\u3067\u9078\u624B\u540D\u3092\u62BC\u3057\u3066\u3082\u9078\u624B\u306E\u30DA\u30FC\u30B8\u3092\u958B\u3051\u307E\u3059\u3002<br>\u767B\u9332\u3057\u305F\u9078\u624B\u306E\u672C\u65E5\u306E\u51FA\u8D70\u306F\u3001TOP \u306E\u5834\u4E00\u89A7\u306E\u4E0B\u306B\u3082\u51FA\u307E\u3059\u3002</div>';
+    }
+    var idx = _racerTodayIndex();
+    var set = _favIdSet();
+    var infos = favs.map(function(f) {
+      return { info: _racerInfo(f.id, idx), ts: f.ts };
+    });
+    function nextMs(info) {
+      var best = null;
+      info.today.forEach(function(e) {
+        var st = _racerEntryStatus(e, now);
+        if (st.kind === "open" && e.closedMs != null && (best == null || e.closedMs < best)) best = e.closedMs;
+      });
+      return best;
+    }
+    infos.forEach(function(x) {
+      x.racing = x.info.today.length ? 1 : 0;
+      x.next = nextMs(x.info);
+    });
+    infos.sort(function(a, b) {
+      if (a.racing !== b.racing) return b.racing - a.racing;
+      if (a.next == null !== (b.next == null)) return a.next == null ? 1 : -1;
+      if (a.next != null && a.next !== b.next) return a.next - b.next;
+      return b.ts - a.ts;
+    });
+    var html = '<div class="card racer-list">';
+    infos.forEach(function(x) {
+      html += _racerRowHtml(x.info, set, now, { emptyToday: "\u672C\u65E5\u306E\u51FA\u8D70\u306A\u3057" });
+    });
+    return html + "</div>";
+  }
+  function _racerActiveSids() {
+    if (typeof programData === "undefined" || !programData) return [];
+    return Object.keys(programData).filter(function(s) {
+      return programData[s] && Object.keys(programData[s]).length > 0;
+    }).sort(function(a, b) {
+      return parseInt(a, 10) - parseInt(b, 10);
+    });
+  }
+  function _racerTodayTabHtml(now) {
+    var sids = _racerActiveSids();
+    if (!sids.length) return '<div class="card racer-empty">\u672C\u65E5\u306E\u51FA\u8D70\u8868\u304C\u307E\u3060\u5C4A\u3044\u3066\u3044\u307E\u305B\u3093\u3002</div>';
+    var cur = String(_racerUi.sid || "");
+    if (sids.indexOf(cur) < 0)
+      cur = typeof currentStadium !== "undefined" && currentStadium ? String(currentStadium) : "";
+    if (sids.indexOf(cur) < 0) cur = sids[0];
+    _racerUi.sid = cur;
+    var chips = '<div class="racer-sids" role="tablist" aria-label="\u5834\u306E\u9078\u629E">';
+    sids.forEach(function(s) {
+      var name = typeof STADIUMS !== "undefined" && STADIUMS[parseInt(s, 10)] || "\u5834" + s;
+      chips += '<button type="button" class="racer-sid' + (s === cur ? " active" : "") + '" role="tab" aria-selected="' + (s === cur ? "true" : "false") + '" data-action="racerSid" data-arg-sid="' + s + '">' + escText(name) + "</button>";
+    });
+    chips += "</div>";
+    var idx = _racerTodayIndex();
+    var set = _favIdSet();
+    var infos = [];
+    for (var id in idx) {
+      if (String(idx[id][0].sid) === cur) infos.push(_racerInfo(id, idx));
+    }
+    infos.sort(function(a, b) {
+      return (a.cls || 9) - (b.cls || 9) || (b.winRate || 0) - (a.winRate || 0) || Number(a.id) - Number(b.id);
+    });
+    var html = chips + '<div class="racer-count">' + infos.length + ' \u4EBA\uFF08\u7D1A \u2192 \u5168\u56FD\u52DD\u7387\u306E\u9806\uFF09</div><div class="card racer-list">';
+    infos.forEach(function(info) {
+      html += _racerRowHtml(info, set, now, { noStadium: true, wr: true });
+    });
+    return html + "</div>";
+  }
+  function _racerSearchResultHtml(now) {
+    var q = _racerUi.q;
+    if (!_racerSearchKey(q)) {
+      return '<div class="card racer-empty">\u540D\u524D\uFF08\u6F22\u5B57\u30FB\u3072\u3089\u304C\u306A\u30FB\u30AB\u30BF\u30AB\u30CA\uFF09\u304B\u767B\u9332\u756A\u53F7\u3067\u63A2\u305B\u307E\u3059\u3002<br>\u4F8B: \u300C\u307F\u306D\u300D\u300C\u5CF0\u300D\u300C4320\u300D</div>';
+    }
+    if (!globalThis._racerProfiles) {
+      _loadRacerProfiles(_racerRerender);
+    }
+    var res = _racerSearch(q);
+    if (!res.total) {
+      return '<div class="card racer-empty">\u300C' + escText(q) + "\u300D\u306B\u5F53\u3066\u306F\u307E\u308B\u9078\u624B\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002" + (globalThis._racerProfiles ? "" : "<br>\uFF08\u5168\u9078\u624B\u306E\u540D\u7C3F\u3092\u8AAD\u307F\u8FBC\u307F\u4E2D\u3067\u3059\u3002\u5C11\u3057\u5F85\u3064\u3068\u7D50\u679C\u304C\u5897\u3048\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\uFF09") + "</div>";
+    }
+    var idx = _racerTodayIndex();
+    var set = _favIdSet();
+    var html = '<div class="racer-count">' + res.total + " \u4EBA" + (res.total > res.ids.length ? "\uFF08\u4E0A\u4F4D " + res.ids.length + " \u4EBA\u3092\u8868\u793A\u3002\u8A9E\u3092\u8DB3\u3059\u3068\u7D5E\u308C\u307E\u3059\uFF09" : "") + '</div><div class="card racer-list">';
+    res.ids.forEach(function(id) {
+      html += _racerRowHtml(_racerInfo(id, idx), set, now, { wr: true });
+    });
+    return html + "</div>";
+  }
+  function _racerView() {
+    return typeof document !== "undefined" ? document.getElementById("racerView") : null;
+  }
+  function _racerTabsHtml() {
+    var n = _favRacers().length;
+    function tab(key, label) {
+      var on = _racerUi.tab === key;
+      return '<button type="button" class="racer-tab' + (on ? " active" : "") + '" role="tab" aria-selected="' + (on ? "true" : "false") + '" data-action="racerTab" data-arg-tab="' + key + '">' + label + "</button>";
+    }
+    return '<div class="racer-tabs" role="tablist" aria-label="\u9078\u624B\u306E\u8868\u793A\u5207\u66FF">' + tab("fav", '\u2605 \u304A\u6C17\u306B\u5165\u308A <span id="racerFavCount">(' + n + ")</span>") + tab("today", "\u672C\u65E5\u306E\u51FA\u8D70") + tab("search", "\u{1F50D} \u691C\u7D22") + "</div>";
+  }
+  function _racerListHtml(now) {
+    if (!_racerUi.tab) _racerUi.tab = _favRacers().length ? "fav" : "today";
+    var body;
+    if (_racerUi.tab === "today") body = _racerTodayTabHtml(now);
+    else if (_racerUi.tab === "search") {
+      body = '<input type="search" id="racerSearchInput" class="racer-search" placeholder="\u540D\u524D\u30FB\u304B\u306A\u30FB\u767B\u9332\u756A\u53F7" autocomplete="off" autocapitalize="off" enterkeyhint="search" aria-label="\u9078\u624B\u3092\u691C\u7D22" value="' + escText(_racerUi.q) + '"><div id="racerSearchResult">' + _racerSearchResultHtml(now) + "</div>";
+    } else body = _racerFavTabHtml(now);
+    return _racerTabsHtml() + '<div id="racerTabBody">' + body + "</div>";
+  }
+  function _renderRacerPage(next, now, onlyIfChanged) {
+    var view = _racerView();
+    if (!view) return;
+    _racerBind(view);
+    if (next && next.id) {
+      if (_racerUi.view === "list" && next.from === "racer" && typeof window !== "undefined") {
+        _racerUi.scroll = window.scrollY || 0;
+      }
+      _racerUi.view = "detail";
+      _racerUi.id = String(next.id);
+      _racerUi.from = next.from || "top";
+    } else if (next !== void 0) {
+      _racerUi.view = "list";
+    }
+    var html;
+    if (_racerUi.view === "detail") {
+      var f = globalThis._racerDetailHtml;
+      html = typeof f === "function" ? f(_racerUi.id, _racerUi.from, now) : "";
+    } else {
+      html = _racerListHtml(now);
+    }
+    if (!(onlyIfChanged && html === _racerLastHtml)) view.innerHTML = html;
+    _racerLastHtml = html;
+    if (!globalThis._racerProfiles) _loadRacerProfiles(_racerRerender);
+  }
+  function _racerRerender(now) {
+    var view = _racerView();
+    var page = typeof document !== "undefined" ? document.getElementById("pageRacer") : null;
+    if (!view || !page || !page.classList || !page.classList.contains("active")) return;
+    if (_racerUi.view === "list" && _racerUi.tab === "search") {
+      var box = document.getElementById("racerSearchResult");
+      var res = _racerSearchResultHtml(now);
+      if (box && box.innerHTML !== res) box.innerHTML = res;
+      return;
+    }
+    _renderRacerPage(void 0, now, true);
+  }
+  var _racerLastHtml = "";
+  var _racerBound = false;
+  function _racerBind(view) {
+    if (_racerBound || typeof view.addEventListener !== "function") return;
+    _racerBound = true;
+    view.addEventListener("input", function(e) {
+      var t = e.target;
+      if (!t || t.id !== "racerSearchInput") return;
+      _racerUi.q = t.value || "";
+      var box = document.getElementById("racerSearchResult");
+      if (box) box.innerHTML = _racerSearchResultHtml();
+    });
+    view.addEventListener(
+      "error",
+      function(e) {
+        var t = e.target;
+        if (t && t.tagName === "IMG" && t.dataset) t.dataset.broken = "1";
+      },
+      true
+    );
+  }
+  function _racerBack() {
+    var from = _racerUi.from;
+    if (!from || from === "racer") {
+      _renderRacerPage(null);
+      try {
+        window.scrollTo(0, _racerUi.scroll || 0);
+      } catch (_) {
+      }
+      return void 0;
+    }
+    _racerUi.view = "list";
+    if (typeof showPage === "function") showPage(from);
+    return void 0;
+  }
+  function _racerBackLabel(from) {
+    var sName = typeof currentStadium !== "undefined" && currentStadium && typeof STADIUMS !== "undefined" ? STADIUMS[parseInt(currentStadium, 10)] || "" : "";
+    if (from === "detail" && sName && typeof currentRace !== "undefined" && currentRace)
+      return "\u2190 " + sName + " " + currentRace + "R \u306B\u623B\u308B";
+    if (from === "races" && sName) return "\u2190 " + sName + " \u306E\u30EC\u30FC\u30B9\u4E00\u89A7\u306B\u623B\u308B";
+    if (from === "top") return "\u2190 TOP \u306B\u623B\u308B";
+    if (from === "racer") return "\u2190 \u9078\u624B\u4E00\u89A7\u306B\u623B\u308B";
+    return "\u2190 \u623B\u308B";
+  }
+  if (typeof ACTION_HANDLERS === "object" && ACTION_HANDLERS) {
+    ACTION_HANDLERS.racerTab = function(el) {
+      _racerUi.tab = el.dataset.argTab || "fav";
+      _renderRacerPage(null);
+      if (_racerUi.tab === "search") {
+        try {
+          var inp = document.getElementById("racerSearchInput");
+          if (inp && typeof inp.focus === "function") inp.focus();
+        } catch (_) {
+        }
+      }
+    };
+    ACTION_HANDLERS.racerSid = function(el) {
+      _racerUi.sid = String(el.dataset.argSid || "");
+      _renderRacerPage(null);
+    };
+    ACTION_HANDLERS.racerBack = function() {
+      _racerBack();
+    };
+  }
+  if (typeof setInterval === "function" && typeof document !== "undefined") {
+    setInterval(function() {
+      try {
+        if (!document.hidden) _racerRerender();
+      } catch (_) {
+      }
+    }, 3e4);
+  }
+  globalThis._onFavRacerChanged = function() {
+    try {
+      var c = document.getElementById("racerFavCount");
+      if (c) c.textContent = "(" + _favRacers().length + ")";
+    } catch (_) {
+    }
+  };
+  globalThis._renderRacerPage = _renderRacerPage;
+  globalThis._racerRerender = _racerRerender;
+  globalThis._racerInfo = _racerInfo;
+  globalThis._racerSearch = _racerSearch;
+  globalThis._racerSearchKey = _racerSearchKey;
+  globalThis._racerRowHtml = _racerRowHtml;
+  globalThis._racerTodayLine = _racerTodayLine;
+  globalThis._racerBackLabel = _racerBackLabel;
+  globalThis._racerProgramBoat = _racerProgramBoat;
+  globalThis._racerClsChip = _clsChip;
+  globalThis._racerUi = _racerUi;
+})();
+
+/* BUILD:REPORTING_RACER_PAGE:END */
+
+/* BUILD:REPORTING_RACER_DETAIL:START */
+"use strict";
+(() => {
+  // ../src/reporting/racer_detail.js
+  var RACER_OFFICIAL_URL = "https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=";
+  var RACER_DAY_LABELS = ["\u521D\u65E5", "2\u65E5\u76EE", "3\u65E5\u76EE", "4\u65E5\u76EE", "5\u65E5\u76EE", "6\u65E5\u76EE", "7\u65E5\u76EE"];
+  var RACER_AGG_MIN = 3;
+  var RACER_RECENT_MAX = 20;
+  function _rNum(v, digits) {
+    var n = Number(v);
+    return v != null && v !== "" && Number.isFinite(n) ? n.toFixed(digits) : "-";
+  }
+  function _rPct(a, b) {
+    return b > 0 ? Math.round(a / b * 100) + "%" : "-";
+  }
+  function _rTile(value, label) {
+    return "<div><b>" + value + "</b><span>" + label + "</span></div>";
+  }
+  function _racerProfileCard(info) {
+    var meta = [];
+    if (info.age) meta.push(escText(info.age) + "\u6B73");
+    if (info.weight) meta.push(escText(Number(info.weight) % 1 ? Number(info.weight).toFixed(1) : info.weight) + "kg");
+    if (info.birthplace) meta.push(escText(info.birthplace) + "\u51FA\u8EAB");
+    var fl = "";
+    if (info.prog) {
+      var f = info.prog.racer_flying_count || 0;
+      var l = info.prog.racer_late_count || 0;
+      fl = "<br>" + (f > 0 ? '<span class="c-danger fw-700">F' + f + "</span>" : "F0") + " / L" + l + "\uFF08\u4ECA\u671F\uFF09";
+    }
+    var chips = _racerClsChip(info.cls) + '<span class="chip">\u767B\u9332 ' + escText(info.id) + "</span>" + (info.branch ? '<span class="chip">' + escText(info.branch) + "\u652F\u90E8</span>" : "");
+    var unknown = !info.p && !info.prog;
+    return '<div class="card"><div class="pf"><img class="pf-photo" src="data/photos/' + encodeURIComponent(info.id) + '.jpg" alt=""><div class="pf-main"><div class="pf-head"><div><div class="pf-name">' + escText(info.name) + "</div>" + (info.kana ? '<div class="pf-kana">' + escText(info.kana) + "</div>" : "") + "</div>" + _favBtnHtml(info.id, info.name, true) + '</div><div class="pf-chips">' + chips + '</div><div class="pf-meta">' + meta.join(" / ") + fl + "</div></div></div>" + (unknown ? '<div class="racer-note">\u3053\u306E\u9078\u624B\u306E\u6210\u7E3E\u306F\u307E\u3060\u624B\u5143\u306B\u3042\u308A\u307E\u305B\u3093\uFF08\u540D\u7C3F\u306E\u66F4\u65B0\u524D\u3001\u307E\u305F\u306F\u51FA\u8D70\u4E88\u5B9A\u306E\u7121\u3044\u9078\u624B\u3067\u3059\uFF09\u3002</div>' : "") + "</div>";
+  }
+  function _racerSeriesHtml(info) {
+    var e = info.today[0];
+    if (!e || typeof _seriesSlotsFor !== "function" || typeof renderSeriesCell !== "function") return "";
+    var rd = typeof getRaceDataForRace === "function" ? getRaceDataForRace(e.sid, e.rno) : null;
+    var slots = _seriesSlotsFor(String(e.sid), rd, e.boat, Number(info.id)) || [];
+    var last = 0;
+    for (var i = 0; i < slots.length; i++) if (slots[i] != null) last = i + 1;
+    if (!last) return "";
+    var days = Math.ceil(last / 2);
+    var head = "";
+    var cells = "";
+    for (var d = 0; d < days; d++) {
+      head += '<th colspan="2">' + (RACER_DAY_LABELS[d] || d + 1 + "\u65E5\u76EE") + "</th>";
+      cells += renderSeriesCell(slots[d * 2]) + renderSeriesCell(slots[d * 2 + 1]);
+    }
+    return '<div class="sec-sub">\u4ECA\u7BC0\u6210\u7E3E <span class="sec-src">\u4E0A: \u7740\u9806 / \u4E0B: \u9032\u5165\u30B3\u30FC\u30B9\u3068 ST\u3001\u8272\u306F\u67A0</span></div><div class="detail-table-wrap"><table class="racer-series"><tr>' + head + "</tr><tr>" + cells + "</tr></table></div>";
+  }
+  function _racerTodayCard(info, now) {
+    if (!info.today.length) {
+      return '<div class="card"><div class="sec-title">\u672C\u65E5\u306E\u51FA\u8D70</div><div class="racer-note">\u672C\u65E5\u306E\u51FA\u8D70\u306F\u3042\u308A\u307E\u305B\u3093\u3002</div></div>';
+    }
+    var e0 = info.today[0];
+    var st = typeof programData !== "undefined" && programData ? programData[e0.sid] : null;
+    var race0 = st ? st[e0.rno] : null;
+    var sName = typeof STADIUMS !== "undefined" && STADIUMS[e0.sid] || "\u5834" + e0.sid;
+    var grade = race0 && typeof GRADE_CLASS !== "undefined" ? GRADE_CLASS[race0.race_grade_number || 5] : null;
+    var day = "";
+    if (st && typeof _stadiumDayInfo === "function") {
+      var rns = Object.keys(st).sort(function(a, b) {
+        return parseInt(a, 10) - parseInt(b, 10);
+      });
+      day = _stadiumDayInfo(e0.sid, "", rns).text || "";
+    }
+    var src = [sName, grade && grade.name !== "\u4E00\u822C" ? grade.name : "", race0 ? race0.race_title || "" : "", day].filter(Boolean).map(escText).join(" ");
+    var rows = "";
+    info.today.forEach(function(e) {
+      var s = _racerEntryStatus(e, now);
+      var ai = "";
+      if (s.kind === "open" && typeof _racerAiMark === "function") {
+        var mk = _racerAiMark(e.sid, e.rno, e.boat);
+        if (mk && mk.mark)
+          ai = ' <span class="fav-note">AI ' + escText(mk.mark) + (typeof mk.prob === "number" ? " " + Math.round(mk.prob * 100) + "%" : "") + "</span>";
+      }
+      var cls = "fav-st";
+      if (s.kind === "done" && s.place && s.place <= 3) cls += " res-" + s.place;
+      else if (s.kind === "open" && s.mins != null && s.mins <= 5) cls += " soon-urgent";
+      else if (s.kind === "cancel") cls += " c-danger";
+      rows += '<div class="fav-row' + (s.kind === "open" ? "" : " done") + '" role="button" tabindex="0" data-action="openRace" data-arg-sid="' + e.sid + '" data-arg-rn="' + e.rno + '"><span class="fav-time">' + escText(e.hm) + "</span><span><b>" + e.rno + 'R</b></span><span class="fav-who">' + (typeof boatBadge === "function" ? boatBadge(e.boat) : e.boat) + " " + e.boat + "\u53F7\u8247" + ai + '</span><span class="' + cls + '">' + escText(s.text || "\u767A\u58F2\u4E2D") + "</span></div>";
+    });
+    return '<div class="card"><div class="sec-title">\u672C\u65E5\u306E\u51FA\u8D70 <span class="sec-src">' + src + "</span></div>" + rows + _racerSeriesHtml(info) + "</div>";
+  }
+  function _racerFanLine(p) {
+    if (!p || p.winRate == null) return "";
+    return "\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09: \u52DD\u7387 " + _rNum(p.winRate, 2) + " \uFF0F 2\u9023\u5BFE\u7387 " + _rNum(p.top2Rate, 1) + "% \uFF0F \u5E73\u5747ST " + _rNum(p.avgST, 2) + " \uFF0F " + (p.totalRaces || 0) + " \u8D70";
+  }
+  function _racerStatsCard(info) {
+    var b = info.prog;
+    var p = info.p;
+    if (b) {
+      var tiles = _rTile(_rNum(b.racer_national_top_1_percent, 2), "\u5168\u56FD\u52DD\u7387") + _rTile(_rNum(b.racer_national_top_2_percent, 1) + "%", "2\u9023\u5BFE\u7387") + _rTile(_rNum(b.racer_national_top_3_percent, 1) + "%", "3\u9023\u5BFE\u7387") + _rTile(_rNum(b.racer_average_start_timing, 2), "\u5E73\u5747ST") + _rTile(_rNum(b.racer_local_top_1_percent, 2), "\u5F53\u5730\u52DD\u7387") + _rTile(_rNum(b.racer_local_top_2_percent, 1) + "%", "\u5F53\u57302\u9023\u5BFE") + _rTile(escText(b.racer_assigned_motor_number || "-"), "\u30E2\u30FC\u30BF\u30FC") + _rTile(_rNum(b.racer_assigned_motor_top_2_percent, 1) + "%", "\u30E2\u30FC\u30BF\u30FC2\u9023");
+      var fan = _racerFanLine(p);
+      return '<div class="card"><div class="sec-title">\u6210\u7E3E <span class="sec-src">\u672C\u65E5\u306E\u51FA\u8D70\u8868\u3088\u308A</span></div><div class="kv">' + tiles + "</div>" + (fan ? '<div class="racer-note">' + fan + "</div>" : "") + "</div>";
+    }
+    if (p && p.winRate != null) {
+      return '<div class="card"><div class="sec-title">\u6210\u7E3E <span class="sec-src">\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09</span></div><div class="kv">' + _rTile(_rNum(p.winRate, 2), "\u52DD\u7387") + _rTile(_rNum(p.top2Rate, 1) + "%", "2\u9023\u5BFE\u7387") + _rTile(_rNum(p.avgST, 2), "\u5E73\u5747ST") + _rTile(escText(p.totalRaces || 0), "\u51FA\u8D70\u6570") + "</div></div>";
+    }
+    return "";
+  }
+  function _racerCourseCard(info) {
+    var cs = info.p && info.p.courseStats;
+    if (!cs) return "";
+    var total = 0;
+    var rows = "";
+    for (var c = 1; c <= 6; c++) {
+      var s = cs[String(c)] || {};
+      var n = s.entries || 0;
+      total += n;
+      var pl = Array.isArray(s.places) ? s.places : [];
+      var win = s.wins != null ? s.wins : pl[0] || 0;
+      var top3 = (pl[0] || 0) + (pl[1] || 0) + (pl[2] || 0);
+      var wr = n > 0 ? Math.round(win / n * 100) : 0;
+      rows += "<tr><td>" + (typeof boatBadge === "function" ? boatBadge(c) : c) + "</td><td>" + n + "</td><td>" + (n > 0 ? "<b>" + wr + '%</b><div class="bar"><i style="width:' + Math.min(100, wr) + '%"></i></div>' : "-") + "</td><td>" + (n > 0 ? _rNum(s.top2Rate, 1) + "%" : "-") + "</td><td>" + (n > 0 && pl.length ? _rPct(top3, n) : "-") + "</td><td>" + (n > 0 ? _rNum(s.avgST, 2) : "-") + "</td><td>" + (n > 0 ? _rNum(s.avgSTRank, 1) : "-") + "</td></tr>";
+    }
+    if (!total) return "";
+    return '<div class="card"><div class="sec-title">\u30B3\u30FC\u30B9\u5225\u6210\u7E3E <span class="sec-src">\u671F\u5225\u6210\u7E3E\uFF08\u30D5\u30A1\u30F3\u624B\u5E33\uFF09' + total + ' \u8D70</span></div><table class="ct"><tr><th>\u30B3\u30FC\u30B9</th><th>\u51FA\u8D70</th><th>1\u7740\u7387</th><th>2\u9023\u5BFE</th><th>3\u9023\u5BFE</th><th>\u5E73\u5747ST</th><th>ST\u9806</th></tr>' + rows + "</table></div>";
+  }
+  function _racerRecentCard(info) {
+    var rr = info.p && Array.isArray(info.p.recentResults) ? info.p.recentResults.slice(-RACER_RECENT_MAX) : [];
+    if (!rr.length) return "";
+    var chips = "";
+    for (var i = rr.length - 1; i >= 0; i--) {
+      var v = rr[i];
+      var ok = v >= 1 && v <= 6;
+      chips += '<span class="pl' + (ok && v <= 3 ? " pl-" + v : "") + '">' + (ok ? v : "-") + "</span>";
+    }
+    return '<div class="card"><div class="sec-title">\u76F4\u8FD1 ' + rr.length + ' \u8D70\u306E\u7740\u9806 <span class="sec-src">\u5DE6\u304C\u65B0\u3057\u3044</span></div><div class="pl-wrap">' + chips + "</div></div>";
+  }
+  function _racerAggCard(info) {
+    var V = globalThis._racerStatsView;
+    if (!V) {
+      if (typeof _loadRacerStatsView === "function") _loadRacerStatsView(_racerRerender);
+      return "";
+    }
+    var rs = V.racers ? V.racers[info.id] : null;
+    if (!rs || !rs.c) return "";
+    var total = 0;
+    var rows = "";
+    for (var c = 1; c <= 6; c++) {
+      var a = rs.c[String(c)];
+      if (!a || !a[0]) continue;
+      total += a[0];
+      var kw = rs.kw && rs.kw[String(c)] || {};
+      var tech = Object.keys(kw).sort(function(x, y) {
+        return kw[y] - kw[x];
+      }).slice(0, 2).map(function(k) {
+        return escText(typeof TECHNIQUE !== "undefined" && TECHNIQUE[k] || "\u4ED6") + " " + kw[k];
+      }).join("\u30FB");
+      rows += "<tr><td>" + (typeof boatBadge === "function" ? boatBadge(c) : c) + "</td><td>" + a[0] + "</td><td>" + a[1] + "</td><td>" + a[2] + "</td><td>" + a[3] + '</td><td class="ta-l">' + (tech || "-") + "</td></tr>";
+    }
+    if (total < RACER_AGG_MIN) return "";
+    var st = rs.st;
+    var sz = rs.sz;
+    var line = "";
+    if (st && st[0] != null) {
+      line = "\u672C\u756A\u306E\u5E73\u5747ST " + _rNum(st[0], 2) + "\uFF08" + (st[1] || 0) + " \u8D70\uFF09";
+      if (st[2] > 0) line += ' \uFF0F <span class="c-danger">F ' + st[2] + " \u56DE</span>";
+      if (st[3] > 0) line += " \uFF0F L " + st[3] + " \u56DE";
+      if (sz && sz[2] >= 3) line += " \uFF0F \u5C55\u793A\u3068\u306E\u5DEE " + (sz[0] >= 0 ? "+" : "") + _rNum(sz[0], 2);
+    }
+    var months = V.window && V.window.racer_months || 12;
+    return '<div class="card"><div class="sec-title">\u5F53\u30A2\u30D7\u30EA\u306E\u96C6\u8A08 <span class="sec-src">\u76F4\u8FD1 ' + months + " \u304B\u6708\u30FB" + total + ' \u8D70</span></div><table class="ct"><tr><th>\u30B3\u30FC\u30B9</th><th>\u51FA\u8D70</th><th>1\u7740</th><th>2\u9023\u5BFE</th><th>3\u9023\u5BFE</th><th class="ta-l">\u52DD\u3061\u6C7A\u307E\u308A\u624B</th></tr>' + rows + "</table>" + (line ? '<div class="racer-note">' + line + "</div>" : "") + "</div>";
+  }
+  function _racerFootHtml(info, hasAgg) {
+    var at = globalThis._racerProfilesAt ? String(globalThis._racerProfilesAt).slice(0, 10) : "";
+    var src = [];
+    if (info.prog) src.push("\u672C\u65E5\u306E\u51FA\u8D70\u8868");
+    if (info.p) src.push("\u30D5\u30A1\u30F3\u624B\u5E33\u306E\u671F\u5225\u6210\u7E3E" + (at ? "\uFF08" + escText(at) + " \u53D6\u5F97\uFF09" : ""));
+    if (hasAgg) src.push("\u5F53\u30A2\u30D7\u30EA\u306E\u96C6\u8A08");
+    return '<div class="racer-foot"><a class="racer-ext" href="' + RACER_OFFICIAL_URL + encodeURIComponent(info.id) + '" target="_blank" rel="noopener noreferrer">\u516C\u5F0F\u30B5\u30A4\u30C8\u306E\u9078\u624B\u30DA\u30FC\u30B8\u3092\u958B\u304F \u2197</a>' + (src.length ? '<div class="racer-note">\u51FA\u5178: ' + src.join(" / ") + "</div>" : "") + "</div>";
+  }
+  function _racerDetailHtml(id, from, now) {
+    var info = _racerInfo(id);
+    if (typeof _racerAiMarkReset === "function") _racerAiMarkReset();
+    var agg = _racerAggCard(info);
+    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info) + _racerTodayCard(info, now) + _racerStatsCard(info) + _racerCourseCard(info) + _racerRecentCard(info) + agg + _racerFootHtml(info, !!agg);
+  }
+  globalThis._racerDetailHtml = _racerDetailHtml;
+})();
+
+/* BUILD:REPORTING_RACER_DETAIL:END */
 
 // ===============================================
 // Macour-style Odds Section (3d trifecta + 3e exacta + 3f controls)
@@ -11939,7 +12930,7 @@ setTimeout(function(){
     } catch(_){}
     // P0-5: PWA 再起動時のページ復元（shortcut ルーティングが優先）
     if(!routed && typeof _restoreNavState === 'function') _restoreNavState();
-    // P2-1 (Epic 14): お気に入りレースの結果確定を 1 通知に集約
+    // P2-1 (Epic 14): 注目レースの結果確定を 1 通知に集約
     try { if(typeof _maybeNotifyNewResults === 'function') _maybeNotifyNewResults(); } catch(_){}
   });
 }, 100);

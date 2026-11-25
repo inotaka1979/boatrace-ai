@@ -2258,6 +2258,7 @@ window.addEventListener('unhandledrejection', function(e){
       "page.stats": "\u6210\u7E3E",
       "page.daily": "\u65E5\u5225",
       "page.backtest": "\u691C\u8A3C",
+      "page.racer": "\u9078\u624B",
       "page.settings": "\u8A2D\u5B9A",
       // settings
       "settings.bet_count_3": "3\u9023\u5358 \u8CB7\u3044\u76EE\u70B9\u6570",
@@ -2284,7 +2285,7 @@ window.addEventListener('unhandledrejection', function(e){
       "notify.permission_granted": "\u2713 \u8A31\u53EF\u6E08",
       "notify.permission_denied": "\xD7 \u62D2\u5426\uFF08\u30D6\u30E9\u30A6\u30B6\u8A2D\u5B9A\u3067\u5909\u66F4\u53EF\uFF09",
       "notify.permission_default": "\u672A\u8A2D\u5B9A",
-      "notify.title": "\u304A\u6C17\u306B\u5165\u308A\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u304C\u78BA\u5B9A",
+      "notify.title": "\u6CE8\u76EE\u30EC\u30FC\u30B9\u306E\u7D50\u679C\u304C\u78BA\u5B9A",
       // api
       "api.health.fail": "API \u53D6\u5F97\u5931\u6557",
       "api.health.cached": "\u30AD\u30E3\u30C3\u30B7\u30E5\u4F7F\u7528\u4E2D",
@@ -2347,6 +2348,7 @@ window.addEventListener('unhandledrejection', function(e){
       "page.stats": "Stats",
       "page.daily": "Daily",
       "page.backtest": "Backtest",
+      "page.racer": "Racers",
       "page.settings": "Settings",
       // settings
       "settings.bet_count_3": "Trifecta # of bets",
@@ -2437,6 +2439,7 @@ window.addEventListener('unhandledrejection', function(e){
       "page.stats": "\u4E1A\u7EE9",
       "page.daily": "\u65E5\u62A5",
       "page.backtest": "\u56DE\u6D4B",
+      "page.racer": "\u9009\u624B",
       "page.settings": "\u8BBE\u7F6E",
       // settings
       "settings.bet_count_3": "\u4E09\u8FDE\u5355\u6CE8\u6570",
@@ -3413,7 +3416,8 @@ var _backfillTimer = null;
   // ../src/reporting/page_router.js
   var _chunkStates = {
     stats: { loaded: false, promise: null },
-    detail: { loaded: false, promise: null }
+    detail: { loaded: false, promise: null },
+    racer: { loaded: false, promise: null }
   };
   function _loadChunk(stateKey, filename) {
     var st = _chunkStates[stateKey];
@@ -3452,6 +3456,9 @@ var _backfillTimer = null;
   }
   function _ensureRaceDetailChunk() {
     return _loadChunk("detail", "app-rest-detail.min.js");
+  }
+  function _ensureRacerChunk() {
+    return Promise.all([_ensureRaceDetailChunk(), _loadChunk("racer", "app-rest-racer.min.js")]);
   }
   function _openStatsChunkPage(renderName) {
     _ensureStatsChunk().then(
@@ -3516,6 +3523,10 @@ var _backfillTimer = null;
       document.getElementById("pageSettings").classList.add("active");
       _setActive("navSettings");
       loadSettings();
+    } else if (page === "racer") {
+      document.getElementById("pageRacer").classList.add("active");
+      _setActive("navRacer");
+      if (typeof _onShowRacerPage === "function") _onShowRacerPage();
     }
     window.scrollTo(0, 0);
     try {
@@ -3526,6 +3537,7 @@ var _backfillTimer = null;
   globalThis.showPage = showPage;
   globalThis._ensureStatsChunk = _ensureStatsChunk;
   globalThis._ensureRaceDetailChunk = _ensureRaceDetailChunk;
+  globalThis._ensureRacerChunk = _ensureRacerChunk;
 })();
 
 /* BUILD:REPORTING_PAGE_ROUTER:END */
@@ -3621,6 +3633,7 @@ var _backfillTimer = null;
       }
     }
     list.innerHTML = html;
+    if (typeof _renderFavTop === "function") _renderFavTop();
   }
   function openStadium(sid) {
     if (typeof predictRace !== "function" || typeof savePrediction !== "function") {
@@ -3836,14 +3849,16 @@ var _backfillTimer = null;
 /* BUILD:REPORTING_STADIUM_PAGES:END */
 
 
+
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
-//   トリガ: loadAllData 完了後、お気に入り（boatrace_watched）の確定レースを 1 通知に集約
+//   トリガ: loadAllData 完了後、注目レース（boatrace_watched）の確定レースを 1 通知に集約
 //   許可: ユーザが明示的に「許可リクエスト」ボタンを押した時のみ requestPermission
 /* MOVED: function _enableNotifyPermission */
 /* MOVED: function _refreshNotifyStatus */
 /* MOVED: function _maybeNotifyNewResults */
 
-// P2-2: お気に入りレース管理（注目したいレースを localStorage に記録）
+// P2-2: 注目レースの管理（注目したいレースを localStorage に記録）。
+//   2026-11-25: 呼び名を「お気に入りレース」→「注目レース」に（選手の ★ = お気に入り選手 と区別）
 //   key: boatrace_watched = [{sid, race, ts}]、上限 100 件のリングバッファ
 var _WATCHED_KEY = 'boatrace_watched';
 var _WATCHED_MAX = 100;
@@ -3881,6 +3896,10 @@ var _nextOpenMap = {};
 // ===============================================
 
 
+
+
+
+// 2026-11-25: 選手ページ（lazy chunk app-rest-racer。scripts/split_app.py の REST_RACER_BUILD_MARKERS）
 
 
 
@@ -4041,7 +4060,7 @@ setTimeout(function(){
     } catch(_){}
     // P0-5: PWA 再起動時のページ復元（shortcut ルーティングが優先）
     if(!routed && typeof _restoreNavState === 'function') _restoreNavState();
-    // P2-1 (Epic 14): お気に入りレースの結果確定を 1 通知に集約
+    // P2-1 (Epic 14): 注目レースの結果確定を 1 通知に集約
     try { if(typeof _maybeNotifyNewResults === 'function') _maybeNotifyNewResults(); } catch(_){}
   });
 }, 100);

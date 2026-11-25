@@ -196,6 +196,8 @@ function renderStadiums() {
     }
   }
   list.innerHTML = html; // PH-2: 単一 reflow
+  // 2026-11-25: 場一覧の下に「お気に入り選手の出走」、場カードに ★（rest: racer_fav.js）
+  if (typeof _renderFavTop === 'function') _renderFavTop();
 }
 
 function openStadium(sid) {

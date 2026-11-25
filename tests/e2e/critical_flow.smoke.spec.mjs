@@ -86,3 +86,22 @@ test('詳細画面の3タブが切替可能 (P0-4 回帰防止)', async ({ page 
   const tabFnExists = await page.evaluate(() => typeof window._showDetailTab === 'function');
   expect(tabFnExists).toBe(true);
 });
+
+// 2026-11-25: 選手ページは lazy chunk (app-rest-racer + app-rest-detail)。iOS で chunk の動的読込と
+//   data-action のタップ（rest が後から登録するハンドラ）が通ることを確かめる。データには依存しない
+//   （番組表が無い時間帯でもタブと検索欄は出る）。
+test('下メニュー「選手」で選手ページが開き、検索欄が出る (lazy chunk)', async ({ page }) => {
+  await page.goto('/index.html');
+  await page.waitForFunction(
+    () => typeof window.showPage === 'function' && typeof window._onShowRacerPage === 'function' && window._actionDelegationInstalled === true,
+    { timeout: 15_000 }
+  );
+  await page.locator('#navRacer').click();
+  await expect(page.locator('#pageRacer')).toHaveClass(/active/, { timeout: 10_000 });
+  await expect(page.locator('#navRacer')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#racerView .racer-tabs')).toBeVisible({ timeout: 15_000 });
+  await page.locator('.racer-tab[data-arg-tab="search"]').click();
+  await expect(page.locator('#racerSearchInput')).toBeVisible();
+  // 選手ページの下に設定ページの中身（DB 情報）がはみ出していないこと
+  await expect(page.locator('#dbInfo')).toBeHidden();
+});
