@@ -103,6 +103,11 @@ def _scrape_day_labels() -> int:
     return _run_subprocess("scrape_day_labels.py", timeout_sec=240)
 
 
+def _scrape_tomorrow() -> int:
+    # 2026-11-26: 翌日の出走（お気に入り選手の「明日の出走」用）。1 場 1 ページ。内部期限 240s で必ず書き出す。
+    return _run_subprocess("scrape_tomorrow.py", timeout_sec=330)
+
+
 def _scrape_racedata() -> int:
     # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
     #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
@@ -375,6 +380,12 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     ):
         tasks.append(("day_labels", _scrape_day_labels))
 
+    # 2026-11-26: 翌日の出走（data/schedule/tomorrow.json）。翌日分は前日の午後〜夜に公開されるので、
+    #   15 時以降の run で毎回取り直す（1 場 1 ページ、開催 14 場前後）。公開前の場は pending に残り、次の run で取る。
+    #   real-time 系の後・時間のかかる racedata / backfill の前。
+    if 15 <= h <= 23:
+        tasks.append(("tomorrow", _scrape_tomorrow))
+
     # 2026-08-11 FIX: racedata は real-time 系 (odds/previews/results) の後に実行する。
     #   理由は上の racedata_stale ブロックのコメント参照。
     if racedata_stale:
@@ -429,6 +440,7 @@ def main() -> int:
             "prerender": _prerender_top,
             "backfill": _backfill_archive,
             "day_labels": _scrape_day_labels,
+            "tomorrow": _scrape_tomorrow,
         }
         if args.only not in m:
             log.error("unknown --only: %s", args.only)

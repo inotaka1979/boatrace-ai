@@ -18,7 +18,7 @@
 //         openRacer / _onShowRacerPage
 
 /* global programData, resultData, predictRace, escText, boatBadge, safeParse, safeSet, showPage, ACTION_HANDLERS,
-   currentStadium, _ensureRacerChunk */
+   currentStadium, _ensureRacerChunk, _tomorrowEntriesOf, _tomorrowInfo, _loadTomorrow */
 'use strict';
 
 var FAV_RACER_KEY = 'boatrace_fav_racers';
@@ -271,6 +271,84 @@ function _favRowHtml(r, withMark) {
   );
 }
 
+// ─── 明日の出走（2026-11-26、第 3 段階 B）────────────────────────────────
+//   data/schedule/tomorrow.json（src/discovery/tomorrow_loader.js）。前日の 15 時以降、公開された場から入る。
+var FAV_TOMORROW_MAX = 8; // TOP に並べる明日の行数の上限
+var FAV_WD = ['日', '月', '火', '水', '木', '金', '土'];
+
+// 'YYYYMMDD' → '11/27（金）'
+function _favMdw(ymd) {
+  var m = /^(\d{4})(\d{2})(\d{2})$/.exec(ymd || '');
+  if (!m) return '';
+  var wd = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay();
+  return parseInt(m[2], 10) + '/' + parseInt(m[3], 10) + '（' + FAV_WD[wd] + '）';
+}
+
+// お気に入り選手の明日の出走を締切の早い順で。明日のデータがまだ無ければ rows は空
+function _favEntriesTomorrow(now) {
+  var rows = [];
+  var racers = 0;
+  if (typeof _tomorrowEntriesOf !== 'function') return { rows: rows, racers: 0 };
+  _favRacers().forEach(function (f) {
+    var es = _tomorrowEntriesOf(f.id, now) || [];
+    if (es.length) racers++;
+    es.forEach(function (e) {
+      rows.push({ id: f.id, name: e.name || f.name, e: e });
+    });
+  });
+  rows.sort(function (a, b) {
+    return (
+      (a.e.hm || '99:99').localeCompare(b.e.hm || '99:99') ||
+      a.e.sid - b.e.sid ||
+      a.e.rno - b.e.rno ||
+      a.e.boat - b.e.boat
+    );
+  });
+  return { rows: rows, racers: racers };
+}
+
+// 帯の中の「明日」の部分。出走が無い・データが無いときは ''
+function _favTomorrowHtml(now) {
+  var tm = _favEntriesTomorrow(now);
+  if (!tm.rows.length) return '';
+  var info = typeof _tomorrowInfo === 'function' ? _tomorrowInfo(now) : null;
+  var html =
+    '<div class="fav-sub">明日 ' +
+    escText(_favMdw(info ? info.date : '')) +
+    ' ' +
+    tm.racers +
+    ' 人・' +
+    tm.rows.length +
+    ' 走' +
+    (info && info.pending > 0 ? '<span class="fav-note">（' + info.pending + ' 場は出走表が未公開）</span>' : '') +
+    '</div>';
+  tm.rows.slice(0, FAV_TOMORROW_MAX).forEach(function (r) {
+    var e = r.e;
+    html +=
+      '<div class="fav-row fav-tm" role="button" tabindex="0" data-action="openRacer" data-arg-id="' +
+      escText(r.id) +
+      '"><span class="fav-time">' +
+      escText(e.hm) +
+      '</span><span>' +
+      escText((typeof STADIUMS !== 'undefined' && STADIUMS[e.sid]) || '場' + e.sid) +
+      ' <b>' +
+      e.rno +
+      'R</b></span><span class="fav-who">' +
+      (typeof boatBadge === 'function' ? boatBadge(e.boat) : e.boat) +
+      ' <span class="fav-nm">' +
+      escText(_racerDispName(r.name)) +
+      '</span></span><span class="fav-st"></span></div>';
+  });
+  if (tm.rows.length > FAV_TOMORROW_MAX) {
+    html +=
+      '<div class="fav-row fav-rest" role="button" tabindex="0" data-action="showPage" data-arg-page="racer">' +
+      '<span class="fav-note">明日 ほか ' +
+      (tm.rows.length - FAV_TOMORROW_MAX) +
+      ' 走を見る ›</span></div>';
+  }
+  return html;
+}
+
 // 帯の HTML（置き場が無い・番組表が未取得なら null = 何も書き換えない）
 function _favStripHtml(now) {
   if (typeof programData === 'undefined' || !programData) return null;
@@ -285,7 +363,19 @@ function _favStripHtml(now) {
     );
   }
   var t = _favEntriesToday(now);
+  var tomorrow = _favTomorrowHtml(now);
   _racerAiMarkReset();
+  if (!t.rows.length && tomorrow) {
+    // 本日の出走は無いが、明日は出る
+    return (
+      '<div class="fav-strip" role="region" aria-label="お気に入り選手の出走"><div class="fav-title"><span>' +
+      '<span class="fav-mark">★</span> お気に入り選手の出走（本日はなし）</span>' +
+      more +
+      '選手一覧 ›</span></div>' +
+      tomorrow +
+      '</div>'
+    );
+  }
   if (!t.rows.length) {
     return (
       '<div class="fav-strip fav-empty" role="region" aria-label="お気に入り選手の出走">' +
@@ -319,7 +409,7 @@ function _favStripHtml(now) {
       (t.rows.length - shown.length) +
       ' 走を見る ›</span></div>';
   }
-  return html + '</div>';
+  return html + tomorrow + '</div>';
 }
 
 // 開催中の場カードに ★（その場にお気に入り選手が出る日）。疑似要素で出すので高さは変わらない。
@@ -349,6 +439,12 @@ function _renderFavTop(now) {
     if (html != null) el.innerHTML = html;
   }
   _markFavStadiums();
+  // 明日の出走: お気に入りがある時だけ取りに行く（15 時以降・10 分は取り直さない）。届いたら描き直す
+  if (typeof _loadTomorrow === 'function' && _favRacers().length) {
+    _loadTomorrow(function () {
+      _renderFavTop();
+    }, now);
+  }
 }
 
 // レース一覧（AI 予想ビュー）の選手名に ★。行は [R, 1〜6 号艇] の順（欠場は '-' の td）なので位置で引く。
@@ -495,6 +591,8 @@ globalThis._racerTodayIndex = _racerTodayIndex;
 globalThis._racerEntryStatus = _racerEntryStatus;
 globalThis._favInRace = _favInRace;
 globalThis._favEntriesToday = _favEntriesToday;
+globalThis._favEntriesTomorrow = _favEntriesTomorrow;
+globalThis._favMdw = _favMdw;
 globalThis._favStripHtml = _favStripHtml;
 globalThis._renderFavTop = _renderFavTop;
 globalThis._markFavRaceList = _markFavRaceList;

@@ -3850,6 +3850,7 @@ var _backfillTimer = null;
 
 
 
+
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
 //   トリガ: loadAllData 完了後、注目レース（boatrace_watched）の確定レースを 1 通知に集約
 //   許可: ユーザが明示的に「許可リクエスト」ボタンを押した時のみ requestPermission

@@ -19,7 +19,7 @@
 /* global programData, escText, boatBadge, renderSeriesCell, getRaceDataForRace, _seriesSlotsFor, _stadiumDayInfo,
    _racerInfo, _racerBackLabel, _racerClsChip, _favBtnHtml, _racerEntryStatus, _racerAiMark, _racerAiMarkReset,
    _loadRacerStatsView, _racerRerender, _racerOfficialOf, _loadRacerOfficial, _racerOfficialPaused, _racerIsoDay,
-   _loadRacerLog, _racerLogOf */
+   _loadRacerLog, _racerLogOf, _tomorrowEntriesOf, _loadTomorrow, _tomorrowInfo, _favMdw */
 'use strict';
 
 var RACER_OFFICIAL_URL = 'https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=';
@@ -203,6 +203,49 @@ function _racerTodayCard(info, now) {
     rows +
     _racerSeriesHtml(info) +
     '</div>'
+  );
+}
+
+// ─── 2'. 明日の出走（2026-11-26、第 3 段階 B）────────────────────────────
+//   前日の 15 時以降、公開された場から入る（data/schedule/tomorrow.json）。出走が分かっている時だけ出す。
+function _racerTomorrowCard(info, now) {
+  if (typeof _tomorrowEntriesOf !== 'function') return '';
+  if (typeof _loadTomorrow === 'function') {
+    _loadTomorrow(function () {
+      _racerRerender();
+    }, now);
+  }
+  var es = _tomorrowEntriesOf(info.id, now);
+  if (!es || !es.length) return '';
+  var tinfo = typeof _tomorrowInfo === 'function' ? _tomorrowInfo(now) : null;
+  var e0 = es[0];
+  var src = [
+    typeof _favMdw === 'function' && tinfo ? _favMdw(tinfo.date) : '',
+    (typeof STADIUMS !== 'undefined' && STADIUMS[e0.sid]) || '場' + e0.sid,
+    e0.label,
+  ]
+    .filter(Boolean)
+    .map(escText)
+    .join(' ');
+  var rows = '';
+  es.forEach(function (e) {
+    rows +=
+      '<div class="fav-row tm-row"><span class="fav-time">' +
+      escText(e.hm) +
+      '</span><span><b>' +
+      e.rno +
+      'R</b></span><span class="fav-who">' +
+      (typeof boatBadge === 'function' ? boatBadge(e.boat) : e.boat) +
+      ' ' +
+      e.boat +
+      '号艇</span><span class="fav-st"></span></div>';
+  });
+  return (
+    '<div class="card"><div class="sec-title">明日の出走 <span class="sec-src">' +
+    src +
+    '</span></div>' +
+    rows +
+    '<div class="racer-note">締切予定時刻。番組の変更で変わることがあります。</div></div>'
   );
 }
 
@@ -720,6 +763,7 @@ function _racerDetailHtml(id, from, now) {
     '</button>' +
     _racerProfileCard(info, now) +
     _racerTodayCard(info, now) +
+    _racerTomorrowCard(info, now) +
     _racerScheduleCard(info, official, now) +
     _racerStatsCard(info) +
     _racerCourseCard(info) +
@@ -733,4 +777,5 @@ function _racerDetailHtml(id, from, now) {
 
 globalThis._racerDetailHtml = _racerDetailHtml;
 globalThis._racerLogCard = _racerLogCard;
+globalThis._racerTomorrowCard = _racerTomorrowCard;
 globalThis._rAge = _rAge;

@@ -269,6 +269,8 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_DEGRADED_BANNER',
     # 2026-11-25: お気に入り選手（保存・TOP の出走帯・★）。critical からは typeof guard で呼ぶ。
     'REPORTING_RACER_FAV',
+    # 2026-11-26: 翌日の出走の取得（TOP のお気に入り欄と選手ページが使う）。
+    'DISCOVERY_TOMORROW',
     # 2026-11-25: 選手ページ（一覧・検索・詳細）— 下の REST_RACER_BUILD_MARKERS で専用 chunk へ
     'DISCOVERY_RACER_PROFILES',
     'REPORTING_RACER_PAGE',

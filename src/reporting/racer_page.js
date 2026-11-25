@@ -13,7 +13,7 @@
 
 /* global programData, escText, currentStadium, currentRace, showPage, ACTION_HANDLERS, _racerTodayIndex,
    _racerEntryStatus, _racerDispName, _favRacers, _favIdSet, _favBtnHtml, _loadRacerProfiles, _loadRacerExt,
-   _racerOfficialOf, _loadRacerOfficialMany */
+   _racerOfficialOf, _loadRacerOfficialMany, _tomorrowEntriesOf, _loadTomorrow */
 'use strict';
 
 var RACER_SEARCH_MAX = 50;
@@ -92,11 +92,37 @@ function _racerMd(d) {
   return m ? parseInt(m[2], 10) + '/' + parseInt(m[3], 10) : '';
 }
 
-// 一覧の 1 行に出す「次節 12/6〜12/11 蒲郡 G1」
-function _racerNextLine(id, now) {
-  var s = _racerNextSeries(id, now);
-  if (!s) return '';
+// 一覧の 1 行に出す「明日 常滑 6R・10R」（2026-11-26。明日のデータがあり、出走する選手だけ）
+function _racerTomorrowLine(id, now) {
+  var es = typeof _tomorrowEntriesOf === 'function' ? _tomorrowEntriesOf(id, now) : null;
+  if (!es || !es.length) return '';
+  // 場ごとにまとめる（1 日に 2 場へ出ることは無いが、データがそうなっていても崩れないように）
+  var parts = [];
+  var bySid = {};
+  es.forEach(function (e) {
+    if (!bySid[e.sid]) {
+      bySid[e.sid] = [];
+      parts.push(e.sid);
+    }
+    bySid[e.sid].push(e.rno + 'R');
+  });
   return (
+    '明日 ' +
+    parts
+      .map(function (sid) {
+        return escText((typeof STADIUMS !== 'undefined' && STADIUMS[sid]) || '場' + sid) + ' ' + bySid[sid].join('・');
+      })
+      .join('、')
+  );
+}
+
+// 一覧の 1 行に出す「明日 常滑 6R・10R / 次節 12/6〜12/11 蒲郡 G1」
+function _racerNextLine(id, now) {
+  var tm = _racerTomorrowLine(id, now);
+  var s = _racerNextSeries(id, now);
+  if (!s) return tm;
+  return (
+    (tm ? tm + ' / ' : '') +
     '次節 ' +
     escText(_racerMd(s.from)) +
     '〜' +
@@ -321,6 +347,14 @@ function _racerFavTabHtml(now) {
       }),
       _racerFillNext
     );
+  }
+  // 明日の出走（15 時以降・10 分は取り直さない）。届いたら、出ている行の「明日 …」を書き換える
+  if (typeof _loadTomorrow === 'function') {
+    _loadTomorrow(function () {
+      favs.forEach(function (f) {
+        _racerFillNext(f.id);
+      });
+    }, now);
   }
   return html + '</div>';
 }
@@ -624,3 +658,4 @@ globalThis._racerNextLine = _racerNextLine;
 globalThis._racerMd = _racerMd;
 globalThis._racerIsoDay = _racerIsoDay;
 globalThis._racerFillNext = _racerFillNext;
+globalThis._racerTomorrowLine = _racerTomorrowLine;
