@@ -9,8 +9,11 @@
 //
 // 2026-11-25（第 2 段階）: 追加項目 racer_ext.json と、公式の選手ページ（Worker /racer-proxy）の取得もここに置く。
 //
+// 2026-11-26（第 3 段階）: 選手ごとの出走ログ（data/db/racer_log/NN.json）の取得。
+//
 // Public: _loadRacerProfiles / _racerProfiles / _racerProfilesAt / _loadRacerExt / _racerExt /
-//         _loadRacerOfficial / _loadRacerOfficialMany / _racerOfficialOf / _racerOfficialPaused (globalThis)
+//         _loadRacerOfficial / _loadRacerOfficialMany / _racerOfficialOf / _racerOfficialPaused /
+//         _loadRacerLog / _racerLogOf (globalThis)
 
 /* global WORKER_BASE */
 'use strict';
@@ -165,7 +168,68 @@ function _loadRacerOfficialMany(ids, onEach) {
   return n;
 }
 
+// ─── 出走ログ（日付・場・進入・ST・着順・決まり手）— scripts/build_racer_log.py ──────────────────
+//   data/db/racer_log/NN.json（NN = 登録番号 % 100、1 ファイル 10〜20KB）。選手詳細を開いた時に、その選手の
+//   入った 1 ファイルだけ取る。前日までの分（当日の分は「本日の出走」が実況の結果から出す）。
+var RACER_LOG_SHARDS = 100;
+var RACER_LOG_TTL_MS = 30 * 60000;
+var RACER_LOG_RETRY_MS = 3 * 60000;
+var RACER_LOG_TIMEOUT_MS = 10000;
+var _racerLogCache = {}; // shard 番号 → { at, racers, loading, failed }
+
+function _racerLogShard(id) {
+  return Number(id) % RACER_LOG_SHARDS;
+}
+
+// null（まだ取っていない）/ { loading, failed, rows }。
+//   rows: 取れていれば配列（その選手の行が無ければ []）、まだ 1 度も取れていなければ null。
+function _racerLogOf(id) {
+  if (!/^\d{4,5}$/.test(String(id))) return null;
+  var e = _racerLogCache[_racerLogShard(id)];
+  if (!e) return null;
+  var rows = e.racers ? e.racers[String(id)] : null;
+  return { loading: !!e.loading, failed: !!e.failed, rows: e.racers ? (Array.isArray(rows) ? rows : []) : null };
+}
+
+// 取りに行った（true）/ 行く必要が無い・行けない（false）。終わったら onLoaded(id)。
+function _loadRacerLog(id, onLoaded, now) {
+  id = String(id == null ? '' : id);
+  if (!/^\d{4,5}$/.test(id) || typeof fetch !== 'function') return false;
+  var n = _racerLogShard(id);
+  var t = now || Date.now();
+  var e = _racerLogCache[n];
+  if (e) {
+    if (e.loading) return false;
+    var age = t - e.at;
+    if (age >= 0 && age < (e.failed ? RACER_LOG_RETRY_MS : RACER_LOG_TTL_MS)) return false;
+  }
+  var prev = e && e.racers ? e.racers : null; // 取り直しに失敗しても、前に取れた内容は残す
+  _racerLogCache[n] = { at: t, racers: prev, loading: true, failed: false };
+  var opt = { cache: 'no-cache' };
+  try {
+    if (typeof capabilities !== 'undefined' && capabilities && typeof capabilities.makeTimeoutSignal === 'function') {
+      opt.signal = capabilities.makeTimeoutSignal(RACER_LOG_TIMEOUT_MS);
+    }
+  } catch (_) {}
+  var done = function (j) {
+    var ok = !!(j && j.racers && typeof j.racers === 'object' && !Array.isArray(j.racers));
+    _racerLogCache[n] = { at: Date.now(), racers: ok ? j.racers : prev, loading: false, failed: !ok };
+    if (typeof onLoaded === 'function') onLoaded(id);
+  };
+  fetch('data/db/racer_log/' + (n < 10 ? '0' : '') + n + '.json', opt)
+    .then(function (r) {
+      return r.ok ? r.json() : null;
+    })
+    .then(done, function () {
+      done(null);
+    });
+  return true;
+}
+
 globalThis._loadRacerExt = _loadRacerExt;
+globalThis._loadRacerLog = _loadRacerLog;
+globalThis._racerLogOf = _racerLogOf;
+globalThis._racerLogCache = _racerLogCache;
 globalThis._racerOfficialOf = _racerOfficialOf;
 globalThis._racerOfficialPaused = _racerOfficialPaused;
 globalThis._loadRacerOfficial = _loadRacerOfficial;

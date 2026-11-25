@@ -123,6 +123,24 @@ def _zen_to_int(s: str) -> int | None:
 
 _CANCEL_RE = re.compile(r'title12_title[^>]*>\s*レース中止')
 
+# 2026-11-26: 着順の付かなかった艇。結果ページの「着」欄は数字の代わりに次の表記になる。
+#   F=フライング / L=出遅れ / 失=失格 / 転=転覆 / 落=落水 / 沈=沈没 / 妨=妨害 / エ=エンスト / 不=不完走 / 欠=欠場
+#   これまでは着順のある艇しか boats に入れておらず、選手ごとの出走ログから F や転覆のレースが抜け落ちていた。
+#   既存の利用側（boats は着順 1〜6 の艇、という前提）を変えないよう、別のキー out_boats に入れる。
+_OUT_ZEN = str.maketrans("ＦＬＫＳ０１２", "FLKS012")
+_OUT_KNOWN = {"F", "L", "失", "転", "落", "沈", "妨", "エ", "不", "欠"}
+
+
+def _out_label(text: str) -> str | None:
+    """着欄が着順でないとき、その表記を返す（全角英字は半角に）。着順・空・表記でないものは None。"""
+    t = re.sub(r"\s+", "", str(text or "")).translate(_OUT_ZEN)
+    if t in _OUT_KNOWN:
+        return t
+    # 知らない表記でも 1 文字の漢字・かなは拾う（払戻の「単勝」「複勝」などは 2 文字以上なので入らない）
+    if len(t) == 1 and not t.isascii() and not t.isdigit():
+        return t
+    return None
+
 
 def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | None = None) -> dict:
     """raceresult ページの HTML から 1 レース分の結果を抽出する。
@@ -183,6 +201,7 @@ def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | Non
     soup = BeautifulSoup(html, "html.parser")
     places_seen: set[int] = set()
     boats_seen: set[int] = set()
+    out_boats: list[dict] = []
 
     for tbody in soup.find_all("tbody"):
         rows = tbody.find_all("tr")
@@ -214,6 +233,24 @@ def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | Non
                     }
                 )
                 continue
+            # (a') 着順の付かなかった艇（F / 失格 / 転覆 など）。登録番号のある行だけ（払戻の行と取り違えない）
+            label = _out_label(tds[0].get_text(strip=True)) if place is None else None
+            if label and boat_num is not None and 1 <= boat_num <= 6 and boat_num not in boats_seen:
+                raw_name = tds[2].get_text(" ", strip=True)
+                rid = re.search(r"\d{4,5}", raw_name)
+                if rid:
+                    boats_seen.add(boat_num)
+                    out_boats.append(
+                        {
+                            "racer_boat_number": boat_num,
+                            "racer_out": label,
+                            "racer_course_number": None,
+                            "racer_name": re.sub(r"\s*\d{4,5}\s*", "", raw_name).strip(),
+                            "racer_start_timing": None,
+                            "racer_number": int(rid.group()),
+                        }
+                    )
+                    continue
 
         # (b) 払戻 tbody
         text = tbody.get_text()
@@ -246,7 +283,8 @@ def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | Non
             result["payouts"][current].append({"combination": combo, "amount": amount})
 
     # 2026-11-20: スタート情報（コース順に並ぶ: i 行目 = i+1 コース、艇番と ST）と決まり手を読む
-    by_boat = {b["racer_boat_number"]: b for b in result["boats"]}
+    by_boat = {b["racer_boat_number"]: b for b in out_boats}
+    by_boat.update({b["racer_boat_number"]: b for b in result["boats"]})
     for table in soup.find_all("table"):
         th = table.find("th")
         label = re.sub(r"\s+", "", th.get_text()) if th else ""
@@ -283,6 +321,8 @@ def parse_raceresult(html: str, stadium: int, race_num: int, date_str: str | Non
         if not tech:
             result["technique_unknown"] = True
         result["_parse_v"] = RESULT_PARSE_VERSION
+        if out_boats:
+            result["out_boats"] = out_boats
 
     return result
 

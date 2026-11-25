@@ -18,7 +18,8 @@
 
 /* global programData, escText, boatBadge, renderSeriesCell, getRaceDataForRace, _seriesSlotsFor, _stadiumDayInfo,
    _racerInfo, _racerBackLabel, _racerClsChip, _favBtnHtml, _racerEntryStatus, _racerAiMark, _racerAiMarkReset,
-   _loadRacerStatsView, _racerRerender, _racerOfficialOf, _loadRacerOfficial, _racerOfficialPaused, _racerIsoDay */
+   _loadRacerStatsView, _racerRerender, _racerOfficialOf, _loadRacerOfficial, _racerOfficialPaused, _racerIsoDay,
+   _loadRacerLog, _racerLogOf */
 'use strict';
 
 var RACER_OFFICIAL_URL = 'https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=';
@@ -366,6 +367,138 @@ function _racerRecentCard(info) {
   );
 }
 
+// ─── 5'. 出走ログ（前日まで。日付・場・枠・進入・ST・着順・決まり手） ──────────────────
+//   data/db/racer_log（scripts/build_racer_log.py）。1 行 = [ymd, sid, rno, boat, course, st, place, tech, out, grade]
+//     st は 1/100 秒（F.01 は -1）、place 0 は着順なし（out にその理由。分からなければ '?'）。
+//   2026-11-20 より前のレースは着順だけ（進入・ST・決まり手は null / 0）。
+var RACER_LOG_HEAD = 15; // 最初に見せる行数（残りは折りたたみ）
+
+function _rLogN(v, lo, hi) {
+  return typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+}
+// 表示できる行か（外から来たデータなので、形の合わない行は出さない）
+function _rLogValid(e) {
+  return (
+    Array.isArray(e) &&
+    e.length >= 10 &&
+    _rLogN(e[0], 20000101, 29991231) &&
+    _rLogN(e[1], 1, 24) &&
+    _rLogN(e[2], 1, 12) &&
+    _rLogN(e[3], 1, 6) &&
+    _rLogN(e[6], 0, 6) &&
+    (e[4] === null || _rLogN(e[4], 1, 6)) &&
+    (e[5] === null || _rLogN(e[5], -99, 999))
+  );
+}
+function _rLogSt(e) {
+  if (e[8] === 'L') return 'L';
+  if (e[5] === null) return '-';
+  var a = Math.abs(e[5]);
+  var frac = a % 100;
+  // 1/100 秒 → ".14" / "F.01"。1 秒以上（大きな出遅れ）は "1.05"
+  return (e[5] < 0 ? 'F' : '') + (a >= 100 ? Math.floor(a / 100) : '') + '.' + (frac < 10 ? '0' : '') + frac;
+}
+function _rLogRow(e) {
+  // グレード・決まり手は決まった番号だけ引く（'constructor' のような値で Object の既定の項目を拾わない）
+  var g = _rLogN(e[9], 1, 5) && typeof GRADE_CLASS !== 'undefined' && GRADE_CLASS ? GRADE_CLASS[e[9]] : null;
+  var chip = g && g.name !== '一般' ? _rGradeChip(g.name) : '';
+  var place = e[6];
+  var out = typeof e[8] === 'string' && e[8] && e[8] !== '?' ? e[8].slice(0, 2) : '—';
+  var tech =
+    place === 1 && _rLogN(e[7], 1, 6) && typeof TECHNIQUE !== 'undefined' && TECHNIQUE ? TECHNIQUE[e[7]] || '' : '';
+  return (
+    '<tr><td>' +
+    (Math.floor(e[0] / 100) % 100) +
+    '/' +
+    (e[0] % 100) +
+    '</td><td class="lg-v">' +
+    escText((typeof STADIUMS !== 'undefined' && STADIUMS[e[1]]) || '場' + e[1]) +
+    ' ' +
+    e[2] +
+    'R' +
+    (chip ? ' ' + chip : '') +
+    '</td><td>' +
+    (typeof boatBadge === 'function' ? boatBadge(e[3]) : e[3]) +
+    '</td><td>' +
+    (e[4] === null ? '-' : e[4]) +
+    '</td><td>' +
+    _rLogSt(e) +
+    '</td><td><span class="pl' +
+    (place >= 1 && place <= 3 ? ' pl-' + place : '') +
+    '">' +
+    (place ? place : escText(out)) +
+    '</span></td><td>' +
+    escText(tech) +
+    '</td></tr>'
+  );
+}
+// 見出しの下の 1 行: 着順の内訳と、ST の分かる走の平均（F は平均に入れず回数で出す）
+function _rLogSummary(rows) {
+  var w = [0, 0, 0];
+  var sum = 0;
+  var n = 0;
+  var f = 0;
+  rows.forEach(function (e) {
+    if (e[6] >= 1 && e[6] <= 3) w[e[6] - 1]++;
+    if (e[8] === 'F' || (e[5] !== null && e[5] < 0)) f++;
+    else if (e[5] !== null) {
+      sum += e[5];
+      n++;
+    }
+  });
+  var avg = n ? Math.round(sum / n) : 0;
+  return (
+    '1 着 ' +
+    w[0] +
+    ' 回・2 着 ' +
+    w[1] +
+    ' 回・3 着 ' +
+    w[2] +
+    ' 回' +
+    (n ? ' / 平均 ST .' + (avg < 10 ? '0' : '') + avg + '（' + n + ' 走）' : '') +
+    (f ? ' / F ' + f + ' 回' : '')
+  );
+}
+var RACER_LOG_TH =
+  '<tr><th>日付</th><th>場・R</th><th>枠</th><th>進入</th><th>ST</th><th>着</th><th>決まり手</th></tr>';
+
+// 行があるときだけカードを返す（無い・まだ届いていない間は ''。呼ぶ側が従来の「直近の着順」を出す）
+function _racerLogCard(info) {
+  if (typeof _loadRacerLog !== 'function' || typeof _racerLogOf !== 'function') return '';
+  _loadRacerLog(info.id, function () {
+    _racerRerender();
+  });
+  var log = _racerLogOf(info.id);
+  var rows = log && Array.isArray(log.rows) ? log.rows.filter(_rLogValid) : [];
+  if (!rows.length) return '';
+  var head = rows.slice(0, RACER_LOG_HEAD).map(_rLogRow).join('');
+  var rest = rows.slice(RACER_LOG_HEAD);
+  var partial = rows.some(function (e) {
+    return e[5] === null && e[4] === null && e[6] > 0;
+  });
+  return (
+    '<div class="card"><div class="sec-title">出走ログ <span class="sec-src">前日までの ' +
+    rows.length +
+    ' 走</span></div><div class="racer-note lg-sum">' +
+    _rLogSummary(rows) +
+    '</div><div class="lg-wrap"><table class="ct lg">' +
+    RACER_LOG_TH +
+    head +
+    '</table></div>' +
+    (rest.length
+      ? '<details class="lg-more"><summary>さらに ' +
+        rest.length +
+        ' 走を表示</summary><div class="lg-wrap"><table class="ct lg">' +
+        RACER_LOG_TH +
+        rest.map(_rLogRow).join('') +
+        '</table></div></details>'
+      : '') +
+    '<div class="racer-note">着の「—」や文字（F・転・失 など）は着順なし。' +
+    (partial ? '進入・ST・決まり手は 2026/11/20 以降のレースから記録しています。' : '') +
+    '</div></div>'
+  );
+}
+
 // ─── 6. 当アプリの集計（直近 12 か月） ───────────────────────────────
 function _racerAggCard(info) {
   var V = globalThis._racerStatsView;
@@ -564,6 +697,8 @@ function _racerFootHtml(info, hasAgg, hasOfficial) {
   if (info.p) src.push('ファン手帳の期別成績' + (at ? '（' + escText(at) + ' 取得）' : ''));
   if (hasOfficial) src.push('公式サイト（出場予定・過去 3 節）');
   if (hasAgg) src.push('当アプリの集計');
+  var lg = typeof _racerLogOf === 'function' ? _racerLogOf(info.id) : null;
+  if (lg && lg.rows && lg.rows.length) src.push('確定結果の記録（出走ログ）');
   return (
     '<div class="racer-foot"><a class="racer-ext" href="' +
     RACER_OFFICIAL_URL +
@@ -588,7 +723,8 @@ function _racerDetailHtml(id, from, now) {
     _racerScheduleCard(info, official, now) +
     _racerStatsCard(info) +
     _racerCourseCard(info) +
-    _racerRecentCard(info) +
+    // 出走ログがあればそれを、無ければ（まだ届いていない間も）従来の「直近の着順」を出す
+    (_racerLogCard(info) || _racerRecentCard(info)) +
     _racerBack3Card(info, official) +
     agg +
     _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false))
@@ -596,4 +732,5 @@ function _racerDetailHtml(id, from, now) {
 }
 
 globalThis._racerDetailHtml = _racerDetailHtml;
+globalThis._racerLogCard = _racerLogCard;
 globalThis._rAge = _rAge;
