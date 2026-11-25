@@ -31,13 +31,16 @@ r = plan[n] if n < len(plan) else plan[-1]
 def opt(flag):
     return args[args.index(flag) + 1] if flag in args else None
 if r.get("fail"):
+    # 本物の curl は失敗しても -w の内容を出す（http_code は 000）
+    sys.stdout.write("000 0.000000" if "time_total" in (opt("-w") or "") else "000")
     sys.exit(7)
 if opt("-o") and opt("-o") != "/dev/null":
     open(opt("-o"), "w", encoding="utf-8").write(r.get("body", ""))
 if opt("-D"):
     open(opt("-D"), "w", encoding="utf-8", newline="").write(
         "HTTP/2 %s\r\n" % r["status"] + "".join("%s: %s\r\n" % kv for kv in r.get("headers", {}).items()) + "\r\n")
-sys.stdout.write(str(r["status"]))
+w = opt("-w") or ""
+sys.stdout.write(str(r["status"]) + (" %.6f" % r.get("sec", 0.123456) if "time_total" in w else ""))
 """
 
 OK_BODY = json.dumps({"toban": "4320", "found": True, "schedule": [{}, {}], "back3": [{}], "wins": [], "back3_ok": True})
@@ -61,8 +64,8 @@ def run(plan, toban=None):
 BAD = {"status": 400}
 
 
-def ok(xcache, cc="public, max-age=10800", body=OK_BODY):
-    return {"status": 200, "headers": {"X-Cache": xcache, "Cache-Control": cc}, "body": body}
+def ok(xcache, cc="public, max-age=10800", body=OK_BODY, sec=0.123456):
+    return {"status": 200, "headers": {"X-Cache": xcache, "Cache-Control": cc}, "body": body, "sec": sec}
 
 
 class VerifyRacerProxy(unittest.TestCase):
@@ -70,9 +73,9 @@ class VerifyRacerProxy(unittest.TestCase):
         code, out, calls = run([BAD, ok("MISS"), ok("HIT", "public, max-age=10797")])
         self.assertEqual(code, 0, out)
         self.assertIn("デプロイ済み", out)
-        self.assertIn("1 回目: HTTP 200 / x-cache: MISS / cache-control: public, max-age=10800", out)
+        self.assertIn("1 回目: HTTP 200 (0.1 秒) / x-cache: MISS / cache-control: public, max-age=10800", out)
         self.assertIn("found=True 出場予定 2 件 / 過去 3 節 1 件", out)
-        self.assertIn("2 回目: HTTP 200 / x-cache: HIT", out)
+        self.assertIn("2 回目: HTTP 200 (0.1 秒) / x-cache: HIT", out)
         self.assertIn("edge の保存が効いている", out)
         self.assertNotIn("::warning::", out)
         # 不正な登録番号で 1 回、実在の選手で 2 回。URL の末尾の / は重ねない
@@ -94,7 +97,27 @@ class VerifyRacerProxy(unittest.TestCase):
     def test_unreachable_fails_the_deploy(self):
         code, out, _ = run([{"fail": True}])
         self.assertEqual(code, 1, out)
-        self.assertIn("HTTP 000", out)
+        self.assertIn("HTTP 000、期待は 400", out)  # 000 を重ねて出さない
+
+    def test_slow_first_fetch_is_recorded_and_warned(self):
+        # 本番の初回取得は 10.9 秒だった（2026-11-25）。記録はするが、15 秒までは警告しない
+        code, out, _ = run([BAD, ok("MISS", sec=10.923456), ok("HIT", sec=0.098)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 回目: HTTP 200 (10.9 秒)", out)
+        self.assertNotIn("::warning::", out)
+        code, out, _ = run([BAD, ok("MISS", sec=17.5), ok("HIT")])
+        self.assertEqual(code, 0, out)
+        self.assertIn("::warning::初回の取得に 17.5 秒かかった", out)
+        self.assertIn("edge の保存が効いている", out, "遅くても 2 回目の確認は続ける")
+        # ちょうど 15 秒は警告しない
+        code, out, _ = run([BAD, ok("MISS", sec=15.0), ok("HIT")])
+        self.assertNotIn("::warning::", out)
+
+    def test_curl_failure_on_the_real_call_does_not_fail_the_deploy(self):
+        code, out, calls = run([BAD, {"fail": True}])
+        self.assertEqual(code, 0, out)
+        self.assertIn("公式サイトから取得できなかった (HTTP 000", out)
+        self.assertEqual(len(calls), 2)
 
     def test_old_version_lingers_then_new_one_answers(self):
         code, out, calls = run([{"status": 200}, BAD, ok("MISS"), ok("HIT")])

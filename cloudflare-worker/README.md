@@ -35,7 +35,7 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 | `GET /result-proxy?jcd=&race=&hd=` | 結果 1 レースのオンデマンド取得 |
 | `GET /beforeinfo-proxy?jcd=&race=&hd=` | 直前情報 1 レースのオンデマンド取得 |
 | `GET /orig-exhibition-proxy` | 各場オリジナル展示のプロキシ（対応場のみ） |
-| `GET /racer-proxy?toban=` | 選手の今後の出場予定・過去 3 節・直近の優勝（公式の選手ページ 2 枚を解析した JSON）。アプリの選手ページを開いた時だけ呼ばれる。結果は edge に 3 時間置き（ブラウザには残り時間だけ置かせる）、edge に無い選手の取得は isolate ごとに 1 分 30 人まで（超過は 429）。公式が 403 / 429 を返したら、その isolate は 10 分取りに行かない（503）。KV は使わない |
+| `GET /racer-proxy?toban=` | 選手の今後の出場予定・過去 3 節・直近の優勝（公式の選手ページ 2 枚を解析した JSON）。アプリの選手ページを開いた時だけ呼ばれる。結果は edge に 3 時間置き（ブラウザには残り時間だけ置かせる）、edge に無い選手の取得は isolate ごとに 1 分 30 人まで（超過は 429）。公式が 403 / 429 を返したら、その isolate は 10 分取りに行かない（503）。公式を待つのは 20 秒まで（502）。取得と保存は waitUntil で最後までやる（アプリが待ち切れずに切っても、次は edge から返る）。KV は使わない |
 | `GET /hotpepper` | 姉妹アプリ（旅食Navi）用のホットペッパー API 中継。KV は使わない |
 
 CORS は Origin 許可リスト方式（`https://inotaka1979.github.io` と localhost:8000/8080）。

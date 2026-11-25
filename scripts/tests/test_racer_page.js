@@ -940,7 +940,7 @@ t('公式: 時間切れを付けて取る（capabilities.makeTimeoutSignal）', 
   Object.defineProperty(caps, 'makeTimeoutSignal', { value: (n) => ((ms = n), sig) });
   ctx.capabilities = caps;
   ctx._loadRacerOfficial('4320');
-  assert.strictEqual(ms, 10000);
+  assert.strictEqual(ms, 25000); // 本番の初回取得は 10.9 秒かかった。10 秒では初回が毎回失敗に見える
   assert.strictEqual(calls[0].opt.signal, sig);
 });
 t('公式（一覧用）: 1 人ずつ順に、最大 20 人。取得済みの選手は飛ばす', async () => {

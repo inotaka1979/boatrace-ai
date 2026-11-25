@@ -1293,6 +1293,9 @@ function racerScrapeAllowed(nowMs) {
 //   edge に置いてある選手はその間も返す。
 const RACER_PROXY_BLOCK_PAUSE_MS = 10 * 60000;
 let _racerBlockedUntil = 0;
+// 公式サイトへの 1 回の取得を待つ上限。アプリは 25 秒で待つのをやめるので、それより先に 502 を返す
+//   （本番の初回取得は 10.9 秒を実測: 2026-11-25 のデプロイ後確認）。
+const RACER_UPSTREAM_TIMEOUT_MS = 20000;
 const RACER_PROFILE_KEYS = {
   '登録番号': 'toban', '生年月日': 'birth', '身長': 'height', '体重': 'weight', '血液型': 'blood',
   '支部': 'branch', '出身地': 'birthplace', '登録期': 'ki', '級別': 'cls',
@@ -1410,6 +1413,9 @@ async function scrapeRacerOfficial(toban) {
     headers: { 'User-Agent': 'Mozilla/5.0 boatrace-scrape-worker/1.2' },
     cf: { cacheTtl: 3600, cacheEverything: true },
   };
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    opt.signal = AbortSignal.timeout(RACER_UPSTREAM_TIMEOUT_MS);
+  }
   const [pRes, bRes] = await Promise.all([
     fetch(`${base}profile?toban=${toban}`, opt),
     fetch(`${base}back3?toban=${toban}`, opt),
@@ -1913,24 +1919,38 @@ export default {
           headers: { ...noStore, 'retry-after': '60' },
         });
       }
-      try {
-        const data = await scrapeRacerOfficial(toban);
-        const ttl = data.found ? RACER_PROXY_TTL_SEC : RACER_PROXY_MISS_TTL_SEC;
-        const out = new Response(JSON.stringify(data), {
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'cache-control': `public, max-age=${ttl}`,
-            'x-cache': 'MISS',
-            'x-racer-expires': String(Date.now() + ttl * 1000),
-            ...CORS,
-          },
-        });
-        if (ctx && typeof ctx.waitUntil === 'function') {
-          try { ctx.waitUntil(cache.put(cacheKey, out.clone())); } catch (_) { /* cache は best effort */ }
+      // 取得 → edge への保存までを 1 つの仕事にして、応答を返す前に waitUntil に載せる。
+      //   公式サイトの応答が遅いと、アプリが待ち切れずに接続を切ることがある（本番の初回取得は 10.9 秒）。
+      //   そのときも取得と保存を最後までやれば、次に開いた時は edge から即座に返る。
+      //   取得だけで終わって保存されないと、遅い間は何度開いても同じ待ち時間で失敗し続ける。
+      const job = (async () => {
+        let data;
+        try {
+          data = await scrapeRacerOfficial(toban);
+        } catch (e) {
+          // 拒否の記録も仕事の中で行う（接続が切れた後でも次の人に効くように）
+          if (e && e.blocked) _racerBlockedUntil = Date.now() + RACER_PROXY_BLOCK_PAUSE_MS;
+          throw e;
         }
-        return out;
+        const ttl = data.found ? RACER_PROXY_TTL_SEC : RACER_PROXY_MISS_TTL_SEC;
+        const body = JSON.stringify(data);
+        const headers = {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': `public, max-age=${ttl}`,
+          'x-cache': 'MISS',
+          'x-racer-expires': String(Date.now() + ttl * 1000),
+          ...CORS,
+        };
+        try { await cache.put(cacheKey, new Response(body, { headers })); } catch (_) { /* cache は best effort */ }
+        return { body, headers };
+      })();
+      if (ctx && typeof ctx.waitUntil === 'function') {
+        try { ctx.waitUntil(job.catch(() => {})); } catch (_) { /* best effort */ }
+      }
+      try {
+        const done = await job;
+        return new Response(done.body, { headers: done.headers });
       } catch (e) {
-        if (e && e.blocked) _racerBlockedUntil = Date.now() + RACER_PROXY_BLOCK_PAUSE_MS;
         return jsonResponse(
           { error: 'upstream', message: String((e && e.message) || e).slice(0, 120) },
           { status: 502, cacheControl: 'no-store' }
