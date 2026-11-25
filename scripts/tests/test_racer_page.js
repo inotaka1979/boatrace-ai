@@ -140,6 +140,9 @@ function pageCtx(favs, opt) {
   ctx._loadRacerOfficial = () => false;
   ctx._racerOfficialOf = () => null;
   ctx._loadRacerOfficialMany = () => 0;
+  // 第 3 段階の出走ログも同じ（既定は「取得のしくみ無し」= 従来の「直近の着順」を出す。test_racer_log.js が個別に確かめる）
+  ctx._loadRacerLog = () => false;
+  ctx._racerLogOf = () => null;
   if (favs) ctx.localStorage.setItem('boatrace_fav_racers', JSON.stringify(favs));
   const els = {};
   ctx.document.getElementById = (id) => els[id] || (els[id] = fakeEl(id));

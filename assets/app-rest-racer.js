@@ -121,7 +121,57 @@
     next();
     return n;
   }
+  var RACER_LOG_SHARDS = 100;
+  var RACER_LOG_TTL_MS = 30 * 6e4;
+  var RACER_LOG_RETRY_MS = 3 * 6e4;
+  var RACER_LOG_TIMEOUT_MS = 1e4;
+  var _racerLogCache = {};
+  function _racerLogShard(id) {
+    return Number(id) % RACER_LOG_SHARDS;
+  }
+  function _racerLogOf(id) {
+    if (!/^\d{4,5}$/.test(String(id))) return null;
+    var e = _racerLogCache[_racerLogShard(id)];
+    if (!e) return null;
+    var rows = e.racers ? e.racers[String(id)] : null;
+    return { loading: !!e.loading, failed: !!e.failed, rows: e.racers ? Array.isArray(rows) ? rows : [] : null };
+  }
+  function _loadRacerLog(id, onLoaded, now) {
+    id = String(id == null ? "" : id);
+    if (!/^\d{4,5}$/.test(id) || typeof fetch !== "function") return false;
+    var n = _racerLogShard(id);
+    var t = now || Date.now();
+    var e = _racerLogCache[n];
+    if (e) {
+      if (e.loading) return false;
+      var age = t - e.at;
+      if (age >= 0 && age < (e.failed ? RACER_LOG_RETRY_MS : RACER_LOG_TTL_MS)) return false;
+    }
+    var prev = e && e.racers ? e.racers : null;
+    _racerLogCache[n] = { at: t, racers: prev, loading: true, failed: false };
+    var opt = { cache: "no-cache" };
+    try {
+      if (typeof capabilities !== "undefined" && capabilities && typeof capabilities.makeTimeoutSignal === "function") {
+        opt.signal = capabilities.makeTimeoutSignal(RACER_LOG_TIMEOUT_MS);
+      }
+    } catch (_) {
+    }
+    var done = function(j) {
+      var ok = !!(j && j.racers && typeof j.racers === "object" && !Array.isArray(j.racers));
+      _racerLogCache[n] = { at: Date.now(), racers: ok ? j.racers : prev, loading: false, failed: !ok };
+      if (typeof onLoaded === "function") onLoaded(id);
+    };
+    fetch("data/db/racer_log/" + (n < 10 ? "0" : "") + n + ".json", opt).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(done, function() {
+      done(null);
+    });
+    return true;
+  }
   globalThis._loadRacerExt = _loadRacerExt;
+  globalThis._loadRacerLog = _loadRacerLog;
+  globalThis._racerLogOf = _racerLogOf;
+  globalThis._racerLogCache = _racerLogCache;
   globalThis._racerOfficialOf = _racerOfficialOf;
   globalThis._racerOfficialPaused = _racerOfficialPaused;
   globalThis._loadRacerOfficial = _loadRacerOfficial;
@@ -306,6 +356,60 @@
     }
     return '<div class="card"><div class="sec-title">\u76F4\u8FD1 ' + rr.length + ' \u8D70\u306E\u7740\u9806 <span class="sec-src">\u5DE6\u304C\u65B0\u3057\u3044</span></div><div class="pl-wrap">' + chips + "</div></div>";
   }
+  var RACER_LOG_HEAD = 15;
+  function _rLogN(v, lo, hi) {
+    return typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
+  }
+  function _rLogValid(e) {
+    return Array.isArray(e) && e.length >= 10 && _rLogN(e[0], 20000101, 29991231) && _rLogN(e[1], 1, 24) && _rLogN(e[2], 1, 12) && _rLogN(e[3], 1, 6) && _rLogN(e[6], 0, 6) && (e[4] === null || _rLogN(e[4], 1, 6)) && (e[5] === null || _rLogN(e[5], -99, 999));
+  }
+  function _rLogSt(e) {
+    if (e[8] === "L") return "L";
+    if (e[5] === null) return "-";
+    var a = Math.abs(e[5]);
+    var frac = a % 100;
+    return (e[5] < 0 ? "F" : "") + (a >= 100 ? Math.floor(a / 100) : "") + "." + (frac < 10 ? "0" : "") + frac;
+  }
+  function _rLogRow(e) {
+    var g = _rLogN(e[9], 1, 5) && typeof GRADE_CLASS !== "undefined" && GRADE_CLASS ? GRADE_CLASS[e[9]] : null;
+    var chip = g && g.name !== "\u4E00\u822C" ? _rGradeChip(g.name) : "";
+    var place = e[6];
+    var out = typeof e[8] === "string" && e[8] && e[8] !== "?" ? e[8].slice(0, 2) : "\u2014";
+    var tech = place === 1 && _rLogN(e[7], 1, 6) && typeof TECHNIQUE !== "undefined" && TECHNIQUE ? TECHNIQUE[e[7]] || "" : "";
+    return "<tr><td>" + Math.floor(e[0] / 100) % 100 + "/" + e[0] % 100 + '</td><td class="lg-v">' + escText(typeof STADIUMS !== "undefined" && STADIUMS[e[1]] || "\u5834" + e[1]) + " " + e[2] + "R" + (chip ? " " + chip : "") + "</td><td>" + (typeof boatBadge === "function" ? boatBadge(e[3]) : e[3]) + "</td><td>" + (e[4] === null ? "-" : e[4]) + "</td><td>" + _rLogSt(e) + '</td><td><span class="pl' + (place >= 1 && place <= 3 ? " pl-" + place : "") + '">' + (place ? place : escText(out)) + "</span></td><td>" + escText(tech) + "</td></tr>";
+  }
+  function _rLogSummary(rows) {
+    var w = [0, 0, 0];
+    var sum = 0;
+    var n = 0;
+    var f = 0;
+    rows.forEach(function(e) {
+      if (e[6] >= 1 && e[6] <= 3) w[e[6] - 1]++;
+      if (e[8] === "F" || e[5] !== null && e[5] < 0) f++;
+      else if (e[5] !== null) {
+        sum += e[5];
+        n++;
+      }
+    });
+    var avg = n ? Math.round(sum / n) : 0;
+    return "1 \u7740 " + w[0] + " \u56DE\u30FB2 \u7740 " + w[1] + " \u56DE\u30FB3 \u7740 " + w[2] + " \u56DE" + (n ? " / \u5E73\u5747 ST ." + (avg < 10 ? "0" : "") + avg + "\uFF08" + n + " \u8D70\uFF09" : "") + (f ? " / F " + f + " \u56DE" : "");
+  }
+  var RACER_LOG_TH = "<tr><th>\u65E5\u4ED8</th><th>\u5834\u30FBR</th><th>\u67A0</th><th>\u9032\u5165</th><th>ST</th><th>\u7740</th><th>\u6C7A\u307E\u308A\u624B</th></tr>";
+  function _racerLogCard(info) {
+    if (typeof _loadRacerLog !== "function" || typeof _racerLogOf !== "function") return "";
+    _loadRacerLog(info.id, function() {
+      _racerRerender();
+    });
+    var log = _racerLogOf(info.id);
+    var rows = log && Array.isArray(log.rows) ? log.rows.filter(_rLogValid) : [];
+    if (!rows.length) return "";
+    var head = rows.slice(0, RACER_LOG_HEAD).map(_rLogRow).join("");
+    var rest = rows.slice(RACER_LOG_HEAD);
+    var partial = rows.some(function(e) {
+      return e[5] === null && e[4] === null && e[6] > 0;
+    });
+    return '<div class="card"><div class="sec-title">\u51FA\u8D70\u30ED\u30B0 <span class="sec-src">\u524D\u65E5\u307E\u3067\u306E ' + rows.length + ' \u8D70</span></div><div class="racer-note lg-sum">' + _rLogSummary(rows) + '</div><div class="lg-wrap"><table class="ct lg">' + RACER_LOG_TH + head + "</table></div>" + (rest.length ? '<details class="lg-more"><summary>\u3055\u3089\u306B ' + rest.length + ' \u8D70\u3092\u8868\u793A</summary><div class="lg-wrap"><table class="ct lg">' + RACER_LOG_TH + rest.map(_rLogRow).join("") + "</table></div></details>" : "") + '<div class="racer-note">\u7740\u306E\u300C\u2014\u300D\u3084\u6587\u5B57\uFF08F\u30FB\u8EE2\u30FB\u5931 \u306A\u3069\uFF09\u306F\u7740\u9806\u306A\u3057\u3002' + (partial ? "\u9032\u5165\u30FBST\u30FB\u6C7A\u307E\u308A\u624B\u306F 2026/11/20 \u4EE5\u964D\u306E\u30EC\u30FC\u30B9\u304B\u3089\u8A18\u9332\u3057\u3066\u3044\u307E\u3059\u3002" : "") + "</div></div>";
+  }
   function _racerAggCard(info) {
     var V = globalThis._racerStatsView;
     if (!V) {
@@ -420,6 +524,8 @@
     if (info.p) src.push("\u30D5\u30A1\u30F3\u624B\u5E33\u306E\u671F\u5225\u6210\u7E3E" + (at ? "\uFF08" + escText(at) + " \u53D6\u5F97\uFF09" : ""));
     if (hasOfficial) src.push("\u516C\u5F0F\u30B5\u30A4\u30C8\uFF08\u51FA\u5834\u4E88\u5B9A\u30FB\u904E\u53BB 3 \u7BC0\uFF09");
     if (hasAgg) src.push("\u5F53\u30A2\u30D7\u30EA\u306E\u96C6\u8A08");
+    var lg = typeof _racerLogOf === "function" ? _racerLogOf(info.id) : null;
+    if (lg && lg.rows && lg.rows.length) src.push("\u78BA\u5B9A\u7D50\u679C\u306E\u8A18\u9332\uFF08\u51FA\u8D70\u30ED\u30B0\uFF09");
     return '<div class="racer-foot"><a class="racer-ext" href="' + RACER_OFFICIAL_URL + encodeURIComponent(info.id) + '" target="_blank" rel="noopener noreferrer">\u516C\u5F0F\u30B5\u30A4\u30C8\u306E\u9078\u624B\u30DA\u30FC\u30B8\u3092\u958B\u304F \u2197</a>' + (src.length ? '<div class="racer-note">\u51FA\u5178: ' + src.join(" / ") + "</div>" : "") + "</div>";
   }
   function _racerDetailHtml(id, from, now) {
@@ -427,9 +533,11 @@
     if (typeof _racerAiMarkReset === "function") _racerAiMarkReset();
     var agg = _racerAggCard(info);
     var official = _racerOfficialFor(info);
-    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info, now) + _racerTodayCard(info, now) + _racerScheduleCard(info, official, now) + _racerStatsCard(info) + _racerCourseCard(info) + _racerRecentCard(info) + _racerBack3Card(info, official) + agg + _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false));
+    return '<button type="button" class="back-btn" data-action="racerBack">' + escText(_racerBackLabel(from)) + "</button>" + _racerProfileCard(info, now) + _racerTodayCard(info, now) + _racerScheduleCard(info, official, now) + _racerStatsCard(info) + _racerCourseCard(info) + // 出走ログがあればそれを、無ければ（まだ届いていない間も）従来の「直近の着順」を出す
+    (_racerLogCard(info) || _racerRecentCard(info)) + _racerBack3Card(info, official) + agg + _racerFootHtml(info, !!agg, !!(official && official.data && official.data.found !== false));
   }
   globalThis._racerDetailHtml = _racerDetailHtml;
+  globalThis._racerLogCard = _racerLogCard;
   globalThis._rAge = _rAge;
 })();
 

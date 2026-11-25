@@ -420,7 +420,7 @@ async function main() {
     // 2026-11-25: 選手ページ（一覧・検索・詳細）。選手ページを開いた時だけ読む（起動 TBT に影響なし）。
     //   第 1 段階 21.3KB → 第 2 段階（追加プロフィール・今後の出場予定・過去 3 節・現在 / 来期の級）で 30.6KB。
     //   第 1 段階で見込んだ 26000 では足りなかったので 32000 に（見込み違い。実寸に合わせた）。
-    { path: 'assets/app-rest-racer.min.js',  max: 32000, level: 'warn' },  // 選手ページ sub-chunk
+    { path: 'assets/app-rest-racer.min.js',  max: 40000, level: 'warn' },  // 選手ページ sub-chunk（2026-11-26: 第 3 段階の出走ログ等で 32000 → 40000。選手ページを開いた時だけ読む）
     { path: 'assets/worker_predictor.js', max: 90000,  level: 'warn' },   // v2 24-dim + features.js bundle 後 (~85KB)
   ];
   let budgetFail = false;

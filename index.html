@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=7fbb40bf" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=7fbb40bf" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=8b39533e" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=8b39533e" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -221,6 +221,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku
 table.ct{width:100%;border-collapse:collapse;font-size:13px;text-align:center}
 table.ct th{font-weight:400;color:var(--text-sub);font-size:11px;padding:3px 2px;border-bottom:1px solid var(--border)}
 table.ct td{padding:5px 2px;border-bottom:1px solid var(--border)}
+table.lg td{white-space:nowrap}table.lg .lg-v{text-align:left}table.lg .pl{margin:0}
+.lg-wrap{overflow-x:auto}
+@media(max-width:340px){table.lg{font-size:12px}table.lg td{padding:5px 1px}table.lg .gr{margin-right:0}}
+.lg-sum{margin:0 0 6px}.lg-more{margin-top:6px}.lg-more summary{font-size:13px;color:var(--accent);padding:8px 0;cursor:pointer}
 .bar{height:6px;border-radius:3px;background:#E3EAF2;overflow:hidden;margin-top:2px}
 .bar i{display:block;height:100%;background:var(--accent)}
 .pl{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:4px;font-size:13px;font-weight:700;margin:0 3px 3px 0;background:#F0F2F5}
@@ -854,7 +858,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=7fbb40bf" defer></script>
-<script src="assets/app-rest.min.js?v=7fbb40bf" defer></script>
+<script src="assets/app-critical.min.js?v=8b39533e" defer></script>
+<script src="assets/app-rest.min.js?v=8b39533e" defer></script>
 </body>
 </html>

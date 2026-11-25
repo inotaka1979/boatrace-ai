@@ -481,6 +481,15 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         log.warning("  build_series error: %s (non-fatal)", e)
 
+    # 2026-11-26: 選手ごとの出走ログ（data/db/racer_log/NN.json）。前日までの確定結果から作る。
+    #   ローカルのファイルだけで数秒。内容が変わらなければ何も書かない。補助タスクなので失敗は数えない。
+    try:
+        rlog = _run_subprocess("build_racer_log.py", timeout_sec=120)
+        if rlog != 0:
+            log.warning("  build_racer_log exit=%d (non-fatal)", rlog)
+    except Exception as e:  # noqa: BLE001
+        log.warning("  build_racer_log error: %s (non-fatal)", e)
+
     elapsed = time.monotonic() - overall_started
     log.info("=== scrape_all done in %.1fs, failures=%d ===", elapsed, len(failures))
     if failures:
