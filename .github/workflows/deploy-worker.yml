@@ -9,7 +9,7 @@ name: Deploy Cloudflare Worker
 #   CLOUDFLARE_ACCOUNT_ID — Cloudflare Account ID (ダッシュボード右下に表示)
 #
 # 確認内容:
-#   deploy               — 本体 /health が 200
+#   deploy               — 本体 /health が 200、/racer-proxy が応答する (scripts/verify_racer_proxy.sh)
 #   deploy-sentinel      — sentinel /status が 200、Service Binding が有効、本体 probe の結果を表示
 #   verify-sentinel-cron — sentinel の cron が新バージョンで実際に発火したこと (最大 11 分待つ)
 on:
@@ -59,6 +59,11 @@ jobs:
             cat /tmp/health || true
             exit 1
           fi
+
+      # 2026-11-25: 選手の出場予定・過去 3 節の取得口 (/racer-proxy) がデプロイされ、動いていること。
+      #   開発環境からは workers.dev に届かず確かめられないので、デプロイのたびにここで確かめる。
+      - name: Verify /racer-proxy
+        run: bash scripts/verify_racer_proxy.sh https://boatrace-scrape-trigger.inotaka1979.workers.dev
 
   # 2026-11-11: 本体の外形監視・自己復旧を担う第 2 Worker (boatrace-sentinel)。
   #   GitHub schedule が間引かれて watchdog が 1-2 回/日しか動かないため、監視を
