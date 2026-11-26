@@ -2405,6 +2405,231 @@
 /* BUILD:REPORTING_DEGRADED_BANNER:END */
 
 
+/* BUILD:REPORTING_FAV_NOTIFY:START */
+"use strict";
+(() => {
+  // ../src/reporting/fav_notify.js
+  var FAV_NOTIFY_CHOICES = [0, 3, 5, 10, 15];
+  var FAV_NOTIFY_DEFAULT = 5;
+  var FAV_NOTIFIED_KEY = "boatrace_fav_notified";
+  var FAV_NOTIFY_TICK_MS = 2e4;
+  var FAV_TOAST_MS = 15e3;
+  var FAV_TOAST_ROWS = 3;
+  var _favToastTimer = null;
+  function _favNotifyMin() {
+    var v = typeof settings !== "undefined" && settings ? settings.favNotifyMin : void 0;
+    var n = typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v) ? parseInt(v, 10) : NaN;
+    return FAV_NOTIFY_CHOICES.indexOf(n) >= 0 ? n : FAV_NOTIFY_DEFAULT;
+  }
+  function _favNotifyYmd(now) {
+    var d = new Date((now || Date.now()) + 9 * 36e5);
+    var m = d.getUTCMonth() + 1;
+    var day = d.getUTCDate();
+    return String(d.getUTCFullYear()) + (m < 10 ? "0" : "") + m + (day < 10 ? "0" : "") + day;
+  }
+  function _favNotifiedSet(now) {
+    var s = typeof safeParse === "function" ? safeParse(FAV_NOTIFIED_KEY, null) : null;
+    var out = {};
+    if (s && s.d === _favNotifyYmd(now) && Array.isArray(s.k)) {
+      s.k.forEach(function(k) {
+        if (typeof k === "string") out[k] = true;
+      });
+    }
+    return out;
+  }
+  function _favNotifyDue(now) {
+    var lead = _favNotifyMin();
+    if (!lead || typeof _favEntriesToday !== "function") return [];
+    if (typeof programData === "undefined" || !programData) return [];
+    var done = _favNotifiedSet(now);
+    var by = {};
+    var order = [];
+    _favEntriesToday(now).rows.forEach(function(r) {
+      var st = r.st;
+      var e = r.e;
+      if (st.kind !== "open" || st.mins == null || st.mins < 0 || st.mins > lead) return;
+      var key = e.sid + "_" + e.rno;
+      if (done[key]) return;
+      if (!by[key]) {
+        by[key] = { sid: e.sid, rno: e.rno, mins: st.mins, hm: e.hm, closedMs: e.closedMs, who: [] };
+        order.push(key);
+      }
+      by[key].who.push({ name: e.name, boat: e.boat });
+    });
+    return order.map(function(k) {
+      return by[k];
+    }).sort(function(a, b) {
+      return (a.closedMs || 0) - (b.closedMs || 0) || a.sid - b.sid || a.rno - b.rno;
+    });
+  }
+  function _favNotifyMark(list, now) {
+    if (typeof safeSet !== "function") return;
+    var done = _favNotifiedSet(now);
+    list.forEach(function(x) {
+      done[x.sid + "_" + x.rno] = true;
+    });
+    safeSet(FAV_NOTIFIED_KEY, { d: _favNotifyYmd(now), k: Object.keys(done) });
+  }
+  function _favStadiumName(sid) {
+    return typeof STADIUMS !== "undefined" && STADIUMS[sid] || "\u5834" + sid;
+  }
+  function _favToastHtml(list) {
+    var rows = "";
+    list.slice(0, FAV_TOAST_ROWS).forEach(function(x) {
+      rows += '<div class="fav-toast-row" role="button" tabindex="0" data-action="favToastOpen" data-arg-sid="' + x.sid + '" data-arg-rn="' + x.rno + '"><span class="fav-toast-when">\u3042\u3068 ' + x.mins + " \u5206</span><span><b>" + escText(_favStadiumName(x.sid)) + " " + x.rno + 'R</b></span><span class="fav-toast-who">' + x.who.map(function(w) {
+        return (typeof boatBadge === "function" ? boatBadge(w.boat) : w.boat) + " " + escText(typeof _racerDispName === "function" ? _racerDispName(w.name) : w.name);
+      }).join(" ") + "</span></div>";
+    });
+    if (list.length > FAV_TOAST_ROWS) {
+      rows += '<div class="fav-toast-more">\u307B\u304B ' + (list.length - FAV_TOAST_ROWS) + " \u30EC\u30FC\u30B9\uFF08TOP \u306E\u304A\u6C17\u306B\u5165\u308A\u6B04\uFF09</div>";
+    }
+    return '<div class="fav-toast-h"><span>\u2605 \u304A\u6C17\u306B\u5165\u308A\u9078\u624B \u307E\u3082\u306A\u304F\u7DE0\u5207</span><button type="button" class="fav-toast-x" data-action="favToastClose" aria-label="\u9589\u3058\u308B">\xD7</button></div>' + rows;
+  }
+  function _hideFavToast() {
+    if (_favToastTimer) {
+      clearTimeout(_favToastTimer);
+      _favToastTimer = null;
+    }
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("favToast");
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+  function _showFavToast(list) {
+    if (typeof document === "undefined" || !document.body || typeof document.createElement !== "function") return false;
+    _hideFavToast();
+    var el = document.createElement("div");
+    el.id = "favToast";
+    el.className = "fav-toast";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    el.innerHTML = _favToastHtml(list);
+    document.body.appendChild(el);
+    if (typeof setTimeout === "function") _favToastTimer = setTimeout(_hideFavToast, FAV_TOAST_MS);
+    return true;
+  }
+  function _favCanSystemNotify() {
+    try {
+      return typeof Notification !== "undefined" && Notification.permission === "granted";
+    } catch (_) {
+      return false;
+    }
+  }
+  function _favSystemNotify(list) {
+    try {
+      if (!_favCanSystemNotify()) return false;
+      var x = list[0];
+      var title = "\u307E\u3082\u306A\u304F\u7DE0\u5207 " + _favStadiumName(x.sid) + " " + x.rno + "R\uFF08\u3042\u3068 " + x.mins + " \u5206\uFF09";
+      var body = x.who.map(function(w) {
+        return w.boat + "\u53F7\u8247 " + (typeof _racerDispName === "function" ? _racerDispName(w.name) : w.name);
+      }).join("\u3001") + (list.length > 1 ? " \u307B\u304B " + (list.length - 1) + " \u30EC\u30FC\u30B9" : "");
+      var opt = {
+        body,
+        icon: "icon-192.png",
+        badge: "icon-192.png",
+        tag: "boatrace-fav-" + x.sid + "-" + x.rno,
+        data: { sid: x.sid, rno: x.rno }
+      };
+      var sw = typeof navigator !== "undefined" ? navigator.serviceWorker : null;
+      if (sw && sw.ready && typeof sw.ready.then === "function") {
+        sw.ready.then(function(reg) {
+          return reg.showNotification(title, opt);
+        }).catch(function() {
+        });
+      } else {
+        new Notification(title, opt);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _favPageHidden() {
+    return typeof document !== "undefined" && !!document && document.visibilityState === "hidden";
+  }
+  function _favNotifyTick(now) {
+    if (_favPageHidden() && !_favCanSystemNotify()) return 0;
+    var due;
+    try {
+      due = _favNotifyDue(now);
+    } catch (_) {
+      return 0;
+    }
+    if (!due.length) return 0;
+    _favNotifyMark(due, now);
+    try {
+      _showFavToast(due);
+    } catch (_) {
+    }
+    _favSystemNotify(due);
+    return due.length;
+  }
+  function _syncFavNotifyUi() {
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("setFavNotify");
+    if (el) el.value = String(_favNotifyMin());
+  }
+  if (typeof ACTION_HANDLERS === "object" && ACTION_HANDLERS) {
+    ACTION_HANDLERS.favToastClose = function() {
+      _hideFavToast();
+    };
+    ACTION_HANDLERS.favToastOpen = function(el) {
+      _hideFavToast();
+      if (typeof ACTION_HANDLERS.openRace === "function") ACTION_HANDLERS.openRace(el);
+    };
+  }
+  if (typeof setInterval === "function" && typeof document !== "undefined") {
+    setInterval(function() {
+      _favNotifyTick();
+    }, FAV_NOTIFY_TICK_MS);
+    if (typeof setTimeout === "function") {
+      setTimeout(function() {
+        _favNotifyTick();
+      }, 3e3);
+    }
+  }
+  function _favOnVisibility() {
+    return _favNotifyTick();
+  }
+  try {
+    if (typeof document !== "undefined" && document && typeof document.addEventListener === "function") {
+      document.addEventListener("visibilitychange", _favOnVisibility);
+    }
+  } catch (_) {
+  }
+  function _favOnSwMessage(ev) {
+    var d = ev && ev.data;
+    if (!d || d.type !== "OPEN_RACE") return false;
+    var sid = Number(d.sid);
+    var rno = Number(d.rno);
+    if (!Number.isInteger(sid) || !Number.isInteger(rno) || sid < 1 || sid > 24 || rno < 1 || rno > 12) return false;
+    _hideFavToast();
+    if (typeof ACTION_HANDLERS !== "object" || !ACTION_HANDLERS || typeof ACTION_HANDLERS.openRace !== "function") {
+      return false;
+    }
+    ACTION_HANDLERS.openRace({ dataset: { argSid: String(sid), argRn: String(rno) } });
+    return true;
+  }
+  try {
+    if (typeof navigator !== "undefined" && navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+      navigator.serviceWorker.addEventListener("message", _favOnSwMessage);
+    }
+  } catch (_) {
+  }
+  globalThis._favNotifyMin = _favNotifyMin;
+  globalThis._favNotifyDue = _favNotifyDue;
+  globalThis._favNotifyTick = _favNotifyTick;
+  globalThis._syncFavNotifyUi = _syncFavNotifyUi;
+  globalThis._showFavToast = _showFavToast;
+  globalThis._hideFavToast = _hideFavToast;
+  globalThis._favSystemNotify = _favSystemNotify;
+  globalThis._favOnSwMessage = _favOnSwMessage;
+  globalThis._favOnVisibility = _favOnVisibility;
+  globalThis._favToastHtml = _favToastHtml;
+})();
+
+/* BUILD:REPORTING_FAV_NOTIFY:END */
+
+
 /* BUILD:REPORTING_RACER_FAV:START */
 "use strict";
 (() => {
@@ -5605,6 +5830,8 @@ function loadSettings(){
   if(km) km.value = settings.kpiMode || 'balanced';
   // P2-1 (Epic 14): 通知許可状態をボタン横に表示
   if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
+  // 2026-11-26: お気に入り選手の締切前通知（分数）の選択を保存値に合わせる
+  if(typeof _syncFavNotifyUi === 'function') _syncFavNotifyUi();
   // Epic 18 (P2-7): COI 状態をボタン横に表示
   if(typeof _refreshCOIStatus === 'function') _refreshCOIStatus();
   // Epic 22: 言語 dropdown を現 locale に同期

@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-2cdd358c';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
+const VERSION = 'br-oracle-02a2ccf0';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
@@ -90,6 +90,25 @@ self.addEventListener('activate', (e) => {
     // PD-3: 既存クライアントに新バージョンを通知（UI でトースト表示）
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
     clients.forEach((c) => c.postMessage({ type: 'NEW_VERSION', version: VERSION }));
+  })());
+});
+
+// 2026-11-26: 端末の通知（お気に入り選手の締切前通知）を押した時。
+//   開いているアプリがあれば前面に出して、そのレースを開くよう知らせる（OPEN_RACE）。無ければアプリを開く。
+self.addEventListener('notificationclick', (e) => {
+  const d = (e.notification && e.notification.data) || {};
+  try { e.notification.close(); } catch (_) {}
+  e.waitUntil((async () => {
+    try {
+      const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const c of list) {
+        if (typeof c.focus !== 'function') continue;
+        try { await c.focus(); } catch (_) {}
+        if (d.sid && d.rno) c.postMessage({ type: 'OPEN_RACE', sid: d.sid, rno: d.rno });
+        return;
+      }
+      if (self.clients.openWindow) await self.clients.openWindow('./');
+    } catch (_) {}
   })());
 });
 

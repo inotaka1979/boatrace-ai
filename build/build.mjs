@@ -143,6 +143,7 @@ async function main() {
     { marker: 'REPORTING_STADIUM_RESULTS', src: 'reporting/stadium_results.js' }, // マクール風 結果一覧ビュー (rest bundle)
     { marker: 'REPORTING_RACER_FAV', src: 'reporting/racer_fav.js' }, // 2026-11-25: お気に入り選手 + TOP の出走帯 (rest bundle)
     { marker: 'DISCOVERY_TOMORROW', src: 'discovery/tomorrow_loader.js' }, // 2026-11-26: 翌日の出走の取得 (rest bundle)
+    { marker: 'REPORTING_FAV_NOTIFY', src: 'reporting/fav_notify.js' }, // 2026-11-26: お気に入り選手の締切前通知 (rest bundle)
     { marker: 'DISCOVERY_RACER_PROFILES', src: 'discovery/racer_profiles_loader.js' }, // 2026-11-25: 選手プロフィールの取得 (rest-racer)
     { marker: 'REPORTING_RACER_PAGE', src: 'reporting/racer_page.js' },     // 2026-11-25: 選手一覧・検索 (rest-racer)
     { marker: 'REPORTING_RACER_DETAIL', src: 'reporting/racer_detail.js' }, // 2026-11-25: 選手詳細 (rest-racer)
