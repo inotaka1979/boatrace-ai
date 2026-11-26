@@ -81,6 +81,8 @@ function _toggleFavRacer(id, name) {
   }
   if (typeof safeSet === 'function') safeSet(FAV_RACER_KEY, arr);
   _syncFavUi(id, on);
+  // 「閉じている間も通知」(Web Push) が有効なら、Worker に預けたお気に入りも合わせる
+  if (typeof globalThis._pushSyncSoon === 'function') globalThis._pushSyncSoon();
   return on;
 }
 

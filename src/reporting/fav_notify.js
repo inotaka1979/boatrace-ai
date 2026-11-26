@@ -14,7 +14,7 @@
 //         _favOnVisibility (globalThis)
 
 /* global settings, safeParse, safeSet, escText, boatBadge, ACTION_HANDLERS, programData, _favEntriesToday,
-   _racerDispName */
+   _racerDispName, _pushIsOn, currentStadium, currentRace */
 'use strict';
 
 var FAV_NOTIFY_CHOICES = [0, 3, 5, 10, 15];
@@ -220,7 +220,8 @@ function _favNotifyTick(now) {
   try {
     _showFavToast(due);
   } catch (_) {}
-  _favSystemNotify(due);
+  // 「閉じている間も通知」(Web Push) が有効なら、端末の通知は Worker から届く（ここでも出すと 2 通になる）
+  if (!(typeof _pushIsOn === 'function' && _pushIsOn())) _favSystemNotify(due);
   return due.length;
 }
 
@@ -283,6 +284,70 @@ try {
   }
 } catch (_) {}
 
+// ─── 通知から開いた時（アプリが閉じていた場合）────────────────────────
+//   sw.js は、開いているアプリが無ければ ./?race=<場>-<R> で開く。起動後にそのレースを表示する。
+function _favRaceFromSearch(search) {
+  var m = /[?&]race=(\d{1,2})-(\d{1,2})(?:&|$)/.exec(String(search || ''));
+  if (!m) return null;
+  var sid = parseInt(m[1], 10);
+  var rno = parseInt(m[2], 10);
+  return sid >= 1 && sid <= 24 && rno >= 1 && rno <= 12 ? { sid: sid, rno: rno } : null;
+}
+
+function _favRaceShown(t) {
+  try {
+    var pg = document.querySelector('.page.active');
+    return (
+      !!pg &&
+      pg.id === 'pageDetail' &&
+      typeof currentStadium !== 'undefined' &&
+      typeof currentRace !== 'undefined' &&
+      Number(currentStadium) === t.sid &&
+      Number(currentRace) === t.rno
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function _favOpenFromUrl() {
+  var t = null;
+  try {
+    t = _favRaceFromSearch(location.search);
+  } catch (_) {
+    t = null;
+  }
+  if (!t) return null;
+  // 起動時のページ復元 (_restoreNavState) が、このレースを開くようにしておく
+  try {
+    sessionStorage.setItem('boatrace_nav', JSON.stringify({ page: 'detail', sid: t.sid, rn: t.rno, ts: Date.now() }));
+  } catch (_) {}
+  // 読み直しで同じレースを開き直さないよう、URL から外す
+  try {
+    history.replaceState(null, '', location.pathname + location.hash);
+  } catch (_) {}
+  // 復元が先に済んでいた場合（rest の読込が遅かった）の備え: 番組表が届いたら自分で開く
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    var ready = typeof programData !== 'undefined' && programData && programData[t.sid] && programData[t.sid][t.rno];
+    if (!ready && tries < 60) return;
+    clearInterval(timer);
+    if (!ready) return;
+    setTimeout(function () {
+      if (_favRaceShown(t)) return;
+      _favOnSwMessage({ data: { type: 'OPEN_RACE', sid: t.sid, rno: t.rno } });
+    }, 700);
+  }, 500);
+  return t;
+}
+try {
+  if (typeof location !== 'undefined' && typeof document !== 'undefined' && typeof setInterval === 'function')
+    _favOpenFromUrl();
+} catch (_) {}
+
+globalThis._favRaceFromSearch = _favRaceFromSearch;
+globalThis._favOpenFromUrl = _favOpenFromUrl;
 globalThis._favNotifyMin = _favNotifyMin;
 globalThis._favNotifyDue = _favNotifyDue;
 globalThis._favNotifyTick = _favNotifyTick;

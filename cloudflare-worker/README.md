@@ -5,7 +5,7 @@
 
 | Worker | 役割 | cron |
 |---|---|---|
-| `boatrace-scrape-trigger`（`worker.js`） | 本体。openapi + boatrace.jp を取得して KV に保存し、PWA に `/api/*` で配信する | JST 8-22 時は 5 分毎、夜間は 30 分毎 |
+| `boatrace-scrape-trigger`（`worker.js` + `push.js`） | 本体。openapi + boatrace.jp を取得して KV に保存し、PWA に `/api/*` で配信する。お気に入り選手の締切前通知（Web Push）も送る | データ更新: JST 8-22 時は 5 分毎、夜間は 30 分毎 / 通知の確認: 毎分 |
 | `boatrace-sentinel`（`sentinel/sentinel.js`） | 本体の外形監視と予備 cron。詳細は [`sentinel/README.md`](sentinel/README.md) | 5 分毎（終日） |
 
 ## 本体 Worker の動作
@@ -24,6 +24,44 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 - cron が止まっても、`/api/*` へのアクセス自体が `refreshAll()` を起動する（serve-heal、5 分 throttle）。
 - さらに sentinel が 5 分毎に `/api/refresh-now` を叩く予備 cron として働く。
 
+### 締切前通知（Web Push、2026-11-27）
+
+アプリの設定「閉じている間も通知」を有効にした端末へ、お気に入り選手の出るレースの締切 N 分前に通知を送る。
+アプリを閉じていても届く。実装は `push.js`（ライブラリなし。本文の暗号化は RFC 8291、送信元の証明は RFC 8292）。
+
+```
+アプリ → POST /push/subscribe { 通知の宛先, お気に入り選手, 何分前か } → KV push:subs
+データ更新の cron → 番組表から「締切時刻と出場選手」だけを抜き出す → KV push:index（中身が変わった時だけ書く）
+毎分の cron (* * * * *) → scheduled() → pushTick()
+    締切の N 分前になったレースに、預かっているお気に入り選手が出ていれば、その端末の push service に送る
+    送った記録 → KV push:sent:0 / push:sent:1（重ねて送らない。送り損ねは 2 分おきの回に 1 回だけ拾い直す）
+```
+
+- `scheduled()` は `event.cron` で振り分ける。毎分の cron はデータ更新（`refreshAll()`）を走らせない。
+- 送信元の鍵（VAPID）は、最初の `GET /push/key` で Worker が自分で作って KV（`push:vapid`）に置く。**手動設定は無い。**
+  （デプロイ後の確認が `/push/key` を呼ぶので、最初のデプロイで作られる。secret `VAPID_JWK` を入れればそちらを使う。）
+- 通知の宛先として受け付けるのは、ブラウザの push service（`fcm.googleapis.com` / `*.push.apple.com` /
+  `*.push.services.mozilla.com` / `*.notify.windows.com`）だけ。宛先は 30 件まで、1 宛先のお気に入りは 100 人まで。
+- KV の書込（無料枠 1,000 回/日を本体と共用。使い切ると本体のデータ更新まで止まるので、どれにも上限がある）:
+  索引 1〜3 回/日、cron の生存記録 4 回/日、宛先の文書（登録・変更・解除・無くなった宛先の掃除）は 1 日 60 回まで、
+  送った記録は送った回だけで 1 日 100 回まで。毎分の確認そのものは読むだけ。
+  送った記録が上限に達した日は、締切 N 分前ちょうどの回の通知だけを送り、拾い直しはしない
+  （送ったかどうかを記録で確かめられないので、同じ通知を重ねて送らないことを優先する）。
+- 同じ通知を試すのは 2 分おき（ちょうどの回・2 分後・4 分後 …）で、送った記録は分の偶奇で 2 つの文書に分けている。
+  KV は、書いた内容がほかの場所から読めるようになるまで 60 秒ほどかかることがある（Cloudflare の説明では
+  「60 秒かそれ以上」）。同じ文書の読み書きを 2 分以上空けることで、古い中身を読んで前の回の記録を上書きしたり、
+  記録が読めずに重ねて送ったりするのを避ける。
+- ちょうどの回は「送ってから記録」（記録を書けなくても通知は届ける）。拾い直し（ちょうどの回が欠けた・一時的に失敗した・
+  直前に登録した）は「記録してから送る」で、記録を書けなければ送らない。KV に書けない間（書込枠を使い切った日など）に、
+  isolate が替わるたびに同じ通知を送り直すことが無い。拾い直しは 1 回きり。
+- push service への送信は転送 (3xx) を追わない（宛先の検証を転送で抜けさせない）。
+- KV を読めなかった時（障害・読込枠切れ）は、その文書に書かない。「読めなかった」を「まだ無い」と取り違えると、
+  次の書込でそれまでの中身を消してしまう（送信元の鍵を作り直す = それまでの宛先すべてに送れなくなる /
+  預かっている宛先を 1 件で上書きする / 送った記録を消して送り直す）。登録・解除・テスト通知は 503 `kv_unavailable`、
+  `/push/key` は 503 `no_key` を返し、毎分の確認は「ちょうどの回の通知だけ送って記録しない」に落とす。
+- Cloudflare Free の Cron Triggers はアカウント合計 5 本まで。本体 3 + sentinel 1 = 4 本を使っている。
+- 届かない時の調べ方は `docs/RUNBOOK.md` §12。
+
 ## エンドポイント
 
 | パス | 用途 |
@@ -37,6 +75,12 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 | `GET /orig-exhibition-proxy` | 各場オリジナル展示のプロキシ（対応場のみ） |
 | `GET /racer-proxy?toban=` | 選手の今後の出場予定・過去 3 節・直近の優勝（公式の選手ページ 2 枚を解析した JSON）。アプリの選手ページを開いた時だけ呼ばれる。結果は edge に 3 時間置き（ブラウザには残り時間だけ置かせる）、edge に無い選手の取得は isolate ごとに 1 分 30 人まで（超過は 429）。公式が 403 / 429 を返したら、その isolate は 10 分取りに行かない（503）。公式を待つのは 20 秒まで（502）。取得と保存は waitUntil で最後までやる（アプリが待ち切れずに切っても、次は edge から返る）。応答の `timing` に、公式サイトの応答にかかった時間（`profile_ms` / `back3_ms` = Worker が測った値、`edge_ms` / `origin_ms` = 公式サイトの `Server-Timing`）が入る（公式サイトが応答を遅らせているかの判別用、RUNBOOK §11.2）。KV は使わない |
 | `GET /hotpepper` | 姉妹アプリ（旅食Navi）用のホットペッパー API 中継。KV は使わない |
+| `GET /push/key` | 締切前通知の送信元の公開鍵（アプリがブラウザの購読を作るのに使う）。無ければ作る |
+| `POST /push/subscribe` | 通知の宛先・お気に入り選手・何分前かを預かる。本文は `text/plain` の JSON（ブラウザの事前確認を起こさない）。同じ内容なら KV に書かない |
+| `POST /push/unsubscribe` | 宛先の登録を消す |
+| `POST /push/test` | 登録済みの宛先にテスト通知を 1 通送る（`delay` 秒後、最大 20 秒。アプリを閉じて確かめる用）。push service の応答を `status` で返す |
+| `GET /push/status` | 鍵の有無・宛先の数・索引のレース数・毎分の cron が最後に動いた時刻・今日送った数（宛先そのものは出さない） |
+| `GET /push/selftest` | 実行環境の暗号が RFC 8291 の例と同じ本文を作るか（デプロイ後の確認用） |
 
 CORS は Origin 許可リスト方式（`https://inotaka1979.github.io` と localhost:8000/8080）。
 追加したい場合だけ、環境変数 `ALLOWED_ORIGINS`（カンマ区切り）を設定する。
@@ -47,7 +91,8 @@ CORS は Origin 許可リスト方式（`https://inotaka1979.github.io` と loca
 
 | job | 内容 |
 |---|---|
-| `deploy` | 本体をデプロイし `/health` が 200 であることを確認。続けて `/racer-proxy` を確認する（`scripts/verify_racer_proxy.sh`: 経路があること = 必須、公式から取れるか・応答時間・応答した拠点・edge の保存 = 記録のみ） |
+| `deploy` | 本体をデプロイし `/health` が 200 であることを確認。続けて `/racer-proxy` を確認する（`scripts/verify_racer_proxy.sh`: 経路があること = 必須、公式から取れるか・応答時間・応答した拠点・edge の保存 = 記録のみ）。締切前通知は `scripts/verify_push.sh` で確認する（暗号が RFC の例と一致・鍵がある・決まった push service 以外の宛先を断る・登録の無い宛先に送らない = すべて必須） |
+| `verify-push-cron` | 毎分の cron（締切前通知の確認）が動いている記録を確認（最大 4 分待つ。確認できなければ warning） |
 | `deploy-sentinel` | sentinel をデプロイし、`/status` が 200・Service Binding が有効であることを確認 |
 | `verify-sentinel-cron` | sentinel の cron が新バージョンで実際に発火したことを確認（最大 11 分待つ） |
 

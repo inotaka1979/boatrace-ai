@@ -9,7 +9,9 @@ name: Deploy Cloudflare Worker
 #   CLOUDFLARE_ACCOUNT_ID — Cloudflare Account ID (ダッシュボード右下に表示)
 #
 # 確認内容:
-#   deploy               — 本体 /health が 200、/racer-proxy が応答する (scripts/verify_racer_proxy.sh)
+#   deploy               — 本体 /health が 200、/racer-proxy が応答する (scripts/verify_racer_proxy.sh)、
+#                          Web Push の登録口と暗号が動く (scripts/verify_push.sh)
+#   verify-push-cron     — 毎分の cron（締切前通知の確認）が動いている (最大 4 分待つ)
 #   deploy-sentinel      — sentinel /status が 200、Service Binding が有効、本体 probe の結果を表示
 #   verify-sentinel-cron — sentinel の cron が新バージョンで実際に発火したこと (最大 11 分待つ)
 on:
@@ -30,7 +32,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
         with:
@@ -64,6 +66,27 @@ jobs:
       #   開発環境からは workers.dev に届かず確かめられないので、デプロイのたびにここで確かめる。
       - name: Verify /racer-proxy
         run: bash scripts/verify_racer_proxy.sh https://boatrace-scrape-trigger.inotaka1979.workers.dev
+
+      # 2026-11-27: 締切前通知 (Web Push) の登録口と暗号がデプロイされ、動いていること。
+      #   実行環境の暗号が標準仕様 (RFC 8291) の例と一致するか、送信元の鍵があるか、決まった push service 以外の
+      #   宛先を断るか、登録の無い宛先に送らないか。1 つでも違えば失敗させる（scripts/verify_push.sh）。
+      #   実際の端末への配達は、アプリの設定「閉じている間も通知」→「テスト通知」で確かめる。
+      - name: Verify /push (Web Push)
+        run: bash scripts/verify_push.sh https://boatrace-scrape-trigger.inotaka1979.workers.dev
+
+  # 2026-11-27: 毎分の cron（締切前通知の確認）が動いていること。
+  #   本体 Worker は最初の回と、以後 6 時間に 1 回、動いた記録を KV に書く（/push/status の tick_at）。
+  #   Cloudflare 側の cron の反映が遅れることがあるので最大 4 分待つ。確認できなくても失敗にはしない (warning)。
+  verify-push-cron:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Wait for the per-minute push cron
+        run: bash scripts/verify_push.sh https://boatrace-scrape-trigger.inotaka1979.workers.dev --cron 240
 
   # 2026-11-11: 本体の外形監視・自己復旧を担う第 2 Worker (boatrace-sentinel)。
   #   GitHub schedule が間引かれて watchdog が 1-2 回/日しか動かないため、監視を

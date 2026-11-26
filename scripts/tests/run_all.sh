@@ -249,6 +249,15 @@ step "Tomorrow's entries: scrape raceindex (scripts/scrape_tomorrow.py)" \
 # 2026-11-26（第 3 段階 C）: お気に入り選手の締切前通知（アプリを開いている間）
 step "Favorite racers: deadline notice (setting / due / once per race / toast / system notification / SW click)" \
      "node scripts/tests/test_fav_notify.js"
+# 2026-11-27: 閉じている間も届く締切前通知（Web Push）
+step "Web Push: payload encryption (RFC 8291 example) + VAPID (RFC 8292)" \
+     "node scripts/tests/test_push_crypto.mjs"
+step "Web Push: worker endpoints / per-minute check / cron dispatch (cloudflare-worker/push.js)" \
+     "node scripts/tests/test_push_worker.mjs"
+step "Web Push: app side (enable / sync / disable / test / SW push / open from notification)" \
+     "node scripts/tests/test_fav_push.js"
+step "Post-deploy check of Web Push (scripts/verify_push.sh)" \
+     "python3 -m unittest scripts.tests.test_verify_push"
 # 2026-11-25（第 2 段階）: Worker /racer-proxy（公式の選手ページ: 今後の出場予定・過去 3 節）
 step "Worker /racer-proxy: official racer page parse" \
      "node scripts/tests/test_racer_proxy_parse.js"
@@ -260,7 +269,7 @@ step "Post-deploy check of /racer-proxy (scripts/verify_racer_proxy.sh)" \
 # 選手ページのテストを別の日時でも走らせる（書いた日にだけ通るテストを残さない）。
 #   級の適用開始（1/1・7/1）の後、日付が変わる直前、過去の日付。
 step "Racer tests under other dates (no real-clock dependence)" \
-     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
+     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js test_fav_push.js test_push_worker.mjs test_push_crypto.mjs; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
 # 2026-11-25: 意図した見た目の変更の申告（tests/e2e/vrt-baseline-request → VRT の baseline を自動で差し替える）
 step "VRT baseline request (scripts/vrt_request.sh)" \
      "python3 -m unittest scripts.tests.test_vrt_request -v"

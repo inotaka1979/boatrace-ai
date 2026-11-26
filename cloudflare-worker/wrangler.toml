@@ -14,10 +14,15 @@ compatibility_date = "2024-12-01"
 #   JST 08:00-22:55 (UTC 23,0-13)        → 5 分間隔
 #   JST 23:00-07:55 (UTC 14-22)          → 30 分間隔
 #   合計 KV writes/日 ≒ 316 × 3 種 = 948 (無料枠 1000/日 95% 内)
+# 2026-11-27: 毎分の cron を追加（締切前通知 = Web Push の確認だけを行う。worker.js の scheduled() が
+#   event.cron で振り分けるので、データ更新は従来の 2 本のまま）。
+#   Cloudflare Free の Cron Triggers はアカウント合計 5 本まで: 本体 3 + sentinel 1 = 4。
+#   式を変えるときは push.js の MAIN_CRONS / PUSH_CRON も合わせる（テストが一致を確かめる）。
 [triggers]
 crons = [
   "*/5 23,0-13 * * *",       # JST 8-22: 5 分毎
   "*/30 14-22 * * *",        # JST 23-07: 30 分毎
+  "* * * * *",               # 毎分: 締切前通知 (Web Push) の確認
 ]
 
 # Path C: KV namespace for scraped data

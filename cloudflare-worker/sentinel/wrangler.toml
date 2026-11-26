@@ -31,7 +31,7 @@ compatibility_date = "2024-12-01"
 
 [triggers]
 # 5 分毎・終日。本体の夜間 cron は 30 分間隔なので閾値側（NIGHT）で吸収する。
-# Cloudflare Free は Cron Triggers 合計 5/アカウント: 本体 2 + sentinel 1 = 3。
+# Cloudflare Free は Cron Triggers 合計 5/アカウント: 本体 3（2026-11-27 に毎分の通知確認を追加）+ sentinel 1 = 4。
 crons = ["*/5 * * * *"]
 
 [vars]
