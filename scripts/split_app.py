@@ -273,6 +273,8 @@ REST_ONLY_BUILD_MARKERS = {
     'DISCOVERY_TOMORROW',
     # 2026-11-26: お気に入り選手の締切前通知（アプリを開いている間）。
     'REPORTING_FAV_NOTIFY',
+    'DISCOVERY_PUSH_CLIENT',  # 2026-11-27: Web Push の登録口との通信
+    'REPORTING_FAV_PUSH',  # 2026-11-27: 閉じている間も届く締切前通知
     # 2026-11-25: 選手ページ（一覧・検索・詳細）— 下の REST_RACER_BUILD_MARKERS で専用 chunk へ
     'DISCOVERY_RACER_PROFILES',
     'REPORTING_RACER_PAGE',

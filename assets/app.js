@@ -9183,6 +9183,7 @@ function racerBadges(boat,form,divergence){
     }
     if (typeof safeSet === "function") safeSet(FAV_RACER_KEY, arr);
     _syncFavUi(id, on);
+    if (typeof globalThis._pushSyncSoon === "function") globalThis._pushSyncSoon();
     return on;
   }
   function _racerDispName(n) {
@@ -9812,7 +9813,7 @@ function racerBadges(boat,form,divergence){
       _showFavToast(due);
     } catch (_) {
     }
-    _favSystemNotify(due);
+    if (!(typeof _pushIsOn === "function" && _pushIsOn())) _favSystemNotify(due);
     return due.length;
   }
   function _syncFavNotifyUi() {
@@ -9867,6 +9868,58 @@ function racerBadges(boat,form,divergence){
     }
   } catch (_) {
   }
+  function _favRaceFromSearch(search) {
+    var m = /[?&]race=(\d{1,2})-(\d{1,2})(?:&|$)/.exec(String(search || ""));
+    if (!m) return null;
+    var sid = parseInt(m[1], 10);
+    var rno = parseInt(m[2], 10);
+    return sid >= 1 && sid <= 24 && rno >= 1 && rno <= 12 ? { sid, rno } : null;
+  }
+  function _favRaceShown(t) {
+    try {
+      var pg = document.querySelector(".page.active");
+      return !!pg && pg.id === "pageDetail" && typeof currentStadium !== "undefined" && typeof currentRace !== "undefined" && Number(currentStadium) === t.sid && Number(currentRace) === t.rno;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _favOpenFromUrl() {
+    var t = null;
+    try {
+      t = _favRaceFromSearch(location.search);
+    } catch (_) {
+      t = null;
+    }
+    if (!t) return null;
+    try {
+      sessionStorage.setItem("boatrace_nav", JSON.stringify({ page: "detail", sid: t.sid, rn: t.rno, ts: Date.now() }));
+    } catch (_) {
+    }
+    try {
+      history.replaceState(null, "", location.pathname + location.hash);
+    } catch (_) {
+    }
+    var tries = 0;
+    var timer = setInterval(function() {
+      tries++;
+      var ready = typeof programData !== "undefined" && programData && programData[t.sid] && programData[t.sid][t.rno];
+      if (!ready && tries < 60) return;
+      clearInterval(timer);
+      if (!ready) return;
+      setTimeout(function() {
+        if (_favRaceShown(t)) return;
+        _favOnSwMessage({ data: { type: "OPEN_RACE", sid: t.sid, rno: t.rno } });
+      }, 700);
+    }, 500);
+    return t;
+  }
+  try {
+    if (typeof location !== "undefined" && typeof document !== "undefined" && typeof setInterval === "function")
+      _favOpenFromUrl();
+  } catch (_) {
+  }
+  globalThis._favRaceFromSearch = _favRaceFromSearch;
+  globalThis._favOpenFromUrl = _favOpenFromUrl;
   globalThis._favNotifyMin = _favNotifyMin;
   globalThis._favNotifyDue = _favNotifyDue;
   globalThis._favNotifyTick = _favNotifyTick;
@@ -9880,6 +9933,521 @@ function racerBadges(boat,form,divergence){
 })();
 
 /* BUILD:REPORTING_FAV_NOTIFY:END */
+
+/* BUILD:DISCOVERY_PUSH_CLIENT:START */
+"use strict";
+(() => {
+  // ../src/discovery/push_client.js
+  var PUSH_API_TIMEOUT_MS = 12e3;
+  function _pushApiBase() {
+    return typeof WORKER_BASE !== "undefined" && WORKER_BASE ? WORKER_BASE : "";
+  }
+  function _pushApiOpt(opt, timeoutMs) {
+    try {
+      if (typeof capabilities !== "undefined" && capabilities && typeof capabilities.makeTimeoutSignal === "function") {
+        opt.signal = capabilities.makeTimeoutSignal(timeoutMs || PUSH_API_TIMEOUT_MS);
+      }
+    } catch (_) {
+    }
+    return opt;
+  }
+  function _pushFetchKey() {
+    var base = _pushApiBase();
+    if (!base || typeof fetch !== "function") return Promise.resolve(null);
+    return fetch(base + "/push/key", _pushApiOpt({ cache: "no-store" })).then(function(r) {
+      return r && r.ok ? r.json() : null;
+    }).then(
+      function(j) {
+        return j && typeof j.key === "string" && /^[A-Za-z0-9_-]{87}$/.test(j.key) ? j.key : null;
+      },
+      function() {
+        return null;
+      }
+    );
+  }
+  function _pushPost(path, body, timeoutMs) {
+    var base = _pushApiBase();
+    if (!base || typeof fetch !== "function") return Promise.resolve({ status: 0, data: null });
+    var opt = _pushApiOpt(
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "text/plain;charset=UTF-8" },
+        body: JSON.stringify(body)
+      },
+      timeoutMs
+    );
+    return fetch(base + path, opt).then(function(r) {
+      return r.json().then(
+        function(j) {
+          return { status: r.status, data: j && typeof j === "object" ? j : null };
+        },
+        function() {
+          return { status: r.status, data: null };
+        }
+      );
+    }).then(
+      function(x) {
+        return x;
+      },
+      function() {
+        return { status: 0, data: null };
+      }
+    );
+  }
+  globalThis._pushFetchKey = _pushFetchKey;
+  globalThis._pushPost = _pushPost;
+})();
+
+/* BUILD:DISCOVERY_PUSH_CLIENT:END */
+
+/* BUILD:REPORTING_FAV_PUSH:START */
+"use strict";
+(() => {
+  // ../src/reporting/fav_push.js
+  var PUSH_STATE_KEY = "boatrace_push";
+  var PUSH_RESYNC_MS = 24 * 36e5;
+  var PUSH_SYNC_DEBOUNCE_MS = 2500;
+  var PUSH_TEST_DELAY_SEC = 10;
+  var PUSH_SW_WAIT_MS = 6e3;
+  var PUSH_KEY_CACHE_MS = 10 * 6e4;
+  var _pushBusy = false;
+  var _pushMsg = "";
+  var _pushSyncTimer = null;
+  var _pushKeyCache = null;
+  function _pushState() {
+    var s = typeof safeParse === "function" ? safeParse(PUSH_STATE_KEY, null) : null;
+    return s && typeof s === "object" && !Array.isArray(s) ? s : {};
+  }
+  function _pushSave(st) {
+    if (typeof safeSet === "function") safeSet(PUSH_STATE_KEY, st);
+  }
+  function _pushIsOn() {
+    return _pushState().on === true;
+  }
+  function _pushSupported() {
+    return typeof navigator !== "undefined" && !!navigator && !!navigator.serviceWorker && typeof PushManager !== "undefined" && typeof Notification !== "undefined";
+  }
+  function _pushIosNeedsInstall() {
+    try {
+      var ua = String(navigator && navigator.userAgent || "");
+      var ios = /iPhone|iPad|iPod/.test(ua) || /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      if (!ios) return false;
+      var standalone = navigator.standalone === true || typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches;
+      return !standalone;
+    } catch (_) {
+      return false;
+    }
+  }
+  function _pushB64uToBytes(s) {
+    var b64 = String(s).replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function _pushBytesToB64u(buf) {
+    var bytes = new Uint8Array(buf);
+    var s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function _pushPayload() {
+    var favs = [];
+    (typeof _favRacers === "function" ? _favRacers() : []).forEach(function(f) {
+      var id = parseInt(f.id, 10);
+      if (id > 0) favs.push([id, typeof _racerDispName === "function" ? _racerDispName(f.name) : String(f.name || "")]);
+    });
+    favs.sort(function(a, b) {
+      return a[0] - b[0];
+    });
+    return { favs, lead: typeof _favNotifyMin === "function" ? _favNotifyMin() : 5 };
+  }
+  function _pushSigOf(endpoint, payload) {
+    var s = endpoint + "|" + payload.lead + "|" + JSON.stringify(payload.favs);
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = (h << 5) + h + s.charCodeAt(i) | 0;
+    return (h >>> 0).toString(36) + "." + s.length;
+  }
+  function _pushReg() {
+    return new Promise(function(resolve) {
+      var done = false;
+      var finish = function(v) {
+        if (done) return;
+        done = true;
+        resolve(v || null);
+      };
+      try {
+        setTimeout(function() {
+          finish(null);
+        }, PUSH_SW_WAIT_MS);
+        navigator.serviceWorker.ready.then(finish, function() {
+          finish(null);
+        });
+      } catch (_) {
+        finish(null);
+      }
+    });
+  }
+  function _pushKeyNow() {
+    var c = _pushKeyCache;
+    var now = Date.now();
+    if (c && c.key && now - c.at >= 0 && now - c.at < PUSH_KEY_CACHE_MS) return Promise.resolve(c.key);
+    if (c && c.pending) return c.pending;
+    var pending = _pushFetchKey().then(function(k) {
+      _pushKeyCache = k ? { key: k, at: Date.now(), pending: null } : null;
+      return k;
+    });
+    _pushKeyCache = { key: null, at: 0, pending };
+    return pending;
+  }
+  function _pushCurrentSub(reg) {
+    if (!reg || !reg.pushManager) return Promise.resolve(null);
+    return reg.pushManager.getSubscription().then(
+      function(s) {
+        return s || null;
+      },
+      function() {
+        return null;
+      }
+    );
+  }
+  function _pushAskPermission() {
+    return new Promise(function(resolve) {
+      try {
+        if (Notification.permission === "granted" || Notification.permission === "denied") {
+          resolve(Notification.permission);
+          return;
+        }
+        var r = Notification.requestPermission(function(p) {
+          resolve(p);
+        });
+        if (r && typeof r.then === "function") {
+          r.then(resolve, function() {
+            resolve("denied");
+          });
+        }
+      } catch (_) {
+        resolve("denied");
+      }
+    });
+  }
+  function _pushSubUsesKey(sub, key) {
+    try {
+      var k = sub && sub.options && sub.options.applicationServerKey;
+      if (k) return _pushBytesToB64u(k) === key;
+    } catch (_) {
+    }
+    return _pushState().key === key;
+  }
+  function _pushSubJson(sub) {
+    var j = typeof sub.toJSON === "function" ? sub.toJSON() : sub;
+    return { endpoint: j.endpoint, keys: { p256dh: j.keys && j.keys.p256dh, auth: j.keys && j.keys.auth } };
+  }
+  function _pushFail(code) {
+    var e = new Error(code);
+    e.pushCode = code;
+    return e;
+  }
+  var PUSH_MESSAGES = {
+    denied: "\u901A\u77E5\u304C\u8A31\u53EF\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002\u7AEF\u672B\u306E\u8A2D\u5B9A\u3067\u3053\u306E\u30A2\u30D7\u30EA\u306E\u901A\u77E5\u3092\u8A31\u53EF\u3057\u3066\u304B\u3089\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+    no_sw: "\u30A2\u30D7\u30EA\u306E\u6E96\u5099\u304C\u3067\u304D\u3066\u3044\u307E\u305B\u3093\u3002\u5C11\u3057\u5F85\u3063\u3066\u304B\u3089\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+    server: "\u30B5\u30FC\u30D0\u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u6642\u9593\u3092\u304A\u3044\u3066\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+    full: "\u30B5\u30FC\u30D0\u306B\u767B\u9332\u3067\u304D\u308B\u6570\u306E\u4E0A\u9650\u306B\u9054\u3057\u3066\u3044\u307E\u3059\u3002",
+    busy: "\u6DF7\u307F\u5408\u3063\u3066\u3044\u307E\u3059\u3002\u5C11\u3057\u5F85\u3063\u3066\u304B\u3089\u3001\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+    subscribe: "\u3053\u306E\u7AEF\u672B\u3067\u306F\u901A\u77E5\u306E\u5B9B\u5148\u3092\u4F5C\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002",
+    rejected: "\u30B5\u30FC\u30D0\u306B\u767B\u9332\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002"
+  };
+  function _pushUpload(sub, key) {
+    var json = _pushSubJson(sub);
+    var payload = _pushPayload();
+    return _pushPost("/push/subscribe", { sub: json, favs: payload.favs, lead: payload.lead }).then(function(res) {
+      if (res.status === 200 && res.data && res.data.ok) {
+        var st = _pushState();
+        _pushSave({
+          on: true,
+          key: key || st.key || "",
+          ep: json.endpoint,
+          sig: _pushSigOf(json.endpoint, payload),
+          at: Date.now(),
+          keyAt: key ? Date.now() : st.keyAt || 0
+        });
+        return true;
+      }
+      if (res.status === 0) throw _pushFail("server");
+      if (res.status === 507) throw _pushFail("full");
+      if (res.status === 429) throw _pushFail("busy");
+      throw _pushFail("rejected");
+    });
+  }
+  function _pushEnable() {
+    if (_pushBusy) return Promise.resolve(false);
+    if (!_pushSupported()) {
+      _syncFavPushUi();
+      return Promise.resolve(false);
+    }
+    _pushBusy = true;
+    _pushMsg = "\u8A2D\u5B9A\u3057\u3066\u3044\u307E\u3059\u2026";
+    _syncFavPushUi();
+    var reg = null;
+    var key = null;
+    return _pushAskPermission().then(function(perm) {
+      if (perm !== "granted") throw _pushFail("denied");
+      return _pushReg();
+    }).then(function(r) {
+      if (!r || !r.pushManager) throw _pushFail("no_sw");
+      reg = r;
+      return _pushKeyNow();
+    }).then(function(k) {
+      if (!k) throw _pushFail("server");
+      key = k;
+      return _pushCurrentSub(reg);
+    }).then(function(old) {
+      if (old && !_pushSubUsesKey(old, key)) {
+        return old.unsubscribe().then(
+          function() {
+            return null;
+          },
+          function() {
+            return null;
+          }
+        );
+      }
+      return old;
+    }).then(function(old) {
+      if (old) return old;
+      return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _pushB64uToBytes(key) }).then(
+        function(s) {
+          return s;
+        },
+        function() {
+          throw _pushFail("subscribe");
+        }
+      );
+    }).then(function(sub) {
+      return _pushUpload(sub, key);
+    }).then(
+      function() {
+        _pushMsg = "\u6709\u52B9\u306B\u3057\u307E\u3057\u305F\u3002\u300C\u30C6\u30B9\u30C8\u901A\u77E5\u300D\u3067\u3001\u5C4A\u304F\u304B\u3069\u3046\u304B\u3092\u78BA\u304B\u3081\u3089\u308C\u307E\u3059\u3002";
+        return true;
+      },
+      function(e) {
+        _pushMsg = PUSH_MESSAGES[e && e.pushCode || ""] || PUSH_MESSAGES.rejected;
+        return false;
+      }
+    ).then(function(ok) {
+      _pushBusy = false;
+      _syncFavPushUi();
+      return ok;
+    });
+  }
+  function _pushDisable() {
+    if (_pushBusy) return Promise.resolve(false);
+    _pushBusy = true;
+    _pushMsg = "";
+    _syncFavPushUi();
+    var st = _pushState();
+    return _pushReg().then(_pushCurrentSub).then(function(sub) {
+      var ep = sub && sub.endpoint || st.ep;
+      var gone = ep ? _pushPost("/push/unsubscribe", { endpoint: ep }) : Promise.resolve(null);
+      return gone.then(function() {
+        if (!sub) return null;
+        return sub.unsubscribe().then(
+          function() {
+            return null;
+          },
+          function() {
+            return null;
+          }
+        );
+      });
+    }).then(
+      function() {
+      },
+      function() {
+      }
+    ).then(function() {
+      _pushSave({ on: false });
+      _pushMsg = "\u7121\u52B9\u306B\u3057\u307E\u3057\u305F\u3002";
+      _pushBusy = false;
+      _syncFavPushUi();
+      return true;
+    });
+  }
+  function _pushSync(force) {
+    var st = _pushState();
+    if (st.on !== true || _pushBusy || !_pushSupported()) return Promise.resolve(false);
+    var reg = null;
+    return _pushReg().then(function(r) {
+      reg = r;
+      return _pushCurrentSub(r);
+    }).then(function(sub) {
+      if (!reg) return false;
+      var granted = false;
+      try {
+        granted = Notification.permission === "granted";
+      } catch (_) {
+      }
+      if (!sub || !granted) {
+        _pushSave({ on: false, lost: true });
+        _pushMsg = "";
+        _syncFavPushUi();
+        return false;
+      }
+      var payload = _pushPayload();
+      var now = Date.now();
+      var fresh = st.at && now - st.at >= 0 && now - st.at < PUSH_RESYNC_MS;
+      if (!force && fresh && st.sig === _pushSigOf(sub.endpoint, payload)) return false;
+      var keyFresh = st.keyAt && now - st.keyAt >= 0 && now - st.keyAt < PUSH_RESYNC_MS;
+      var keyCheck = keyFresh && !force ? Promise.resolve(st.key) : _pushFetchKey();
+      return keyCheck.then(function(key) {
+        if (key && st.key && key !== st.key) {
+          _pushSave({ on: false, lost: true });
+          _pushMsg = "";
+          _syncFavPushUi();
+          return false;
+        }
+        return _pushUpload(sub, key && !keyFresh ? key : null).then(
+          function() {
+            _syncFavPushUi();
+            return true;
+          },
+          function() {
+            return false;
+          }
+        );
+      });
+    }).then(
+      function(v) {
+        return v;
+      },
+      function() {
+        return false;
+      }
+    );
+  }
+  function _pushSyncSoon() {
+    if (!_pushIsOn()) return false;
+    if (_pushSyncTimer) clearTimeout(_pushSyncTimer);
+    _pushSyncTimer = setTimeout(function() {
+      _pushSyncTimer = null;
+      _pushSync(false);
+    }, PUSH_SYNC_DEBOUNCE_MS);
+    return true;
+  }
+  function _pushTest() {
+    var st = _pushState();
+    if (st.on !== true || _pushBusy) return Promise.resolve(false);
+    _pushBusy = true;
+    _pushMsg = PUSH_TEST_DELAY_SEC + " \u79D2\u5F8C\u306B\u30C6\u30B9\u30C8\u901A\u77E5\u3092\u9001\u308A\u307E\u3059\u3002\u30A2\u30D7\u30EA\u3092\u9589\u3058\u3066\uFF08\u30DB\u30FC\u30E0\u753B\u9762\u306B\u623B\u3063\u3066\uFF09\u304A\u5F85\u3061\u304F\u3060\u3055\u3044\u3002";
+    _syncFavPushUi();
+    return _pushReg().then(_pushCurrentSub).then(function(sub) {
+      var ep = sub && sub.endpoint || st.ep;
+      return _pushPost("/push/test", { endpoint: ep, delay: PUSH_TEST_DELAY_SEC }, 45e3);
+    }).then(function(res) {
+      var d = res.data || {};
+      if (res.status === 200 && d.ok) {
+        _pushMsg = "\u30C6\u30B9\u30C8\u901A\u77E5\u3092\u9001\u308A\u307E\u3057\u305F\u3002\u5C4A\u304B\u306A\u3044\u3068\u304D\u306F\u3001\u7AEF\u672B\u306E\u8A2D\u5B9A\u3067\u3053\u306E\u30A2\u30D7\u30EA\u306E\u901A\u77E5\u304C\u8A31\u53EF\u3055\u308C\u3066\u3044\u308B\u304B\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044\u3002";
+        return true;
+      }
+      if (res.status === 404) {
+        _pushBusy = false;
+        return _pushSync(true).then(function(ok) {
+          _pushMsg = ok ? "\u767B\u9332\u3057\u76F4\u3057\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u300C\u30C6\u30B9\u30C8\u901A\u77E5\u300D\u3092\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002" : PUSH_MESSAGES.server;
+          return false;
+        });
+      }
+      if (res.status === 429) _pushMsg = PUSH_MESSAGES.busy;
+      else if (res.status === 200) {
+        _pushMsg = "\u901A\u77E5\u3092\u9001\u308C\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u901A\u77E5\u30B5\u30FC\u30D3\u30B9\u306E\u5FDC\u7B54 " + (Number(d.status) || 0) + "\uFF09\u3002\u300C\u7121\u52B9\u306B\u3059\u308B\u300D\u2192\u300C\u6709\u52B9\u306B\u3059\u308B\u300D\u3067\u767B\u9332\u3057\u76F4\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+      } else _pushMsg = PUSH_MESSAGES.server;
+      return false;
+    }).then(
+      function(ok) {
+        return ok;
+      },
+      function() {
+        _pushMsg = PUSH_MESSAGES.server;
+        return false;
+      }
+    ).then(function(ok) {
+      _pushBusy = false;
+      _syncFavPushUi();
+      return ok;
+    });
+  }
+  function _pushDefaultNote(st) {
+    if (!_pushSupported()) {
+      return _pushIosNeedsInstall() ? "iPhone \u3067\u306F\u3001\u5171\u6709\u30E1\u30CB\u30E5\u30FC\u306E\u300C\u30DB\u30FC\u30E0\u753B\u9762\u306B\u8FFD\u52A0\u300D\u3067\u5165\u308C\u305F\u30A2\u30D7\u30EA\u304B\u3089\u6709\u52B9\u306B\u3067\u304D\u307E\u3059\uFF08iOS 16.4 \u4EE5\u964D\uFF09\u3002" : "\u3053\u306E\u7AEF\u672B\u30FB\u30D6\u30E9\u30A6\u30B6\u306F\u3001\u9589\u3058\u3066\u3044\u308B\u9593\u306E\u901A\u77E5\uFF08\u30D7\u30C3\u30B7\u30E5\u901A\u77E5\uFF09\u306B\u5BFE\u5FDC\u3057\u3066\u3044\u307E\u305B\u3093\u3002";
+    }
+    if (st.on === true) {
+      var p = _pushPayload();
+      if (!p.lead) return "\u6709\u52B9\u3067\u3059\u304C\u3001\u4E0A\u306E\u300C\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u7DE0\u5207\u524D\u901A\u77E5\u300D\u304C\u300C\u901A\u77E5\u3057\u306A\u3044\u300D\u306E\u305F\u3081\u3001\u901A\u77E5\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002";
+      if (!p.favs.length)
+        return "\u6709\u52B9\u3067\u3059\u3002\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\uFF08\u2605\uFF09\u3092\u767B\u9332\u3059\u308B\u3068\u3001\u305D\u306E\u9078\u624B\u306E\u51FA\u308B\u30EC\u30FC\u30B9\u306E\u7DE0\u5207 " + p.lead + " \u5206\u524D\u306B\u901A\u77E5\u304C\u5C4A\u304D\u307E\u3059\u3002";
+      return "\u6709\u52B9\u3067\u3059\u3002\u30A2\u30D7\u30EA\u3092\u9589\u3058\u3066\u3044\u3066\u3082\u3001\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\uFF08" + p.favs.length + " \u4EBA\uFF09\u306E\u51FA\u308B\u30EC\u30FC\u30B9\u306E\u7DE0\u5207 " + p.lead + " \u5206\u524D\u306B\u901A\u77E5\u304C\u5C4A\u304D\u307E\u3059\u3002";
+    }
+    if (st.lost) return "\u901A\u77E5\u306E\u767B\u9332\u304C\u7121\u52B9\u306B\u306A\u3063\u3066\u3044\u307E\u3059\u3002\u3082\u3046\u4E00\u5EA6\u300C\u6709\u52B9\u306B\u3059\u308B\u300D\u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    return "\u6709\u52B9\u306B\u3059\u308B\u3068\u3001\u30A2\u30D7\u30EA\u3092\u9589\u3058\u3066\u3044\u3066\u3082\u7DE0\u5207\u524D\u306B\u901A\u77E5\u304C\u5C4A\u304D\u307E\u3059\u3002\u304A\u6C17\u306B\u5165\u308A\u9078\u624B\u306E\u4E00\u89A7\u3068\u901A\u77E5\u306E\u5B9B\u5148\u3092\u3001\u3053\u306E\u30A2\u30D7\u30EA\u306E\u30B5\u30FC\u30D0\uFF08Cloudflare\uFF09\u306B\u4FDD\u5B58\u3057\u307E\u3059\u3002";
+  }
+  function _syncFavPushUi(opened) {
+    if (typeof document === "undefined") return;
+    if (opened === true && _pushSupported() && !_pushIsOn() && !_pushBusy) _pushKeyNow();
+    var btn = document.getElementById("btnFavPush");
+    var tst = document.getElementById("btnFavPushTest");
+    var note = document.getElementById("favPushNote");
+    var st = _pushState();
+    var on = st.on === true;
+    if (btn) {
+      btn.textContent = on ? "\u7121\u52B9\u306B\u3059\u308B" : "\u6709\u52B9\u306B\u3059\u308B";
+      btn.disabled = _pushBusy || !on && !_pushSupported();
+    }
+    if (tst) {
+      tst.style.display = on ? "" : "none";
+      tst.disabled = _pushBusy;
+    }
+    if (note) note.textContent = _pushMsg || _pushDefaultNote(st);
+  }
+  if (typeof ACTION_HANDLERS === "object" && ACTION_HANDLERS) {
+    ACTION_HANDLERS.favPushToggle = function() {
+      return _pushIsOn() ? _pushDisable() : _pushEnable();
+    };
+    ACTION_HANDLERS.favPushTest = function() {
+      return _pushTest();
+    };
+  }
+  try {
+    if (typeof document !== "undefined" && document && typeof document.addEventListener === "function") {
+      document.addEventListener("change", function(ev) {
+        var el = ev && ev.target;
+        if (el && el.id === "setFavNotify") {
+          _pushMsg = "";
+          _pushSyncSoon();
+          setTimeout(_syncFavPushUi, 0);
+        }
+      });
+    }
+    if (typeof setTimeout === "function" && typeof document !== "undefined") {
+      setTimeout(function() {
+        _pushSync(false);
+      }, 5e3);
+    }
+  } catch (_) {
+  }
+  globalThis._pushIsOn = _pushIsOn;
+  globalThis._pushSupported = _pushSupported;
+  globalThis._pushSync = _pushSync;
+  globalThis._pushSyncSoon = _pushSyncSoon;
+  globalThis._pushEnable = _pushEnable;
+  globalThis._pushDisable = _pushDisable;
+  globalThis._pushTest = _pushTest;
+  globalThis._syncFavPushUi = _syncFavPushUi;
+  globalThis._pushPayload = _pushPayload;
+  globalThis._pushState = _pushState;
+})();
+
+/* BUILD:REPORTING_FAV_PUSH:END */
 
 // P2-1 (Epic 14): ローカル通知 — server push 不要、起動時の差分検知で notify
 //   トリガ: loadAllData 完了後、注目レース（boatrace_watched）の確定レースを 1 通知に集約
@@ -12889,6 +13457,7 @@ function loadSettings(){
   if(typeof _refreshNotifyStatus === 'function') _refreshNotifyStatus();
   // 2026-11-26: お気に入り選手の締切前通知（分数）の選択を保存値に合わせる
   if(typeof _syncFavNotifyUi === 'function') _syncFavNotifyUi();
+  if(typeof _syncFavPushUi === 'function') _syncFavPushUi(true);
   // Epic 18 (P2-7): COI 状態をボタン横に表示
   if(typeof _refreshCOIStatus === 'function') _refreshCOIStatus();
   // Epic 22: 言語 dropdown を現 locale に同期

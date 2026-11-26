@@ -24,7 +24,7 @@
 //   PD-3 update 検出時にクライアントへ通知（NEW_VERSION）
 //   P1-B5/C6 戦略 3 層を docstring で明示、CDN_ORIGINS の意図を inline 化
 
-const VERSION = 'br-oracle-02a2ccf0';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
+const VERSION = 'br-oracle-014f0a0f';   // 場別レース一覧の 的中判定を保存済 trifecta_bets ベースに統一
 const CDN_CACHE = 'br-oracle-cdn-v1';
 // STATIC: 自オリジンの不変アセット（VERSION bump で全更新される）
 const STATIC_ASSETS = [
@@ -93,10 +93,34 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+// 2026-11-27: Web Push（お気に入り選手の締切前通知。アプリを閉じていても届く）を受け取った時。
+//   本文は Cloudflare Worker (cloudflare-worker/push.js) が作る { t: 題, b: 本文, g: tag, d: { sid, rno } }。
+//   受け取ったら必ず通知を出す（iPhone は、通知を出さない push が続くと購読を取り消す）。
+//   本文が読めなくても、決まった文で出す。
+self.addEventListener('push', (e) => {
+  let d = null;
+  try { d = e.data ? e.data.json() : null; } catch (_) { d = null; }
+  if (!d || typeof d !== 'object') d = {};
+  const data = d.d && typeof d.d === 'object' ? d.d : {};
+  const title = typeof d.t === 'string' && d.t ? d.t.slice(0, 120) : 'BoatRace Oracle';
+  const opt = {
+    body: typeof d.b === 'string' && d.b ? d.b.slice(0, 300) : 'お気に入り選手のレースがまもなく締切です。',
+    icon: 'icon-192.png',
+    badge: 'icon-192.png',
+    tag: typeof d.g === 'string' && d.g ? d.g.slice(0, 60) : 'boatrace-push',
+    data: { sid: data.sid, rno: data.rno },
+  };
+  e.waitUntil(self.registration.showNotification(title, opt));
+});
+
 // 2026-11-26: 端末の通知（お気に入り選手の締切前通知）を押した時。
-//   開いているアプリがあれば前面に出して、そのレースを開くよう知らせる（OPEN_RACE）。無ければアプリを開く。
+//   開いているアプリがあれば前面に出して、そのレースを開くよう知らせる（OPEN_RACE）。
+//   無ければ、そのレースを指定してアプリを開く（./?race=<場>-<R>。アプリ側 fav_notify.js が開く）。
 self.addEventListener('notificationclick', (e) => {
   const d = (e.notification && e.notification.data) || {};
+  const sid = Number(d.sid);
+  const rno = Number(d.rno);
+  const race = Number.isInteger(sid) && sid >= 1 && sid <= 24 && Number.isInteger(rno) && rno >= 1 && rno <= 12;
   try { e.notification.close(); } catch (_) {}
   e.waitUntil((async () => {
     try {
@@ -104,10 +128,10 @@ self.addEventListener('notificationclick', (e) => {
       for (const c of list) {
         if (typeof c.focus !== 'function') continue;
         try { await c.focus(); } catch (_) {}
-        if (d.sid && d.rno) c.postMessage({ type: 'OPEN_RACE', sid: d.sid, rno: d.rno });
+        if (race) c.postMessage({ type: 'OPEN_RACE', sid, rno });
         return;
       }
-      if (self.clients.openWindow) await self.clients.openWindow('./');
+      if (self.clients.openWindow) await self.clients.openWindow(race ? './?race=' + sid + '-' + rno : './');
     } catch (_) {}
   })());
 });

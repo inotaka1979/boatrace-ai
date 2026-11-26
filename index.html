@@ -57,8 +57,8 @@
 <!-- PI-fix: critical + rest の両方を preload して起動を確実にする
      （rest 内に renderStats / predictRace / openRace / calcTodayStats 等
       ユーザ操作で即必要な関数があり、lazy load では race condition の温床） -->
-<link rel="preload" href="assets/app-critical.min.js?v=02a2ccf0" as="script">
-<link rel="preload" href="assets/app-rest.min.js?v=02a2ccf0" as="script">
+<link rel="preload" href="assets/app-critical.min.js?v=014f0a0f" as="script">
+<link rel="preload" href="assets/app-rest.min.js?v=014f0a0f" as="script">
 <!-- PG-8: critical data fetch を preload で先行（HTML parse と並列化） -->
 <link rel="preload" href="https://boatraceopenapi.github.io/programs/v2/today.json" as="fetch" crossorigin>
 <link rel="preload" href="https://boatraceopenapi.github.io/previews/v2/today.json" as="fetch" crossorigin>
@@ -806,7 +806,14 @@ button.action-btn:active{background:#F0F0F0}
         <option value="15">15 分前</option>
       </select>
     </div>
-    <div class="setting-note">アプリを開いている間、お気に入り選手の出るレースが締切に近づくと画面の下に知らせます。上の「許可リクエスト」を許可すると、端末の通知でも知らせます。アプリを閉じている間は通知できません。</div>
+    <div class="setting-note">アプリを開いている間、お気に入り選手の出るレースが締切に近づくと画面の下に知らせます。上の「許可リクエスト」を許可すると、端末の通知でも知らせます。アプリを閉じている間も受け取るには、下の「閉じている間も通知」を有効にしてください。</div>
+    <!-- 2026-11-27: 閉じている間も届く締切前通知（Web Push）。src/reporting/fav_push.js -->
+    <div class="setting-row">
+      <span class="setting-label">閉じている間も通知</span>
+      <span><button class="action-btn" id="btnFavPush" data-action="favPushToggle">有効にする</button>
+            <button class="action-btn" id="btnFavPushTest" data-action="favPushTest" style="display:none">テスト通知</button></span>
+    </div>
+    <div class="setting-note" id="favPushNote">有効にすると、アプリを閉じていても締切前に通知が届きます。お気に入り選手の一覧と通知の宛先を、このアプリのサーバ（Cloudflare）に保存します。</div>
     <!-- Epic 18 (P2-7): SharedArrayBuffer 実験オプション -->
     <div class="setting-row">
       <span class="setting-label" data-i18n="settings.coi">SAB高速化(実験)</span>
@@ -880,7 +887,7 @@ button.action-btn:active{background:#F0F0F0}
      旧 lazy 方式は code split 境界で race condition を起こし、ユーザ操作で
      ReferenceError が頻発するため撤廃。?v=N は HTTP cache bypass の
      cache-bust（SW は normalizeRequest で query を剥がす）。 -->
-<script src="assets/app-critical.min.js?v=02a2ccf0" defer></script>
-<script src="assets/app-rest.min.js?v=02a2ccf0" defer></script>
+<script src="assets/app-critical.min.js?v=014f0a0f" defer></script>
+<script src="assets/app-rest.min.js?v=014f0a0f" defer></script>
 </body>
 </html>

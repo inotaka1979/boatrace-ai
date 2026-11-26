@@ -110,7 +110,7 @@ t('設定画面: 選択肢・保存先・既定値がコードと合っている
     assert.strictEqual(ctx._favNotifyMin(), Number(o[1]), '選択肢 ' + o[1] + ' を読める');
   }
   assert.deepStrictEqual(opts.filter((o) => o[2]).map((o) => Number(o[1])), [5], '既定で選ばれているのは 5 分前');
-  assert.ok(html.indexOf('アプリを閉じている間は通知できません') >= 0, '限界を画面に書く');
+  assert.ok(html.indexOf('アプリを閉じている間も受け取るには、下の「閉じている間も通知」を有効にしてください') >= 0, '閉じている間は別の設定が要ることを画面に書く');
 });
 t('設定の説明文は行の高さを px で指定する（小数の高さで下の行をずらさない）', () => {
   // line-height:1.6 だと 12px × 1.6 = 19.2px で説明文の高さが小数になり、下にある表示言語の選択が 0.25px ずれて
@@ -447,17 +447,26 @@ t('開いているアプリがあれば前面に出して、そのレースを�
   assert.deepStrictEqual(J(sw.calls.post), [{ type: 'OPEN_RACE', sid: 8, rno: 6 }]);
   assert.deepStrictEqual(sw.calls.opened, []);
 });
-t('開いているアプリが無ければアプリを開く。レースの指定が無い通知でも落ちない', async () => {
+t('開いているアプリが無ければ、そのレースを指定してアプリを開く。レースの指定が無い通知でも落ちない', async () => {
   const sw = loadSw([]);
   await click(sw, { sid: 8, rno: 6 });
-  assert.deepStrictEqual(sw.calls.opened, ['./']);
+  assert.deepStrictEqual(sw.calls.opened, ['./?race=8-6']);
   const sw2 = loadSw(['a']);
   await click(sw2, undefined);
   assert.strictEqual(sw2.calls.focus, 1);
   assert.deepStrictEqual(sw2.calls.post, []);
   const sw3 = loadSw(['nofocus']);
   await click(sw3, { sid: 8, rno: 6 });
-  assert.deepStrictEqual(sw3.calls.opened, ['./'], '前面に出せない相手しかいなければ開く');
+  assert.deepStrictEqual(sw3.calls.opened, ['./?race=8-6'], '前面に出せない相手しかいなければ開く');
+  // レースの指定がおかしい通知（テスト通知など）は、アプリを開くだけ
+  for (const bad of [undefined, {}, { sid: 99, rno: 1 }, { sid: 8, rno: 13 }, { sid: '8&x=1', rno: 6 }, { sid: 1.5, rno: 2 }, { sid: '../', rno: 1 }]) {
+    const s4 = loadSw([]);
+    await click(s4, bad);
+    assert.deepStrictEqual(s4.calls.opened, ['./'], JSON.stringify(bad));
+    const s5 = loadSw(['a']);
+    await click(s5, bad);
+    assert.deepStrictEqual(s5.calls.post, [], JSON.stringify(bad));
+  }
 });
 t('アプリ側: 知らせを受けたらそのレースを開く。おかしな値は無視する', () => {
   const { ctx, nodes } = mk({ min: '5' });

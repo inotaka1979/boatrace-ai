@@ -22,7 +22,14 @@
 //   GET /api/refresh-now — 手動 refresh トリガ (デバッグ用)
 //   GET /odds-proxy     — boatrace.jp odds CORS pass-through
 //   GET /racer-proxy    — 選手の今後の出場予定・過去 3 節（公式の選手ページ、edge に 3 時間）
+//   /push/*             — 締切前通知 (Web Push) の登録・解除・テスト送信（push.js）
+//
+// cron は 3 本: データ更新（日中 5 分毎・夜間 30 分毎）と、締切前通知の確認（毎分、push.js の pushTick）。
 // =============================================================================
+
+// 2026-11-27: Web Push（お気に入り選手の締切前通知を、アプリを閉じていても届ける）。中身は push.js。
+//   scheduled() は event.cron で「毎分の通知確認 (PUSH_CRON)」と「データ更新 (MAIN_CRONS)」を振り分ける。
+import { MAIN_CRONS, PUSH_CRON, handlePush, pushTick, writePushIndex } from './push.js';
 
 const UPSTREAM = {
   previews: 'https://boatraceopenapi.github.io/previews/v2/today.json',
@@ -47,7 +54,8 @@ const CORS = {
   //   リクエストの Origin に応じて必ず上書き（許可外なら削除）する。ここを個別に
   //   書き換えると 30 箇所以上の呼出を触ることになるため、単一の出口で正規化する。
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, OPTIONS',
+  // POST は /push/* だけ（本文は text/plain で送るので、ブラウザの事前確認は起きない）
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
 };
 
 // FA-5: ブラウザから叩けるオリジンの許可リスト。
@@ -1046,6 +1054,12 @@ async function refreshAll(env, opts) {
   if (opts && typeof opts.onBaseWritten === 'function') {
     try { await opts.onBaseWritten(out); } catch (e) { out.on_base_written_err = String(e).slice(0, 100); }
   }
+  // 2026-11-27: 締切前通知 (Web Push) 用の索引。番組表から締切時刻と出場選手だけを抜き出して KV に置く
+  //   （毎分の確認は 600KB の番組表を読めない）。中身が変わった時だけ書く。base と heartbeat の後ろ。
+  if (kvAvail && programs) {
+    try { out.push_index = await writePushIndex(env, programs); }
+    catch (e) { out.push_index = { error: String(e).slice(0, 100) }; }
+  }
 
   // ---------------------------------------------------------------------------
   // Phase 2: boatrace.jp 直スクレイプで補完 (重い処理は base 書込の後ろへ)
@@ -1476,6 +1490,27 @@ export default {
       console.error('BOATRACE_KV binding missing');
       return;
     }
+    // 2026-11-27: 毎分の cron は締切前通知 (Web Push) の確認だけを行い、データ更新 (refreshAll) は行わない。
+    //   cron が複数あると、Cloudflare は発火した cron ごとに scheduled() を呼び、event.cron にその式を入れる。
+    const cron = event && typeof event.cron === 'string' ? event.cron : '';
+    if (cron === PUSH_CRON) {
+      try {
+        const r = await pushTick(env, event.scheduledTime);
+        if (r && (r.sent || r.failed || r.gone)) console.log('push:', JSON.stringify(r));
+      } catch (e) {
+        console.error('push tick failed:', String(e && e.message ? e.message : e).slice(0, 200));
+      }
+      return;
+    }
+    // 知らない式で、5 分の区切りでもない時刻なら何もしない（毎分の cron の式が想定と違う形で渡された場合に、
+    //   重いデータ更新を毎分走らせないための歯止め）。式が空（手動実行・テスト）は従来どおり実行する。
+    if (cron && MAIN_CRONS.indexOf(cron) < 0) {
+      const at = typeof event.scheduledTime === 'number' ? event.scheduledTime : Date.now();
+      if (Math.floor(at / 60000) % 5 !== 0) {
+        console.warn('scheduled: unknown cron, skipped:', cron);
+        return;
+      }
+    }
     // rt-fix3 (2026-06-27): cron 生存ハートビート。内容変化に関わらず毎 run 1 write。
     //   /health?strict=1 はこれ (cron_age_sec) で cron 死活を判定する。
     //   データキー (programs 等) の wrote_at は kvWrite が「内容変化時のみ」更新するため、
@@ -1574,6 +1609,10 @@ export default {
         }
       }
       return jsonResponse(out, { cacheControl: 'no-store' });
+    }
+    // 2026-11-27: Web Push の登録・解除・テスト送信（push.js）
+    if (url.pathname.startsWith('/push/')) {
+      return handlePush(request, env, ctx, url, { allowedOrigins: _allowedOrigins(env) });
     }
     // 2026-09-06 serve-heal: cron が死んでいれば、この通常アクセスを代替トリガにして
     //   refreshAll を裏で走らせる (5 分 throttle)。応答は待たせない。

@@ -114,7 +114,7 @@ Settings → Variables and Secrets に Secret として追加する。
 
 ## 無料枠
 
-- Cron Triggers: Free は合計 5/アカウント。本体 2 + sentinel 1 = 3。
+- Cron Triggers: Free は合計 5/アカウント。本体 3（データ更新 2 + 締切前通知の確認 1、2026-11-27 に追加）+ sentinel 1 = 4。
 - Requests: 288 回/日（監視）+ 失敗時の `refresh-now`。
 - KV: 読み 288/日。書きは平常時 24 回/日（生存記録）、失敗区間がある日でも 120 回 + 必須の保存
   （上の「KV 書込の予算」）。本体（約 700 回/日）と合わせて無料枠 1,000 writes/日に収まる。
