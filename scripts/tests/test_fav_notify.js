@@ -112,6 +112,18 @@ t('設定画面: 選択肢・保存先・既定値がコードと合っている
   assert.deepStrictEqual(opts.filter((o) => o[2]).map((o) => Number(o[1])), [5], '既定で選ばれているのは 5 分前');
   assert.ok(html.indexOf('アプリを閉じている間は通知できません') >= 0, '限界を画面に書く');
 });
+t('設定の説明文は行の高さを px で指定する（小数の高さで下の行をずらさない）', () => {
+  // line-height:1.6 だと 12px × 1.6 = 19.2px で説明文の高さが小数になり、下にある表示言語の選択が 0.25px ずれて
+  // VRT (locale-dropdown) が 44px → 45px で落ちた（PR #356）。
+  const m = /\.setting-note\{([^}]*)\}/.exec(read('index.html'));
+  assert.ok(m, '.setting-note の指定が無い');
+  const lh = /line-height:([^;]+)/.exec(m[1]);
+  assert.ok(lh && /^\d+px$/.test(lh[1].trim()), 'line-height は整数の px: ' + (lh && lh[1]));
+  for (const prop of ['padding', 'border-bottom']) {
+    const v = new RegExp(prop + ':([^;]+)').exec(m[1]);
+    assert.ok(v && !/\d\.\d|em|%/.test(v[1]), prop + ' も小数にならない単位: ' + (v && v[1]));
+  }
+});
 t('設定画面を開くと、選択が保存値に合う', () => {
   const { ctx } = mk({ min: '10' });
   const sel = { value: '' };
