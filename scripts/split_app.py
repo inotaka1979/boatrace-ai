@@ -271,6 +271,8 @@ REST_ONLY_BUILD_MARKERS = {
     'REPORTING_RACER_FAV',
     # 2026-11-26: 翌日の出走の取得（TOP のお気に入り欄と選手ページが使う）。
     'DISCOVERY_TOMORROW',
+    # 2026-11-26: お気に入り選手の締切前通知（アプリを開いている間）。
+    'REPORTING_FAV_NOTIFY',
     # 2026-11-25: 選手ページ（一覧・検索・詳細）— 下の REST_RACER_BUILD_MARKERS で専用 chunk へ
     'DISCOVERY_RACER_PROFILES',
     'REPORTING_RACER_PAGE',

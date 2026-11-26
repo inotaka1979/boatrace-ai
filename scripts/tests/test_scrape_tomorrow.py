@@ -27,8 +27,12 @@ import source_health  # noqa: E402
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 with open(os.path.join(FIX, "raceindex_tokoname.html"), encoding="utf-8") as _f:
     PAGE = _f.read()
+# 出走表の公開前（開催する場）: 開催日タブの下に「※ データはありません。」
 with open(os.path.join(FIX, "raceindex_notyet.html"), encoding="utf-8") as _f:
     NOTYET = _f.read()
+# その日に開催が無い場: 見出しが「データがありません。」
+with open(os.path.join(FIX, "raceindex_noseries.html"), encoding="utf-8") as _f:
+    NOSERIES = _f.read()
 UNREADABLE = "<html><body><h2>レース一覧</h2><table><tbody><tr><td>形が変わった</td></tr></tbody></table></body></html>"
 
 # 11/25 19:00 JST → 翌日は 11/26（フィクスチャの日付）
@@ -119,8 +123,36 @@ class TestParse(unittest.TestCase):
                 self.assertIn(b[3], (1, 2, 3, 4))
 
     def test_not_yet_published_page_has_no_races(self):
-        self.assertEqual(st.parse_raceindex(NOTYET), [])
-        self.assertIn(st.NOT_PUBLISHED, NOTYET)
+        # 2026-11-26 の初日、公開前の 5 場が「読めないページ」と数えられた（文言が「データはありません」で、
+        # 「データがありません」しか見ていなかった）。実ページの形を固定する。
+        for name, page in (("公開前", NOTYET), ("開催なし", NOSERIES)):
+            self.assertEqual(st.parse_raceindex(page), [], name)
+            self.assertTrue(st.is_not_published(page), name)
+        self.assertIn("※ データはありません。", NOTYET)
+        self.assertNotIn("データがありません", NOTYET)
+        self.assertIn("データがありません。", NOSERIES)
+
+    def test_not_yet_published_is_read_from_a_heading_only(self):
+        ok = ("<h3 class='title12_title is-type1'>※ データはありません。</h3>",
+              "<h3>\n  ※ データはありません。\n</h3>",
+              "<h3>データはありません</h3>",
+              "<h2 class='heading1_title'><span class='heading1_mainLabel'>データがありません。</span></h2>",
+              "<h2>\n<span>\n データがありません。</span></h2>")
+        for h in ok:
+            self.assertTrue(st.is_not_published("<html><body>" + h + "</body></html>"), h)
+        # 公開済みのページ・形の変わったページ・見出し以外の同じ文言は「公開前」ではない
+        ng = (PAGE, UNREADABLE, "", None, "<p>※ データはありません。</p>", "<li><a href='#'>本日のデータはありません</a></li>",
+              "<h3>レース一覧</h3><div>データはありません</div>", "<h3>出走表</h3>")
+        for h in ng:
+            self.assertFalse(st.is_not_published(h), repr(h)[:60])
+        # 見出しの先頭が別の文なら違う
+        self.assertFalse(st.is_not_published("<h3>お知らせ: データはありません</h3>"))
+
+    def test_day_label_is_readable_before_the_races_are_published(self):
+        # 公開前のページにも開催日タブはある（当日のタブはリンクではない）
+        now = datetime.datetime(2026, 11, 27, 18, 0, tzinfo=st.JST)
+        self.assertEqual(st._label_for(NOTYET, datetime.date(2026, 11, 28), now), "5日目")
+        self.assertEqual(st._label_for(NOTYET, datetime.date(2026, 11, 29), now), "最終日")
 
     def test_garbage_does_not_raise(self):
         for bad in ("", None, "<html>", UNREADABLE, "<tbody><tr><td><a href='racelist?rno=99'>99R</a></td></tr></tbody>",
@@ -209,11 +241,14 @@ class TestRun(unittest.TestCase):
     def test_not_yet_published_venues_are_pending_and_not_a_problem(self):
         with tempfile.TemporaryDirectory() as d:
             _setup(d)
-            s = _run(d, _Site(pages={5: (200, NOTYET), 12: (200, NOTYET)}))
+            s = _run(d, _Site(pages={5: (200, NOTYET), 12: (200, NOSERIES)}))
             out = _out(d)
             self.assertEqual(out["pending"], [5, 12])
             self.assertNotIn("5", out["stadiums"])
             self.assertEqual((s["published"], s["pending"], s["unreadable"]), (5, 2, 0))
+            # 公開前の場も「読めたページ」に数える（初日は 14 場中 5 場が公開前で updated が 9 になっていた）
+            t = _status(d)["tasks"]["tomorrow"]
+            self.assertEqual((t["attempted"], t["updated"], t["published"]), (7, 7, 5))
             # 全場が公開前でも「取れていない」とは扱わない（夕方の早い時刻には普通に起きる）
             _run(d, _Site(default=(200, NOTYET)))
             st_ = _status(d)
@@ -232,6 +267,15 @@ class TestRun(unittest.TestCase):
             v = source_health.evaluate(st_, datetime.datetime.now(datetime.timezone.utc))
             self.assertEqual(v["state"], "problem")
             self.assertIn("tomorrow", v["lines"][0])
+
+    def test_an_error_response_is_not_counted_as_not_yet_published(self):
+        # 200 以外の応答は、本文に「データはありません」があっても「読めたページ」に数えない
+        with tempfile.TemporaryDirectory() as d:
+            _setup(d)
+            s = _run(d, _Site(default=(404, NOTYET)))
+            self.assertEqual((s["published"], s["pending"], s["unreadable"]), (0, 7, 0))
+            t = _status(d)["tasks"]["tomorrow"]
+            self.assertEqual((t["attempted"], t["updated"], t["ok"]), (7, 0, 0))
 
     def test_keeps_a_venue_already_fetched_when_the_refetch_fails(self):
         with tempfile.TemporaryDirectory() as d:

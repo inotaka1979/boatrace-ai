@@ -5,8 +5,9 @@
 出場レーサー（登録番号・名前・級）が載っている。翌日に開催する場（data/schedule/current.json）を
 1 場 1 ページずつ取り、data/schedule/tomorrow.json に書く（番組表 data/programs/ とは形が違うので置き場を分ける）。お気に入り選手の「明日の出走」に使う。
 
-  * 翌日分は前日の午後〜夜に公開される。公開前のページは「データがありません」になるので、その場は
-    pending に残して次の run で取り直す。
+  * 翌日分は前日の夕方〜夜に公開される（初日の実測 2026-11-26: 18:08 に 14 場中 9 場、22:27 に全場。
+    18:08 に未公開だった 5 場はすべてナイター場）。公開前のページは、開催日タブの下に
+    「※ データはありません。」と出る（レース一覧の表が無い）。その場は pending に残して次の run で取り直す。
   * 1 件ずつ、間隔 0.5 秒（ほかの scraper と同じ）。403 が続いたら止める。応答が遅くても同時には送らない
     （docs/RUNBOOK.md §11.2）。内部期限 BUDGET_SEC で必ず書き出す。
   * 取り直しに失敗した場・公開前に戻ったように見える場は、同じ日付で既に取れている内容を消さない。
@@ -47,12 +48,18 @@ INTERVAL = 0.5
 BUDGET_SEC = int(os.environ.get("TOMORROW_BUDGET_SEC", "240"))
 JST = datetime.timezone(datetime.timedelta(hours=9))
 OUT_REL = os.path.join("schedule", "tomorrow.json")
-NOT_PUBLISHED = "データがありません"
 CLASS_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("tomorrow")
 
+# 公開前のページ（2026-11-27 に実ページで確認）。どちらも見出しに出る。助詞が違う:
+#   開催する場・出走表の公開前 → 開催日タブの下に <h3>※ データはありません。</h3>
+#   その日に開催が無い場       → <h2><span>データがありません。</span></h2>（日程が変わった時に起こりうる。
+#                                 公開前の出走表ページ racelist もこの形）
+# 見出し以外の場所（お知らせ欄など）に同じ文言があっても「公開前」とは扱わない
+# （形の変わった公開済みページを「公開前」と読み違えると、読めないことに気付けなくなる）。
+_NOT_PUBLISHED = re.compile(r"<h[1-6][^>]*>(?:\s|<[^>]+>)*※?\s*データ[はが]ありません")
 _RNO = re.compile(r"racelist\?[^\"']*\brno=(\d{1,2})\b")
 _TOBAN = re.compile(r"toban=(\d{4,5})\b")
 _HM = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
@@ -70,6 +77,11 @@ def _load(path: str):
 def _name(text: str) -> str:
     """「海野　ゆかり」「米丸　　乃絵」→ 姓と名の間を半角空白 1 つに。"""
     return re.sub(r"[\s\u3000]+", " ", str(text or "")).strip()
+
+
+def is_not_published(html: str) -> bool:
+    """出走表の公開前（または開催の無い日）のページか。"""
+    return bool(_NOT_PUBLISHED.search(html or ""))
 
 
 def parse_raceindex(html: str) -> list[dict]:
@@ -188,11 +200,12 @@ def run(data_dir: str = "data", now: datetime.datetime | None = None, budget_sec
             readable += 1
             stadiums[key] = {"label": _label_for(html, day, now), "races": races}
             continue
-        if status == 200 and html and NOT_PUBLISHED in html:
+        if status == 200 and is_not_published(html):
             readable += 1  # まだ公開されていない（正常）
         elif status == 200:
             summary["unreadable"] += 1
-            log.warning("tomorrow: 場 %d のページを読めない（公開済みに見えるが 1 レースも取れない）", sid)
+            log.warning("tomorrow: 場 %d のページを読めない（公開済みに見えるが 1 レースも取れない。%d 文字）",
+                        sid, len(html or ""))
         else:
             log.warning("tomorrow: 場 %d HTTP %s", sid, status)
         if key in kept:
