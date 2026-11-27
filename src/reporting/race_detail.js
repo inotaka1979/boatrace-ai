@@ -54,8 +54,10 @@ function _windDirLabel(wd) {
 }
 
 // 1 艇の調整重量 (kg)。数値で返す（外から来た値。表示で toFixed を呼ぶ）。
-//   2026-11-27: 欄の名前は取得元で違う（Worker / scraper = racer_adjust_weight、上流 (openapi) = racer_weight_adjustment。
-//   同じレースで値は一致する）。従来は前者だけを読み、上流の行（展示が出そろった後の大半）では「-」と出ていた。
+//   2026-11-27: 欄の名前は取得元で違う（Worker / scraper = racer_adjust_weight、上流 (openapi) = racer_weight_adjustment）。
+//   従来は前者だけを読み、上流の行（上流の展示に置き換わった行）では「-」と出ていた。
+//   両方ある時は前者（展示の時に公式ページから読んだ値）を使う。上流が展示の後に取った行では同じ値だが、
+//   展示の前に取った値（朝の計量）とはまれに違う（この日の本番: 323 艇中 3 艇、0.5kg）。採点・特徴量も同じ順で読む。
 function _adjWeightOf(pv) {
   if (!pv) return 0;
   return +(pv.racer_adjust_weight != null ? pv.racer_adjust_weight : pv.racer_weight_adjustment) || 0;

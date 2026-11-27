@@ -377,7 +377,9 @@ function exhibitionCount(row) {
 // 2026-11-27: この Worker が公式の直前情報ページから足す項目のうち、上流 (openapi) の行には無いもの。
 //   上流の行に展示が入ると（展示の艇数が同じになると）上流の行を使うので、艇ごとに引き継がないと消える。
 //   この日の本番: 11:10 に Worker が取っていた 33 レースが 11:25 にすべて上流の行に置き換わり、部品交換の記載
-//   （「ギヤ」「リング×２」など 15 艇）が消えた。調整重量は上流の racer_weight_adjustment と同じ値（198 艇すべて一致）。
+//   （「ギヤ」「リング×２」など 15 艇）が消えた。調整重量は、上流が展示の後に取った行の racer_weight_adjustment と
+//   同じ値（置き換わった 33 レースの 198 艇すべて一致）。上流が展示の前に取った値とはまれに違うので（323 艇中 3 艇）、
+//   展示の時に読んだ値として残す（アプリはこちらを優先して読む）。
 const PREVIEW_BOAT_WORKER_FIELDS = ['racer_propeller', 'racer_parts_replaced', 'racer_adjust_weight'];
 function carryWorkerBoatFields(row, old) {
   const nb = row && row.boats;
