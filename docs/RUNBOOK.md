@@ -457,3 +457,71 @@ boatrace.jp は、自動取得への応答を **1 件あたり 8〜10 秒遅ら�
   自動的に登録し直す（最長 1 日。すぐ戻すには、その端末で「テスト通知」を押す = 記録が無ければ登録し直す）。
 - 鍵を作り直す（`push:vapid` を削除）と、それまでの宛先には送れなくなる。各端末のアプリは 1 日 1 回の確認で気付いて
   「通知の登録が無効になっています」と出すので、「有効にする」を押し直す。ふだんは触らない。
+
+## 13. 気象（風・波・気温・水温）が出ない / 風向の読み方
+
+レース詳細の先頭の欄。「風: 向かい風 3m　波: 2cm　気温: 11℃　水温: 18℃」と出る。計測値が無い間は
+「気象: 未取得（展示の後に表示されます）」と出る（展示が出る前は、これが正常）。
+
+### 13.1 どこから来るか
+
+気象は公式サイトの直前情報ページ（展示と同じページ）の「水面気象情報」。上流 (openapi) の previews にも気象の欄は
+あるが、値が入らないまま届く（2026-11-27 に確認: 168 レースすべて空）。
+
+| 経路 | いつ | 入り方 |
+|---|---|---|
+| Worker の定期取得（主） | 締切の窓の中で、展示を取りに行った時 | `/api/previews` の `race_wind` などの欄 |
+| Worker `/beforeinfo-proxy` | アプリが展示の無いレースを開いた・締切が近い時 | 応答の `race_wind` などの欄 |
+| GitHub Actions (`scrape_previews.py`) | 1 日数回 | `data/previews/today.json` の各レースの `weather` |
+| 夜間の後追い (`backfill_archive.py`) | 過去日のアーカイブ | `data/previews/YYYYMMDD.json` の `weather`（2R 以降だけ） |
+
+どの経路も、入れるのは「展示が出ていて、欄の見出しからそのレースの締切前の計測値だと分かる時」だけ:
+
+- 「水面気象情報　11R時点」→ そのレースより前のレースの時点の値なら使う。
+- 「水面気象情報　7:45現在」→ 締切の 3 時間前〜10 分後に計測された値だけ使う（締切時刻が分からなければ使わない）。
+  1R のページは、後から開くとその時点の「現在」の値を出す。過去日なら、その日の最後の計測値になる
+  （2026-11-19 桐生 1R = 締切 15 時台のページが、後日は「20:34現在」）。このため後追いでは 1R に気象を入れない。
+- 見出しの後ろが空白（展示前）・読めない → 使わない。
+
+### 13.2 風向の番号
+
+`race_wind_direction_number` / `weather.wind_direction` は**方位ではない**。公式ページの `is-windN` の番号で、
+スタンドを下・1 マークを右に描いたコース図の上の矢印（風の吹いていく向き）を表す。
+
+| 番号 | 矢印 | アプリの表示 | 採点 |
+|---|---|---|---|
+| 3〜7（5 = 右向き） | → | 追い風 | 風速 3m 以上で 1 コース加点 |
+| 11〜15（13 = 左向き） | ← | 向かい風 | 風速 3m 以上で 1 コース減点・外コース加点 |
+| 16・1・2（1 = 上向き） | ↑ | 右横風（スタンド側から） | 変えない |
+| 8〜10（9 = 下向き） | ↓ | 左横風（バック側から） | 変えない |
+| 17 | － | 無風 | 変えない |
+
+艇はホームストレッチを左 → 右に走るので、右向きが追い風になる。確かめ方（2026-11-27）: 公式の矢印の画像
+(`/static_extra/pc/images/icon_wind1_N.png`) と、方位の画像 (`is-directionN`、1 = 北が上で時計回り) を合わせて
+実測と照合した（2026-11-19 桐生・11-20 宮島は、どちらも冬型の西風）。
+
+2026-11-27 までは、この番号を「1 = 北 … 16 = 北北西」の方位と仮定していた（7 場だけ場別の表、残りは全場共通の表）。
+気象が届いていなかった間は風速 0 で判定そのものが働いていなかったので、予想への影響は出ていない。
+
+### 13.3 確かめる順番
+
+1. **Worker が配っているか**（気象の入ったレース数）:
+   ```bash
+   curl -s https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/previews | python3 -c "
+   import json,sys
+   d=json.load(sys.stdin); rows=d['previews']
+   ex=[r for r in rows if any((b or {}).get('racer_exhibition_time') for b in (r['boats'].values() if isinstance(r['boats'],dict) else r['boats']))]
+   wx=[r for r in rows if (r.get('race_temperature') or 0)>0 or (r.get('race_water_temperature') or 0)>0]
+   print('展示あり', len(ex), '/ 気象あり', len(wx), '/ 全', len(rows), '| boats の形:', {type(r['boats']).__name__ for r in rows})"
+   ```
+   展示ありのレースのほとんどに気象があれば正常（1 日の最初のうち、修正前に展示を取ったレースには入らない）。
+   `boats の形` は `{'dict'}` が正常。`list` が混ざるのは、修正前の Worker が書いた KV が残っている間だけ（次の定期取得で消える）。
+2. **展示は増えるのに気象が 0 のまま**: 公式ページの気象の欄の形が変わった可能性。
+   `curl -s "https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno=1&jcd=14&hd=YYYYMMDD" | grep -n "weather1_"` で、
+   `weather1_title` / `weather1_bodyUnitLabelTitle` / `weather1_bodyUnitLabelData` / `is-windN` があるかを見る
+   （1 件ずつ。応答は 1 件 8〜10 秒かかる）。形が変わっていたら、`scripts/tests/fixtures/beforeinfo_*.html` を取り直して
+   Worker (`parseBeforeinfoWeather` / `parseWeatherAsOf`) と `scripts/scrape_previews.py` (`parse_weather` / `weather_as_of`) を直す。
+3. **GitHub Actions 側**: `data/_status.json` の `tasks.previews`。`attempted` = 取りに行ったレース、`updated` = ページを
+   読めたレース（展示前で中身の無いページを含む）、`exhibition` / `weather` = その回に展示 / 気象が取れたレース。
+   2026-11-27 までは、この記録が一度も書かれていなかった（scraper がファイルを書いた直後に毎回例外で終了していた）。
+4. **アプリ側**: レース詳細の欄が「未取得」のまま → そのレースの展示が出ているかを先に見る。展示が出ているのに未取得なら 1〜3。

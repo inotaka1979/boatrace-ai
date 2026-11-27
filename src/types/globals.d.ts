@@ -41,7 +41,6 @@ interface BoatRaceGlobalAPI {
   BOAT_COLORS: Readonly<Record<number, string>>;
   BOAT_TEXT: Readonly<Record<number, string>>;
   TECHNIQUE: Readonly<Record<number, string>>;
-  WIND_DIR: Readonly<Record<number, string>>;
   GRADE_CLASS: Readonly<Record<number, { name: string; cls: string }>>;
 
   // capabilities (src/capabilities.js / src/capabilities-worker.js)
@@ -58,6 +57,8 @@ interface BoatRaceGlobalAPI {
   validateApiPayload: (apiJson: unknown, key: string) => boolean;
   indexByStadiumRace: (apiJson: unknown, key: string) => Record<string, Record<string, unknown>> | null;
   indexPreviews: (apiJson: unknown) => Record<string, Record<string, unknown>> | null;
+  _pvWeather: (p: unknown) => Record<string, number>;
+  _wxAny: (w: unknown) => boolean;
   indexResults: (apiJson: unknown) => Record<string, Record<string, unknown>> | null;
   _filterStalePreviews: (raw: unknown) => unknown;
 

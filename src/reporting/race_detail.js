@@ -41,6 +41,48 @@
 
 'use strict';
 
+// 2026-11-27: 風向の表示。公式の風向の番号はコース図の上の矢印（isHeadWind の説明を参照）なので、方位ではなく
+//   「追い風 / 向かい風 / 横風」で出す。区分は採点（score_boat）が使う判定と同じ。
+//   横風は艇の進行方向（左 → 右）から見た左右: スタンド側から吹く風（上向きの矢印）が右横風。
+function _windDirLabel(wd) {
+  wd = +wd;
+  if (wd === 17) return '無風';
+  if (!(wd >= 1 && wd <= 16)) return '---';
+  if (isTailWind(wd)) return '追い風';
+  if (isHeadWind(wd)) return '向かい風';
+  return wd >= 8 && wd <= 10 ? '左横風' : '右横風';
+}
+
+// 気象の欄（レース詳細の先頭）。preview が無ければ空文字。
+//   2026-11-27: 計測値が 1 つも無い時は「未取得」と出す。従来は「風: --- 0m 波: 0cm」と出て、
+//   無風・波なしと区別が付かなかった（気象が届いていなかった間、全レースがこの表示だった）。
+//   値は _pvWeather で数値にしてから出す（外から来た値を画面にそのまま出さない）。
+function _weatherBarHtml(preview) {
+  if (!preview) return '';
+  var w = _pvWeather(preview.weather || preview);
+  if (!_wxAny(w)) {
+    return '<div class="weather-bar"><span class="weather-item">気象: 未取得（展示の後に表示されます）</span></div>';
+  }
+  return (
+    '<div class="weather-bar">' +
+    '<span class="weather-item">風: ' +
+    _windDirLabel(w.wind_direction) +
+    ' ' +
+    w.wind_speed +
+    'm</span>' +
+    '<span class="weather-item">波: ' +
+    w.wave_height +
+    'cm</span>' +
+    '<span class="weather-item">気温: ' +
+    (w.temperature || '--') +
+    '℃</span>' +
+    '<span class="weather-item">水温: ' +
+    (w.water_temperature || '--') +
+    '℃</span>' +
+    '</div>'
+  );
+}
+
 function openRace(sid, rn) {
   currentStadium = sid;
   currentRace = rn;
@@ -139,32 +181,7 @@ function openRace(sid, rn) {
   updateOddsUI();
 
   // Weather
-  var weatherHtml = '';
-  if (preview) {
-    var w = preview.weather || preview;
-    var windDir = WIND_DIR[w.wind_direction || w.race_wind_direction_number] || '---';
-    var ws = w.wind_speed || w.race_wind || 0;
-    var wh = w.wave_height || w.race_wave || 0;
-    var temp = w.temperature || w.race_temperature || '--';
-    var wtemp = w.water_temperature || w.race_water_temperature || '--';
-    weatherHtml =
-      '<div class="weather-bar">' +
-      '<span class="weather-item">風: ' +
-      windDir +
-      ' ' +
-      ws +
-      'm</span>' +
-      '<span class="weather-item">波: ' +
-      wh +
-      'cm</span>' +
-      '<span class="weather-item">気温: ' +
-      temp +
-      '℃</span>' +
-      '<span class="weather-item">水温: ' +
-      wtemp +
-      '℃</span>' +
-      '</div>';
-  }
+  var weatherHtml = _weatherBarHtml(preview);
   var _wxBar = weatherHtml; // 天気だけ（中止のレースはオッズ古さの警告を出さない）
   // FIX: オッズデータの実スクレイプ経過を詳細画面トップに警告表示
   //   "0秒前" は GitHub Pages からの fetch 時刻であり、cron が止まると
@@ -557,3 +574,5 @@ function _findLockedPred(sid, rn, livePred) {
 globalThis._findLockedPred = _findLockedPred;
 
 globalThis.openRace = openRace;
+globalThis._windDirLabel = _windDirLabel;
+globalThis._weatherBarHtml = _weatherBarHtml;

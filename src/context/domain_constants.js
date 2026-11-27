@@ -1,7 +1,7 @@
 // Phase 2e (Clearwing patterns): src/context/domain_constants.js
 //
 // Context 層: 副作用なしの状態・設定保持。
-// 競艇ドメインの静的データテーブル（場名・級・決まり手・風向・グレード等）を集約。
+// 競艇ドメインの静的データテーブル（場名・級・決まり手・グレード等）を集約。
 //
 // build/build.mjs が IIFE bundle して assets/app.js の
 //   /* BUILD:CONTEXT_DOMAIN:START */ ... /* BUILD:CONTEXT_DOMAIN:END */
@@ -9,7 +9,9 @@
 //
 // Public (globalThis に export):
 //   STADIUMS / CLASS_NAME / CLASS_COLOR / BOAT_COLORS / BOAT_TEXT
-//   TECHNIQUE / WIND_DIR / GRADE_CLASS
+//   TECHNIQUE / GRADE_CLASS
+//   （風向の表 WIND_DIR は 2026-11-27 に撤去。公式の風向の番号は方位ではなく、コース図の上の矢印。
+//     追い風 / 向かい風の判定は assets/app.js の isHeadWind / isTailWind、表示は race_detail.js）
 //
 // 設計原則:
 //   - 全て読み取り専用テーブル（実行時に変化しない）
@@ -74,26 +76,6 @@ const TECHNIQUE = Object.freeze({
   6: '恵まれ',
 });
 
-const WIND_DIR = Object.freeze({
-  1: 'N',
-  2: 'NNE',
-  3: 'NE',
-  4: 'ENE',
-  5: 'E',
-  6: 'ESE',
-  7: 'SE',
-  8: 'SSE',
-  9: 'S',
-  10: 'SSW',
-  11: 'SW',
-  12: 'WSW',
-  13: 'W',
-  14: 'WNW',
-  15: 'NW',
-  16: 'NNW',
-  17: '無風',
-});
-
 const GRADE_CLASS = Object.freeze({
   1: Object.freeze({ name: 'SG', cls: 'grade-sg' }),
   2: Object.freeze({ name: 'G1', cls: 'grade-g1' }),
@@ -109,5 +91,4 @@ globalThis.CLASS_COLOR = CLASS_COLOR;
 globalThis.BOAT_COLORS = BOAT_COLORS;
 globalThis.BOAT_TEXT = BOAT_TEXT;
 globalThis.TECHNIQUE = TECHNIQUE;
-globalThis.WIND_DIR = WIND_DIR;
 globalThis.GRADE_CLASS = GRADE_CLASS;

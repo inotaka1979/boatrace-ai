@@ -67,11 +67,11 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 | パス | 用途 |
 |---|---|
 | `GET /health` | 疎通と KV 各キーの鮮度。`?strict=1&max_age_sec=N` は cron heartbeat が N 秒より古いと HTTP 500 |
-| `GET /api/previews` `/api/programs` `/api/results` | PWA 用の本日データ（KV） |
+| `GET /api/previews` `/api/programs` `/api/results` | PWA 用の本日データ（KV）。previews の `boats` は艇番をキーにした形（`{"1": {...}, …, "6": {...}}`）、気象は `race_wind` などの欄（下の「展示と気象」） |
 | `GET /api/refresh-now` | `refreshAll()` を 1 回実行。未認証は 5 分に 1 回まで（超過は 429）。`TRIGGER_SECRET` を提示すれば無制限 |
 | `GET /odds-proxy?type=&sid=&rno=&hd=` | boatrace.jp オッズの CORS プロキシ（表示中レースの実時間オッズ） |
 | `GET /result-proxy?jcd=&race=&hd=` | 結果 1 レースのオンデマンド取得 |
-| `GET /beforeinfo-proxy?jcd=&race=&hd=` | 直前情報 1 レースのオンデマンド取得 |
+| `GET /beforeinfo-proxy?jcd=&race=&hd=[&close=HHMM]` | 直前情報 1 レースのオンデマンド取得。展示（艇番をキーにした `boats`）と、使える気象があれば `race_wind` などの欄を返す。`close` はそのレースの締切時刻（アプリが番組表から付ける）で、気象の計測時刻が締切前かを確かめるのに使う。展示前は `{"pending": true}` |
 | `GET /orig-exhibition-proxy` | 各場オリジナル展示のプロキシ（対応場のみ） |
 | `GET /racer-proxy?toban=` | 選手の今後の出場予定・過去 3 節・直近の優勝（公式の選手ページ 2 枚を解析した JSON）。アプリの選手ページを開いた時だけ呼ばれる。結果は edge に 3 時間置き（ブラウザには残り時間だけ置かせる）、edge に無い選手の取得は isolate ごとに 1 分 30 人まで（超過は 429）。公式が 403 / 429 を返したら、その isolate は 10 分取りに行かない（503）。公式を待つのは 20 秒まで（502）。取得と保存は waitUntil で最後までやる（アプリが待ち切れずに切っても、次は edge から返る）。応答の `timing` に、公式サイトの応答にかかった時間（`profile_ms` / `back3_ms` = Worker が測った値、`edge_ms` / `origin_ms` = 公式サイトの `Server-Timing`）が入る（公式サイトが応答を遅らせているかの判別用、RUNBOOK §11.2）。KV は使わない |
 | `GET /hotpepper` | 姉妹アプリ（旅食Navi）用のホットペッパー API 中継。KV は使わない |
@@ -81,6 +81,27 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 | `POST /push/test` | 登録済みの宛先にテスト通知を 1 通送る（`delay` 秒後、最大 20 秒。アプリを閉じて確かめる用）。push service の応答を `status` で返す |
 | `GET /push/status` | 鍵の有無・宛先の数・索引のレース数・毎分の cron が最後に動いた時刻・今日送った数（宛先そのものは出さない） |
 | `GET /push/selftest` | 実行環境の暗号が RFC 8291 の例と同じ本文を作るか（デプロイ後の確認用） |
+
+### 展示と気象（previews）
+
+- **boats の形**: 上流 (openapi) の previews は `boats` を配列（位置 0 = 1 号艇）で配る。この Worker とアプリは
+  `boats[艇番]` で読み書きするので、取得の入口（`fetchPreviewsBase` → `normalizePreviewsDoc`）で艇番をキーにした形に
+  そろえる。2026-11-27 までは配列のまま `boats[艇番]` に書いていて、取得した 1 号艇の値が位置 1（艇番の欄は 2）に入り、
+  6 号艇の分は 7 番目の要素になっていた。その形の KV は `racer_propeller`（Worker が足した要素だけが持つ項目）で見分けて
+  読み替える。
+- **気象**: 上流の気象の欄（`race_wind` など）は値が入らないまま届く。展示の補完で取っている公式の直前情報ページの
+  「水面気象情報」から読む（`parseBeforeinfoWeather`。追加の取得は無い）。入れるのは、展示が出ていて、
+  欄の見出しからそのレースの締切前の計測値だと分かる時だけ:
+  - 「◯R時点」= そのレースより前のレースの時点の値 → 使う
+  - 「HH:MM現在」= その時刻の値 → 締切の 3 時間前〜10 分後のものだけ使う（締切時刻が分からなければ使わない）。
+    1R のページは、後から開くとその時点の「現在」の値を出す（過去日なら、その日の最後の計測値）
+  - 見出しが空白（展示前）・読めない → 使わない
+- **風向の番号** (`race_wind_direction_number`) は方位ではない。公式ページの `is-windN` をそのまま入れる:
+  スタンドを下・1 マークを右に描いたコース図の上の矢印で、風の吹いていく向き。1 = 上向き（スタンド側 → バック側）から
+  時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを左 → 右に走るので、5（右向き）が追い風、13（左向き）が向かい風。
+- 一度入れた展示・気象は、同じ日の間は次の回に引き継ぐ（`carryRicherExhibitions`。上流の行は空のまま届くため）。
+- `refreshAll()` の結果の `exhibition_scrape.weather` は、その回に気象も入れられたレース数。展示は入るのに 0 が続く時は、
+  公式ページの気象の欄の形が変わった可能性がある（`scripts/tests/test_preview_weather.mjs` のフィクスチャを取り直す）。
 
 CORS は Origin 許可リスト方式（`https://inotaka1979.github.io` と localhost:8000/8080）。
 追加したい場合だけ、環境変数 `ALLOWED_ORIGINS`（カンマ区切り）を設定する。

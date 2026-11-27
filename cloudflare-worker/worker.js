@@ -226,7 +226,13 @@ async function fetchProgramsBase() {
 //   boatrace.jp 直スクレイプで補完されるため base はリスト/締切時刻取得用途）。
 async function fetchKindBase(kind) {
   if (kind === 'programs') return await fetchProgramsBase();
+  if (kind === 'previews') return await fetchPreviewsBase();
   return await fetchUpstream(UPSTREAM[kind]);
+}
+
+// 2026-11-27: 上流の previews を取り、boats を「艇番で引ける形」にそろえて返す（normalizePreviewsDoc の説明を参照）。
+async function fetchPreviewsBase() {
+  return normalizePreviewsDoc(await fetchUpstream(UPSTREAM.previews));
 }
 
 // 2026-07-17: 上流 openapi previews/v2/today.json が「programs の中身を results キーで
@@ -237,6 +243,69 @@ async function fetchKindBase(kind) {
 //   既存 KV の展示・気象は同一レース(同日)に限り温存する。
 function isValidPreviewsShape(d) {
   return !!(d && Array.isArray(d.previews));
+}
+
+// 2026-11-27: boats を「艇番で引ける形」（{ "1": {...}, …, "6": {...} }）にそろえる。
+//   上流 (openapi) の previews は boats を配列（位置 0 = 1 号艇）で配る。一方、この Worker の展示の補完と
+//   アプリは boats[艇番] で読み書きする（もとの形は艇番をキーにしたオブジェクトだった）。配列のまま
+//   boats[艇番] に書くと、取得した 1 号艇の値が位置 1（艇番の欄は 2）に入り、6 号艇の分は 7 番目の要素になる。
+//   アプリも同じ読み方をするので表示は合っていたが（2026-11-27 鳴門 1R を公式ページと照合）、艇番の欄とは
+//   1 つずれており、上流が自分で値を入れた配列はアプリが 1 つずれて読む。入口でそろえて、どちらも無くす。
+//
+//   KV に残っている旧版の配列（上の「ずれた形」）は、旧版が書き足した要素だけが持つ項目 (racer_propeller) で
+//   見分けて、位置 n → n 号艇として読み替える。上流そのままの配列は、艇番の欄どおりに引き直す。
+const PREVIEW_BOAT_MERGED_MARK = 'racer_propeller';
+
+function normalizePreviewBoats(boats) {
+  const out = {};
+  if (!boats || typeof boats !== 'object') return out;
+  if (!Array.isArray(boats)) {
+    for (const k of Object.keys(boats)) {
+      const n = parseInt(k, 10);
+      const b = boats[k];
+      if (n >= 1 && n <= 6 && b && typeof b === 'object') {
+        b.racer_boat_number = n;
+        out[n] = b;
+      }
+    }
+    return out;
+  }
+  const legacy = boats.some(
+    (b) => b && typeof b === 'object' && Object.prototype.hasOwnProperty.call(b, PREVIEW_BOAT_MERGED_MARK)
+  );
+  if (legacy) {
+    for (let n = 1; n <= 6; n++) {
+      const b = boats[n];
+      if (!b || typeof b !== 'object') continue;
+      // 体重の欄は上流の「艇番の欄」の艇（= 隣の艇）のものなので引き継がない
+      const rest = Object.assign({}, b);
+      delete rest.racer_weight;
+      delete rest.racer_weight_adjustment;
+      rest.racer_boat_number = n;
+      out[n] = rest;
+    }
+    // 位置 0 は上流の 1 号艇の枠。1 号艇の値が無い時だけ使う
+    if (!out[1] && boats[0] && typeof boats[0] === 'object') {
+      boats[0].racer_boat_number = 1;
+      out[1] = boats[0];
+    }
+    return out;
+  }
+  for (const b of boats) {
+    if (!b || typeof b !== 'object') continue;
+    const n = Number(b.racer_boat_number);
+    if (Number.isInteger(n) && n >= 1 && n <= 6 && !out[n]) out[n] = b;
+  }
+  return out;
+}
+
+// previews の文書（{ previews: [...] }）の全レースをそろえる。形が違う文書はそのまま返す。
+function normalizePreviewsDoc(doc) {
+  if (!isValidPreviewsShape(doc)) return doc;
+  for (const row of doc.previews) {
+    if (row && typeof row === 'object') row.boats = normalizePreviewBoats(row.boats);
+  }
+  return doc;
 }
 
 function synthesizePreviewsFromPrograms(programs) {
@@ -268,6 +337,7 @@ const PREVIEW_WEATHER_FIELDS = [
 //   race_date 一致を条件にするため日跨ぎ混入は起きない。
 function mergePreviewsBoatsFrom(target, old) {
   if (!isValidPreviewsShape(target) || !isValidPreviewsShape(old)) return;
+  normalizePreviewsDoc(old);
   const byKey = new Map();
   for (const r of old.previews) {
     byKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
@@ -280,6 +350,18 @@ function mergePreviewsBoatsFrom(target, old) {
       if (o[f] != null && row[f] == null) row[f] = o[f];
     }
   }
+}
+
+// 2026-11-27: 気象が入っているか（上流の「欄はあるが値が無い」= 0 / null は、入っていない扱い）
+function hasPreviewWeather(row) {
+  if (!row) return false;
+  return (
+    (row.race_temperature || 0) > 0 ||
+    (row.race_water_temperature || 0) > 0 ||
+    (row.race_wind || 0) > 0 ||
+    (row.race_wave || 0) > 0 ||
+    row.race_wind_direction_number != null
+  );
 }
 
 // 2026-11-20: 展示 (racer_exhibition_time > 0) の艇数
@@ -299,6 +381,7 @@ function exhibitionCount(row) {
 //   「表示されていた展示が消える」（2026-11-20 鳴門）。
 function carryRicherExhibitions(target, old) {
   if (!isValidPreviewsShape(target) || !isValidPreviewsShape(old)) return 0;
+  normalizePreviewsDoc(old);
   const byKey = new Map();
   for (const r of old.previews) byKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
   let carried = 0;
@@ -311,6 +394,11 @@ function carryRicherExhibitions(target, old) {
         if (o[f] != null) row[f] = o[f];
       }
       carried++;
+    } else if (hasPreviewWeather(o) && !hasPreviewWeather(row)) {
+      // 2026-11-27: 展示の艇数が同じでも、前回読めた気象は引き継ぐ（上流の気象の欄は空のまま届く）
+      for (const f of PREVIEW_WEATHER_FIELDS) {
+        if (o[f] != null) row[f] = o[f];
+      }
     }
   }
   return carried;
@@ -491,7 +579,93 @@ function parseBeforeinfoHTML(html) {
   return hasData ? boats : null;
 }
 
-async function scrapeBeforeinfo(sid, rno, hd) {
+// 2026-11-27: 直前情報ページの「水面気象情報」（気温・天候・風速・風向・水温・波高）。
+//   上流 (openapi) の previews は気象の欄を持つが値が入っておらず、この Worker の展示の補完も GitHub Actions の
+//   取得も気象を読んでいなかったため、アプリの気象欄は「風: --- 0m」のまま、風・波を使う採点も 0 で動いていた
+//   （2026-11-27 の本番: 168 レースすべて気象なし）。展示のために既に取っているページなので、追加の取得は無い。
+//   読めた項目だけを openapi と同じ名前で返す（数値が 1 つも読めなければ null）。
+//   風向 (is-windN) は方位ではない: スタンドを下・1 マークを右に描いたコース図の上の矢印で、風の吹いていく
+//   向きを表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
+//   左 → 右に走るので、5（右向き）が追い風、13（左向き）が向かい風。公式の画像 (icon_wind1_N.png) と、
+//   2026-11-19 桐生・11-20 宮島の実測（方位の画像 is-directionN と合わせると、どちらも西風）で確かめた。
+//   天候 (is-weatherN) も公式ページの番号そのまま。
+function parseBeforeinfoWeather(html) {
+  const src = String(html || '');
+  const at = src.indexOf('weather1_body');
+  if (at < 0) return null;
+  const block = src.slice(at, at + 4000);
+  const out = {};
+  const num = (text) => {
+    const m = /-?\d+(?:\.\d+)?/.exec(String(text || ''));
+    return m ? parseFloat(m[0]) : null;
+  };
+  const pairRe = /weather1_bodyUnitLabelTitle"[^>]*>([^<]*)<\/span>\s*<span[^>]*weather1_bodyUnitLabelData"[^>]*>([^<]*)</g;
+  const NAMES = { 気温: 'race_temperature', 風速: 'race_wind', 水温: 'race_water_temperature', 波高: 'race_wave' };
+  let m;
+  while ((m = pairRe.exec(block)) !== null) {
+    const title = m[1].trim();
+    // 表にある見出しだけ（'constructor' のような文字列で Object の既定の項目を拾わない）
+    if (!Object.prototype.hasOwnProperty.call(NAMES, title)) continue;
+    const v = num(m[2]);
+    if (v != null) out[NAMES[title]] = v;
+  }
+  // 数値が 1 つも読めないページは計測前（展示前は欄が空白で、天候の画像だけ「不明」の番号が付く）
+  if (!Object.keys(out).length) return null;
+  const wx = /weather1_bodyUnitImage\s+is-weather(\d+)/.exec(block);
+  if (wx) out.race_weather_number = parseInt(wx[1], 10);
+  const wd = /weather1_bodyUnitImage\s+is-wind(\d+)/.exec(block);
+  if (wd) out.race_wind_direction_number = parseInt(wd[1], 10);
+  return out;
+}
+
+// 2026-11-27: 気象の欄の見出しは、その値がいつの計測かを示す。
+//   「水面気象情報　11R時点」= 11R の時点の計測値（過去日のページでも変わらない）
+//   「水面気象情報　7:45現在」= その時刻の計測値
+//   「水面気象情報　&nbsp;」  = まだ計測値が無い（展示前）
+function parseWeatherAsOf(html) {
+  const m = /weather1_title"[^>]*>([^<]*)</.exec(String(html || ''));
+  if (!m) return null;
+  const r = /(\d{1,2})\s*R\s*時点/.exec(m[1]);
+  if (r) return { race: parseInt(r[1], 10) };
+  const c = /(\d{1,2})\s*[:：]\s*(\d{2})\s*現在/.exec(m[1]);
+  if (c) return { minutes: parseInt(c[1], 10) * 60 + parseInt(c[2], 10) };
+  return null;
+}
+
+// 「現在」の計測値を、そのレースの締切前の気象として使う範囲（締切の何分前から・何分後まで）
+const WEATHER_CLOCK_BEFORE_MIN = 180;
+const WEATHER_CLOCK_AFTER_MIN = 10;
+
+// その気象を「rno レースの締切前の気象」として使えるか。
+//   R時点: それより前のレースの時点の値なら使える。
+//   現在:  締切の 3 時間前 〜 10 分後に計測された値だけ使う（締切時刻が分からなければ使わない）。
+//          1R のページは、後から開くとその時点の「現在」の値を出す。過去日なら、その日の最後の計測値になる
+//          （2026-11-19 桐生 1R = 締切 15 時台のページが、後日は「20:34現在」= 12R の時点の値）。
+//   見出しが読めない時は使わない（いつの値か分からないものを入れない）。
+function weatherFitsRace(asOf, rno, closeMin) {
+  if (!asOf) return false;
+  if (asOf.race != null) return asOf.race >= 1 && asOf.race < rno;
+  if (asOf.minutes == null || closeMin == null) return false;
+  return asOf.minutes >= closeMin - WEATHER_CLOCK_BEFORE_MIN && asOf.minutes <= closeMin + WEATHER_CLOCK_AFTER_MIN;
+}
+
+// 締切時刻 "YYYY-MM-DD HH:MM:SS" (JST) → その日の 0 時からの分（読めなければ null）
+function closeMinutesOf(closedAtStr) {
+  const m = /^\d{4}-\d{2}-\d{2} (\d{2}):(\d{2}):\d{2}$/.exec(String(closedAtStr || ''));
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+}
+
+// 読めた気象の項目を previews の 1 レースに書く（読めなかった項目は元の値のまま）
+function applyBeforeinfoWeather(row, weather) {
+  if (!row || !weather) return;
+  for (const f of PREVIEW_WEATHER_FIELDS) {
+    if (weather[f] != null) row[f] = weather[f];
+  }
+}
+
+// 1 レースの直前情報。{ boats: 展示（艇番 → 値。展示前は null）, weather: 気象（使える値が無ければ null）}
+//   closeMin = そのレースの締切時刻（0 時からの分）。分からなければ null（「現在」の計測値は使わない）。
+async function scrapeBeforeinfoFull(sid, rno, hd, closeMin) {
   const jcd = String(sid).padStart(2, '0');
   const url = `https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno=${rno}&jcd=${jcd}&hd=${hd}`;
   const res = await fetch(url, {
@@ -500,7 +674,10 @@ async function scrapeBeforeinfo(sid, rno, hd) {
   });
   if (!res.ok) throw new Error(`beforeinfo ${res.status}: stadium=${sid} race=${rno}`);
   const html = await res.text();
-  return parseBeforeinfoHTML(html);
+  const boats = parseBeforeinfoHTML(html);
+  // 気象は、展示が出ていて、そのレースの締切前の計測値だと分かる時だけ使う
+  const fits = !!boats && weatherFitsRace(parseWeatherAsOf(html), rno, closeMin == null ? null : closeMin);
+  return { boats, weather: fits ? parseBeforeinfoWeather(html) : null };
 }
 
 // JST 「YYYYMMDD」を Date の race_closed_at "YYYY-MM-DD HH:MM:SS" から導出
@@ -820,7 +997,9 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs, maxScrapes =
       r.race_stadium_number === sid && r.race_number === rno
     );
     if (!pv) continue;
-    const boats = pv.boats || {};
+    // 呼ぶ側がそろえていない文書（古い形の KV を読んだ場合など）でも、艇番どおりに書けるようにする
+    pv.boats = normalizePreviewBoats(pv.boats);
+    const boats = pv.boats;
     const hasEx = Object.values(boats).some(b => (b.racer_exhibition_time||0) > 0);
     if (hasEx) continue;   // 既に展示あり → スキップ
     scrapeTargets.push({ sid, rno, hd, pv });
@@ -835,14 +1014,19 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs, maxScrapes =
   const picks = scrapeTargets.slice(0, maxScrapes);
 
   let mergedCount = 0;
+  let weatherCount = 0;
   // 並列 fetch (Cloudflare のサブリクエスト最大 50 件以内)
   const results = await Promise.allSettled(
-    picks.map(t => scrapeBeforeinfo(t.sid, t.rno, t.hd).then(boats => ({ t, boats })))
+    picks.map(t =>
+      scrapeBeforeinfoFull(t.sid, t.rno, t.hd, closeMinutesOf(progByKey.get(`${t.sid}-${t.rno}`).race_closed_at))
+        .then(got => ({ t, got }))
+    )
   );
   for (const r of results) {
-    if (r.status !== 'fulfilled' || !r.value.boats) continue;
-    const { t, boats } = r.value;
-    // pv.boats に注入 (openapi 形式に変換)
+    if (r.status !== 'fulfilled' || !r.value.got || !r.value.got.boats) continue;
+    const { t, got } = r.value;
+    const boats = got.boats;
+    // pv.boats に注入 (openapi 形式に変換)。pv.boats は艇番をキーにした形（上でそろえた）
     const newBoats = t.pv.boats || {};
     for (const bn of Object.keys(boats)) {
       const src = boats[bn];
@@ -856,9 +1040,12 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs, maxScrapes =
       newBoats[bn].racer_adjust_weight   = src.adjust_weight;
     }
     t.pv.boats = newBoats;
+    applyBeforeinfoWeather(t.pv, got.weather);
+    if (got.weather) weatherCount++;
     mergedCount++;
   }
-  return { targets: scrapeTargets.length, scraped: picks.length, merged: mergedCount };
+  // weather = 展示と一緒に気象も入れられたレース数（0 が続く時は、公式ページの気象の欄の形が変わった可能性）
+  return { targets: scrapeTargets.length, scraped: picks.length, merged: mergedCount, weather: weatherCount };
 }
 
 // -----------------------------------------------------------------------
@@ -961,7 +1148,7 @@ function _isValidResult(r) {
 async function refreshAll(env, opts) {
   const out = {};
   let previews = null, programs = null, results = null;
-  try { previews = await fetchUpstream(UPSTREAM.previews); out.previews = { ok: true }; }
+  try { previews = await fetchPreviewsBase(); out.previews = { ok: true }; }
   catch (e) { out.previews = { ok: false, error: String(e).slice(0,200) }; }
   try { programs = await fetchProgramsBase(); out.programs = { ok: true }; }
   catch (e) { out.programs = { ok: false, error: String(e).slice(0,200) }; }
@@ -1906,7 +2093,7 @@ export default {
     // 直前情報(展示タイム/ST/チルト/ペラ/部品/調整重量)のオンデマンド取得 (2026-06-30)。
     //   bulk /api/previews は朝の一斉展示で Worker cron(20件/run)が全場を覆いきれず、
     //   一部の場(三国/唐津/児島 等)の「展示情報」テーブルが丸ごと出ない。
-    //   既存 scrapeBeforeinfo を 1 レース公開し、openapi 互換の boats(object)で返す。
+    //   既存 scrapeBeforeinfoFull を 1 レース公開し、openapi 互換の boats(object) と気象 (race_*) で返す。
     if (url.pathname === '/beforeinfo-proxy') {
       const jcd = url.searchParams.get('jcd') || '';
       const race = url.searchParams.get('race') || '';
@@ -1918,7 +2105,11 @@ export default {
       if (sidNum < 1 || sidNum > 24) return new Response('bad sid', { status: 400, headers: CORS });
       const raceDate = `${hd.slice(0, 4)}-${hd.slice(4, 6)}-${hd.slice(6, 8)}`;
       try {
-        const boats = await scrapeBeforeinfo(sidNum, parseInt(race), hd);
+        // close=HHMM（そのレースの締切時刻。アプリが番組表から付ける）。無い / 形が違う時は null
+        const close = url.searchParams.get('close') || '';
+        const closeMin = /^([01]\d|2[0-3])[0-5]\d$/.test(close) ? parseInt(close.slice(0, 2), 10) * 60 + parseInt(close.slice(2), 10) : null;
+        const got = await scrapeBeforeinfoFull(sidNum, parseInt(race), hd, closeMin);
+        const boats = got.boats;
         // 展示前(boats=null)は pending。クライアントは tried を解除して後で再取得。
         if (!boats) {
           return new Response(JSON.stringify({ pending: true }), {
@@ -1940,6 +2131,7 @@ export default {
           };
         }
         const out = { race_stadium_number: sidNum, race_number: parseInt(race), race_date: raceDate, boats: outBoats };
+        applyBeforeinfoWeather(out, got.weather); // 気象（race_wind など。読めた項目だけ）
         return new Response(JSON.stringify(out), {
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=20', ...CORS },
         });

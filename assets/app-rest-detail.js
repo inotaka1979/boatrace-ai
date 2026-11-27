@@ -33,6 +33,22 @@
 "use strict";
 (() => {
   // ../src/reporting/race_detail.js
+  function _windDirLabel(wd) {
+    wd = +wd;
+    if (wd === 17) return "\u7121\u98A8";
+    if (!(wd >= 1 && wd <= 16)) return "---";
+    if (isTailWind(wd)) return "\u8FFD\u3044\u98A8";
+    if (isHeadWind(wd)) return "\u5411\u304B\u3044\u98A8";
+    return wd >= 8 && wd <= 10 ? "\u5DE6\u6A2A\u98A8" : "\u53F3\u6A2A\u98A8";
+  }
+  function _weatherBarHtml(preview) {
+    if (!preview) return "";
+    var w = _pvWeather(preview.weather || preview);
+    if (!_wxAny(w)) {
+      return '<div class="weather-bar"><span class="weather-item">\u6C17\u8C61: \u672A\u53D6\u5F97\uFF08\u5C55\u793A\u306E\u5F8C\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09</span></div>';
+    }
+    return '<div class="weather-bar"><span class="weather-item">\u98A8: ' + _windDirLabel(w.wind_direction) + " " + w.wind_speed + 'm</span><span class="weather-item">\u6CE2: ' + w.wave_height + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + (w.temperature || "--") + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + (w.water_temperature || "--") + "\u2103</span></div>";
+  }
   function openRace(sid, rn) {
     currentStadium = sid;
     currentRace = rn;
@@ -89,16 +105,7 @@
     var rdForRace = getRaceDataForRace(sid, rn);
     document.getElementById("oddsRefreshBtn").style.display = "inline-block";
     updateOddsUI();
-    var weatherHtml = "";
-    if (preview) {
-      var w = preview.weather || preview;
-      var windDir = WIND_DIR[w.wind_direction || w.race_wind_direction_number] || "---";
-      var ws = w.wind_speed || w.race_wind || 0;
-      var wh = w.wave_height || w.race_wave || 0;
-      var temp = w.temperature || w.race_temperature || "--";
-      var wtemp = w.water_temperature || w.race_water_temperature || "--";
-      weatherHtml = '<div class="weather-bar"><span class="weather-item">\u98A8: ' + windDir + " " + ws + 'm</span><span class="weather-item">\u6CE2: ' + wh + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + temp + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + wtemp + "\u2103</span></div>";
-    }
+    var weatherHtml = _weatherBarHtml(preview);
     var _wxBar = weatherHtml;
     var _osmRace = typeof _raceOddsAgeMin === "function" && raceOdds ? _raceOddsAgeMin(raceOdds) : null;
     if (_osmRace != null || oddsData && oddsData.updated_at) {
@@ -333,6 +340,8 @@
   }
   globalThis._findLockedPred = _findLockedPred;
   globalThis.openRace = openRace;
+  globalThis._windDirLabel = _windDirLabel;
+  globalThis._weatherBarHtml = _weatherBarHtml;
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL:END */

@@ -261,6 +261,57 @@ function indexByStadiumRace(apiJson, key) {
 }
 
 /**
+ * アプリ内の気象の形を作る。入力は previews の 1 レース（openapi の race_* の欄）か、
+ * data/previews の weather（アプリ内と同じ名前）。値は必ず数値にする（画面にそのまま出すため）。
+ * @param {any} p
+ */
+function _pvWeather(p) {
+  const n = function (/** @type {string} */ a, /** @type {string} */ b) {
+    return +p[a] || +p[b] || 0;
+  };
+  return {
+    wind_speed: n('race_wind', 'wind_speed'),
+    wind_direction: n('race_wind_direction_number', 'wind_direction'),
+    wave_height: n('race_wave', 'wave_height'),
+    temperature: n('race_temperature', 'temperature'),
+    water_temperature: n('race_water_temperature', 'water_temperature'),
+    weather_number: n('race_weather_number', 'weather_number'),
+  };
+}
+
+/**
+ * 気象が入っているか（全部 0 = まだ計測値が無い）。
+ * @param {any} w
+ */
+function _wxAny(w) {
+  return !!w && !!(w.temperature || w.water_temperature || w.wind_speed || w.wave_height || w.wind_direction);
+}
+
+/**
+ * 2026-11-27: boats を「艇番で引ける形」にそろえる（アプリは boats[艇番] で読む）。
+ *   上流 (openapi) は配列（位置 0 = 1 号艇）で配る → 艇番の欄で引き直す。
+ *   修正前の Worker が展示を足した配列は「位置 n = n 号艇」（艇番の欄は 1 つずれている）→ 位置で読む。
+ *   見分けは、Worker が足した要素だけが持つ racer_propeller。
+ * @param {any} bs
+ */
+function _pvBoats(bs) {
+  if (!Array.isArray(bs)) return bs;
+  /** @type {Record<string, any>} */
+  const o = {};
+  const byPos = bs.some(function (b) {
+    return b && 'racer_propeller' in b;
+  });
+  bs.forEach(function (b, i) {
+    const n = b && (byPos ? i : b.racer_boat_number);
+    if (n >= 1 && n <= 6 && !o[n]) {
+      b.racer_boat_number = n;
+      o[n] = b;
+    }
+  });
+  return o;
+}
+
+/**
  * @param {any} apiJson
  * @returns {Record<string, Record<string, unknown>> | null}
  */
@@ -270,14 +321,8 @@ function indexPreviews(apiJson) {
   for (const sid in indexed) {
     for (const rn in indexed[sid]) {
       const p = /** @type {any} */ (indexed[sid][rn]);
-      p.weather = {
-        wind_speed: p.race_wind || 0,
-        wind_direction: p.race_wind_direction_number || 0,
-        wave_height: p.race_wave || 0,
-        temperature: p.race_temperature || 0,
-        water_temperature: p.race_water_temperature || 0,
-        weather_number: p.race_weather_number || 0,
-      };
+      p.boats = _pvBoats(p.boats);
+      p.weather = _pvWeather(p);
     }
   }
   return indexed;
@@ -409,5 +454,7 @@ _g.fetchWithFallback = fetchWithFallback;
 _g.validateApiPayload = validateApiPayload;
 _g.indexByStadiumRace = indexByStadiumRace;
 _g.indexPreviews = indexPreviews;
+_g._pvWeather = _pvWeather;
+_g._wxAny = _wxAny;
 _g.indexResults = indexResults;
 _g._filterStalePreviews = _filterStalePreviews;

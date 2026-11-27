@@ -67,6 +67,11 @@ step "Python unit tests (source block detection)" \
 step "Python unit tests (archive backfill)" \
      "python3 -m unittest scripts.tests.test_backfill_archive -v"
 
+# 2026-11-27: 直前情報の気象を data/previews と過去日アーカイブへ（実ページ / 見出しで計測時刻を判定 /
+#   async_main を最後まで走らせる = 11/20 から続いた毎回の NameError 終了の再発防止）
+step "Python unit tests (exhibition scraper: weather / main routine end to end)" \
+     "python3 -m unittest scripts.tests.test_preview_weather"
+
 # 2026-11-20: 選手・モーターの長期集計（月別、解析版 2 の結果だけ、二重計上なし）
 step "Python unit tests (long-term racer / motor aggregates)" \
      "python3 -m unittest scripts.tests.test_aggregate_racer_stats -v"
@@ -269,7 +274,7 @@ step "Post-deploy check of /racer-proxy (scripts/verify_racer_proxy.sh)" \
 # 選手ページのテストを別の日時でも走らせる（書いた日にだけ通るテストを残さない）。
 #   級の適用開始（1/1・7/1）の後、日付が変わる直前、過去の日付。
 step "Racer tests under other dates (no real-clock dependence)" \
-     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js test_fav_push.js test_push_worker.mjs test_push_crypto.mjs; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
+     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js test_fav_push.js test_push_worker.mjs test_push_crypto.mjs test_preview_weather.mjs test_preview_weather_app.js; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
 # 2026-11-25: 意図した見た目の変更の申告（tests/e2e/vrt-baseline-request → VRT の baseline を自動で差し替える）
 step "VRT baseline request (scripts/vrt_request.sh)" \
      "python3 -m unittest scripts.tests.test_vrt_request -v"
@@ -287,6 +292,11 @@ step "Cloudflare Worker KV write budget" \
 # 2026-11-20: 表示済みの展示が消えない（Worker の KV 引き継ぎ + アプリの poll マージ）
 step "Exhibition data is never dropped (Worker carry + app merge)" \
      "node scripts/tests/test_preview_carry.mjs"
+# 2026-11-27: 直前情報の気象と、展示データ (boats) の形（Worker / アプリ）。風向の番号 = 公式ページの矢印
+step "Worker: weather from the official page / boats keyed by boat number" \
+     "node scripts/tests/test_preview_weather.mjs"
+step "App: boats shape / weather from live sources / wind direction meaning" \
+     "node scripts/tests/test_preview_weather_app.js"
 
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \

@@ -29,7 +29,10 @@ function _windCourse(ctx) {
   if (!ctx.weather) return 0;
   const ws = ctx.weather.wind_speed || ctx.weather.race_wind || 0;
   const wd = ctx.weather.wind_direction || ctx.weather.race_wind_direction_number || 0;
-  const isHead = wd >= 7 && wd <= 11;
+  // 2026-11-27: 向かい風は 11〜15（公式の風向の番号はコース図の上の矢印で、13 = 左向き = 向かい風）。
+  //   従来の 7〜11 は方位と仮定した値で、公式の番号では「スタンドへ向かう横風」に当たる。
+  //   assets/app.js の HEAD_WIND_DIRS と同じ範囲（テストで固定）。
+  const isHead = wd >= 11 && wd <= 15;
   if (isHead && ctx.course === 1) return -ws / 10;
   if (isHead && ctx.course >= 4) return ws / 20;
   return 0;

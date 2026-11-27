@@ -16,7 +16,7 @@
   },
   "preview": {
     "race_closed_at": "2026-07-26 17:20",
-    "weather": { "wind_speed": 6, "wind_direction": 5, "wave_height": 8, "water_temperature": 19 },
+    "weather": { "wind_speed": 6, "wind_direction": 13, "wave_height": 8, "water_temperature": 19 },
     "boats": {
       "1": { "racer_course_number": 1, "racer_exhibition_time": 6.90, "racer_start_timing": 0.20, "racer_tilt_adjustment": 0.0, "racer_adjust_weight": 0.0, "racer_parts_replaced": "" },
       "2": { "racer_course_number": 2, "racer_exhibition_time": 6.85, "racer_start_timing": 0.16, "racer_tilt_adjustment": 0.5, "racer_adjust_weight": 0.0, "racer_parts_replaced": "ペラ" },
