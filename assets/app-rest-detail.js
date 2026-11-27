@@ -41,12 +41,14 @@
     if (isHeadWind(wd)) return "\u5411\u304B\u3044\u98A8";
     return wd >= 8 && wd <= 10 ? "\u5DE6\u6A2A\u98A8" : "\u53F3\u6A2A\u98A8";
   }
+  function _adjWeightOf(pv) {
+    if (!pv) return 0;
+    return +(pv.racer_adjust_weight != null ? pv.racer_adjust_weight : pv.racer_weight_adjustment) || 0;
+  }
   function _weatherBarHtml(preview) {
     if (!preview) return "";
     var w = _pvWeather(preview.weather || preview);
-    if (!_wxAny(w)) {
-      return '<div class="weather-bar"><span class="weather-item">\u6C17\u8C61: \u672A\u53D6\u5F97\uFF08\u5C55\u793A\u306E\u5F8C\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09</span></div>';
-    }
+    if (!_wxAny(w)) return '<div class="weather-bar"><span class="weather-item">\u6C17\u8C61: \u672A\u53D6\u5F97</span></div>';
     return '<div class="weather-bar"><span class="weather-item">\u98A8: ' + _windDirLabel(w.wind_direction) + " " + w.wind_speed + 'm</span><span class="weather-item">\u6CE2: ' + w.wave_height + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + (w.temperature || "--") + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + (w.water_temperature || "--") + "\u2103</span></div>";
   }
   function openRace(sid, rn) {
@@ -221,7 +223,7 @@
         var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
         var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
         var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
-        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
+        var adjVal = _adjWeightOf(pv);
         var etRk = etRankMap[bn];
         var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
         var stRk = stRankMap[bn];
@@ -342,6 +344,7 @@
   globalThis.openRace = openRace;
   globalThis._windDirLabel = _windDirLabel;
   globalThis._weatherBarHtml = _weatherBarHtml;
+  globalThis._adjWeightOf = _adjWeightOf;
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL:END */

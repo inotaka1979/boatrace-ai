@@ -875,6 +875,50 @@ t('公式: 取得中は重ねて取らない。成功は 30 分、失敗は 3 �
   assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 2 * 60000), false);
   assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 4 * 60000), true);
 });
+t('公式: 過去 3 節だけ取れなかった結果は、3 分で取り直す（30 分は待たない）', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  ctx._loadRacerOfficial('4320');
+  await settle(ok(official({ back3: [], wins: [], back3_ok: false })));
+  const e = ctx._racerOfficialOf('4320');
+  assert.deepStrictEqual([e.loading, e.failed, e.data.back3_ok, e.data.schedule.length], [false, false, false, 3]);
+  const t0 = Date.now();
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t0 + 2 * 60000), false, '2 分後はまだ取り直さない');
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t0 + 4 * 60000), true, '4 分後に取り直す');
+  // 取り直して全部取れたら、次は 30 分後
+  await settle(ok(official()));
+  assert.strictEqual(ctx._racerOfficialOf('4320').data.back3_ok, true);
+  const t1 = Date.now();
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 4 * 60000), false);
+  assert.strictEqual(ctx._loadRacerOfficial('4320', null, t1 + 31 * 60000), true);
+  assert.strictEqual(calls.length, 3);
+  // back3_ok の無い応答（古い形）は「一部だけ」と扱わない
+  const noFlag = official();
+  delete noFlag.back3_ok;
+  ctx._loadRacerOfficial('4321');
+  await settle(ok(noFlag));
+  assert.strictEqual(ctx._racerOfficialOf('4321').data.back3_ok, undefined);
+  assert.strictEqual(ctx._loadRacerOfficial('4321', null, Date.now() + 4 * 60000), false);
+});
+t('公式（一覧用）: 過去 3 節が欠けた結果は取り直さない（一覧は出場予定だけを使う）。30 分たてば取り直す', async () => {
+  const { ctx, calls, settle, ok } = officialCtx();
+  ctx.setTimeout = (fn) => fn();
+  const realNow = Date.now;
+  let clock = realNow.call(Date);
+  ctx.Date.now = () => clock;
+  try {
+    ctx._loadRacerOfficial('4320');
+    await settle(ok(official({ back3: [], wins: [], back3_ok: false })));
+    calls.length = 0;
+    clock += 4 * 60000; // 詳細なら取り直す間隔を過ぎている
+    assert.strictEqual(ctx._loadRacerOfficialMany(['4320']), 0, '一覧からは取り直さない');
+    assert.strictEqual(calls.length, 0);
+    clock += 27 * 60000; // 取得から 31 分
+    assert.strictEqual(ctx._loadRacerOfficialMany(['4320']), 1);
+    assert.strictEqual(calls.length, 1);
+  } finally {
+    ctx.Date.now = realNow;
+  }
+});
 t('公式: HTTP エラー・エラー応答・形の違う応答は失敗として扱う。番号が不正なら取りに行かない', async () => {
   const { ctx, calls, settle, ok } = officialCtx();
   for (const bad of ['', 'abc', '123', '123456', null]) assert.strictEqual(ctx._loadRacerOfficial(bad), false, String(bad));

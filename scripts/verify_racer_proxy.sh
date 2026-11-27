@@ -82,6 +82,17 @@ try:
     if d.get("found") and not (d.get("schedule") or d.get("back3")):
         print("::warning::選手ページは取れたが、出場予定も過去 3 節も 0 件。公式ページの形が変わった可能性（test_racer_proxy_parse.js のフィクスチャを取り直して確認）。")
     t = d.get("timing")
+    if d.get("found") and d.get("back3_ok") is False:
+        # back3_status: 過去 3 節のページの HTTP 状態。0 = 直前に断られたので、この回は取りに行っていない
+        st = t.get("back3_status") if isinstance(t, dict) else None
+        why = ""
+        if st == 0:
+            why = "（直前に断られたので、この回は取りに行っていない）"
+        elif isinstance(st, int):
+            why = f" (HTTP {st})"
+        print("::warning::選手ページは取れたが、過去 3 節のページが取れなかった" + why
+              + "。この結果は 10 分までしか置かれず、その後に開いた時に取り直す。"
+              + "断られた場合 (403 / 429)、Worker はそのページを 10 分取りに行かない（RUNBOOK §11.1）。")
     if isinstance(t, dict):
         sec = lambda v: "不明" if not isinstance(v, (int, float)) else f"{v / 1000:.1f} 秒"
         # 保存した結果 (HIT) に入っているのは、保存した時点（最大 3 時間前）に測った値

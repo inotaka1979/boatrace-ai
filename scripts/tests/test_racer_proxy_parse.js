@@ -44,7 +44,8 @@ const ctx = {
 vm.createContext(ctx);
 vm.runInContext(extractConst('RACER_PROFILE_KEYS'), ctx);
 vm.runInContext(extractConst('RACER_PROXY_MAX_PER_MIN'), ctx);
-vm.runInContext('var _racerScrapeLog = [];', ctx);
+vm.runInContext(extractConst('RACER_PROXY_BLOCK_PAUSE_MS'), ctx);
+vm.runInContext('var _racerScrapeLog = []; var _racerBack3BlockedUntil = 0;', ctx);
 for (const fn of ['stripTags', 'zenToHan', 'racerSectionTable', 'racerTableRows', 'racerSeriesCells',
   'parseRacerProfileHTML', 'parseRacerBack3HTML', 'racerUpstreamTiming', 'scrapeRacerOfficial', 'racerScrapeAllowed']) {
   vm.runInContext(extractFn(fn), ctx);
@@ -156,12 +157,32 @@ t('scrapeRacerOfficial: 2 ページを取り、過去 3 節が取れなくても
     ['4320', true, '峰 竜太', 4, 3, 1, true]);
   assert.ok(/^\d{4}-\d{2}-\d{2}T/.test(r.fetched_at));
 
+  assert.strictEqual(r.timing.back3_status, 200);
+
   ctx.__fetch = (url) => (/profile\?/.test(url) ? res(true, fx('racer_profile.html')) : res(false, '', 503));
   r = J(await ctx.scrapeRacerOfficial('4320'));
   assert.deepStrictEqual([r.found, r.schedule.length, r.back3.length, r.back3_ok], [true, 4, 0, false]);
+  assert.strictEqual(r.timing.back3_status, 503, '過去 3 節のページの HTTP 状態');
+  assert.strictEqual(ctx._racerBack3BlockedUntil, 0, '5xx は「断られた」ではない');
 
   ctx.__fetch = () => res(false, 'forbidden', 403);
   await assert.rejects(() => ctx.scrapeRacerOfficial('4320'), /racer profile 403/);
+  // 選手ページが断られた時は、過去 3 節のページの印は付けない（全体を止めるのは呼ぶ側の仕事）
+  assert.strictEqual(ctx._racerBack3BlockedUntil, 0);
+
+  // 過去 3 節のページだけ断られた: 出場予定は返し、そのページを 10 分取りに行かない印を付ける
+  ctx.__fetch = (url) => (/profile\?/.test(url) ? res(true, fx('racer_profile.html')) : res(false, 'forbidden', 403));
+  const before = Date.now();
+  r = J(await ctx.scrapeRacerOfficial('4320'));
+  assert.deepStrictEqual([r.schedule.length, r.back3_ok, r.timing.back3_status], [4, false, 403]);
+  assert.ok(ctx._racerBack3BlockedUntil >= before + 10 * 60000 && ctx._racerBack3BlockedUntil <= Date.now() + 10 * 60000);
+  // 印が付いている間は、選手ページだけ取る（公式が戻っていても確かめに行かない）
+  calls.length = 0;
+  ctx.__fetch = (url) => (/profile\?/.test(url) ? res(true, fx('racer_profile.html')) : res(true, fx('racer_back3.html')));
+  r = J(await ctx.scrapeRacerOfficial('4321'));
+  assert.deepStrictEqual(calls, ['https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=4321']);
+  assert.deepStrictEqual([r.schedule.length, r.back3_ok, r.back3, r.timing.back3_status, r.timing.back3_ms], [4, false, [], 0, null]);
+  ctx._racerBack3BlockedUntil = 0;
 
   ctx.__fetch = () => res(true, fx('racer_notfound.html'));
   r = J(await ctx.scrapeRacerOfficial('9999'));

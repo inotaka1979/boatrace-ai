@@ -207,6 +207,34 @@ class VerifyRacerProxy(unittest.TestCase):
         self.assertIn("公式サイトの応答（保存した時点に Worker が測った値）: profile 9.8 秒", out)
         self.assertNotIn("（Worker が測った値）", out)
 
+    def test_partial_result_is_warned_with_the_refused_status(self):
+        """選手ページは取れたが過去 3 節が取れなかった（公式サイトがページ単位で断った）。デプロイは失敗にしない。"""
+        partial = json.dumps({"toban": "4320", "found": True, "schedule": [{}, {}], "back3": [], "wins": [], "back3_ok": False,
+                              "timing": {"profile_ms": 9300, "back3_ms": 100, "back3_status": 403}})
+        code, out, _ = run([BAD, ok("MISS", "public, max-age=600", body=partial), ok("HIT", "public, max-age=597", body=partial)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("::warning::選手ページは取れたが、過去 3 節のページが取れなかった (HTTP 403)。", out)
+        self.assertIn("10 分までしか置かれず", out)
+        # 直前に断られていて、この回は取りに行かなかった（back3_status: 0）
+        skipped = json.dumps({"toban": "4320", "found": True, "schedule": [{}, {}], "back3": [], "wins": [], "back3_ok": False,
+                              "timing": {"profile_ms": 9300, "back3_ms": None, "back3_status": 0}})
+        code, out, _ = run([BAD, ok("MISS", "public, max-age=240", body=skipped), ok("HIT", "public, max-age=237", body=skipped)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("過去 3 節のページが取れなかった（直前に断られたので、この回は取りに行っていない）。", out)
+        self.assertNotIn("(HTTP 0)", out)
+        # HTTP 状態が無い（古い Worker の）応答でも落ちない
+        old = json.dumps({"toban": "4320", "found": True, "schedule": [{}], "back3": [], "wins": [], "back3_ok": False})
+        code, out, _ = run([BAD, ok("MISS", body=old), ok("HIT", body=old)])
+        self.assertEqual(code, 0, out)
+        self.assertIn("過去 3 節のページが取れなかった。", out)
+        # 全部取れている時は出さない。back3_ok の無い応答（古い形）でも出さない
+        code, out, _ = run([BAD, ok("MISS"), ok("HIT")])
+        self.assertNotIn("過去 3 節のページが取れなかった", out)
+        noflag = json.dumps({"toban": "4320", "found": True, "schedule": [{}], "back3": [{}], "wins": []})
+        code, out, _ = run([BAD, ok("MISS", body=noflag), ok("HIT", body=noflag)])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("過去 3 節のページが取れなかった", out)
+
     def test_empty_parse_result_warns_about_page_shape(self):
         empty = json.dumps({"toban": "4320", "found": True, "schedule": [], "back3": [], "wins": [], "back3_ok": True})
         code, out, _ = run([BAD, ok("MISS", body=empty), ok("HIT", body=empty)])

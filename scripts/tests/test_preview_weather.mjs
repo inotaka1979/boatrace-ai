@@ -2,8 +2,9 @@
  * 直前情報の気象と、展示データ (boats) の形（Worker 側）
  *
  * 2026-11-27 に本番で見つけた 2 件:
- *   1. 気象（風・波・気温・水温・天候）がどの経路にも入っていなかった。上流 (openapi) の previews は気象の欄を
- *      持つが値が無く、Worker の展示の補完も気象を読んでいなかった（168 レースすべて気象なし）。
+ *   1. 気象（風・波・気温・水温・天候）を、Worker の展示の補完が読んでいなかった。上流 (openapi) の previews の気象は
+ *      遅れて届く（この日は 10:55 JST まで 168 レースすべて空、11:10〜11:25 の間に開催中の 9 場の全 12R 分が入った）ので、
+ *      それまでのレースには気象が無かった。上流の値は「その場の最新の計測値」で、展示前のレースにも入る。
  *   2. 上流の boats は配列（位置 0 = 1 号艇）で、Worker は boats[艇番] に書いていた。取得した 1 号艇の値が
  *      位置 1（艇番の欄は 2）に入り、6 号艇の分は 7 番目の要素になる。アプリも同じ読み方をするので表示は
  *      合っていたが、艇番の欄とは 1 つずれていた。
@@ -92,6 +93,7 @@ vm.runInContext(
     extractFn('stripTags'), extractFn('parseBeforeinfoHTML'), extractFn('parseBeforeinfoWeather'),
     extractFn('applyBeforeinfoWeather'), extractFn('normalizePreviewBoats'), extractFn('isValidPreviewsShape'),
     extractFn('normalizePreviewsDoc'), extractFn('hasPreviewWeather'), extractFn('exhibitionCount'),
+    extractConst('PREVIEW_BOAT_WORKER_FIELDS'), extractFn('carryWorkerBoatFields'),
     extractFn('carryRicherExhibitions'), extractFn('mergePreviewsBoatsFrom'),
   ].join('\n') +
     '\nthis.F = { parseBeforeinfoHTML, parseBeforeinfoWeather, applyBeforeinfoWeather, normalizePreviewBoats,' +
@@ -346,6 +348,61 @@ await t('展示の艇数が同じでも、前回読めた気象は引き継ぐ�
   assert.strictEqual(target2.previews[0].race_temperature, 5);
   assert.strictEqual(target2.previews[0].race_wind, 7);
 });
+await t('上流の行に展示が入って置き換わっても、Worker が足した項目（プロペラ・部品交換・調整重量）は艇ごとに残す（本番の実データ）', () => {
+  // 2026-11-27 唐津 1R: 11:10 は Worker が取った行、11:25 には上流の行に置き換わり、部品交換の記載が消えていた
+  const FX = JSON.parse(read('previews_worker_then_upstream.json'));
+  const target = { previews: [clone(FX.upstream_row)] };
+  const old = { previews: [clone(FX.worker_row)] };
+  assert.strictEqual(F.carryRicherExhibitions(target, old), 0, '展示の艇数は同じ: 上流の行を使う');
+  const b = target.previews[0].boats;
+  // 上流の行の値（体重・調整重量・展示・気象）はそのまま
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_weight), [52, 53.9, 49.5, 54.6, 56.2, 50.5]);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_weight_adjustment), [0, 0, 2.5, 0, 0, 1.5]);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_exhibition_time), [6.73, 6.78, 6.7, 6.73, 6.77, 6.74]);
+  assert.deepStrictEqual([target.previews[0].race_wind, target.previews[0].race_wind_direction_number], [4, 14]);
+  // Worker が公式ページから足した項目が残る
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_parts_replaced), ['キャリボ', '', '', '', 'リング×２', '']);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_propeller), ['', '', '', '', '', '']);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => b[n].racer_adjust_weight), [0, 0, 2.5, 0, 0, 1.5]);
+  // 引き継ぐのは決めた 3 項目だけ（展示の値などを前回の行で上書きしない）
+  const target2 = { previews: [clone(FX.upstream_row)] };
+  const old2 = { previews: [clone(FX.worker_row)] };
+  old2.previews[0].boats[1].racer_exhibition_time = 9.99;
+  old2.previews[0].boats[1].racer_tilt_adjustment = 3;
+  old2.previews[0].boats[1].extra_field = 'x';
+  F.carryRicherExhibitions(target2, old2);
+  const b1 = target2.previews[0].boats[1];
+  const u1 = FX.upstream_row.boats[1];
+  assert.deepStrictEqual([b1.racer_exhibition_time, b1.racer_tilt_adjustment, 'extra_field' in b1], [u1.racer_exhibition_time, u1.racer_tilt_adjustment, false]);
+  assert.strictEqual(u1.racer_exhibition_time, 6.73);
+  // 今回の行が持っている値は上書きしない
+  const target3 = { previews: [clone(FX.upstream_row)] };
+  target3.previews[0].boats[1].racer_parts_replaced = 'ペラ';
+  F.carryRicherExhibitions(target3, { previews: [clone(FX.worker_row)] });
+  assert.strictEqual(target3.previews[0].boats[1].racer_parts_replaced, 'ペラ');
+  // 前日の行からは引き継がない
+  const target4 = { previews: [clone(FX.upstream_row)] };
+  const old4 = { previews: [Object.assign(clone(FX.worker_row), { race_date: '2026-11-26' })] };
+  F.carryRicherExhibitions(target4, old4);
+  assert.ok(!('racer_parts_replaced' in target4.previews[0].boats[1]));
+  // 前回の行に無い艇・壊れた艇があっても落ちない
+  const target5 = { previews: [clone(FX.upstream_row)] };
+  const old5 = { previews: [clone(FX.worker_row)] };
+  old5.previews[0].boats[2] = null;
+  delete old5.previews[0].boats[4];
+  target5.previews[0].boats[6] = null;
+  F.carryRicherExhibitions(target5, old5);
+  assert.strictEqual(target5.previews[0].boats[5].racer_parts_replaced, 'リング×２');
+  assert.ok(!('racer_parts_replaced' in target5.previews[0].boats[2]) && !('racer_parts_replaced' in target5.previews[0].boats[4]));
+});
+await t('前回の行のほうが展示が多い時は、従来どおり前回の艇データをそのまま使う', () => {
+  const FX = JSON.parse(read('previews_worker_then_upstream.json'));
+  const up = clone(FX.upstream_row);
+  for (const n of [5, 6]) up.boats[n].racer_exhibition_time = 0; // 上流の行は 4 艇分だけ
+  const target = { previews: [up] };
+  assert.strictEqual(F.carryRicherExhibitions(target, { previews: [clone(FX.worker_row)] }), 1);
+  assert.deepStrictEqual(plain(target.previews[0].boats), plain(FX.worker_row.boats));
+});
 await t('前日の KV の気象は引き継がない', () => {
   const old = F.normalizePreviewsDoc({ previews: [Object.assign(nativeRow(14, 1, '2000-01-01'), OFFICIAL_WEATHER)] });
   const target = F.normalizePreviewsDoc({ previews: [nativeRow(14, 1)] });
@@ -448,6 +505,62 @@ await t('次の回: 上流は空のまま → 展示と気象を引き継ぐ。�
   assert.deepStrictEqual(plain(byBoat(r.boats)), plain(OFFICIAL));
   for (const f of Object.keys(OFFICIAL_WEATHER)) assert.strictEqual(r[f], OFFICIAL_WEATHER[f], f);
   assert.strictEqual(beforeinfoHits().length, 0, '展示があるのに取り直した');
+});
+await t('上流が気象と体重を入れてきた行（展示前のレースにも、その場の最新の計測値が入る）: そのまま配り、展示を取った時に読めた気象で置き換える', async () => {
+  // 2026-11-27 11:25 JST の本番: 上流の行に、開催中の 9 場の全 12R 分の気象と体重が入っていた（10:55 までは全場が空）。
+  //   値はその時の唐津 12R のもの。boats は上流の配り方（配列、位置 0 = 1 号艇）に置き直してある
+  const UP_WX = { race_weather_number: 2, race_wind: 4, race_wind_direction_number: 14, race_wave: 4, race_temperature: 14, race_water_temperature: 11 };
+  const up = (rno) => {
+    const r = Object.assign(nativeRow(14, rno), UP_WX);
+    r.boats.forEach((b, i) => { b.racer_weight = 50 + i; });
+    return r;
+  };
+  // (1) まだ展示が出ていない: 上流の気象と体重をそのまま配る（窓の中の 1R も、窓の外の 12R も）
+  upstreamPreviews = { previews: [up(1), up(12)] };
+  officialPage = { status: 200, body: PAGE_PRE };
+  const kv = makeKV();
+  await cron(kv);
+  for (const rno of [1, 12]) {
+    const r = kvRow(kv, 14, rno);
+    for (const f of Object.keys(UP_WX)) assert.strictEqual(r[f], UP_WX[f], rno + 'R ' + f);
+    assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => r.boats[n].racer_weight), [50, 51, 52, 53, 54, 55], rno + 'R 体重');
+    assert.ok(Object.values(r.boats).every((b) => !b.racer_exhibition_time));
+  }
+  // (2) 展示が出た: そのレースの締切前の計測値だと分かる気象（公式ページ）で置き換える
+  upstreamPreviews = { previews: [up(1), up(12)] };
+  officialPage = { status: 200, body: PAGE };
+  await cron(kv);
+  const r1 = kvRow(kv, 14, 1);
+  assert.deepStrictEqual(plain(byBoat(r1.boats)), plain(OFFICIAL));
+  for (const f of Object.keys(OFFICIAL_WEATHER)) assert.strictEqual(r1[f], OFFICIAL_WEATHER[f], f);
+  for (const f of Object.keys(UP_WX)) assert.strictEqual(kvRow(kv, 14, 12)[f], UP_WX[f], '12R は上流の値のまま ' + f);
+  // (2') 上流の行にも展示が入った: 上流の行を使う（体重あり）。Worker が足した項目（公式ページでは 6 号艇の調整重量 1.0）は残る
+  const upEx = (rno) => {
+    const r = up(rno);
+    r.boats.forEach((b, i) => {
+      const o = OFFICIAL[i + 1];
+      Object.assign(b, { racer_exhibition_time: o.et, racer_course_number: o.course, racer_start_timing: o.st, racer_tilt_adjustment: o.tilt, racer_weight_adjustment: i === 5 ? 1 : 0 });
+    });
+    return r;
+  };
+  upstreamPreviews = { previews: [upEx(1), up(12)] };
+  officialPage = { status: 500, body: '' }; // 展示のあるレースは取りに行かない
+  officialHits = [];
+  await cron(kv);
+  const r1b = kvRow(kv, 14, 1);
+  assert.strictEqual(beforeinfoHits().length, 0);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => r1b.boats[n].racer_weight), [50, 51, 52, 53, 54, 55], '上流の行を使っていない');
+  assert.deepStrictEqual(plain(byBoat(r1b.boats)), plain(OFFICIAL));
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => r1b.boats[n].racer_adjust_weight), [0, 0, 0, 0, 0, 1]);
+  assert.ok([1, 2, 3, 4, 5, 6].every((n) => r1b.boats[n].racer_propeller === '' && r1b.boats[n].racer_parts_replaced === ''));
+  // (3) 見出しがそのレースに合わないページ（後から開いた 1R）: 展示は入れ、気象は上流の値を残す
+  const kv2 = makeKV();
+  upstreamPreviews = { previews: [up(1), up(12)] };
+  officialPage = { status: 200, body: PAGE.replace('7:45現在', '20:34現在') };
+  await cron(kv2);
+  const r2 = kvRow(kv2, 14, 1);
+  assert.deepStrictEqual(plain(byBoat(r2.boats)), plain(OFFICIAL));
+  for (const f of Object.keys(UP_WX)) assert.strictEqual(r2[f], UP_WX[f], f);
 });
 await t('KV が修正前の形（本番の実データ）でも、艇番どおりに引き継ぐ。7 番目の要素は残さない', async () => {
   const old = clone(LEGACY);

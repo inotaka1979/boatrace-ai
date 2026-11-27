@@ -63,14 +63,15 @@
     var t = now || Date.now();
     return t < _racerOfficialPausedUntil && _racerOfficialPausedUntil - t <= RACER_OFFICIAL_PAUSE_MS;
   }
-  function _racerOfficialNeeds(id, now) {
+  function _racerOfficialNeeds(id, now, scheduleOnly) {
     var t = now || Date.now();
     var e = _racerOfficialCache[String(id)];
     if (e && e.loading) return false;
     if (_racerOfficialPaused(t)) return false;
     if (!e) return true;
     var age = t - e.at;
-    return age >= (e.failed ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
+    var partial = !scheduleOnly && !!(e.data && e.data.back3_ok === false);
+    return age >= (e.failed || partial ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
   }
   function _loadRacerOfficial(id, onLoaded, now) {
     id = String(id == null ? "" : id);
@@ -106,7 +107,7 @@
   }
   function _loadRacerOfficialMany(ids, onEach) {
     var queue = (ids || []).map(String).filter(function(id) {
-      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id);
+      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id, 0, true);
     }).slice(0, RACER_OFFICIAL_BATCH_MAX);
     var next = function() {
       var id = queue.shift();

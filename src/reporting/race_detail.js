@@ -53,16 +53,26 @@ function _windDirLabel(wd) {
   return wd >= 8 && wd <= 10 ? '左横風' : '右横風';
 }
 
+// 1 艇の調整重量 (kg)。数値で返す（外から来た値。表示で toFixed を呼ぶ）。
+//   2026-11-27: 欄の名前は取得元で違う（Worker / scraper = racer_adjust_weight、上流 (openapi) = racer_weight_adjustment。
+//   同じレースで値は一致する）。従来は前者だけを読み、上流の行（展示が出そろった後の大半）では「-」と出ていた。
+function _adjWeightOf(pv) {
+  if (!pv) return 0;
+  return +(pv.racer_adjust_weight != null ? pv.racer_adjust_weight : pv.racer_weight_adjustment) || 0;
+}
+
 // 気象の欄（レース詳細の先頭）。preview が無ければ空文字。
-//   2026-11-27: 計測値が 1 つも無い時は「未取得」と出す。従来は「風: --- 0m 波: 0cm」と出て、
-//   無風・波なしと区別が付かなかった（気象が届いていなかった間、全レースがこの表示だった）。
+//   2026-11-27: 計測値が 1 つも無い時は、0 を並べずにそう書く。従来は「風: --- 0m 波: 0cm」と出て、
+//   無風・波なしと区別が付かなかった（上流の気象が届く前に展示を取ったレースが、この表示だった）。
+//   この欄が出るのは展示か気象のどちらかがあるレースだけ（どちらも無いレースは取り込まない: openapi_client の
+//   _filterStalePreviews）。つまり計測値が無いのは「展示は出ているのに気象が無い」レース（計測時刻がそのレースの
+//   ものと確かめられなかった・気象の読み取りを入れる前に展示を取った）なので、「未取得」とだけ書く。
+//   当初は「未取得（展示の後に表示されます）」と出していたが、展示が出ているレースにしか出ない文言だった。
 //   値は _pvWeather で数値にしてから出す（外から来た値を画面にそのまま出さない）。
 function _weatherBarHtml(preview) {
   if (!preview) return '';
   var w = _pvWeather(preview.weather || preview);
-  if (!_wxAny(w)) {
-    return '<div class="weather-bar"><span class="weather-item">気象: 未取得（展示の後に表示されます）</span></div>';
-  }
+  if (!_wxAny(w)) return '<div class="weather-bar"><span class="weather-item">気象: 未取得</span></div>';
   return (
     '<div class="weather-bar">' +
     '<span class="weather-item">風: ' +
@@ -374,7 +384,7 @@ function openRace(sid, rn) {
       var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
       var propVal = pv && pv.racer_propeller ? pv.racer_propeller : '';
       var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : '';
-      var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
+      var adjVal = _adjWeightOf(pv);
 
       // Rank coloring for ET
       var etRk = etRankMap[bn];
@@ -576,3 +586,4 @@ globalThis._findLockedPred = _findLockedPred;
 globalThis.openRace = openRace;
 globalThis._windDirLabel = _windDirLabel;
 globalThis._weatherBarHtml = _weatherBarHtml;
+globalThis._adjWeightOf = _adjWeightOf;

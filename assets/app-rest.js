@@ -1808,7 +1808,7 @@
         else if (course >= 4 && tilt >= 0.5) score += 2;
         else if (course <= 2 && tilt >= 0.5) score -= 1;
         else if (course >= 4 && tilt <= -0.5) score -= 1;
-        var adjW = pf(myPv.racer_adjust_weight);
+        var adjW = pf(myPv.racer_adjust_weight != null ? myPv.racer_adjust_weight : myPv.racer_weight_adjustment);
         if (adjW >= 1) {
           if (course >= 4) {
             score -= 3;
