@@ -170,6 +170,75 @@ await t('公式の障害・通信の失敗: 502 を返し、置かない（次�
   assert.deepStrictEqual([res3.status, j.schedule.length, j.back3.length, j.back3_ok], [200, 4, 0, false]);
 });
 
+await t('過去 3 節だけ取れなかった結果は 10 分だけ置く（3 時間置くと、その間ずっと「取得できませんでした」のまま）', async () => {
+  // 一時的な失敗（5xx）: 一部だけの結果も置くが 10 分だけ。過去 3 節のページの HTTP 状態を残す
+  const before = puts.length;
+  respond = (u) => (/profile\?/.test(u) ? page(fx('racer_profile.html')) : page('busy', 503));
+  const res = await get('4460');
+  const j = await res.json();
+  assert.deepStrictEqual([res.status, j.found, j.schedule.length, j.back3_ok], [200, true, 4, false]);
+  assert.strictEqual(res.headers.get('cache-control'), 'public, max-age=600');
+  assert.strictEqual(j.timing.back3_status, 503, '過去 3 節のページの HTTP 状態が残っていない');
+  assert.strictEqual(puts.length, before + 1, '一部だけの結果も置く（取り直しの間隔を空けるため）');
+  // 2 回目は置いたものが返る。ブラウザに置かせるのも残り時間まで（10 分を超えない）
+  advance(4 * 60000);
+  upstream = [];
+  const again = await get('4460');
+  assert.deepStrictEqual([again.headers.get('x-cache'), again.headers.get('cache-control'), upstream.length], ['HIT', 'public, max-age=360', 0]);
+  // 5xx は「断られた」ではない: 次の選手は 2 ページとも取りに行く
+  respond = official;
+  const full = await get('4461');
+  const fj = await full.json();
+  assert.strictEqual(upstream.length, 2);
+  // 両方取れた結果は 3 時間のまま。過去 3 節の HTTP 状態は 200
+  assert.strictEqual(full.headers.get('cache-control'), 'public, max-age=10800');
+  assert.deepStrictEqual([fj.back3_ok, fj.timing.back3_status, typeof fj.timing.back3_ms], [true, 200, 'number']);
+});
+
+await t('過去 3 節のページだけ断られたら（403 / 429）、そのページだけ 10 分取りに行かない。選手ページは取り続ける', async () => {
+  // 公式サイトは Worker からの取得をページ単位で断ることがある（デプロイ run 81: 選手ページは取れ、過去 3 節は取れなかった）
+  advance(2 * 60000);
+  for (const refused of [403, 429]) {
+    respond = (u) => (/profile\?/.test(u) ? page(fx('racer_profile.html')) : page('refused', refused));
+    const a = String(4470 + (refused === 403 ? 0 : 5));
+    const b = String(+a + 1);
+    const c = String(+a + 2);
+    upstream = [];
+    const first = await get(a);
+    const j = await first.json();
+    assert.deepStrictEqual([first.status, j.schedule.length, j.back3_ok, j.timing.back3_status], [200, 4, false, refused]);
+    assert.strictEqual(first.headers.get('cache-control'), 'public, max-age=600');
+    assert.strictEqual(upstream.length, 2, '断られたことに気づく 1 回');
+    // 公式が戻っていても、10 分は過去 3 節を確かめに行かない。選手ページだけ取って返す
+    respond = official;
+    upstream = [];
+    advance(4 * 60000);
+    const second = await get(b);
+    const j2 = await second.json();
+    assert.deepStrictEqual(upstream, ['https://www.boatrace.jp/owpc/pc/data/racersearch/profile?toban=' + b], '止めている間は選手ページだけ');
+    assert.deepStrictEqual([second.status, j2.name, j2.schedule.length, j2.back3_ok, j2.back3.length], [200, '峰 竜太', 4, false, 0]);
+    assert.deepStrictEqual([j2.timing.back3_status, j2.timing.back3_ms], [0, null], '取りに行かなかった時は 0 / null');
+    assert.ok(j2.timing.profile_ms >= 0);
+    // 置くのは「止めている残り時間」だけ（止めるのをやめたら取り直せる）
+    assert.strictEqual(second.headers.get('cache-control'), 'public, max-age=360');
+    // 残りが短くても 60 秒は置く
+    advance(5 * 60000 + 30000);
+    upstream = [];
+    const third = await get(c);
+    assert.deepStrictEqual([upstream.length, third.headers.get('cache-control')], [1, 'public, max-age=60']);
+    // 10 分たったら、置いた結果は切れていて、2 ページとも取りに行く
+    advance(30000 + 1000);
+    edge.delete([...edge.keys()].find((k) => k.endsWith('toban=' + b))); // 差し替えの edge は期限を見ないので、切れた分を消す
+    upstream = [];
+    const back = await get(b);
+    const j4 = await back.json();
+    assert.strictEqual(upstream.length, 2, '10 分たったら過去 3 節も取りに行く');
+    assert.deepStrictEqual([j4.back3_ok, j4.back3.length, j4.timing.back3_status], [true, 3, 200]);
+    assert.strictEqual(back.headers.get('cache-control'), 'public, max-age=10800');
+    advance(2 * 60000);
+  }
+});
+
 await t('公式が拒否（403）したら 10 分は取りに行かない（叩き続けない）。edge にある選手はその間も返す', async () => {
   respond = () => page('forbidden', 403);
   const first = await get('4447');

@@ -2744,7 +2744,7 @@ function formatDate(){var d=getJSTDate(0);return(d.getUTCMonth()+1)+'/'+d.getUTC
       name: "weightAdjust",
       fn: (ctx) => {
         const myPv = ctx.myPv || {};
-        return ctx.pf(myPv.racer_weight_adjustment) / 5;
+        return ctx.pf(myPv.racer_weight_adjustment != null ? myPv.racer_weight_adjustment : myPv.racer_adjust_weight) / 5;
       }
     },
     { name: "tiltRaw", fn: (ctx) => ctx.tilt },
@@ -4868,7 +4868,8 @@ var SCENARIO_DIST = {
 //   表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
 //   左 → 右に走るので、右向き (5) が追い風、左向き (13) が向かい風。それぞれ ±45° までを追い風 / 向かい風と扱う。
 //   従来は「1 = 北 … 16 = 北北西」の方位と仮定し、7 場だけ場別の表、残りは全場共通の表で判定していた。
-//   どちらも公式の番号の意味と合わない（気象が届いていなかった間は、風速 0 で判定そのものが働いていなかった）。
+//   どちらも公式の番号の意味と合わない。上流の気象が届いたレースでは、その読み方で判定していた（全場共通の表は
+//   3〜5 と 11 が正しい番号と重なるだけ）。気象が届く前のレースは、風速 0 で判定そのものが働いていなかった。
 //   確かめ方: 公式の矢印の画像 (icon_wind1_N.png) と、2026-11-19 桐生・11-20 宮島の実測
 //   （方位の画像 is-directionN と合わせると、どちらも冬型の西風）。
 var HEAD_WIND_DIRS = [11,12,13,14,15];
@@ -5789,7 +5790,7 @@ var CLASS_COURSE_MULT = [
         else if (course >= 4 && tilt >= 0.5) score += 2;
         else if (course <= 2 && tilt >= 0.5) score -= 1;
         else if (course >= 4 && tilt <= -0.5) score -= 1;
-        var adjW = pf(myPv.racer_adjust_weight);
+        var adjW = pf(myPv.racer_adjust_weight != null ? myPv.racer_adjust_weight : myPv.racer_weight_adjustment);
         if (adjW >= 1) {
           if (course >= 4) {
             score -= 3;
@@ -10675,12 +10676,14 @@ async function _loadNextOpen(){
     if (isHeadWind(wd)) return "\u5411\u304B\u3044\u98A8";
     return wd >= 8 && wd <= 10 ? "\u5DE6\u6A2A\u98A8" : "\u53F3\u6A2A\u98A8";
   }
+  function _adjWeightOf(pv) {
+    if (!pv) return 0;
+    return +(pv.racer_adjust_weight != null ? pv.racer_adjust_weight : pv.racer_weight_adjustment) || 0;
+  }
   function _weatherBarHtml(preview) {
     if (!preview) return "";
     var w = _pvWeather(preview.weather || preview);
-    if (!_wxAny(w)) {
-      return '<div class="weather-bar"><span class="weather-item">\u6C17\u8C61: \u672A\u53D6\u5F97\uFF08\u5C55\u793A\u306E\u5F8C\u306B\u8868\u793A\u3055\u308C\u307E\u3059\uFF09</span></div>';
-    }
+    if (!_wxAny(w)) return '<div class="weather-bar"><span class="weather-item">\u6C17\u8C61: \u672A\u53D6\u5F97</span></div>';
     return '<div class="weather-bar"><span class="weather-item">\u98A8: ' + _windDirLabel(w.wind_direction) + " " + w.wind_speed + 'm</span><span class="weather-item">\u6CE2: ' + w.wave_height + 'cm</span><span class="weather-item">\u6C17\u6E29: ' + (w.temperature || "--") + '\u2103</span><span class="weather-item">\u6C34\u6E29: ' + (w.water_temperature || "--") + "\u2103</span></div>";
   }
   function openRace(sid, rn) {
@@ -10855,7 +10858,7 @@ async function _loadNextOpen(){
         var tiltVal = pv && pv.racer_tilt_adjustment != null ? pv.racer_tilt_adjustment : null;
         var propVal = pv && pv.racer_propeller ? pv.racer_propeller : "";
         var partsVal = pv && pv.racer_parts_replaced ? pv.racer_parts_replaced : "";
-        var adjVal = pv && pv.racer_adjust_weight != null ? pv.racer_adjust_weight : 0;
+        var adjVal = _adjWeightOf(pv);
         var etRk = etRankMap[bn];
         var etCls = etRk === 0 ? "hl-rank1" : etRk === 1 ? "hl-rank2" : etRk === 2 ? "hl-rank3" : "";
         var stRk = stRankMap[bn];
@@ -10976,6 +10979,7 @@ async function _loadNextOpen(){
   globalThis.openRace = openRace;
   globalThis._windDirLabel = _windDirLabel;
   globalThis._weatherBarHtml = _weatherBarHtml;
+  globalThis._adjWeightOf = _adjWeightOf;
 })();
 
 /* BUILD:REPORTING_RACE_DETAIL:END */
@@ -11806,14 +11810,15 @@ async function _loadNextOpen(){
     var t = now || Date.now();
     return t < _racerOfficialPausedUntil && _racerOfficialPausedUntil - t <= RACER_OFFICIAL_PAUSE_MS;
   }
-  function _racerOfficialNeeds(id, now) {
+  function _racerOfficialNeeds(id, now, scheduleOnly) {
     var t = now || Date.now();
     var e = _racerOfficialCache[String(id)];
     if (e && e.loading) return false;
     if (_racerOfficialPaused(t)) return false;
     if (!e) return true;
     var age = t - e.at;
-    return age >= (e.failed ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
+    var partial = !scheduleOnly && !!(e.data && e.data.back3_ok === false);
+    return age >= (e.failed || partial ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
   }
   function _loadRacerOfficial(id, onLoaded, now) {
     id = String(id == null ? "" : id);
@@ -11849,7 +11854,7 @@ async function _loadNextOpen(){
   }
   function _loadRacerOfficialMany(ids, onEach) {
     var queue = (ids || []).map(String).filter(function(id) {
-      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id);
+      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id, 0, true);
     }).slice(0, RACER_OFFICIAL_BATCH_MAX);
     var next = function() {
       var id = queue.shift();

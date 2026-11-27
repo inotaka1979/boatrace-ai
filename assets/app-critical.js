@@ -1925,7 +1925,7 @@ window.addEventListener('unhandledrejection', function(e){
       name: "weightAdjust",
       fn: (ctx) => {
         const myPv = ctx.myPv || {};
-        return ctx.pf(myPv.racer_weight_adjustment) / 5;
+        return ctx.pf(myPv.racer_weight_adjustment != null ? myPv.racer_weight_adjustment : myPv.racer_adjust_weight) / 5;
       }
     },
     { name: "tiltRaw", fn: (ctx) => ctx.tilt },
@@ -3053,7 +3053,8 @@ var SCENARIO_DIST = {
 //   表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
 //   左 → 右に走るので、右向き (5) が追い風、左向き (13) が向かい風。それぞれ ±45° までを追い風 / 向かい風と扱う。
 //   従来は「1 = 北 … 16 = 北北西」の方位と仮定し、7 場だけ場別の表、残りは全場共通の表で判定していた。
-//   どちらも公式の番号の意味と合わない（気象が届いていなかった間は、風速 0 で判定そのものが働いていなかった）。
+//   どちらも公式の番号の意味と合わない。上流の気象が届いたレースでは、その読み方で判定していた（全場共通の表は
+//   3〜5 と 11 が正しい番号と重なるだけ）。気象が届く前のレースは、風速 0 で判定そのものが働いていなかった。
 //   確かめ方: 公式の矢印の画像 (icon_wind1_N.png) と、2026-11-19 桐生・11-20 宮島の実測
 //   （方位の画像 is-directionN と合わせると、どちらも冬型の西風）。
 var HEAD_WIND_DIRS = [11,12,13,14,15];

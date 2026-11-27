@@ -312,14 +312,48 @@ t('追い風・横風・無風の表示', () => {
   assert.ok(bar(9, 3).startsWith('風: 左横風 3m'), bar(9, 3));
   assert.ok(bar(17, 0).startsWith('風: 無風 0m'), bar(17, 0));
 });
-t('計測値が無い時は「未取得」（「風: --- 0m 波: 0cm」と出して無風と見せない）', () => {
-  for (const pv of [{ weather: ZERO_WX }, { weather: {} }, { boats: {} }, { race_wind: 0, race_wind_direction_number: null, race_temperature: 0 }]) {
+t('上流が入れた気象（展示前のレースにも、その場の最新の計測値が入る。本番の実データ）を取り込んで表示する', () => {
+  // 2026-11-27 11:25 JST の本番 /api/previews の 2 行: 唐津 12R（風 4m・番号 14）/ 戸田 4R（無風）。どちらも展示はまだ無い
+  const UP = JSON.parse(fs.readFileSync(path.join(FIX, 'previews_upstream_weather.json'), 'utf8'));
+  const rows = UP.previews.map((r) => Object.assign(clone(r), { race_date: todayIso() }));
+  assert.deepStrictEqual(rows.map((r) => [r.race_stadium_number, r.race_number]), [[23, 12], [2, 4]]);
+  // 展示が無くても、気象があれば取り込む
+  const kept = ctx._filterStalePreviews({ previews: rows });
+  assert.strictEqual(kept.previews.length, 2);
+  const idx = ctx.indexPreviews({ previews: kept.previews });
+  const karatsu = idx[23][12];
+  const toda = idx[2][4];
+  assert.deepStrictEqual(plain(karatsu.weather), { wind_speed: 4, wind_direction: 14, wave_height: 4, temperature: 14, water_temperature: 11, weather_number: 2 });
+  assert.strictEqual(text(ctx._weatherBarHtml(karatsu)), '風: 向かい風 4m 波: 4cm 気温: 14℃ 水温: 11℃');
+  assert.strictEqual(text(ctx._weatherBarHtml(toda)), '風: 無風 0m 波: 0cm 気温: 12℃ 水温: 11℃');
+  // 体重は艇番どおり・展示はまだ無い（展示を取りに行く対象のまま）
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => karatsu.boats[n].racer_weight), [52, 57.1, 52.6, 52.3, 52, 52]);
+  assert.strictEqual(ctx._isPreviewIncomplete(karatsu), true);
+  // 採点が使う判定: 番号 14 は向かい風
+  assert.deepStrictEqual([ctx.isHeadWind(karatsu.weather.wind_direction), ctx.isTailWind(karatsu.weather.wind_direction)], [true, false]);
+});
+t('計測値が無い時は「気象: 未取得」とだけ出す（0 を並べて無風と見せない・「展示の後に」と書かない）', () => {
+  const noEx = { boats: Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, { racer_boat_number: n, racer_exhibition_time: 0 }])), weather: ZERO_WX };
+  const withEx = { boats: PROXY_BOATS(), weather: ZERO_WX };
+  for (const pv of [withEx, noEx, { weather: ZERO_WX }, { weather: {} }, { boats: {} }, { race_wind: 0, race_wind_direction_number: null, race_temperature: 0 }]) {
     const html = ctx._weatherBarHtml(pv);
-    assert.ok(/気象: 未取得/.test(html), JSON.stringify(pv) + ' → ' + text(html));
-    assert.ok(!/0m|0cm/.test(html));
+    assert.strictEqual(html, '<div class="weather-bar"><span class="weather-item">気象: 未取得</span></div>', JSON.stringify(pv).slice(0, 80));
   }
   assert.strictEqual(ctx._weatherBarHtml(null), '');
   assert.strictEqual(ctx._weatherBarHtml(undefined), '');
+  // 本番の修正前の形（展示あり・気象なし）を取り込んだレース: この欄が出るのは展示の後なので、「展示の後に表示」とは書かない
+  const legacy = ctx.indexPreviews({ previews: [fxRow(0)] })[14][1];
+  assert.ok(Object.values(legacy.boats).some((x) => x.racer_exhibition_time > 0));
+  assert.strictEqual(text(ctx._weatherBarHtml(legacy)), '気象: 未取得');
+});
+t('展示も気象も無いレースは取り込まない（気象の欄は出ない）。展示か気象のどちらかがあれば取り込む', () => {
+  const blank = (rno) => ({ race_date: todayIso(), race_stadium_number: 14, race_number: rno, race_wind: 0, race_wind_direction_number: null, race_wave: 0, race_weather_number: null, race_temperature: 0, race_water_temperature: 0,
+    boats: [1, 2, 3, 4, 5, 6].map((n) => ({ racer_boat_number: n, racer_exhibition_time: 0 })) });
+  const withEx = blank(2);
+  withEx.boats[0].racer_exhibition_time = 6.8;
+  const withWx = Object.assign(blank(3), { race_temperature: 12 });
+  const out = ctx._filterStalePreviews({ previews: [blank(1), withEx, withWx] });
+  assert.deepStrictEqual(out.previews.map((p) => p.race_number), [2, 3]);
 });
 t('weather が無く race_* の欄だけの形でも出せる', () => {
   const html = ctx._weatherBarHtml({ race_wind: 6, race_wind_direction_number: 5, race_wave: 8, race_temperature: 9.5, race_water_temperature: 12 });
@@ -369,6 +403,74 @@ t('風速 5m: 向かい風 (13) < 無風 = 横風 (1・9) < 追い風 (5)。理�
 t('従来の表で「向かい風」だった番号 (7〜10) は、もう向かい風として採点しない', () => {
   const none = predictWithWind(0, 0);
   for (const n of [8, 9, 10]) assert.strictEqual(predictWithWind(5, n).prob, none.prob, '番号 ' + n);
+});
+
+// ------------------------------------------------------------------------------------------
+section('[調整重量: 上流の欄名 (racer_weight_adjustment) でも Worker の欄名 (racer_adjust_weight) でも読む]');
+// 2026-11-27 の本番: 上流の行に展示が入ると Worker の行と入れ替わる。調整重量は上流 = racer_weight_adjustment、
+//   Worker / scraper = racer_adjust_weight で、同じレースの値は 198 艇すべて一致していた。
+function predictWithAdj(field, values) {
+  const c = makeCtx();
+  const pv = clone(konsen.preview);
+  for (const n of Object.keys(pv.boats)) {
+    delete pv.boats[n].racer_adjust_weight;
+    delete pv.boats[n].racer_weight_adjustment;
+  }
+  for (const n of Object.keys(values || {})) pv.boats[n][field] = values[n];
+  c.programData = { [konsen.sid]: { [konsen.rno]: konsen.program } };
+  c.previewData = { [konsen.sid]: { [konsen.rno]: pv } };
+  c.oddsData = { odds: [konsen.odds] };
+  c.racerDB = {};
+  c.stadiumDB = {};
+  c.l2trainStep = 0;
+  c.settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'prob', evMode: false, kpiMode: 'balanced' };
+  return c.predictRace(konsen.sid, konsen.rno);
+}
+const markOf = (r, n) => r.marks.find((m) => m.boat === n);
+t('採点: どちらの欄名でも同じ予想になる。1.0kg 以上で減点し、リスクに「調整重量」と出す（外コースは「アウト不利」）', () => {
+  const none = predictWithAdj('racer_adjust_weight', {});
+  const w = predictWithAdj('racer_adjust_weight', { 5: 1.5, 2: 1 });
+  const u = predictWithAdj('racer_weight_adjustment', { 5: 1.5, 2: 1 });
+  assert.deepStrictEqual(plain(u.marks), plain(w.marks), '欄の名前で予想が変わる');
+  assert.strictEqual(markOf(none, 5).course, 5);
+  for (const r of [w, u]) {
+    assert.ok(markOf(r, 5).prob < markOf(none, 5).prob, '5 号艇が減点されていない');
+    assert.ok(markOf(r, 5).risks.some((x) => x === '調整重量+1.5kg(アウト不利)'), JSON.stringify(markOf(r, 5).risks));
+    assert.ok(markOf(r, 2).risks.some((x) => x === '調整重量+1.0kg'), JSON.stringify(markOf(r, 2).risks));
+  }
+  assert.ok(!markOf(none, 5).risks.some((x) => /調整重量/.test(x)));
+  // 文字列の数字でも同じ（外から来た値）
+  const str = predictWithAdj('racer_weight_adjustment', { 5: '1.5', 2: '1' });
+  assert.deepStrictEqual(plain(str.marks), plain(w.marks));
+});
+t('L2 の特徴量 (weightAdjust) も、どちらの欄名でも同じ値', () => {
+  const i = ctx.FEATURE_PIPELINE.findIndex((f) => f.name === 'weightAdjust');
+  assert.ok(i >= 12, 'weightAdjust が特徴量に無い');
+  const boat5 = konsen.program.boats.find((b) => b.racer_boat_number === 5);
+  const feat = (over) => {
+    const pv = clone(konsen.preview);
+    delete pv.boats[5].racer_adjust_weight;
+    delete pv.boats[5].racer_weight_adjustment;
+    Object.assign(pv.boats[5], over);
+    // 2 番目の引数は、その艇の展示（previews の boats[艇番]）
+    return ctx.getL2Features(boat5, pv.boats[5], pv.weather, 2, 2, konsen.sid, { allBoats: konsen.program.boats })[i];
+  };
+  assert.strictEqual(feat({}), 0);
+  assert.strictEqual(feat({ racer_weight_adjustment: 1.5 }), 0.3);
+  assert.strictEqual(feat({ racer_adjust_weight: 1.5 }), 0.3);
+  assert.strictEqual(feat({ racer_weight_adjustment: 0, racer_adjust_weight: 0 }), 0);
+});
+t('表示: 上流の行でも Worker の行でも同じ数値を返す。数値でない値は 0（toFixed で落ちない）', () => {
+  const FXW = JSON.parse(fs.readFileSync(path.join(FIX, 'previews_worker_then_upstream.json'), 'utf8'));
+  // 本番の同じレース（唐津 1R）の 2 時点: 3 号艇 2.5kg / 6 号艇 1.5kg
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => ctx._adjWeightOf(FXW.worker_row.boats[n])), [0, 0, 2.5, 0, 0, 1.5]);
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6].map((n) => ctx._adjWeightOf(FXW.upstream_row.boats[n])), [0, 0, 2.5, 0, 0, 1.5]);
+  assert.strictEqual(ctx._adjWeightOf({ racer_weight_adjustment: '1.5' }), 1.5);
+  for (const bad of [null, undefined, {}, { racer_adjust_weight: 'x' }, { racer_weight_adjustment: '<b>' }, { racer_adjust_weight: null, racer_weight_adjustment: null }]) {
+    assert.strictEqual(ctx._adjWeightOf(bad), 0, JSON.stringify(bad));
+  }
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'reporting', 'race_detail.js'), 'utf8');
+  assert.ok(/var adjVal = _adjWeightOf\(pv\);/.test(src), 'レース詳細が _adjWeightOf を使っていない');
 });
 
 // ------------------------------------------------------------------------------------------

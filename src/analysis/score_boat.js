@@ -277,7 +277,9 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
 
       // F12: 調整重量（規定体重未達の重り）
       // > 0 で重い荷物 → ボート加速悪化、特にアウトコースで影響大
-      var adjW = pf(myPv.racer_adjust_weight);
+      //   2026-11-27: 欄の名前は取得元で違う（Worker / scraper = racer_adjust_weight、上流 = racer_weight_adjustment。
+      //   値は同じ）。従来は前者だけを読み、上流の行（展示が出そろった後の大半）では減点が効いていなかった。
+      var adjW = pf(myPv.racer_adjust_weight != null ? myPv.racer_adjust_weight : myPv.racer_weight_adjustment);
       if (adjW >= 1.0) {
         if (course >= 4) {
           score -= 3;

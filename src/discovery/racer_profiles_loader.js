@@ -101,14 +101,19 @@ function _racerOfficialPaused(now) {
   return t < _racerOfficialPausedUntil && _racerOfficialPausedUntil - t <= RACER_OFFICIAL_PAUSE_MS;
 }
 
-function _racerOfficialNeeds(id, now) {
+// scheduleOnly = 出場予定だけを使う呼び出し（お気に入り一覧の「次節」）。
+function _racerOfficialNeeds(id, now, scheduleOnly) {
   var t = now || Date.now();
   var e = _racerOfficialCache[String(id)];
   if (e && e.loading) return false;
   if (_racerOfficialPaused(t)) return false;
   if (!e) return true;
   var age = t - e.at;
-  return age >= (e.failed ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
+  // 2026-11-27: 出場予定は取れたが過去 3 節が取れなかった結果 (back3_ok: false) は、失敗と同じ間隔で取り直す
+  //   （公式サイトがページ単位で断ることがある。Worker はこの結果を 10 分までしか置かず、ブラウザにもその残り時間
+  //   しか置かせないので、それまでの取り直しは通信にならない）。出場予定だけを使う一覧は、欠けていても取り直さない。
+  var partial = !scheduleOnly && !!(e.data && e.data.back3_ok === false);
+  return age >= (e.failed || partial ? RACER_OFFICIAL_RETRY_MS : RACER_OFFICIAL_TTL_MS) || age < 0;
 }
 
 // 取りに行った（true）/ 取りに行く必要が無い・行けない・休止中（false）。終わったら onLoaded(id)。
@@ -151,7 +156,7 @@ function _loadRacerOfficialMany(ids, onEach) {
   var queue = (ids || [])
     .map(String)
     .filter(function (id) {
-      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id);
+      return /^\d{4,5}$/.test(id) && _racerOfficialNeeds(id, 0, true);
     })
     .slice(0, RACER_OFFICIAL_BATCH_MAX);
   var next = function () {

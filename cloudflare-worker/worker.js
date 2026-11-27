@@ -374,6 +374,25 @@ function exhibitionCount(row) {
   return n;
 }
 
+// 2026-11-27: この Worker が公式の直前情報ページから足す項目のうち、上流 (openapi) の行には無いもの。
+//   上流の行に展示が入ると（展示の艇数が同じになると）上流の行を使うので、艇ごとに引き継がないと消える。
+//   この日の本番: 11:10 に Worker が取っていた 33 レースが 11:25 にすべて上流の行に置き換わり、部品交換の記載
+//   （「ギヤ」「リング×２」など 15 艇）が消えた。調整重量は上流の racer_weight_adjustment と同じ値（198 艇すべて一致）。
+const PREVIEW_BOAT_WORKER_FIELDS = ['racer_propeller', 'racer_parts_replaced', 'racer_adjust_weight'];
+function carryWorkerBoatFields(row, old) {
+  const nb = row && row.boats;
+  const ob = old && old.boats;
+  if (!nb || !ob || typeof nb !== 'object' || typeof ob !== 'object' || Array.isArray(nb) || Array.isArray(ob)) return;
+  for (let n = 1; n <= 6; n++) {
+    const a = nb[n];
+    const b = ob[n];
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') continue;
+    for (const f of PREVIEW_BOAT_WORKER_FIELDS) {
+      if (a[f] == null && b[f] != null) a[f] = b[f];
+    }
+  }
+}
+
 // 2026-11-20: 同じ日の前回 KV のほうが展示を多く持つレースは、前回の艇データ・気象を引き継ぐ。
 //   従来は上流 previews が壊れている時しか KV の展示を引き継がず、普段は openapi の previews（展示が
 //   まだ無い / 欠けている）をそのまま base として KV に上書きしていた。直接スクレイプで足し直すのは
@@ -394,10 +413,15 @@ function carryRicherExhibitions(target, old) {
         if (o[f] != null) row[f] = o[f];
       }
       carried++;
-    } else if (hasPreviewWeather(o) && !hasPreviewWeather(row)) {
-      // 2026-11-27: 展示の艇数が同じでも、前回読めた気象は引き継ぐ（上流の気象の欄は空のまま届く）
-      for (const f of PREVIEW_WEATHER_FIELDS) {
-        if (o[f] != null) row[f] = o[f];
+    } else {
+      // 今回の行（上流）を使う。この Worker だけが持つ項目（プロペラ・部品交換・調整重量）は艇ごとに引き継ぐ
+      carryWorkerBoatFields(row, o);
+      if (hasPreviewWeather(o) && !hasPreviewWeather(row)) {
+        // 2026-11-27: 展示の艇数が同じでも、前回読めた気象は引き継ぐ。上流の行に気象が入るのは遅れるので
+        //   （下の parseBeforeinfoWeather の説明）、それまでは前回の値を残す。上流の行に気象があれば上流の値を使う。
+        for (const f of PREVIEW_WEATHER_FIELDS) {
+          if (o[f] != null) row[f] = o[f];
+        }
       }
     }
   }
@@ -580,9 +604,14 @@ function parseBeforeinfoHTML(html) {
 }
 
 // 2026-11-27: 直前情報ページの「水面気象情報」（気温・天候・風速・風向・水温・波高）。
-//   上流 (openapi) の previews は気象の欄を持つが値が入っておらず、この Worker の展示の補完も GitHub Actions の
-//   取得も気象を読んでいなかったため、アプリの気象欄は「風: --- 0m」のまま、風・波を使う採点も 0 で動いていた
-//   （2026-11-27 の本番: 168 レースすべて気象なし）。展示のために既に取っているページなので、追加の取得は無い。
+//   上流 (openapi) の previews の気象は遅れて届く。2026-11-27 は 10:55 JST まで全 168 レースが空（展示・体重・気象とも）で、
+//   11:10〜11:25 の間に、開催の始まっていた 9 場の全 12R 分が入った（最初の展示から約 3 時間後）。上流の値は
+//   「上流が取りに行った時点の、その場の最新の計測値」で、展示前のレースにも同じ値が入る。
+//   この Worker の展示の補完と GitHub Actions の取得は気象を読んでいなかったので、上流の気象が届くまでのレースは
+//   アプリの気象欄が「風: --- 0m」のまま、風・波を使う採点も風速 0 で動いていた。展示を取る時に気象も読み、上流を待たずに
+//   入れる（展示のために既に取っているページなので、追加の取得は無い）。上流の行に気象が入っていても、展示を取った時に
+//   読めた気象（そのレースの締切前の計測値だと分かるもの）で置き換える。
+//   （当初この説明は「上流の気象の欄には値が入らない」としていたが、朝 8:47〜9:27 の観測だけに基づく誤りだった。）
 //   読めた項目だけを openapi と同じ名前で返す（数値が 1 つも読めなければ null）。
 //   風向 (is-windN) は方位ではない: スタンドを下・1 マークを右に描いたコース図の上の矢印で、風の吹いていく
 //   向きを表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
@@ -1478,6 +1507,11 @@ async function serveFromKV(env, kind, ctx) {
 // -----------------------------------------------------------------------
 const RACER_PROXY_TTL_SEC = 3 * 3600;
 const RACER_PROXY_MISS_TTL_SEC = 600; // 「データが存在しない」選手番号（引退・誤り）は短めに置く
+// 2026-11-27: 出場予定は取れたが過去 3 節が取れなかった結果は短めに置く（次に開いた時に取り直せるように）。
+//   公式サイトは Worker からの取得を、ページ単位で断ることがある（デプロイ run 81 の確認: 選手ページは 9.3 秒で取れ、
+//   過去 3 節は 0.1 秒で失敗した）。従来はこの「一部だけ」の結果も 3 時間置いていたので、その拠点では 3 時間
+//   「過去 3 節は取得できませんでした」のままになっていた。
+const RACER_PROXY_PARTIAL_TTL_SEC = 600;
 // edge に無い選手の取得は、この isolate で 1 分に RACER_PROXY_MAX_PER_MIN 人まで。
 //   誰でも呼べる口なので、選手番号を総なめにして boatrace.jp へ大量に取りに行かせる使い方を抑える
 //   （アプリの使い方は、選手詳細を開いた 1 人 + お気に入り一覧の最大 20 人を 0.3 秒おき）。
@@ -1494,6 +1528,16 @@ function racerScrapeAllowed(nowMs) {
 //   edge に置いてある選手はその間も返す。
 const RACER_PROXY_BLOCK_PAUSE_MS = 10 * 60000;
 let _racerBlockedUntil = 0;
+// 過去 3 節のページだけが断られた時（選手ページは取れた）は、そのページだけ 10 分取りに行かない。
+//   一部だけの結果を短く置く（上の RACER_PROXY_PARTIAL_TTL_SEC）ぶん、断られている間に同じページを
+//   選手ごとに叩き直さないようにする。その間に開いた選手は、選手ページだけ取って返す（back3_ok: false）。
+let _racerBack3BlockedUntil = 0;
+// 一部だけの結果を edge に置く秒数: 過去 3 節を止めている間はその残り時間（止めるのをやめたら取り直せる）、
+//   止めていない時（5xx など一時的な失敗）は RACER_PROXY_PARTIAL_TTL_SEC。
+function racerPartialTtlSec(nowMs) {
+  const left = Math.ceil((_racerBack3BlockedUntil - nowMs) / 1000);
+  return left > 0 ? Math.max(60, left) : RACER_PROXY_PARTIAL_TTL_SEC;
+}
 // 公式サイトへの 1 回の取得を待つ上限。アプリは 25 秒で待つのをやめるので、それより先に 502 を返す
 //   （本番の初回取得は 10.9 秒を実測: 2026-11-25 のデプロイ後確認）。
 const RACER_UPSTREAM_TIMEOUT_MS = 20000;
@@ -1637,20 +1681,34 @@ async function scrapeRacerOfficial(toban) {
     const res = await fetch(u, opt);
     return { res, ms: Date.now() - t0 };
   };
-  const [p, b] = await Promise.all([timed(`${base}profile?toban=${toban}`), timed(`${base}back3?toban=${toban}`)]);
+  // 過去 3 節のページが直前に断られていたら、そのページは取りに行かない（選手ページだけ取る）
+  const skipBack3 = Date.now() < _racerBack3BlockedUntil;
+  const [p, b] = await Promise.all([
+    timed(`${base}profile?toban=${toban}`),
+    skipBack3 ? null : timed(`${base}back3?toban=${toban}`),
+  ]);
   const pRes = p.res;
-  const bRes = b.res;
+  const bRes = b ? b.res : null;
   if (!pRes.ok) {
     const err = new Error(`racer profile ${pRes.status}`);
     err.blocked = pRes.status === 403 || pRes.status === 429;
     throw err;
   }
-  const timing = { profile_ms: p.ms, back3_ms: b.ms, ...racerUpstreamTiming(pRes) };
+  if (bRes && (bRes.status === 403 || bRes.status === 429)) {
+    _racerBack3BlockedUntil = Date.now() + RACER_PROXY_BLOCK_PAUSE_MS;
+  }
+  // back3_status = 過去 3 節のページの HTTP 状態（取れた時は 200、断られた時は 403 など、取りに行かなかった時は 0）
+  const timing = {
+    profile_ms: p.ms,
+    back3_ms: b ? b.ms : null,
+    back3_status: bRes ? bRes.status : 0,
+    ...racerUpstreamTiming(pRes),
+  };
   const prof = parseRacerProfileHTML(await pRes.text());
   // 過去 3 節は取れなくても出場予定は返す（back3_ok で区別できる）
   let back = { back3: [], wins: [] };
   let backOk = false;
-  if (bRes.ok) {
+  if (bRes && bRes.ok) {
     back = parseRacerBack3HTML(await bRes.text());
     backOk = true;
   }
@@ -2184,7 +2242,11 @@ export default {
           if (e && e.blocked) _racerBlockedUntil = Date.now() + RACER_PROXY_BLOCK_PAUSE_MS;
           throw e;
         }
-        const ttl = data.found ? RACER_PROXY_TTL_SEC : RACER_PROXY_MISS_TTL_SEC;
+        const ttl = !data.found
+          ? RACER_PROXY_MISS_TTL_SEC
+          : data.back3_ok
+            ? RACER_PROXY_TTL_SEC
+            : racerPartialTtlSec(Date.now());
         const body = JSON.stringify(data);
         const headers = {
           'content-type': 'application/json; charset=utf-8',

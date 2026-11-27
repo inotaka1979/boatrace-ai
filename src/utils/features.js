@@ -197,7 +197,8 @@ const FEATURE_PIPELINE = Object.freeze([
     name: 'weightAdjust',
     fn: (ctx) => {
       const myPv = ctx.myPv || {};
-      return ctx.pf(myPv.racer_weight_adjustment) / 5;
+      // 欄の名前は取得元で違う（上流 = racer_weight_adjustment、Worker / scraper = racer_adjust_weight。値は同じ）
+      return ctx.pf(myPv.racer_weight_adjustment != null ? myPv.racer_weight_adjustment : myPv.racer_adjust_weight) / 5;
     },
   },
   { name: 'tiltRaw', fn: (ctx) => ctx.tilt }, // ctx.tilt は既に pf 済

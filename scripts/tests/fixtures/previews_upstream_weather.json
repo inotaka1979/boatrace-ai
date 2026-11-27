@@ -1,0 +1,140 @@
+{
+ "_note": "本番 /api/previews (2026-11-27 11:25 JST, KV updated_at 02:25:32Z) の 2 行。上流 (openapi) が入れた気象と体重を持ち、展示はまだ無い: 唐津 12R（風 4m・番号 14 = 向かい風）/ 戸田 4R（無風 = 17）。boats は Worker が艇番をキーにそろえた後の形。",
+ "updated_at": "2026-11-27T02:25:32.289Z",
+ "previews": [
+  {
+   "race_date": "2026-11-27",
+   "race_stadium_number": 23,
+   "race_number": 12,
+   "race_wind": 4,
+   "race_wind_direction_number": 14,
+   "race_wave": 4,
+   "race_weather_number": 2,
+   "race_temperature": 14,
+   "race_water_temperature": 11,
+   "boats": {
+    "1": {
+     "racer_boat_number": 1,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "2": {
+     "racer_boat_number": 2,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 57.1,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "3": {
+     "racer_boat_number": 3,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52.6,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "4": {
+     "racer_boat_number": 4,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52.3,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "5": {
+     "racer_boat_number": 5,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "6": {
+     "racer_boat_number": 6,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    }
+   }
+  },
+  {
+   "race_date": "2026-11-27",
+   "race_stadium_number": 2,
+   "race_number": 4,
+   "race_wind": 0,
+   "race_wind_direction_number": 17,
+   "race_wave": 0,
+   "race_weather_number": 1,
+   "race_temperature": 12,
+   "race_water_temperature": 11,
+   "boats": {
+    "1": {
+     "racer_boat_number": 1,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "2": {
+     "racer_boat_number": 2,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "3": {
+     "racer_boat_number": 3,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 52.4,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "4": {
+     "racer_boat_number": 4,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 53.7,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "5": {
+     "racer_boat_number": 5,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 53.9,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    },
+    "6": {
+     "racer_boat_number": 6,
+     "racer_course_number": null,
+     "racer_start_timing": null,
+     "racer_weight": 54.3,
+     "racer_weight_adjustment": 0,
+     "racer_exhibition_time": 0,
+     "racer_tilt_adjustment": 0
+    }
+   }
+  }
+ ]
+}
