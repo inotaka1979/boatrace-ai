@@ -197,8 +197,10 @@ const FEATURE_PIPELINE = Object.freeze([
     name: 'weightAdjust',
     fn: (ctx) => {
       const myPv = ctx.myPv || {};
-      // 欄の名前は取得元で違う（上流 = racer_weight_adjustment、Worker / scraper = racer_adjust_weight。値は同じ）
-      return ctx.pf(myPv.racer_weight_adjustment != null ? myPv.racer_weight_adjustment : myPv.racer_adjust_weight) / 5;
+      // 欄の名前は取得元で違う（Worker / scraper = racer_adjust_weight、上流 = racer_weight_adjustment）。
+      //   展示の時に公式ページから読んだ値（前者）を優先する。採点 (score_boat) と表示 (_adjWeightOf) と同じ順。
+      //   上流の値は、上流が展示の前に取った行では朝の計量のままで、まれに違う（2026-11-27 の本番: 323 艇中 3 艇、0.5kg）。
+      return ctx.pf(myPv.racer_adjust_weight != null ? myPv.racer_adjust_weight : myPv.racer_weight_adjustment) / 5;
     },
   },
   { name: 'tiltRaw', fn: (ctx) => ctx.tilt }, // ctx.tilt は既に pf 済

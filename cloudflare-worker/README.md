@@ -104,7 +104,8 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 - 一度入れた展示・気象は、同じ日の間は次の回に引き継ぐ（`carryRicherExhibitions`。上流の行に展示・気象が入るのは
   遅れるため）。上流の行に展示が入ったら（展示の艇数が同じになったら）上流の行を使う。その時も、Worker が公式ページから
   足した項目のうち上流の行に無いもの（`racer_propeller` / `racer_parts_replaced` / `racer_adjust_weight`）は艇ごとに残す。
-  調整重量は、上流では `racer_weight_adjustment` という名前（同じ値）。アプリはどちらの名前でも読む。
+  調整重量は、上流では `racer_weight_adjustment` という名前。アプリはどちらの名前でも読み、両方ある時は Worker が
+  展示の時に読んだ値を使う（上流が展示の前に取った値とは、まれに 0.5kg ほど違う）。
 - `refreshAll()` の結果の `exhibition_scrape.weather` は、その回に気象も入れられたレース数。展示は入るのに 0 が続く時は、
   公式ページの気象の欄の形が変わった可能性がある（`scripts/tests/test_preview_weather.mjs` のフィクスチャを取り直す）。
 

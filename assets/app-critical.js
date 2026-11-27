@@ -1925,7 +1925,7 @@ window.addEventListener('unhandledrejection', function(e){
       name: "weightAdjust",
       fn: (ctx) => {
         const myPv = ctx.myPv || {};
-        return ctx.pf(myPv.racer_weight_adjustment != null ? myPv.racer_weight_adjustment : myPv.racer_adjust_weight) / 5;
+        return ctx.pf(myPv.racer_adjust_weight != null ? myPv.racer_adjust_weight : myPv.racer_weight_adjustment) / 5;
       }
     },
     { name: "tiltRaw", fn: (ctx) => ctx.tilt },

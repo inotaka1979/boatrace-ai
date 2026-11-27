@@ -1,0 +1,89 @@
+{
+ "_note": "本番 /api/previews (2026-11-27 14:15 JST) の鳴門 11R。上流 (openapi) が 11 時すぎに取った行（体重・racer_weight_adjustment あり）に、Worker が展示の時に公式ページから読んだ値（racer_adjust_weight など）を足した行。4 号艇は調整重量が食い違う: 上流（展示の前に取った値）2.0 / Worker（展示の時）1.5。この日の本番では、両方の欄がある 323 艇のうち 3 艇で 0.5kg 違っていた。",
+ "updated_at": "2026-11-27T05:15:31.213Z",
+ "row": {
+  "race_date": "2026-11-27",
+  "race_stadium_number": 14,
+  "race_number": 11,
+  "race_wind": 5,
+  "race_wind_direction_number": 13,
+  "race_wave": 5,
+  "race_weather_number": 1,
+  "race_temperature": 19,
+  "race_water_temperature": 17,
+  "boats": {
+   "1": {
+    "racer_boat_number": 1,
+    "racer_course_number": 1,
+    "racer_start_timing": 0.02,
+    "racer_weight": 53.7,
+    "racer_weight_adjustment": 0,
+    "racer_exhibition_time": 6.73,
+    "racer_tilt_adjustment": 0,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 0
+   },
+   "2": {
+    "racer_boat_number": 2,
+    "racer_course_number": 2,
+    "racer_start_timing": -0.01,
+    "racer_weight": 52.7,
+    "racer_weight_adjustment": 0,
+    "racer_exhibition_time": 6.78,
+    "racer_tilt_adjustment": 0,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 0
+   },
+   "3": {
+    "racer_boat_number": 3,
+    "racer_course_number": 3,
+    "racer_start_timing": 0.01,
+    "racer_weight": 55.4,
+    "racer_weight_adjustment": 0,
+    "racer_exhibition_time": 6.86,
+    "racer_tilt_adjustment": 0,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 0
+   },
+   "4": {
+    "racer_boat_number": 4,
+    "racer_course_number": 4,
+    "racer_start_timing": -0.02,
+    "racer_weight": 50,
+    "racer_weight_adjustment": 2,
+    "racer_exhibition_time": 6.87,
+    "racer_tilt_adjustment": 0,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 1.5
+   },
+   "5": {
+    "racer_boat_number": 5,
+    "racer_course_number": 5,
+    "racer_start_timing": 0.04,
+    "racer_weight": 52.2,
+    "racer_weight_adjustment": 0,
+    "racer_exhibition_time": 6.8,
+    "racer_tilt_adjustment": 0,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 0
+   },
+   "6": {
+    "racer_boat_number": 6,
+    "racer_course_number": 6,
+    "racer_start_timing": 0.06,
+    "racer_weight": 54.5,
+    "racer_weight_adjustment": 0,
+    "racer_exhibition_time": 6.82,
+    "racer_tilt_adjustment": -0.5,
+    "racer_propeller": "",
+    "racer_parts_replaced": "",
+    "racer_adjust_weight": 0
+   }
+  }
+ }
+}

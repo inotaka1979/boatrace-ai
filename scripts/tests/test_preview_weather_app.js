@@ -460,6 +460,36 @@ t('L2 の特徴量 (weightAdjust) も、どちらの欄名でも同じ値', () =
   assert.strictEqual(feat({ racer_adjust_weight: 1.5 }), 0.3);
   assert.strictEqual(feat({ racer_weight_adjustment: 0, racer_adjust_weight: 0 }), 0);
 });
+t('両方の欄があって値が違う時は、展示の時に読んだ値 (racer_adjust_weight) を使う — 表示・採点・特徴量とも（本番の実データ）', () => {
+  // 2026-11-27 鳴門 11R 4 号艇: 上流が展示の前に取った値 2.0 / Worker が展示の時に公式ページから読んだ値 1.5
+  const MM = JSON.parse(fs.readFileSync(path.join(FIX, 'previews_adjust_weight_mismatch.json'), 'utf8')).row;
+  const b4 = MM.boats[4];
+  assert.deepStrictEqual([b4.racer_weight_adjustment, b4.racer_adjust_weight], [2, 1.5]);
+  // 表示
+  assert.strictEqual(ctx._adjWeightOf(b4), 1.5);
+  // 特徴量
+  const i = ctx.FEATURE_PIPELINE.findIndex((f) => f.name === 'weightAdjust');
+  const boat4 = konsen.program.boats.find((b) => b.racer_boat_number === 4);
+  const pv = clone(konsen.preview);
+  Object.assign(pv.boats[4], { racer_weight_adjustment: b4.racer_weight_adjustment, racer_adjust_weight: b4.racer_adjust_weight });
+  assert.strictEqual(ctx.getL2Features(boat4, pv.boats[4], pv.weather, 2, 2, konsen.sid, { allBoats: konsen.program.boats })[i], 0.3);
+  // 採点: 予想は「展示の時の値だけがある」場合と同じになり、リスクの文言も 1.5kg
+  const both = predictWithAdj('racer_adjust_weight', { 4: 1.5 });
+  const c = makeCtx();
+  const pv2 = clone(konsen.preview);
+  for (const n of Object.keys(pv2.boats)) { delete pv2.boats[n].racer_adjust_weight; delete pv2.boats[n].racer_weight_adjustment; }
+  Object.assign(pv2.boats[4], { racer_weight_adjustment: 2, racer_adjust_weight: 1.5 });
+  c.programData = { [konsen.sid]: { [konsen.rno]: konsen.program } };
+  c.previewData = { [konsen.sid]: { [konsen.rno]: pv2 } };
+  c.oddsData = { odds: [konsen.odds] };
+  c.racerDB = {};
+  c.stadiumDB = {};
+  c.l2trainStep = 0;
+  c.settings = { betCount3: 10, betCount2: 5, betCountAna: 3, betMethod: 'prob', evMode: false, kpiMode: 'balanced' };
+  const mixed = c.predictRace(konsen.sid, konsen.rno);
+  assert.deepStrictEqual(plain(mixed.marks), plain(both.marks));
+  assert.ok(markOf(mixed, 4).risks.some((x) => x === '調整重量+1.5kg(アウト不利)'), JSON.stringify(markOf(mixed, 4).risks));
+});
 t('表示: 上流の行でも Worker の行でも同じ数値を返す。数値でない値は 0（toFixed で落ちない）', () => {
   const FXW = JSON.parse(fs.readFileSync(path.join(FIX, 'previews_worker_then_upstream.json'), 'utf8'));
   // 本番の同じレース（唐津 1R）の 2 時点: 3 号艇 2.5kg / 6 号艇 1.5kg
