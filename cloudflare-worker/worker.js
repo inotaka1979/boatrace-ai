@@ -300,11 +300,14 @@ function normalizePreviewBoats(boats) {
 }
 
 // previews の文書（{ previews: [...] }）の全レースをそろえる。形が違う文書はそのまま返す。
+//   行として読めない要素（null など）は落とす（2026-11-27）。残すと、引き継ぎの途中で例外になって
+//   ほかのレースの展示を引き継げず、アプリも 1 行ごとに欄を読むので全体が読めなくなる。
 function normalizePreviewsDoc(doc) {
   if (!isValidPreviewsShape(doc)) return doc;
-  for (const row of doc.previews) {
-    if (row && typeof row === 'object') row.boats = normalizePreviewBoats(row.boats);
+  if (doc.previews.some((row) => !row || typeof row !== 'object')) {
+    doc.previews = doc.previews.filter((row) => row && typeof row === 'object');
   }
+  for (const row of doc.previews) row.boats = normalizePreviewBoats(row.boats);
   return doc;
 }
 
@@ -464,6 +467,50 @@ function _noteKvPutFailure(e) {
 //   9 分間隔でも最大 ~15 分で収まるので、半分に減らす（夜間 30 分 cron には影響しない）。
 const HEARTBEAT_MIN_INTERVAL_MS = 9 * 60 * 1000;
 
+// 2026-11-27: 中身が同じでも、この時間を過ぎたら時刻 (updated_at) だけ書き直す（文書ごとの間隔）。
+//   serveFromKV は、文書の updated_at が SERVE_STALE_MS (12 分) より古いと「cron が書けていない」と見て
+//   上流を取り直す。ところが kvWrite は中身が変わった時しか書かないので、cron が 5 分おきに動いていても、
+//   展示や結果が 12 分出ない時間（昼の開催が終わる頃・夜の開催の合間・夜間）には文書が「古い」と判定され、
+//   その経路が KV の展示を上流の素のデータで上書きしていた（serveFromKV の説明。2026-11-27 14:50 に 57 レース分が消えた）。
+//   previews / results は 7 分にする: 中身が変わらない間は cron 2 回に 1 回（10 分おき）書くので、
+//   cron が動いている限り 12 分を超えない（書いた時刻が run の中で 3 分遅れても、次の次の run で 7 分を超える）。
+//   programs は従来どおり 30 分（古いと判定されても、取り直した中身が同じなので害が無い）。
+const KV_TOUCH_MS_DEFAULT = 30 * 60 * 1000;
+const KV_TOUCH_MS = {
+  'previews:today': 7 * 60 * 1000,
+  'results:today': 7 * 60 * 1000,
+};
+
+// 2026-11-27: KV の文書（{ updated_at, data }）を読む。「読めなかった」と「まだ無い」を区別する。
+//   ok: false           = 読めなかった（KV の一時的な失敗）。中身が分からないので、呼ぶ側はこの文書に書かない。
+//                         取り違えると、引き継ぎ（展示・確定結果）なしの中身で上書きして、その日に取ったデータを消す
+//                         （push.js の kvRead と同じ考え方）。
+//   ok: true, doc: null = まだ無い、または JSON として読めない中身（上書きしてよい）。
+async function kvReadDoc(env, key) {
+  let raw;
+  try {
+    raw = await env.BOATRACE_KV.get(key);
+  } catch (e) {
+    return { ok: false, doc: null, error: String(e && e.message ? e.message : e).slice(0, 100) };
+  }
+  if (!raw) return { ok: true, doc: null };
+  try {
+    const doc = JSON.parse(raw);
+    return { ok: true, doc: doc && typeof doc === 'object' ? doc : null };
+  } catch (_) {
+    return { ok: true, doc: null };
+  }
+}
+
+// KV の文書の updated_at が今日 (JST) のものか。読めない日時は「今日」として扱う（従来どおり、引き継ぐ側に倒す）。
+function isSameJstDay(iso, nowMs) {
+  try {
+    return _jstDayIso(new Date(iso).getTime()) === _jstDayIso(nowMs);
+  } catch (_) {
+    return true;
+  }
+}
+
 async function kvWrite(env, key, data, src) {
   const now = new Date().toISOString();
   const newBody = JSON.stringify(data);
@@ -480,8 +527,9 @@ async function kvWrite(env, key, data, src) {
       // 2026-07-19: 内容不変でも 30 分毎に stamp refresh。保存済み data.updated_at が
       //   serveFromKV の応答世代になるため、凍結すると鮮度 SLO が誤発報する
       //   (実害: [STALE] worker-previews)。+~48 writes/日/キーで枠内。
+      // 2026-11-27: 間隔は文書ごと（KV_TOUCH_MS の説明）。previews / results は 7 分。
       const ageMs = Date.now() - new Date(prev.metadata.wrote_at || 0).getTime();
-      if (!(ageMs < 30 * 60 * 1000)) changed = true;
+      if (!(ageMs < (KV_TOUCH_MS[key] || KV_TOUCH_MS_DEFAULT))) changed = true;
     }
     if (prev && prev.value && prev.value.cancel) prev.value.cancel().catch(() => {});
   } catch (_) {
@@ -1103,10 +1151,19 @@ function mergeKVOverOpenapi(openapiResults, kvResults) {
     if (!r || r.race_stadium_number == null || r.race_number == null) continue;
     openapiByKey.set(`${r.race_stadium_number}-${r.race_number}`, r);
   }
+  // 2026-11-27: 日付の違う行は重ねない（前日の確定結果・中止を、今日の同じ場・同じ R に出さない）。
+  //   呼ぶ側は KV の文書の updated_at で「同じ日か」を見ているが、文書は夜間も時刻だけ書き直されるので、
+  //   日付が変わった後は前日の中身でも「今日の文書」に見える。行ごとの race_date でも確かめる
+  //   （どちらかに日付が無ければ従来どおり重ねる）。
+  const openDate = (openapiResults.results.find((r) => r && r.race_date) || {}).race_date || null;
   // KV の finished entries を openapi 側に上書き / 追加
   let preserved = 0, added = 0, rejected = 0;
   for (const kvr of kvResults.results) {
     if (!kvr || kvr.race_stadium_number == null || kvr.race_number == null) continue;
+    if (openDate && kvr.race_date && kvr.race_date !== openDate) {
+      rejected++;
+      continue;
+    }
     // 2026-11-20: 「レース中止」も保持する。捨てると毎 run 中止レースを取り直し、1 run 12 件の取り直し枠を
     //   中止レースが食い潰して他場の中止・結果の判定が回ってこなかった（11/20: 津 10R 分で戸田 3R 以降が未判定）。
     if (kvr.race_cancelled && kvr.race_technique_number == null) {
@@ -1188,63 +1245,50 @@ async function refreshAll(env, opts) {
 
   // 2026-07-17: 上流 previews が壊れた形 (previews キー欠落) / 取得失敗なら programs から合成し、
   //   既存 KV の展示・気象を温存する。壊れた base の KV 書込・配信を止める。
-  if (!isValidPreviewsShape(previews) && programs) {
+  // 2026-11-27: 前回の KV から引き継げなかった文書（KV を読めなかった / 引き継ぎの途中で例外）には、
+  //   この回は書かない。従来はそのまま上流の base を書いていたので、KV の読取が 1 回失敗しただけで、
+  //   その日に取った展示（締切窓を過ぎたレースは取り直せない）と、上流にまだ無い確定結果が消える形だった。
+  //   書かない回のスクレイプも行わない（取っても置けない）。次の回（5 分後）に読めれば元どおり続く。
+  let pvSafe = true;
+  let rsSafe = true;
+  const invalidPreviews = !isValidPreviewsShape(previews);
+  if (invalidPreviews && programs) {
     out.previews.invalid_shape = !!previews;
     previews = synthesizePreviewsFromPrograms(programs);
-    if (env.BOATRACE_KV) {
-      try {
-        const rawKvPv = await env.BOATRACE_KV.get(KV_KEYS.previews);
-        if (rawKvPv) {
-          const kvPv = JSON.parse(rawKvPv);
-          if (kvPv && kvPv.data) mergePreviewsBoatsFrom(previews, kvPv.data);
-        }
-      } catch (e) {
-        out.previews.kv_carry_err = String(e).slice(0, 100);
-      }
-    }
   }
-
   // 2026-11-20: 正常な上流 previews でも、前回 KV のほうが展示を多く持つレースは引き継ぐ
-  //   （carryRicherExhibitions の説明を参照）。合成 previews の経路は上で引き継ぎ済み。
-  else if (env.BOATRACE_KV && isValidPreviewsShape(previews)) {
+  //   （carryRicherExhibitions の説明を参照）。合成 previews は boats が空なので、前回の艇データをそのまま引き継ぐ。
+  if (env.BOATRACE_KV && isValidPreviewsShape(previews)) {
     try {
-      const rawKvPv = await env.BOATRACE_KV.get(KV_KEYS.previews);
-      if (rawKvPv) {
-        const kvPv = JSON.parse(rawKvPv);
-        if (kvPv && kvPv.data) out.previews.kv_carried = carryRicherExhibitions(previews, kvPv.data);
-      }
+      const kvPv = await kvReadDoc(env, KV_KEYS.previews);
+      if (!kvPv.ok) throw new Error('kv read: ' + kvPv.error);
+      const oldPv = kvPv.doc && kvPv.doc.data ? kvPv.doc.data : null;
+      if (oldPv && invalidPreviews) mergePreviewsBoatsFrom(previews, oldPv);
+      else if (oldPv) out.previews.kv_carried = carryRicherExhibitions(previews, oldPv);
     } catch (e) {
-      out.previews.kv_carry_err = String(e).slice(0, 100);
+      pvSafe = false;
+      out.previews.kv_carry_err = String(e && e.message ? e.message : e).slice(0, 100);
     }
   }
 
   // 2026-05-24: openapi 巻き戻り対策 — KV に既存 finished があれば preserve
   if (env.BOATRACE_KV && results) {
     try {
-      const rawKv = await env.BOATRACE_KV.get(KV_KEYS.results);
-      if (rawKv) {
-        const kvWrapped = JSON.parse(rawKv);
-        if (kvWrapped && kvWrapped.data) {
-          // 日跨ぎ判定: KV の updated_at が昨日 (JST) なら preserve しない
-          //   (前日 results を本日 results にマージしてしまう事故防止)
-          let sameDay = true;
-          try {
-            const kvDate = new Date(kvWrapped.updated_at);
-            const now = new Date();
-            const kvJstDay = new Date(kvDate.getTime() + 9*60*60*1000).toISOString().slice(0,10);
-            const nowJstDay = new Date(now.getTime() + 9*60*60*1000).toISOString().slice(0,10);
-            sameDay = (kvJstDay === nowJstDay);
-          } catch (_) { sameDay = true; }
-          if (sameDay) {
-            results = mergeKVOverOpenapi(results, kvWrapped.data);
-            out.results.kv_preserved = results._kv_merge || null;
-          } else {
-            out.results.kv_skip = 'day_change';
-          }
+      const kvRs = await kvReadDoc(env, KV_KEYS.results);
+      if (!kvRs.ok) throw new Error('kv read: ' + kvRs.error);
+      if (kvRs.doc && kvRs.doc.data) {
+        // 日跨ぎ判定: KV の updated_at が昨日 (JST) なら preserve しない
+        //   (前日 results を本日 results にマージしてしまう事故防止)
+        if (isSameJstDay(kvRs.doc.updated_at, Date.now())) {
+          results = mergeKVOverOpenapi(results, kvRs.doc.data);
+          out.results.kv_preserved = results._kv_merge || null;
+        } else {
+          out.results.kv_skip = 'day_change';
         }
       }
     } catch (e) {
-      out.results.kv_merge_err = String(e).slice(0, 100);
+      rsSafe = false;
+      out.results.kv_merge_err = String(e && e.message ? e.message : e).slice(0, 100);
     }
   }
 
@@ -1261,8 +1305,11 @@ async function refreshAll(env, opts) {
   //   「base が変わった時 (openapi の ~30 分 cadence)」に限られ、無料枠 1000/日 に収まる。
   // ---------------------------------------------------------------------------
   const kvAvail = !!env.BOATRACE_KV;
+  // 2026-11-27: 引き継げなかった文書（上の pvSafe / rsSafe）と、形の壊れた previews は書かない
+  const unsafe = { previews: !pvSafe || !isValidPreviewsShape(previews), results: !rsSafe };
   async function writeKey(kind, data, tag) {
     if (!kvAvail || !data) return;
+    if (unsafe[kind]) { out[kind].kv_write_skipped = true; return; }
     try { await kvWrite(env, KV_KEYS[kind], data); out[kind][tag] = true; }
     catch (e) { out[kind][tag + '_err'] = String(e).slice(0, 100); }
   }
@@ -1285,8 +1332,8 @@ async function refreshAll(env, opts) {
   // ---------------------------------------------------------------------------
   const nowMs = Date.now();
   let exMerged = 0, rsMerged = 0;
-  // 展示データを補完
-  if (previews && programs) {
+  // 展示データを補完（この回 previews を書けない時は取りに行かない: 取っても置けない）
+  if (previews && programs && !unsafe.previews) {
     try {
       const mergeStats = await mergeBoatraceJpExhibition(programs, previews, nowMs);
       out.exhibition_scrape = mergeStats;
@@ -1296,7 +1343,7 @@ async function refreshAll(env, opts) {
     }
   }
   // C6: 結果データを補完
-  if (results && programs) {
+  if (results && programs && !unsafe.results) {
     try {
       const mergeStats = await mergeBoatraceJpResults(programs, results, nowMs);
       out.result_scrape = mergeStats;
@@ -1393,6 +1440,8 @@ const MAX_ONDEMAND_SCRAPES = 3;
 let _ondemandExhibitionAt = 0;
 let _ondemandResultsAt = 0;
 
+// previews は、serveFromKV が古い KV の展示を引き継いだ後の文書（2026-11-27。引き継がずに書くと KV の展示が消える）。
+//   取得の経路が previews を書くのはここだけ（展示が増えた時）。
 async function boundedOnDemandExhibition(env, previews, nowMs) {
   try {
     if (nowMs - _ondemandExhibitionAt < 5 * 60 * 1000) return; // debounce (isolate-local)
@@ -1416,6 +1465,10 @@ async function boundedOnDemandExhibition(env, previews, nowMs) {
 //   boatrace.jp raceresult から直スクレイプして KV に反映する。次の poll で確定結果が当たる。
 //   既存 finished を巻き戻さない安全マージ(mergeBoatraceJpResults は payouts smart merge、
 //   未確定のみ追加)なので KV 退行は起きない。
+// 2026-11-27: ↑ が成り立つのは、渡された results に KV の中身が入っている時だけ。従来は serveFromKV が
+//   上流の素の結果を渡していたので、ここで書くと、この Worker が先に取った確定結果と「レース中止」が
+//   KV から消えていた（結果は締切後 6 時間まで取り直すので、数回の cron で戻る）。
+//   今は serveFromKV が KV の結果を重ねてから渡し、KV を読めなかった時はここを呼ばない。
 async function boundedOnDemandResults(env, results, nowMs) {
   try {
     if (nowMs - _ondemandResultsAt < 3 * 60 * 1000) return; // debounce (isolate-local)
@@ -1435,13 +1488,9 @@ async function boundedOnDemandResults(env, results, nowMs) {
 async function serveFromKV(env, kind, ctx) {
   // D9 (2026-05-17): wrapped.updated_at をレスポンス先頭に merge して
   //   PWA 側の鮮度診断 (j.updated_at) が正しく読めるようにする。
-  let kvWrapped = null;
-  try {
-    const raw = await env.BOATRACE_KV.get(KV_KEYS[kind]);
-    if (raw) kvWrapped = JSON.parse(raw);
-  } catch (e) {
-    console.error('KV read failed:', e);
-  }
+  const kv = await kvReadDoc(env, KV_KEYS[kind]);
+  if (!kv.ok) console.error('KV read failed:', kv.error);
+  const kvWrapped = kv.doc;
 
   // KV が十分新しければ (= cron が正常に書けている) それを返す。
   //   boatrace.jp 直スクレイプの exhibition/results merge を含むリッチ版。
@@ -1455,30 +1504,61 @@ async function serveFromKV(env, kind, ctx) {
 
   // KV が無い or STALE (cron/KV write 失敗時の silent-halt を回避):
   //   上流 openapi を live fetch (edge cache、write 枠不要) して fresh を返す。
+  //
+  // 2026-11-27: この経路は、KV が持っているものを消さない・隠さない。
+  //   従来は上流の素のデータをそのまま返し、previews はそれを KV にも書いていた（results は、後ろで動く
+  //   結果の補完が「上流の素のデータ + 取れた数レース」を書いていた）。上流の previews には、この Worker が
+  //   公式ページから取った展示が無い。締切の窓（締切 30 分前〜5 分後）を過ぎたレースの展示は取り直せないので、
+  //   一度上書きされると、その日は戻らない。
+  //   実害: 2026-11-27 14:50 JST、取ってあった展示 57 レース分が KV から消え、残ったのは上流の 33 レースと、
+  //   直後の cron が取り直した締切前の 5 レースだけだった（cron は動いていた）。文書が 12 分書き換わらなかった
+  //   （展示が 2 回続けて出なかった）ところへ取得が 1 回来て上書きした、と見ている: その時刻の書込そのものは
+  //   記録に残っていないが、残ったレースがその順序と合い、同じ手順で同じ消え方を再現できる
+  //   （scripts/tests/test_worker_serve_stale.mjs）。
+  //   直し方は 4 つ:
+  //     1. 上流のデータに、古い KV の中身を引き継いでから返す
+  //        （previews = carryRicherExhibitions、results = mergeKVOverOpenapi。どちらも同じ日の分だけ）。
+  //     2. この経路は previews / results をそのまま書かない。書くのは、後ろの補完で展示・結果が増えた時だけ
+  //        （引き継いだ後の文書に足して書く）。読んだ KV が少し前の版だった時に、新しい版を古い中身で
+  //        上書きしないため（KV の書込がほかの場所から読めるまで、60 秒かそれ以上かかることがある）。
+  //     3. KV を読めなかった時は、補完もしない（中身が分からない文書を上書きしない。応答は上流のデータだけになる）。
+  //     4. cron が動いている間は、そもそも「古い」と判定されないようにする（kvWrite の KV_TOUCH_MS）。
   try {
     let data = await fetchKindBase(kind);
-    // 2026-07-17: 上流 previews 破損 (previews キー欠落) は programs から合成して返す。
-    //   壊れた payload の透過はクライアントの schema 検証 fail =「API取得失敗」バナー貼付きの直因。
-    //   stale KV に展示が残っていれば温存(合成 base は boats 空のため)。
-    if (kind === 'previews' && !isValidPreviewsShape(data)) {
-      const programsBase = await fetchProgramsBase();
-      data = synthesizePreviewsFromPrograms(programsBase);
-      if (kvWrapped && kvWrapped.data) mergePreviewsBoatsFrom(data, kvWrapped.data);
+    const old = kvWrapped && kvWrapped.data ? kvWrapped.data : null;
+    if (kind === 'previews') {
+      if (!isValidPreviewsShape(data)) {
+        // 2026-07-17: 上流 previews 破損 (previews キー欠落) は programs から合成して返す。
+        //   壊れた payload の透過はクライアントの schema 検証 fail =「API取得失敗」バナー貼付きの直因。
+        //   stale KV に展示が残っていれば温存(合成 base は boats 空のため)。
+        const programsBase = await fetchProgramsBase();
+        data = synthesizePreviewsFromPrograms(programsBase);
+        if (old) mergePreviewsBoatsFrom(data, old);
+      } else if (old) {
+        carryRicherExhibitions(data, old);
+      }
+    } else if (kind === 'results' && old && isSameJstDay(kvWrapped.updated_at, Date.now())) {
+      // この Worker が先に取った確定結果・「レース中止」を、上流の結果に重ねる（cron の refreshAll と同じ）
+      data = mergeKVOverOpenapi(data, old);
+      if (data && data._kv_merge) delete data._kv_merge;
     }
+    const canWrite = !!env.BOATRACE_KV && kv.ok;
     // rt-fix2 (2026-06-11): results は opportunistic write しない。
     //   素の openapi results で KV を上書きすると、cron が boatrace.jp 直スクレイプで
     //   先取りした確定結果を mergeKVOverOpenapi (巻き戻り対策) を経由せず破壊するため。
-    if (env.BOATRACE_KV && kind !== 'results') {
+    // 2026-11-27: previews も同じ扱いにする（上の 2.）。ここで書くのは programs だけ
+    //   （取り直した中身が KV と同じなので、書いても何も失わない）。
+    if (canWrite && kind === 'programs') {
       kvWrite(env, KV_KEYS[kind], data, 'serve').catch(() => {});
     }
     // rt-fix3 P1-1: previews が stale (= cron が書けていない) なら、少数の展示スクレイプを
     //   バックグラウンドで実行して KV をリッチ化（cron 死亡時でも展示を提供）。
-    if (env.BOATRACE_KV && kind === 'previews' && ctx && typeof ctx.waitUntil === 'function') {
+    if (canWrite && kind === 'previews' && ctx && typeof ctx.waitUntil === 'function') {
       ctx.waitUntil(boundedOnDemandExhibition(env, data, Date.now()));
     }
     // rt-fix3: results が stale なら、締切直後で未確定のレースを少数だけ boatrace.jp から
     //   直スクレイプして KV に反映（「結果が出た後の更新が遅い」対策）。次の poll で確定が当たる。
-    if (env.BOATRACE_KV && kind === 'results' && ctx && typeof ctx.waitUntil === 'function') {
+    if (canWrite && kind === 'results' && ctx && typeof ctx.waitUntil === 'function') {
       ctx.waitUntil(boundedOnDemandResults(env, data, Date.now()));
     }
     // rt-fix2 (2026-06-11): updated_at の偽装をやめる。
@@ -1486,7 +1566,8 @@ async function serveFromKV(env, kind, ctx) {
     //   約 30 分間隔更新なのに「数秒前のデータ」の顔をして返り、クライアントの
     //   正直な stale 表示 (rt-fix P0-1) と cron 死亡検知の両方を打ち消していた。
     //   data 側の updated_at (真のデータ世代) を温存し、fetch 時刻は fetched_at に分離。
-    //   _source:'live' は「exhibition merge 無しの縮退モード」のマーカー。
+    //   _source:'live' は「cron が書いた KV ではなく、上流を取り直して返した」印
+    //   （2026-11-27 から、古い KV にあった展示・結果は引き継いで入っている）。
     const merged = { ...data, fetched_at: new Date().toISOString(), _source: 'live' };
     if (!merged.updated_at) merged.updated_at = merged.fetched_at;
     return jsonResponse(merged, { cacheControl: 'public, max-age=30' });
