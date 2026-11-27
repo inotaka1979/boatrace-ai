@@ -21,8 +21,31 @@ PWA → GET /api/previews | /api/programs | /api/results   (KV から配信)
 ```
 
 - KV（binding `BOATRACE_KV`）は内容が変わった時だけ書く（無料枠 1,000 writes/日の節約）。
+  中身が同じでも、previews / results は 7 分、programs は 30 分を過ぎたら時刻だけ書き直す（下の「KV の文書が古い時」）。
 - cron が止まっても、`/api/*` へのアクセス自体が `refreshAll()` を起動する（serve-heal、5 分 throttle）。
 - さらに sentinel が 5 分毎に `/api/refresh-now` を叩く予備 cron として働く。
+
+### KV の文書が古い時（`serveFromKV`）と、KV に書く時の決まり（2026-11-27）
+
+`/api/*` は、KV の文書の `updated_at` が 12 分（`SERVE_STALE_MS`）より新しければ KV をそのまま返す。古い時・無い時・
+読めない時は、上流 (openapi) を取り直して返す（応答に `_source: "live"` が付く）。
+
+KV の previews / results には、上流に無いものが入っている（この Worker が公式ページから取った展示・気象・部品交換と、
+上流より先に取った確定結果・「レース中止」）。展示は締切の窓（締切 30 分前〜5 分後）を過ぎると取り直せないので、
+一度消すとその日は戻らない。そのため、**KV に書く経路はどれも次の決まりに従う**:
+
+1. **前回の KV を引き継いでから返す・書く**。previews = `carryRicherExhibitions`、results = `mergeKVOverOpenapi`
+   （どちらも同じ日の分だけ。results は行ごとの `race_date` でも確かめる）。取り直して返す経路も同じ。
+2. **KV を読めなかった時は、その文書に書かない**（`kvReadDoc` が「読めなかった」と「まだ無い」を区別する）。
+   定期更新はその回のその文書を飛ばし（公式ページも取りに行かない）、5 分後の回で続ける。
+3. **取り直して返す経路は、previews / results をそのまま書かない**。書くのは、後ろで動く補完
+   （`boundedOnDemandExhibition` / `boundedOnDemandResults`、1 回 3 ページまで）で展示・結果が増えた時だけ。
+4. **cron が動いている間は「古い」と判定されないようにする**。`kvWrite` は中身が変わった時しか書かないので、
+   previews / results は中身が同じでも 7 分を過ぎたら時刻を書き直す（`KV_TOUCH_MS`。cron 2 回に 1 回 = 10 分おき）。
+
+2026-11-27 14:50 JST に、取ってあった展示 57 レース分が KV から消えた。当時は 1・3 が無く（取り直した上流の素の
+データをそのまま返し、KV にも書いていた）、4 も無かった（展示が 2 回続けて出ないと、cron が動いていても文書が 12 分より
+古くなった）。経緯と確かめ方は `docs/RUNBOOK.md` §14。
 
 ### 締切前通知（Web Push、2026-11-27）
 

@@ -305,9 +305,12 @@ await t('文書ごとそろえる。形の違う文書（上流が壊れてい�
   const broken = { results: [] };
   assert.strictEqual(F.normalizePreviewsDoc(broken), broken);
   assert.strictEqual(F.normalizePreviewsDoc(null), null);
-  const withNull = { previews: [null, { race_number: 1 }] };
+  // 行として読めない要素（null など）は落とす（残すと引き継ぎが途中で例外になり、アプリも読めない）
+  const withNull = { previews: [null, { race_number: 1 }, 'x', 7] };
   F.normalizePreviewsDoc(withNull);
-  assert.deepStrictEqual(plain(withNull.previews[1].boats), {});
+  assert.strictEqual(withNull.previews.length, 1);
+  assert.strictEqual(withNull.previews[0].race_number, 1);
+  assert.deepStrictEqual(plain(withNull.previews[0].boats), {});
 });
 await t('2 回そろえても同じ（そろえた後の形を、ずれた形と読み違えない）', () => {
   const doc = clone(LEGACY);
