@@ -49,14 +49,27 @@ function t(name, fn){
 }
 
 console.log('[isHeadWind / isTailWind]');
-t('戸田 (sid=2): 北東風 dir=4 が向かい風', () => {
-  assert.strictEqual(ctx.isHeadWind(4, 2), true);
+// 2026-11-27: 風向の番号は公式ページのコース図の上の矢印（1 = 上向きから時計回り、17 = 無風）。
+//   右向き (5) が追い風、左向き (13) が向かい風。方位ではないので、場による違いは無い。
+t('左向きの矢印 (11〜15) が向かい風、右向き (3〜7) が追い風', () => {
+  for (let n = 0; n <= 18; n++) {
+    assert.strictEqual(ctx.isHeadWind(n), n >= 11 && n <= 15, 'isHeadWind(' + n + ')');
+    assert.strictEqual(ctx.isTailWind(n), n >= 3 && n <= 7, 'isTailWind(' + n + ')');
+  }
 });
-t('戸田 (sid=2): dir=12 は追い風', () => {
-  assert.strictEqual(ctx.isTailWind(12, 2), true);
+t('横風 (16, 1, 2 / 8, 9, 10)・無風 (17)・不明 (0) はどちらでもない', () => {
+  for (const n of [16, 1, 2, 8, 9, 10, 17, 0, undefined, null, '13']) {
+    assert.strictEqual(ctx.isHeadWind(n), false, 'isHeadWind(' + n + ')');
+    assert.strictEqual(ctx.isTailWind(n), false, 'isTailWind(' + n + ')');
+  }
 });
-t('未登録場 (sid=99): GLOBAL_HEAD_DIRS にフォールバック', () => {
-  assert.strictEqual(ctx.isHeadWind(8, 99), true);   // 8 は GLOBAL に含まれる
+t('場によって変わらない（従来は 7 場だけ別の表で、同じ番号が場によって追い風にも向かい風にもなった）', () => {
+  for (const sid of [1, 2, 3, 4, 12, 14, 19, 20, 24, 99]) {
+    assert.strictEqual(ctx.isHeadWind(13, sid), true, 'sid ' + sid);
+    assert.strictEqual(ctx.isTailWind(5, sid), true, 'sid ' + sid);
+    assert.strictEqual(ctx.isHeadWind(5, sid), false, 'sid ' + sid);
+  }
+  assert.strictEqual(typeof ctx.STADIUM_WIND_PROFILE, 'undefined', '方位を仮定した場別の表が残っている');
 });
 
 console.log('[stormBonus]');

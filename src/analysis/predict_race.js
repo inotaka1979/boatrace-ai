@@ -305,7 +305,7 @@ function predictRace(sid, raceNum) {
   // 2026-11-20: 風速だけで「穴」にしていたが、追い風はイン有利（score_boat は 1 コースに加点）で判定が
   //   矛盾していた。追い風なら風速では穴にしない（向かい風・横風は従来どおり）。
   var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
-  var tailWind = !!wd2 && typeof isTailWind === 'function' && isTailWind(wd2, sid);
+  var tailWind = !!wd2 && typeof isTailWind === 'function' && isTailWind(wd2);
   var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
   // PC-3: TUNING.RACE_TYPE 集約定数を使用
   var RT = TUNING.RACE_TYPE;

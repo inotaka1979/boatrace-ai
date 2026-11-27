@@ -291,25 +291,6 @@
     5: "\u629C\u304D",
     6: "\u6075\u307E\u308C"
   });
-  var WIND_DIR = Object.freeze({
-    1: "N",
-    2: "NNE",
-    3: "NE",
-    4: "ENE",
-    5: "E",
-    6: "ESE",
-    7: "SE",
-    8: "SSE",
-    9: "S",
-    10: "SSW",
-    11: "SW",
-    12: "WSW",
-    13: "W",
-    14: "WNW",
-    15: "NW",
-    16: "NNW",
-    17: "\u7121\u98A8"
-  });
   var GRADE_CLASS = Object.freeze({
     1: Object.freeze({ name: "SG", cls: "grade-sg" }),
     2: Object.freeze({ name: "G1", cls: "grade-g1" }),
@@ -323,7 +304,6 @@
   globalThis.BOAT_COLORS = BOAT_COLORS;
   globalThis.BOAT_TEXT = BOAT_TEXT;
   globalThis.TECHNIQUE = TECHNIQUE;
-  globalThis.WIND_DIR = WIND_DIR;
   globalThis.GRADE_CLASS = GRADE_CLASS;
 })();
 
@@ -1802,7 +1782,7 @@ window.addEventListener('unhandledrejection', function(e){
     if (!ctx.weather) return 0;
     const ws = ctx.weather.wind_speed || ctx.weather.race_wind || 0;
     const wd = ctx.weather.wind_direction || ctx.weather.race_wind_direction_number || 0;
-    const isHead = wd >= 7 && wd <= 11;
+    const isHead = wd >= 11 && wd <= 15;
     if (isHead && ctx.course === 1) return -ws / 10;
     if (isHead && ctx.course >= 4) return ws / 20;
     return 0;
@@ -2737,6 +2717,37 @@ window.addEventListener('unhandledrejection', function(e){
     });
     return result;
   }
+  function _pvWeather(p) {
+    const n = function(a, b) {
+      return +p[a] || +p[b] || 0;
+    };
+    return {
+      wind_speed: n("race_wind", "wind_speed"),
+      wind_direction: n("race_wind_direction_number", "wind_direction"),
+      wave_height: n("race_wave", "wave_height"),
+      temperature: n("race_temperature", "temperature"),
+      water_temperature: n("race_water_temperature", "water_temperature"),
+      weather_number: n("race_weather_number", "weather_number")
+    };
+  }
+  function _wxAny(w) {
+    return !!w && !!(w.temperature || w.water_temperature || w.wind_speed || w.wave_height || w.wind_direction);
+  }
+  function _pvBoats(bs) {
+    if (!Array.isArray(bs)) return bs;
+    const o = {};
+    const byPos = bs.some(function(b) {
+      return b && "racer_propeller" in b;
+    });
+    bs.forEach(function(b, i) {
+      const n = b && (byPos ? i : b.racer_boat_number);
+      if (n >= 1 && n <= 6 && !o[n]) {
+        b.racer_boat_number = n;
+        o[n] = b;
+      }
+    });
+    return o;
+  }
   function indexPreviews(apiJson) {
     const indexed = indexByStadiumRace(apiJson, "previews");
     if (!indexed) return null;
@@ -2746,14 +2757,8 @@ window.addEventListener('unhandledrejection', function(e){
           /** @type {any} */
           indexed[sid][rn]
         );
-        p.weather = {
-          wind_speed: p.race_wind || 0,
-          wind_direction: p.race_wind_direction_number || 0,
-          wave_height: p.race_wave || 0,
-          temperature: p.race_temperature || 0,
-          water_temperature: p.race_water_temperature || 0,
-          weather_number: p.race_weather_number || 0
-        };
+        p.boats = _pvBoats(p.boats);
+        p.weather = _pvWeather(p);
       }
     }
     return indexed;
@@ -2846,6 +2851,8 @@ window.addEventListener('unhandledrejection', function(e){
   _g.validateApiPayload = validateApiPayload;
   _g.indexByStadiumRace = indexByStadiumRace;
   _g.indexPreviews = indexPreviews;
+  _g._pvWeather = _pvWeather;
+  _g._wxAny = _wxAny;
   _g.indexResults = indexResults;
   _g._filterStalePreviews = _filterStalePreviews;
 })();
@@ -3041,21 +3048,16 @@ var SCENARIO_DIST = {
 // X4: 環境データ（潮汐 R-02 / 場別風向 R-10 / 風×波交差項 R-14）
 // ===============================================
 
-// 場別風向プロファイル（イン不利になる風向の角度番号）
-// JMA / 公式の風向番号は 1=北 → 16=北北西 と仮定
-var STADIUM_WIND_PROFILE = {
-  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
-  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
-  '04': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'運河地形・北東〜東で1コース不利（平和島）' }, // P1-A1
-  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
-  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
-  '19': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'関門海峡・南東で外有利（下関）' }, // P1-A1
-  '20': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'玄界灘・北東で1コース不利（若松）' }, // P1-A1
-  // 残り18場は将来 GitHub Actions nightly で「場×風向×1コース勝率」を集計し
-  // 自動更新する `config/wind_profile.json` で補完予定（P2）。
-};
-var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
-var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
+// 風向の番号（公式の直前情報ページの is-windN）と、追い風 / 向かい風の判定。
+// 2026-11-27: 番号は方位ではない。スタンドを下・1 マークを右に描いたコース図の上の矢印で、風の吹いていく向きを
+//   表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
+//   左 → 右に走るので、右向き (5) が追い風、左向き (13) が向かい風。それぞれ ±45° までを追い風 / 向かい風と扱う。
+//   従来は「1 = 北 … 16 = 北北西」の方位と仮定し、7 場だけ場別の表、残りは全場共通の表で判定していた。
+//   どちらも公式の番号の意味と合わない（気象が届いていなかった間は、風速 0 で判定そのものが働いていなかった）。
+//   確かめ方: 公式の矢印の画像 (icon_wind1_N.png) と、2026-11-19 桐生・11-20 宮島の実測
+//   （方位の画像 is-directionN と合わせると、どちらも冬型の西風）。
+var HEAD_WIND_DIRS = [11,12,13,14,15];
+var TAIL_WIND_DIRS = [3,4,5,6,7];
 
 /* MOVED: function isHeadWind */
 /* MOVED: function isTailWind */
@@ -4593,8 +4595,11 @@ function _applyLiveDataMerge(liveData){
   if(liveDate&&liveDate!==todayDate){console.warn('公式展示データは古い('+liveDate+' JST), スキップ');return 0;}
   liveData.races.forEach(function(lr){
     var sid=String(lr.stadium);var rn=String(lr.race);
+    // 2026-11-27: data/previews の気象（scrape_previews が直前情報ページから読んだもの）
+    var lw=_pvWeather(lr.weather||{});
     if(lr.boats&&previewData&&previewData[sid]&&previewData[sid][rn]){
       var pv=previewData[sid][rn];
+      if(_wxAny(lw)&&!_wxAny(pv.weather)) pv.weather=lw;   // まだ無い時だけ（Worker から届いた気象は上書きしない）
       for(var bn in lr.boats){
         var lb=lr.boats[bn];
         if(!pv.boats) pv.boats={};
@@ -4606,8 +4611,7 @@ function _applyLiveDataMerge(liveData){
       }
     } else if(lr.boats&&previewData){
       if(!previewData[sid]) previewData[sid]={};
-      previewData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,boats:lr.boats,
-        weather:{wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0}};
+      previewData[sid][rn]={race_stadium_number:lr.stadium,race_number:lr.race,boats:lr.boats,weather:lw};
     }
     if(lr.finished&&lr.result&&lr.result.places&&resultData){
       if(!resultData[sid]) resultData[sid]={};

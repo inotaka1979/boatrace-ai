@@ -14,6 +14,7 @@ asyncio/aiohttpで5並列フェッチ。
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 import logging
@@ -359,6 +360,103 @@ def parse_beforeinfo(html):
     return boats
 
 
+# 2026-11-27: 「水面気象情報」（気温・天候・風速・風向・水温・波高）。
+#   直前情報ページの展示は読んでいたが、同じページにある気象は読んでいなかった。上流 (openapi) の previews も
+#   気象の欄が空のまま届くため、アプリの気象欄は「風: --- 0m」のまま、風・波を使う採点も 0 で動いていた。
+#   展示のために既に取っているページなので、追加の取得は無い。結果ページの気象の欄も同じ形で読める。
+#
+#   風向 (is-windN) は方位ではない: スタンドを下・1 マークを右に描いたコース図の上の矢印で、風の吹いていく
+#   向きを表す。1 = 上向き（スタンド側 → バック側）から時計回りに 22.5° 刻み、17 = 無風。艇はホームストレッチを
+#   左 → 右に走るので、5（右向き）が追い風、13（左向き）が向かい風。
+_WX_LABELS = {
+    "気温": "temperature",
+    "風速": "wind_speed",
+    "水温": "water_temperature",
+    "波高": "wave_height",
+}
+_WX_PAIR_RE = re.compile(
+    r'weather1_bodyUnitLabelTitle"[^>]*>([^<]*)</span>\s*<span[^>]*weather1_bodyUnitLabelData"[^>]*>([^<]*)<')
+_WX_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_WX_KIND_RE = re.compile(r"weather1_bodyUnitImage\s+is-weather(\d+)")
+_WX_WIND_RE = re.compile(r"weather1_bodyUnitImage\s+is-wind(\d+)")
+
+
+_WX_TITLE_RE = re.compile(r'weather1_title"[^>]*>([^<]*)<')
+_WX_AT_RACE_RE = re.compile(r"(\d{1,2})\s*R\s*時点")
+_WX_AT_CLOCK_RE = re.compile(r"(\d{1,2})\s*[:：]\s*(\d{2})\s*現在")
+# 「現在」の計測値を、そのレースの締切前の気象として使う範囲（締切の何分前から・何分後まで）
+WX_CLOCK_BEFORE_MIN = 180
+WX_CLOCK_AFTER_MIN = 10
+
+
+def weather_as_of(html):
+    """気象の欄の見出しから、その値がいつの計測かを読む。
+
+    「水面気象情報　11R時点」→ ("race", 11) / 「水面気象情報　7:45現在」→ ("clock", 465)
+    読めなければ None（展示前は見出しの後ろが空白）。
+    """
+    m = _WX_TITLE_RE.search(html if isinstance(html, str) else "")
+    if not m:
+        return None
+    r = _WX_AT_RACE_RE.search(m.group(1))
+    if r:
+        return ("race", int(r.group(1)))
+    c = _WX_AT_CLOCK_RE.search(m.group(1))
+    if c:
+        return ("clock", int(c.group(1)) * 60 + int(c.group(2)))
+    return None
+
+
+def weather_fits_race(as_of, rno, close_min=None):
+    """その気象を「rno レースの締切前の気象」として使えるか。
+
+    R時点: それより前のレースの時点の値なら使える（過去日のページでも変わらない）。
+    現在:  締切の 3 時間前 〜 10 分後に計測された値だけ使う。締切時刻 (close_min = 0 時からの分) が
+           分からなければ使わない。1R のページは、後から開くとその時点の「現在」の値を出す。過去日なら
+           その日の最後の計測値になる（2026-11-19 桐生 1R のページが、後日は「20:34現在」）。
+    見出しが読めない時は使わない。
+    """
+    if not as_of:
+        return False
+    kind, value = as_of
+    if kind == "race":
+        return 1 <= value < rno
+    if kind != "clock" or close_min is None:
+        return False
+    return close_min - WX_CLOCK_BEFORE_MIN <= value <= close_min + WX_CLOCK_AFTER_MIN
+
+
+def parse_weather(html):
+    """水面気象情報を読む。
+
+    Returns:
+        読めた項目だけの dict（アプリ内と同じ名前: wind_speed / wind_direction / wave_height /
+        temperature / water_temperature / weather_number）。数値が 1 つも読めなければ None
+        （展示前のページは欄が空白で、天候の画像にだけ「不明」の番号が付く）。
+    """
+    src = html if isinstance(html, str) else ""
+    at = src.find("weather1_body")
+    if at < 0:
+        return None
+    block = src[at:at + 4000]
+    out = {}
+    for title, data in _WX_PAIR_RE.findall(block):
+        key = _WX_LABELS.get(title.strip())
+        m = _WX_NUM_RE.search(data)
+        if key and m:
+            v = float(m.group(0))
+            out[key] = int(v) if v.is_integer() else v
+    if not out:
+        return None
+    m = _WX_KIND_RE.search(block)
+    if m:
+        out["weather_number"] = int(m.group(1))
+    m = _WX_WIND_RE.search(block)
+    if m:
+        out["wind_direction"] = int(m.group(1))
+    return out
+
+
 def parse_result(html):
     """
     公式サイトのレース結果ページから着順・払戻を取得。
@@ -508,8 +606,8 @@ async def fetch_with_retry(session, url, limiter, retries=MAX_RETRIES):
     return None
 
 
-async def scrape_race(session, limiter, sid, rno, date_str, action):
-    """1レースの展示/結果を取得"""
+async def scrape_race(session, limiter, sid, rno, date_str, action, close_min=None):
+    """1レースの展示/結果を取得。close_min = 締切時刻（0 時からの分。気象の計測時刻の確認に使う）"""
     result_data = {
         "stadium": sid,
         "race": rno,
@@ -524,6 +622,7 @@ async def scrape_race(session, limiter, sid, rno, date_str, action):
         url = BEFOREINFO_URL.format(rno=rno, jcd=sid, date=date_str)
         html = await fetch_with_retry(session, url, limiter)
         if html:
+            result_data["_fetched"] = True   # ページは読めた（展示前で中身が無い場合を含む）
             boats = parse_beforeinfo(html)
             if boats:
                 for bn, data in boats.items():
@@ -537,12 +636,18 @@ async def scrape_race(session, limiter, sid, rno, date_str, action):
                         "racer_parts_replaced": data.get("parts_replaced", ""),
                         "racer_adjust_weight": data.get("adjust_weight", 0.0),
                     }
+                # 2026-11-27: 気象は、展示が出ていて、そのレースの締切前の計測値だと分かる時だけ入れる
+                if weather_fits_race(weather_as_of(html), rno, close_min):
+                    weather = parse_weather(html)
+                    if weather:
+                        result_data["weather"] = weather
 
     # 結果取得
     if action in (RaceAction.FETCH_RESULT, RaceAction.FETCH_BOTH):
         url = RESULTS_URL.format(rno=rno, jcd=sid, date=date_str)
         html = await fetch_with_retry(session, url, limiter)
         if html:
+            result_data["_fetched"] = True
             res = parse_result(html)
             if res and res["places"]:
                 result_data["finished"] = True
@@ -551,8 +656,8 @@ async def scrape_race(session, limiter, sid, rno, date_str, action):
     return result_data
 
 
-async def scrape_batch(targets, date_str):
-    """対象レースを並列スクレイプ。
+async def scrape_batch(targets, date_str, closing_map=None):
+    """対象レースを並列スクレイプ。closing_map = {(場, R): 締切の datetime}（気象の計測時刻の確認に使う）
 
     2026-05-10: scrape_odds_fast.py と同じ silent failure を撲滅。
     asyncio.gather(*, return_exceptions=True) と per-task try/except で、
@@ -567,7 +672,9 @@ async def scrape_batch(targets, date_str):
         async def _task(sid, rno, action):
             try:
                 async with semaphore:
-                    data = await scrape_race(session, limiter, sid, rno, date_str, action)
+                    close_dt = (closing_map or {}).get((sid, rno))
+                    close_min = close_dt.hour * 60 + close_dt.minute if close_dt else None
+                    data = await scrape_race(session, limiter, sid, rno, date_str, action, close_min)
                     results[(sid, rno)] = data
             except Exception as e:   # noqa: BLE001
                 # 単一レースの予期せぬ例外で gather 全体を死なせない
@@ -584,6 +691,50 @@ async def scrape_batch(targets, date_str):
 # ---------------------------------------------------------------------------
 # メイン
 # ---------------------------------------------------------------------------
+def merge_scraped(existing, scraped):
+    """取得結果 (scraped) を、これまでのデータ (existing) に合わせる。更新したレース数を返す。
+
+    - 展示が取れたレースは新しいデータで置き換える。気象が読めなかった時は、前に読めた気象を残す。
+    - 結果だけ取れたレースは、これまでの展示・気象を残して結果を足す。
+    - どちらも取れなかったレースは、これまでのデータを残す。
+    - 取得が例外で落ちたレース (None) は飛ばす。2026-11-27 まではここで None.get(...) の例外になり、
+      1 レースの失敗でその回の全レースの書き出しまで失敗していた。
+    """
+    updated_count = 0
+    for (sid, rno), data in scraped.items():
+        if not isinstance(data, dict):
+            log.debug("  %02d-%02dR: scrape crashed, keeping existing", sid, rno)
+            continue
+        key = (sid, rno)
+        old = existing.get(key, {})
+
+        # 展示データ: 新データがあれば上書き、なければ既存を維持
+        if data.get("boats"):
+            if not data.get("weather") and old.get("weather"):
+                data["weather"] = old["weather"]
+            existing[key] = data
+            updated_count += 1
+            status = "exhibition"
+            if data.get("finished"):
+                status = "finished"
+            log.info("  %02d-%02dR: %s", sid, rno, status)
+        elif data.get("finished"):
+            # 結果のみ取得成功 → 既存の展示データを保持
+            merged = dict(old)
+            merged["finished"] = True
+            merged["result"] = data["result"]
+            merged["_scraped_at"] = data["_scraped_at"]
+            existing[key] = merged
+            updated_count += 1
+            log.info("  %02d-%02dR: result only", sid, rno)
+        else:
+            # 取得失敗 → 既存データ維持
+            if key not in existing:
+                existing[key] = data  # 空データでも登録
+            log.debug("  %02d-%02dR: no data", sid, rno)
+    return updated_count
+
+
 async def async_main():
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     now = datetime.now(JST)
@@ -662,7 +813,7 @@ async def async_main():
     if not targets:
         log.info("No races need scraping right now")
         # 既存データのタイムスタンプだけ更新して出力
-        _write_output(existing, closing_map, date_str)
+        _write_output(existing, closing_map, date_str, {"attempted": 0, "updated": 0})
         return
 
     actions_summary = {}
@@ -679,37 +830,23 @@ async def async_main():
 
     # Phase 3 & 4: 並列スクレイプ
     t0 = time.monotonic()
-    scraped = await scrape_batch(targets, date_str)
+    scraped = await scrape_batch(targets, date_str, closing_map)
     elapsed = time.monotonic() - t0
 
-    # 結果マージ
-    updated_count = 0
-    for (sid, rno), data in scraped.items():
-        key = (sid, rno)
-        old = existing.get(key, {})
+    # 取得状況（data/_status.json の tasks.previews）。マージの前に数える（マージは前の気象を引き継ぐため）。
+    #   updated = ページを読めたレース。展示前で中身の無いページも数える（「1 件も取れていない」と
+    #   取り違えると、展示前のレースしか無い回に取得元ブロックの通知が誤って開く）。
+    got = [d for d in scraped.values() if isinstance(d, dict)]
+    scrape_stats = {
+        "attempted": len(targets),
+        "updated": sum(1 for d in got if d.get("_fetched")),
+        "exhibition": sum(1 for d in got if d.get("boats")),
+        "weather": sum(1 for d in got if d.get("weather")),
+        "finished": sum(1 for d in got if d.get("finished")),
+    }
 
-        # 展示データ: 新データがあれば上書き、なければ既存を維持
-        if data.get("boats"):
-            existing[key] = data
-            updated_count += 1
-            status = "exhibition"
-            if data.get("finished"):
-                status = "finished"
-            log.info("  %02d-%02dR: %s", sid, rno, status)
-        elif data.get("finished"):
-            # 結果のみ取得成功 → 既存の展示データを保持
-            merged = dict(old)
-            merged["finished"] = True
-            merged["result"] = data["result"]
-            merged["_scraped_at"] = data["_scraped_at"]
-            existing[key] = merged
-            updated_count += 1
-            log.info("  %02d-%02dR: result only", sid, rno)
-        else:
-            # 取得失敗 → 既存データ維持
-            if key not in existing:
-                existing[key] = data  # 空データでも登録
-            log.debug("  %02d-%02dR: no data", sid, rno)
+    # 結果マージ
+    updated_count = merge_scraped(existing, scraped)
 
     log.info("Scraped %d races in %.1fs, updated %d", len(targets), elapsed, updated_count)
 
@@ -721,7 +858,7 @@ async def async_main():
     _save_scrape_state(scrape_state, date_str)
 
     # 出力
-    _write_output(existing, closing_map, date_str)
+    _write_output(existing, closing_map, date_str, scrape_stats)
 
 
 def _load_scrape_state(date_str):
@@ -748,8 +885,14 @@ def _save_scrape_state(timestamps, date_str):
         log.warning("Failed to save scrape state: %s", e)
 
 
-def _write_output(existing, closing_map, date_str):
-    """既存データ + 全レースを統合してJSON出力"""
+def _write_output(existing, closing_map, date_str, scrape_stats=None):
+    """既存データ + 全レースを統合してJSON出力し、取得状況を data/_status.json に記録する。
+
+    scrape_stats = {"attempted": 取りに行ったレース, "updated": ページを読めたレース, ...}
+    2026-11-27: 従来はここで async_main のローカル変数 (targets / updated_count) を参照しており、
+      ファイルを書いた直後に毎回 NameError で終了していた（11/20 に取得状況の記録を足した時から）。
+      データは書けていたが、tasks.previews は一度も記録されず、取得元ブロックの検知 (exit 3) にも届かなかった。
+    """
     # closing_mapに含まれる全レースを出力 (データがないレースも空で出力)
     all_races = []
     for (sid, rno) in sorted(closing_map.keys()):
@@ -767,6 +910,7 @@ def _write_output(existing, closing_map, date_str):
 
         # 内部用フィールドを除去
         race.pop("_scraped_at", None)
+        race.pop("_fetched", None)
 
         # stadium/race フィールドを確実に設定
         race["stadium"] = sid
@@ -785,7 +929,7 @@ def _write_output(existing, closing_map, date_str):
     previews = sum(1 for r in all_races if r.get("boats"))
     total = len(all_races)
     log.info("Output: %d/%d previews, %d/%d finished -> %s", previews, total, finished, total, OUTPUT)
-    write_source_status("previews", {"attempted": len(targets), "updated": updated_count, **BLOCK.stats()})
+    write_source_status("previews", {"attempted": 0, "updated": 0, **(scrape_stats or {}), **BLOCK.stats()})
     if BLOCK.blocked:
         log.error("SOURCE BLOCKED — boatrace.jp が HTTP 403 を返し続けたため取得を中止 (%s)", BLOCK.stats())
         sys.exit(3)

@@ -95,14 +95,14 @@ const samples = [
     { racer_boat_number: 1, racer_number: 4444, racer_class_number: 1,
       racer_national_top_1_percent: 5.5, racer_assigned_motor_top_2_percent: 38 },
     { racer_course_number: 1, racer_start_timing: 0.13, racer_tilt_adjustment: -0.5 },
-    { wind_speed: 3, wind_direction: 8 },
+    { wind_speed: 3, wind_direction: 13 },   // 向かい風（公式の番号: 13 = 左向きの矢印）
     0, 0, '01'
   ],
   [
     { racer_boat_number: 4, racer_number: 5555, racer_class_number: 3,
       racer_national_top_1_percent: 4.2, racer_assigned_motor_top_2_percent: 32 },
     { racer_course_number: 4, racer_start_timing: 0.18, racer_tilt_adjustment: 0.5 },
-    { wind_speed: 5, wind_direction: 9 },
+    { wind_speed: 5, wind_direction: 12 },   // 向かい風
     3, 4, '02'
   ],
   [

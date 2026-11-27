@@ -751,7 +751,7 @@
     if (weather) {
       var ws = weather.wind_speed || weather.race_wind || 0;
       var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = wd >= 7 && wd <= 11;
+      var isHead = wd >= 11 && wd <= 15;
       if (isHead && course === 1) windCourse = -ws / 10;
       else if (isHead && course >= 4) windCourse = ws / 20;
     }
@@ -1309,7 +1309,7 @@
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
     var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
-    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2);
     var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
@@ -1845,8 +1845,8 @@
     if (weather) {
       var ws = weather.wind_speed || weather.race_wind || 0;
       var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = isHeadWind(wd, sid);
-      var isTail = isTailWind(wd, sid);
+      var isHead = isHeadWind(wd);
+      var isTail = isTailWind(wd);
       if (isHead && ws >= 5) {
         if (course === 1) {
           score -= 8;
@@ -4345,13 +4345,19 @@ function _loadPreviewLive(sid,rno){
     var base=(typeof WORKER_BASE!=='undefined'&&WORKER_BASE)?WORKER_BASE:'';
     if(!base) return;
     var _retry=function(){ if((_pvLiveAttempts[key]||0) < _PV_MAX_ATTEMPTS) _pvLiveTried[key]=false; };
-    fetch(base+'/beforeinfo-proxy?jcd='+sid+'&race='+rno+'&hd='+hd,{cache:'no-store'})
+    // 2026-11-27: 締切時刻 (close=HHMM) を付ける。Worker は気象の計測時刻が締切前のものかを、これで確かめる
+    //   （後から開いた 1R のページは「現在」の値を出すので、締切時刻が無いと気象は返らない）。
+    var _pg=programData&&programData[sid]&&programData[sid][rno];
+    var _cm=/ (\d{2}):(\d{2}):/.exec(String(_pg&&_pg.race_closed_at||''));
+    fetch(base+'/beforeinfo-proxy?jcd='+sid+'&race='+rno+'&hd='+hd+(_cm?'&close='+_cm[1]+_cm[2]:''),{cache:'no-store'})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(obj){
         if(!obj || obj.pending || !obj.boats){ _retry(); return; }
         if(!previewData) previewData={};
         if(!previewData[sid]) previewData[sid]={};
         var prev=previewData[sid][rno];
+        // 2026-11-27: 応答に気象（race_wind など）が付いていれば取り込む（無ければ全部 0）
+        var _wx=_pvWeather(obj);
         if(prev && prev.boats){
           // 既存(天候など)を保持しつつ、展示/ST/チルト等を埋める(値ありのみ上書き=退行防止)
           for(var bn in obj.boats){
@@ -4366,9 +4372,10 @@ function _loadPreviewLive(sid,rno){
             if(s.racer_parts_replaced) d.racer_parts_replaced=s.racer_parts_replaced;
             if(s.racer_adjust_weight!=null) d.racer_adjust_weight=s.racer_adjust_weight;
           }
+          if(_wxAny(_wx)) prev.weather=_wx;
         } else {
-          // 新規エントリ。downstream(predictRace)が weather を参照するため空 weather を付与。
-          obj.weather={wind_speed:0,wind_direction:0,wave_height:0,temperature:0,water_temperature:0,weather_number:0};
+          // 新規エントリ。downstream(predictRace)が weather を参照するため、気象が無くても weather を付ける。
+          obj.weather=_wx;
           previewData[sid][rno]=obj;
         }
         _dRev++;   // 展示が入った = 一覧/詳細を再描画すべき
@@ -4746,16 +4753,12 @@ function learnSeriesAndPairwiseFromResults(resultsJson){
   saveDB();
 }
 
-function isHeadWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.headWindDirs : GLOBAL_HEAD_DIRS;
-  return arr.indexOf(wd) >= 0;
+function isHeadWind(wd){
+  return HEAD_WIND_DIRS.indexOf(wd) >= 0;
 }
 
-function isTailWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.tailWindDirs : GLOBAL_TAIL_DIRS;
-  return arr.indexOf(wd) >= 0;
+function isTailWind(wd){
+  return TAIL_WIND_DIRS.indexOf(wd) >= 0;
 }
 
 function classifyTidePhase(tideEntry, raceTimeJst){

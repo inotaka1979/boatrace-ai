@@ -237,8 +237,11 @@ def _preview_for(f: _Fetcher, sid: int, rno: int, hd: str) -> dict | None:
     boats = prev_mod.parse_beforeinfo(html)
     if not boats:
         return None
+    # 2026-11-27: 気象。過去日のページなので「◯R時点」（前のレースの時点の値で固定）だけを使う。
+    #   1R のページは、その日の最後の計測値を「現在」として出すので使わない（締切時刻を渡さない = 使わない）。
+    weather = prev_mod.parse_weather(html) if prev_mod.weather_fits_race(prev_mod.weather_as_of(html), rno) else None
     # scrape_previews.scrape_race と同じ変換（アーカイブの live スキーマ）
-    return {"boats": {
+    return {"weather": weather, "boats": {
         str(bn): {
             "racer_exhibition_time": d.get("exhibition_time"),
             "racer_start_timing": d.get("start_timing"),

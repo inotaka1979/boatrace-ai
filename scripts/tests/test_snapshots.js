@@ -13,7 +13,7 @@
  * カバー対象 (現状 Phase 2 で抽出済の関数群):
  *   - discovery: indexByStadiumRace / indexPreviews / indexResults / _filterStalePreviews
  *   - analysis : runBacktestEngine / runForwardChainBacktest / _computeCalibrationMetrics
- *   - context  : STADIUMS / GRADE_CLASS / WIND_DIR の Object.freeze 状態
+ *   - context  : STADIUMS / GRADE_CLASS の Object.freeze 状態
  *   - capabilities: list() + has() の出力（Node 環境の capability マップ）
  *   - math     : softmax / safeDiv / Plackett-Luce
  *
@@ -221,7 +221,6 @@ snapshot('context_CLASS_COLOR',       ctx.CLASS_COLOR);
 snapshot('context_BOAT_COLORS',       ctx.BOAT_COLORS);
 snapshot('context_BOAT_TEXT',         ctx.BOAT_TEXT);
 snapshot('context_TECHNIQUE',         ctx.TECHNIQUE);
-snapshot('context_WIND_DIR',          ctx.WIND_DIR);
 snapshot('context_GRADE_CLASS',       ctx.GRADE_CLASS);
 
 // frozen であることの確認 (mutation 試行 → 値が変わっていない)

@@ -85,17 +85,18 @@ function withWind(fx, ws, wd) {
 t('追い風 6m なら風速では穴にしない、向かい風 6m なら穴（混戦レース。本命判定は風より先）', () => {
   const fx = load('race_konsen');
   const ctx = makeCtx();
-  const tail = ctx.GLOBAL_TAIL_DIRS[0], head = ctx.GLOBAL_HEAD_DIRS[0];
-  const sidKey = String(fx.sid).padStart(2, '0');
-  const prof = ctx.STADIUM_WIND_PROFILE[sidKey];
-  const tailDir = prof ? prof.tailWindDirs[0] : tail;
-  const headDir = prof ? prof.headWindDirs[0] : head;
+  // 風向の番号は公式ページの矢印: 5 = 右向き = 追い風、13 = 左向き = 向かい風
+  const tailDir = 5, headDir = 13;
+  assert.ok(ctx.TAIL_WIND_DIRS.indexOf(tailDir) >= 0 && ctx.HEAD_WIND_DIRS.indexOf(headDir) >= 0);
   setup(ctx, fx, { odds: [] }, { evMode: false, betMethod: 'prob' }, withWind(fx, 6, tailDir));
   const tb = ctx.predictRace(fx.sid, fx.rno);
   assert.notStrictEqual(tb.raceType, 'ana', '追い風で穴になった');
   setup(ctx, fx, { odds: [] }, { evMode: false, betMethod: 'prob' }, withWind(fx, 6, headDir));
   const hb = ctx.predictRace(fx.sid, fx.rno);
   assert.strictEqual(hb.raceType, 'ana', '向かい風 6m で穴にならない (' + hb.raceType + ')');
+  // 横風（上向きの矢印 = 1）は追い風ではないので、従来どおり穴
+  setup(ctx, fx, { odds: [] }, { evMode: false, betMethod: 'prob' }, withWind(fx, 6, 1));
+  assert.strictEqual(ctx.predictRace(fx.sid, fx.rno).raceType, 'ana', '横風 6m で穴にならない');
 });
 
 console.log(`\n=== Result: ${pass} passed, ${fail} failed ===`);

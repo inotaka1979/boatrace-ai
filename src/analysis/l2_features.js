@@ -155,7 +155,7 @@ function getL2FeaturesV1(boat, preview, weather, etRank, stRank, sid) {
   if (weather) {
     var ws = weather.wind_speed || weather.race_wind || 0;
     var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-    var isHead = wd >= 7 && wd <= 11;
+    var isHead = wd >= 11 && wd <= 15; // 公式の風向の番号: 13 = 向かい風（features.js と同じ範囲）
     if (isHead && course === 1) windCourse = -ws / 10;
     else if (isHead && course >= 4) windCourse = ws / 20;
   }

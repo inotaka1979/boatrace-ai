@@ -187,19 +187,8 @@ var SCENARIO_DIST = {
     '5-2-4': 0.03, '5-1-4': 0.03, '6-3-2': 0.03,
   },
 };
-var STADIUM_WIND_PROFILE = {
-  '02': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'北東風がイン不利（戸田）' },
-  '03': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'東風がイン不利（江戸川）' },
-  '04': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'運河地形・北東〜東で1コース不利（平和島）' }, // P1-A1
-  '12': { headWindDirs:[7,8,9],  tailWindDirs:[15,16,1], note:'南東風で展開難（蒲郡）' },
-  '14': { headWindDirs:[9,10,11],tailWindDirs:[1,2,3],   note:'南西風で荒れる（唐津）' },
-  '19': { headWindDirs:[5,6,7],  tailWindDirs:[13,14,15], note:'関門海峡・南東で外有利（下関）' }, // P1-A1
-  '20': { headWindDirs:[3,4,5],  tailWindDirs:[11,12,13], note:'玄界灘・北東で1コース不利（若松）' }, // P1-A1
-  // 残り18場は将来 GitHub Actions nightly で「場×風向×1コース勝率」を集計し
-  // 自動更新する `config/wind_profile.json` で補完予定（P2）。
-};
-var GLOBAL_HEAD_DIRS = [7,8,9,10,11];
-var GLOBAL_TAIL_DIRS = [15,16,1,2,3,4,5];
+var HEAD_WIND_DIRS = [11,12,13,14,15];
+var TAIL_WIND_DIRS = [3,4,5,6,7];
 var TIDE_COURSE_BIAS = {
   rising:  {1:-3, 2:-2, 3:0, 4:+2, 5:+3, 6:+2},   // 上げ潮: センター/アウト有利
   falling: {1:+4, 2:+2, 3:0, 4:-2, 5:-3, 6:-2},   // 下げ潮: イン残り
@@ -757,7 +746,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     if (weather) {
       var ws = weather.wind_speed || weather.race_wind || 0;
       var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = wd >= 7 && wd <= 11;
+      var isHead = wd >= 11 && wd <= 15;
       if (isHead && course === 1) windCourse = -ws / 10;
       else if (isHead && course >= 4) windCourse = ws / 20;
     }
@@ -1219,8 +1208,8 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     if (weather) {
       var ws = weather.wind_speed || weather.race_wind || 0;
       var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-      var isHead = isHeadWind(wd, sid);
-      var isTail = isTailWind(wd, sid);
+      var isHead = isHeadWind(wd);
+      var isTail = isTailWind(wd);
       if (isHead && ws >= 5) {
         if (course === 1) {
           score -= 8;
@@ -1896,7 +1885,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     var wh = weather ? weather.wave_height || weather.race_wave || 0 : 0;
     var ws2 = weather ? weather.wind_speed || weather.race_wind || 0 : 0;
     var wd2 = weather ? weather.wind_direction || weather.race_wind_direction_number || 0 : 0;
-    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2, sid);
+    var tailWind = !!wd2 && typeof isTailWind === "function" && isTailWind(wd2);
     var windAna = ws2 >= TUNING.RACE_TYPE.ANA_WIND_SPEED_MS && !tailWind;
     var RT = TUNING.RACE_TYPE;
     if (topProb > RT.HONMEI_TOP1_MIN && top2Prob > RT.HONMEI_TOP2_MIN) {
@@ -2051,7 +2040,7 @@ function safeSet(_k, _v) { /* no-op in worker; main thread persists via batchLea
     if (!ctx.weather) return 0;
     const ws = ctx.weather.wind_speed || ctx.weather.race_wind || 0;
     const wd = ctx.weather.wind_direction || ctx.weather.race_wind_direction_number || 0;
-    const isHead = wd >= 7 && wd <= 11;
+    const isHead = wd >= 11 && wd <= 15;
     if (isHead && ctx.course === 1) return -ws / 10;
     if (isHead && ctx.course >= 4) return ws / 20;
     return 0;
@@ -2507,16 +2496,13 @@ function getStadiumCourseWinRate(sid,course){
   return cw.win/cw.races;
 }
 
-function isHeadWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.headWindDirs : GLOBAL_HEAD_DIRS;
-  return arr.indexOf(wd) >= 0;
+// 2026-11-27: 風向の番号は公式ページのコース図の上の矢印（assets/app.js の同名関数と同じ。テストで一致を固定）
+function isHeadWind(wd){
+  return HEAD_WIND_DIRS.indexOf(wd) >= 0;
 }
 
-function isTailWind(wd, sid){
-  var p = STADIUM_WIND_PROFILE[String(sid).padStart(2,'0')];
-  var arr = p ? p.tailWindDirs : GLOBAL_TAIL_DIRS;
-  return arr.indexOf(wd) >= 0;
+function isTailWind(wd){
+  return TAIL_WIND_DIRS.indexOf(wd) >= 0;
 }
 
 function linearSlope(values){

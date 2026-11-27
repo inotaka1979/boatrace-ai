@@ -322,9 +322,9 @@ function scoreBoatV2(boat, preview, weather, allBoats, allPreviews, sid, predict
   if (weather) {
     var ws = weather.wind_speed || weather.race_wind || 0;
     var wd = weather.wind_direction || weather.race_wind_direction_number || 0;
-    // X4 R-10: 場別風向プロファイルを使用
-    var isHead = isHeadWind(wd, sid);
-    var isTail = isTailWind(wd, sid);
+    // 風向の番号は公式ページのコース図の上の矢印（5 = 追い風、13 = 向かい風。isHeadWind の説明を参照）
+    var isHead = isHeadWind(wd);
+    var isTail = isTailWind(wd);
     if (isHead && ws >= 5) {
       if (course === 1) {
         score -= 8;
