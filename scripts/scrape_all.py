@@ -108,6 +108,32 @@ def _scrape_tomorrow() -> int:
     return _run_subprocess("scrape_tomorrow.py", timeout_sec=330)
 
 
+# 2026-11-28: 番組表（出走表）を前もって取る（scripts/scrape_programs_tomorrow.py）。
+#   夕方〜夜は翌日分、0 時〜朝の窓の前は今日の分の続き。スクリプト側の内部期限で必ず書き出すので、
+#   subprocess の timeout は kill の最終保険（内部期限 + 取得中の 1 件 (最大 15 秒) + 書き出し より長く）。
+#   0 時〜朝は、この後ろに backfill（最大 22 分）が続くので短くする。値の関係は test_scrape_programs_tomorrow.py で固定。
+PROGRAMS_TOMORROW_BUDGET_SEC = 1200
+PROGRAMS_TODAY_AHEAD_BUDGET_SEC = 600
+PROGRAMS_AHEAD_MARGIN_SEC = 120
+
+
+def _scrape_programs_ahead(target: str, budget_cap_sec: int) -> int:
+    # job の残り時間が少ない時は、その分だけ短くする（取れたところまで書いて、続きは次の run）。
+    timeout = _remaining_budget_sec(budget_cap_sec + PROGRAMS_AHEAD_MARGIN_SEC)
+    budget = max(60, timeout - PROGRAMS_AHEAD_MARGIN_SEC)
+    return _run_subprocess(
+        "scrape_programs_tomorrow.py", ["--target", target, "--budget-sec", str(budget)], timeout_sec=timeout
+    )
+
+
+def _scrape_programs_tomorrow() -> int:
+    return _scrape_programs_ahead("tomorrow", PROGRAMS_TOMORROW_BUDGET_SEC)
+
+
+def _scrape_programs_today_ahead() -> int:
+    return _scrape_programs_ahead("today", PROGRAMS_TODAY_AHEAD_BUDGET_SEC)
+
+
 def _scrape_racedata() -> int:
     # D7 (2026-05-17): GHA runner 上では boatrace.jp scrape が遅く
     #   race loop ~20 min + photo DL 600s で 1500s を超過し silent timeout。
@@ -385,6 +411,16 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
     #   real-time 系の後・時間のかかる racedata / backfill の前。
     if 15 <= h <= 23:
         tasks.append(("tomorrow", _scrape_tomorrow))
+        # 2026-11-28: 翌日の番組表（出走表）も前の晩に取っておく（data/schedule/programs_tomorrow.json）。
+        #   朝の番組表は非公式ミラー (openapi) の切り替わり待ちで、自前の取得（下の programs）が届くのは昼前後。
+        #   11/28 はミラーが 9:20 すぎまで前日のままで、アプリは全場を「次節」と表示した（鳴門 1R は 8:35 締切）。
+        #   日付が変わったら Worker がこのファイルを今日の番組表として配る。上の tomorrow が作る一覧を使うので、その直後。
+        tasks.append(("programs(tomorrow)", _scrape_programs_tomorrow))
+
+    # 0 時〜朝の窓の前: 前の晩に取り切れなかった今日の番組表の続きを取る（取り切っていれば何もしない）。
+    #   朝の窓に入ったら、上の programs が data/programs/today.json を取り直す。時間のかかる backfill より先に。
+    if not racedata_window and h < 9:
+        tasks.append(("programs(today)", _scrape_programs_today_ahead))
 
     # 2026-08-11 FIX: racedata は real-time 系 (odds/previews/results) の後に実行する。
     #   理由は上の racedata_stale ブロックのコメント参照。
@@ -441,6 +477,8 @@ def main() -> int:
             "backfill": _backfill_archive,
             "day_labels": _scrape_day_labels,
             "tomorrow": _scrape_tomorrow,
+            "programs_tomorrow": _scrape_programs_tomorrow,
+            "programs_today_ahead": _scrape_programs_today_ahead,
         }
         if args.only not in m:
             log.error("unknown --only: %s", args.only)

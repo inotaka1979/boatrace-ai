@@ -124,7 +124,8 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
 
     def test_pre_race_hours_no_tasks(self):
         # 2026-11-20: 開催日タブ（何日目 / 中止）だけは 6 時から取る
-        self.assertEqual(self._at(7, 0), ["day_labels"])
+        # 2026-11-28: 朝の窓の前は、今日の番組表の続き (programs(today)) も取る
+        self.assertEqual(self._at(7, 0), ["day_labels", "programs(today)"])
         self.assertNotIn("day_labels", self._at(5, 30))
         self.assertNotIn("day_labels", self._at(23, 10))
 
@@ -166,9 +167,38 @@ class TestDecideTasksTimingMatrix(unittest.TestCase):
     def test_late_night_23_00_outside_window(self):
         # 2026-11-20: 夜間はアーカイブの後追い (backfill) を行う（スクレイプの real-time 系は無し）
         # 2026-11-26: 23 時台は翌日の出走 (tomorrow) も取る。時間のかかる backfill より先に
+        # 2026-11-28: 翌日の番組表 (programs(tomorrow)) は、出走の一覧 (tomorrow) の直後
         tasks = self._at(23, 0)
-        self.assertEqual(tasks, ["tomorrow", "backfill"])
-        self.assertEqual(self._at(0, 30), ["backfill"], "日付が変わったら翌日の出走は取らない")
+        self.assertEqual(tasks, ["tomorrow", "programs(tomorrow)", "backfill"])
+        self.assertEqual(self._at(0, 30), ["programs(today)", "backfill"],
+                         "日付が変わったら翌日の出走は取らず、今日の番組表の続きを取る")
+
+    def test_programs_ahead_evening_is_tomorrow_and_before_morning_is_today(self):
+        # 2026-11-28: 番組表を前もって取る。夕方〜夜 = 翌日分、0 時〜朝の窓 (8:30) の前 = 今日の分の続き。
+        #   日中（朝の窓〜14 時台）はどちらも取らない（今日の番組表は programs が取り直す）
+        for h, m in ((15, 0), (18, 13), (22, 18), (23, 59)):
+            tasks = self._at(h, m)
+            self.assertIn("programs(tomorrow)", tasks, (h, m))
+            self.assertNotIn("programs(today)", tasks, (h, m))
+            self.assertEqual(tasks.index("programs(tomorrow)"), tasks.index("tomorrow") + 1,
+                             "一覧 (tomorrow) を作った直後に取る")
+        for h, m in ((0, 0), (2, 21), (4, 12), (6, 48), (8, 0), (8, 29)):
+            tasks = self._at(h, m)
+            self.assertIn("programs(today)", tasks, (h, m))
+            self.assertNotIn("programs(tomorrow)", tasks, (h, m))
+        for h, m in ((8, 30), (9, 0), (11, 39), (14, 59)):
+            tasks = self._at(h, m)
+            self.assertNotIn("programs(today)", tasks, (h, m))
+            self.assertNotIn("programs(tomorrow)", tasks, (h, m))
+            self.assertIn("programs", tasks, "朝の窓では今日の番組表を公式ページから取り直す")
+
+    def test_programs_ahead_comes_before_the_slow_tasks(self):
+        night = self._at(2, 21)
+        self.assertLess(night.index("programs(today)"), night.index("backfill"))
+        evening = self._at(22, 18)
+        for fast in ("results", "previews", "odds"):
+            self.assertLess(evening.index(fast), evening.index("programs(tomorrow)"), fast)
+        self.assertLess(evening.index("programs(tomorrow)"), evening.index("racedata"))
 
     def test_tomorrow_runs_in_the_evening_only(self):
         # 翌日の出走表は前日の午後〜夜に公開される。15〜23 時の run で毎回取り直す

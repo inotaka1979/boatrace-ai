@@ -3629,6 +3629,11 @@ var _backfillTimer = null;
         if (dayOff) nextRaceInfo = "\u767A\u58F2\u306A\u3057";
         html += '<div class="stadium-card active-stadium" data-sid="' + sid + '" role="button" tabindex="0" data-action="openStadium" data-arg-sid="' + sid + '"><span class="stadium-grade ' + grade.cls + '">' + grade.name + '</span><span class="stadium-name">' + name + '</span><span class="stadium-status">' + doneCount + "/" + totalRaces + 'R</span><span class="stadium-day' + (dayCls ? " " + dayCls : "") + '">' + (dayInfo || "&nbsp;") + '</span><span class="stadium-day">' + nextRaceInfo + "</span></div>";
       } else {
+        var wait = typeof _stadiumWaitingCard === "function" ? _stadiumWaitingCard(sid, name) : "";
+        if (wait) {
+          html += wait;
+          continue;
+        }
         var iso = typeof _nextOpenMap === "object" && _nextOpenMap ? _nextOpenMap[sid] || "" : "";
         var dateLabel = _formatNextOpen(iso);
         var dateHtml = dateLabel ? '<span class="stadium-next-date">' + dateLabel + "</span>" : "";

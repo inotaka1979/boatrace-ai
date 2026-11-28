@@ -15,6 +15,9 @@ name: Scrape All (unified - archive role)
 #   - 常時 (8-22 JST):    previews → odds（odds は締切 60 分以内のみ、内部期限 240s）
 #   - 08:30-22 JST:        racedata（場単位 4 並列、未取得が残る限り毎 run 継続）
 #   - 08:00 JST:           tide + schedule
+#   - 15-23 JST:           翌日の出走の一覧 (tomorrow) → 翌日の番組表 (programs(tomorrow)、内部期限 20 分)
+#   - 00:00-08:29 JST:     今日の番組表の続き (programs(today)、内部期限 10 分)。朝、上流 (openapi) の
+#                          切り替わりを待たずに番組表を出すため（2026-11-28、docs/RUNBOOK.md §15）
 #   2026-11-11 (軽量化): 旧構成は odds 全件が 300s timeout に毎回 kill され、racedata の
 #   逐次取得が残り 28 分を使い切っていた（1 run 42 分）。詳細は CLAUDE.md 同日項。
 
