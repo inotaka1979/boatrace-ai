@@ -15,9 +15,11 @@ name: Scrape All (unified - archive role)
 #   - 常時 (8-22 JST):    previews → odds（odds は締切 60 分以内のみ、内部期限 240s）
 #   - 08:30-22 JST:        racedata（場単位 4 並列、未取得が残る限り毎 run 継続）
 #   - 08:00 JST:           tide + schedule
-#   - 15-23 JST:           翌日の出走の一覧 (tomorrow) → 翌日の番組表 (programs(tomorrow)、内部期限 20 分)
-#   - 00:00-08:29 JST:     今日の番組表の続き (programs(today)、内部期限 10 分)。朝、上流 (openapi) の
+#   - 15-23 JST:           翌日の出走の一覧 (tomorrow) → 翌日の番組表 (programs(tomorrow)、job の残り時間まで
+#                          = 最大 35 分。1 回の run で 1 日分を取り切る)
+#   - 00:00-08:29 JST:     今日の番組表の続き (programs(today))。朝、上流 (openapi) の
 #                          切り替わりを待たずに番組表を出すため（2026-11-28、docs/RUNBOOK.md §15）
+#   - 23-07 JST:           確定済みレースの展示・オッズの後追い (backfill、残り時間に収まる分だけ)
 #   2026-11-11 (軽量化): 旧構成は odds 全件が 300s timeout に毎回 kill され、racedata の
 #   逐次取得が残り 28 分を使い切っていた（1 run 42 分）。詳細は CLAUDE.md 同日項。
 
@@ -47,8 +49,20 @@ on:
     #   「30 分毎のはずなのに」という誤った期待を生むだけなので、実態に合わせた
     #   アンカーに削減する。リアルタイム供給は Cloudflare Worker /api/* が担い、
     #   本 workflow は履歴アーカイブ + 障害時 fallback (B18 dispatch で catch-up 可)。
+    #
+    # 2026-11-28: 届く時刻の実測（11/25〜28、この workflow と他 4 本で同じ傾向。docs/RUNBOOK.md §15.4）。
+    #   - 1 日 1 回の行（下の 1 行 1 行）は全部届く。ただし 5〜12 時間遅れる:
+    #       宣言 JST 8:30 → 13:50〜14:34 / 10:00 → 17:32〜18:21 / 13:00 → 22:18〜22:42 /
+    #            16:00 → 翌 2:21〜3:46 / 19:00 → 翌 4:12〜5:23 / 22:00 → 翌 6:48〜7:54
+    #   - 1 行で何度も発火する書き方（毎時など）は、前の 1 件が届くまで次が捨てられ、1 日 2 回ほどになる。
+    #   scrape_all.py は「着いた時刻」で作業を決めるので、遅れても動きは正しい。困るのは届く回数が少ない時間帯。
+    #   翌日の出走表は 18 時ごろ公開され、そこから 0 時までに届くのは上の 2 回（18 時前後・22 時 20 分ごろ）だけ。
+    #   11/28 は 1 回目が公開の前に着いた（17:41 着で 0 場）。JST 11:40 の行は、今の遅れで 20 時台に着く見込みの 1 回
+    #   （夕方の取りこぼしに備える。遅れが変わっても害は無い: ふだんの run が 1 日 1 回増えるだけ）。
+    #   sentinel の定時起動 (SCRAPE_ANCHORS_JST、GH_TOKEN 登録時) には足さない: 定時なら 19:00 と 22:00 が公開の後。
     - cron: '30 23 * * *'        # JST 8:30 (UTC 23:30) 朝イチ・上流 publish 後
     - cron: '0 1 * * *'          # JST 10:00
+    - cron: '40 2 * * *'         # JST 11:40（2026-11-28 追加。今の遅れで 20 時台に着く見込み）
     - cron: '0 4 * * *'          # JST 13:00
     - cron: '0 7 * * *'          # JST 16:00
     - cron: '0 10 * * *'         # JST 19:00
@@ -80,6 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # 2026-11-28: event の SHA ではなく、ブランチの今の先頭から始める。
+          #   既定 (github.sha) は run が作られた時点の commit。前の run の終了待ち (concurrency) の後で
+          #   始まる run は、前の run が commit する前の状態から同じ data/*.json を作り直すので、
+          #   push の rebase が必ず衝突して 5 回とも失敗し、その run の成果が消える
+          #   （実例: 2026-11-27 run 1523。マージで起動 → 定時の run 1522 の終了待ち → push failed after 5 attempts）。
+          #   先頭から始めれば、前の run が取った分（番組表など）を取り直すことも無い。
+          ref: ${{ github.ref }}
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:

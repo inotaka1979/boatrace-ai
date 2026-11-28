@@ -305,6 +305,8 @@ step "Worker: the stale-KV path never drops exhibitions or finished results" \
 #   （この日の朝、番組表がどの経路からも当日分に切り替わらず、開催中の 14 場すべてが「次節」と表示された）
 step "Programs ahead of the day: scrape tomorrow's racelist the evening before (scripts/scrape_programs_tomorrow.py)" \
      "python3 -m unittest scripts.tests.test_scrape_programs_tomorrow"
+step "scrape-all workflow: starts from the branch tip / once-a-day cron lines / time left for the commit" \
+     "python3 -m unittest scripts.tests.test_scrape_all_workflow"
 step "Worker: programs from the evening before / rows of another day never mix into today's" \
      "node scripts/tests/test_worker_programs_eve.mjs"
 step "TOP: a venue racing today without programs shows 'waiting', not 'next series'" \

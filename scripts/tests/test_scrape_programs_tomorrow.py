@@ -209,16 +209,32 @@ class TestEveningRun(unittest.TestCase):
             gaps = [b - a for a, b in zip(site.starts, site.starts[1:])]
             self.assertTrue(all(g >= spt.INTERVAL - 1e-9 for g in gaps), gaps)
 
-    def test_slow_site_stops_at_the_budget_and_writes_what_it_got(self):
-        # 公式サイトが 1 件 9.5 秒かかる日。14 場 = 168 レースは 1 回では取り切れない
-        venues = {sid: "%02d:%02d" % (8 + i // 2, 35 if i % 2 == 0 else 5) for i, sid in enumerate(range(1, 15))}
+    def test_one_run_takes_a_whole_day_even_when_the_site_is_slow(self):
+        # 2026-11-28 の夜: 翌日は 16 場 = 192 レース。公開（18 時ごろ）の後に届く run は 1 晩に 1〜2 回で、
+        #   この日は 1 回目が公開の前に着いた（17:41 着で 0 場）。残った 1 回で取り切れる長さにする（1200 秒では 約 120）
+        venues = {sid: "%02d:%02d" % (8 + i // 2, 35 if i % 2 == 0 else 5) for i, sid in enumerate(range(1, 17))}
         with tempfile.TemporaryDirectory() as d:
             _setup(d, venues)
             site = _Site(sec=9.5)
             s = _run(d, site)
-            self.assertGreaterEqual(s["attempted"], 110, "既定の内部期限で 110 レース以上")
+            self.assertEqual((s["attempted"], s["updated"], s["missing"]), (192, 192, 0))
+            self.assertLess(site.now - 1000.0, spt.BUDGET_SEC, "既定の内部期限の内に終わる")
+            out = _out(d)
+            self.assertIs(out["partial"], False)
+            self.assertEqual((out["expected"], len(out["programs"])), (192, 192))
+            self.assertEqual(site.max_active, 1, "長く取る時も 1 件ずつ")
+
+    def test_slow_site_stops_at_the_budget_and_writes_what_it_got(self):
+        # 公式サイトが 1 件 9.5 秒かかる日に、呼ぶ側が 1200 秒で切り上げさせた時（同じ run で racedata も取る時・
+        #   job の残り時間が少ない時）。14 場 = 168 レースは取り切れない
+        venues = {sid: "%02d:%02d" % (8 + i // 2, 35 if i % 2 == 0 else 5) for i, sid in enumerate(range(1, 15))}
+        with tempfile.TemporaryDirectory() as d:
+            _setup(d, venues)
+            site = _Site(sec=9.5)
+            s = _run(d, site, budget_sec=1200)
+            self.assertGreaterEqual(s["attempted"], 110, "1200 秒で 110 レース以上")
             self.assertLessEqual(s["attempted"], 130)
-            self.assertLessEqual(site.now - 1000.0, spt.BUDGET_SEC + 15, "期限の後は新しく取りに行かない")
+            self.assertLessEqual(site.now - 1000.0, 1200 + 15, "期限の後は新しく取りに行かない")
             out = _out(d)
             self.assertIs(out["partial"], True)
             self.assertEqual(out["expected"], 168)
@@ -378,10 +394,10 @@ class TestFailures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             _setup(d, {8: "10:27"})
             s = _run(d, _Site(default=(200, NODATA)))
-            self.assertEqual((s["no_data"], s["updated"], s["missing"]), (12, 0, 12))
+            self.assertEqual((s["no_data"], s["updated"], s["missing"]), (1, 0, 12))
             st = _status(d)
             t = st["tasks"]["programs_tomorrow"]
-            self.assertEqual((t["attempted"], t["updated"], t["races"]), (12, 12, 0))
+            self.assertEqual((t["attempted"], t["updated"], t["races"]), (1, 1, 0))
             self.assertEqual(source_health.evaluate(st, now)["state"], "ok")
             self.assertFalse(os.path.exists(os.path.join(d, "schedule", "programs_tomorrow.json")),
                              "1 レースも取れていない時は書かない")
@@ -448,11 +464,60 @@ class TestDayChange(unittest.TestCase):
             _setup(d, None, schedule=[14, 8])
             site = _Site(pages={14: (200, NODATA)})  # 14 場は順延で開催なし
             s = _run(d, site, now=NIGHT, target="today")
-            self.assertEqual((s["source"], s["expected"], s["attempted"]), ("schedule", 24, 24))
-            self.assertEqual((s["updated"], s["no_data"], s["missing"]), (12, 12, 12))
+            self.assertEqual((s["source"], s["expected"], s["attempted"]), ("schedule", 24, 13))
+            self.assertEqual((s["updated"], s["no_data"], s["missing"]), (12, 1, 12))
+            self.assertEqual([k for k in site.keys if k[0] == 14], [(14, 1)],
+                             "開催の無い場は 1 ページだけ確かめる（残りの 11 ページを取りに行かない）")
             out = _out(d)
             self.assertEqual({p["race_stadium_number"] for p in out["programs"]}, {8})
             self.assertIs(out["partial"], True)
+
+            # 次の run も、その場は 1 ページだけ確かめる（取れた場は取り直さない）
+            site2 = _Site(pages={14: (200, NODATA)})
+            s2 = _run(d, site2, now=NIGHT, target="today")
+            self.assertEqual(site2.keys, [(14, 1)])
+            self.assertEqual((s2["attempted"], s2["no_data"], s2["missing"]), (1, 1, 12))
+
+    def test_a_single_page_without_data_does_not_stop_a_venue_that_has_programs(self):
+        # 1 レースだけ「データがありません」（その場の番組表は出ている）。残りのレースは取る
+        with tempfile.TemporaryDirectory() as d:
+            _setup(d, {8: "10:27"})
+            site = _Site(pages={(8, 5): (200, NODATA)})
+            s = _run(d, site)
+            self.assertEqual(site.keys, [(8, r) for r in range(1, 13)])
+            self.assertEqual((s["updated"], s["no_data"], s["missing"]), (11, 1, 1))
+            # 次の run: 取れていた場なので、欠けた 1 レースだけ取りに行く。出ていれば埋まる
+            site2 = _Site()
+            s2 = _run(d, site2)
+            self.assertEqual(site2.keys, [(8, 5)])
+            self.assertEqual(s2["missing"], 0)
+
+    def test_pages_without_data_are_each_retried_for_a_venue_kept_from_an_earlier_run(self):
+        # 前の run で番組表が取れている場（ファイルに残っている）: 欠けたレースが続けて「データがありません」でも、
+        #   1 ページで切り上げない（開催の無い場ではないので、どのレースも確かめる）
+        with tempfile.TemporaryDirectory() as d:
+            _setup(d, {8: "10:27"})
+            gaps = {(8, 5): (200, NODATA), (8, 6): (200, NODATA)}
+            self.assertEqual(_run(d, _Site(pages=gaps))["missing"], 2)
+            site2 = _Site(pages=gaps)
+            s2 = _run(d, site2)
+            self.assertEqual(site2.keys, [(8, 5), (8, 6)])
+            self.assertEqual((s2["attempted"], s2["no_data"], s2["missing"]), (2, 2, 2))
+
+    def test_venue_whose_pages_are_not_out_yet_is_retried_by_the_next_run(self):
+        # 一覧（レース一覧のページ）には載ったが、出走表のページがまだ出ていない場。この run では 1 ページで切り上げ、
+        #   次の run で取る
+        with tempfile.TemporaryDirectory() as d:
+            _setup(d, {8: "10:27", 14: "08:35"})
+            site = _Site(pages={14: (200, NODATA)})
+            s = _run(d, site)
+            self.assertEqual(site.keys, [(14, 1)] + [(8, r) for r in range(1, 13)])
+            self.assertEqual((s["updated"], s["no_data"], s["missing"]), (12, 1, 12))
+            site2 = _Site()
+            s2 = _run(d, site2)
+            self.assertEqual(site2.keys, [(14, r) for r in range(1, 13)])
+            self.assertEqual(s2["missing"], 0)
+            self.assertIs(_out(d)["partial"], False)
 
     def test_stale_listing_after_midnight_falls_back_to_the_schedule(self):
         with tempfile.TemporaryDirectory() as d:
@@ -464,34 +529,63 @@ class TestDayChange(unittest.TestCase):
 
 
 class TestSchedulerWiring(unittest.TestCase):
+    # 1 日分 = 16 場 192 レース（2026-11-29 の実数）。公式サイトが応答を遅らせている間は 1 件 約 9.5 秒 + 解析
+    ONE_DAY_RACES = 192
+    SEC_PER_RACE = 10
+
     def test_budget_and_timeout_relations(self):
         m = scrape_all
         self.assertEqual(m.PROGRAMS_TOMORROW_BUDGET_SEC, spt.BUDGET_SEC, "既定の内部期限をそろえる")
         self.assertGreaterEqual(m.PROGRAMS_AHEAD_MARGIN_SEC, 60, "取得中の 1 件 (最大 15 秒) + 書き出しの余裕")
-        # 0 時〜朝: 番組表の続き → backfill。どちらも timeout まで掛かっても job の予算 (42 分) に収まる
-        night = m.PROGRAMS_TODAY_AHEAD_BUDGET_SEC + m.PROGRAMS_AHEAD_MARGIN_SEC + m.BACKFILL_TIMEOUT_SEC
-        self.assertLess(night, m.JOB_BUDGET_SEC)
-        self.assertLess(m.PROGRAMS_TOMORROW_BUDGET_SEC + m.PROGRAMS_AHEAD_MARGIN_SEC, m.JOB_BUDGET_SEC)
+        # 1 回の run で 1 日分を取り切れる長さ（最初の夜 = 1200 秒では 192 レース中 約 120 だった）
+        one_day = self.ONE_DAY_RACES * self.SEC_PER_RACE
+        self.assertGreaterEqual(m.PROGRAMS_TOMORROW_BUDGET_SEC, one_day)
+        self.assertGreaterEqual(m.PROGRAMS_TODAY_AHEAD_BUDGET_SEC, one_day,
+                                "夕方の run が 1 回も届かなかった夜は、0 時以降の 1 回で取り切る")
+        # subprocess の timeout（内部期限 + 余裕）まで掛かっても job の予算 (42 分) に収まる
+        for cap in (m.PROGRAMS_TOMORROW_BUDGET_SEC, m.PROGRAMS_TODAY_AHEAD_BUDGET_SEC):
+            self.assertLess(cap + m.PROGRAMS_AHEAD_MARGIN_SEC, m.JOB_BUDGET_SEC)
+        # racedata が後ろに控えている run は短い期限。real-time 系（夕方は約 11 分）の後でも racedata に 9 分は残る
+        self.assertLess(m.PROGRAMS_TOMORROW_SHARED_BUDGET_SEC, m.PROGRAMS_TOMORROW_BUDGET_SEC)
+        self.assertGreaterEqual(
+            m.JOB_BUDGET_SEC - (m.PROGRAMS_TOMORROW_SHARED_BUDGET_SEC + m.PROGRAMS_AHEAD_MARGIN_SEC), 11 * 60 + 9 * 60)
 
     def _call(self, fn, left):
+        """job の残りが left 秒の時の呼び出し（時計を止めて、残りがちょうど left 秒になるようにする）。"""
         calls = []
         with mock.patch.object(scrape_all, "_run_subprocess",
                                side_effect=lambda script, args=None, timeout_sec=600: calls.append(
                                    (script, args, timeout_sec)) or 0), \
-             mock.patch.object(scrape_all, "_RUN_STARTED", scrape_all.time.monotonic() - (scrape_all.JOB_BUDGET_SEC - left)):
+             mock.patch.object(scrape_all.time, "monotonic", return_value=50000.0), \
+             mock.patch.object(scrape_all, "_RUN_STARTED", 50000.0 - (scrape_all.JOB_BUDGET_SEC - left)):
             self.assertEqual(fn(), 0)
         return calls[0]
 
     def test_evening_call_passes_target_and_budget(self):
-        script, args, timeout = self._call(scrape_all._scrape_programs_tomorrow, left=2400)
+        script, args, timeout = self._call(scrape_all._scrape_programs_tomorrow, left=2500)
+        self.assertEqual(script, "scrape_programs_tomorrow.py")
+        self.assertEqual(args, ["--target", "tomorrow", "--budget-sec", "2100"])
+        self.assertEqual(timeout, 2220)
+
+    def test_evening_run_gets_what_the_job_has_left_after_the_realtime_tasks(self):
+        # 2026-11-28 17:32 の run: real-time 系（結果・展示・オッズ・開催日タブ・出走の一覧）に 655 秒 → 残り 1865 秒。
+        #   その中で取れるだけ取る（約 174 レース。以前の 1200 秒 = 約 120 レースより多い）
+        _, args, timeout = self._call(scrape_all._scrape_programs_tomorrow, left=scrape_all.JOB_BUDGET_SEC - 655)
+        self.assertEqual(timeout, scrape_all.JOB_BUDGET_SEC - 655)
+        budget = int(args[3])
+        self.assertEqual(budget, timeout - scrape_all.PROGRAMS_AHEAD_MARGIN_SEC)
+        self.assertGreaterEqual(budget // self.SEC_PER_RACE, 170)
+
+    def test_evening_call_is_short_when_racedata_follows(self):
+        script, args, timeout = self._call(scrape_all._scrape_programs_tomorrow_shared, left=2500)
         self.assertEqual(script, "scrape_programs_tomorrow.py")
         self.assertEqual(args, ["--target", "tomorrow", "--budget-sec", "1200"])
         self.assertEqual(timeout, 1320)
 
-    def test_night_call_targets_today_with_a_shorter_budget(self):
-        script, args, timeout = self._call(scrape_all._scrape_programs_today_ahead, left=2400)
-        self.assertEqual(args, ["--target", "today", "--budget-sec", "600"])
-        self.assertEqual(timeout, 720)
+    def test_night_call_targets_today(self):
+        script, args, timeout = self._call(scrape_all._scrape_programs_today_ahead, left=2500)
+        self.assertEqual(args, ["--target", "today", "--budget-sec", "2100"])
+        self.assertEqual(timeout, 2220)
 
     def test_budget_shrinks_when_the_job_is_running_out_of_time(self):
         _, args, timeout = self._call(scrape_all._scrape_programs_tomorrow, left=500)

@@ -256,6 +256,25 @@ class TestDecideTasksIdempotency(unittest.TestCase):
         tasks = _names(scrape_all._decide_tasks(now, force_all=False))
         self.assertIn("racedata", tasks, "空 racedata が再取得されない")
 
+    def test_programs_tomorrow_is_cut_short_only_when_racedata_follows(self):
+        """翌日の番組表は 1 回で 1 日分を取る長さ。同じ run で racedata も取る時だけ短くする（2026-11-28）。"""
+        evening = datetime.datetime(2026, 11, 28, 22, 18, tzinfo=JST)
+        scrape_all._is_fresh_today = lambda path, now: True  # racedata は取り終わっている（ふだんの夕方）
+        tasks = dict(scrape_all._decide_tasks(evening, force_all=False))
+        self.assertNotIn("racedata", tasks)
+        self.assertIs(tasks["programs(tomorrow)"], scrape_all._scrape_programs_tomorrow)
+
+        scrape_all._racedata_has_empty = lambda path: True  # 今節成績がまだ埋まっていない
+        tasks = dict(scrape_all._decide_tasks(evening, force_all=False))
+        self.assertIn("racedata", tasks)
+        self.assertIs(tasks["programs(tomorrow)"], scrape_all._scrape_programs_tomorrow_shared)
+
+        # 23 時台は racedata の窓の外（この run では取らない）→ 長い期限
+        late = datetime.datetime(2026, 11, 28, 23, 10, tzinfo=JST)
+        tasks = dict(scrape_all._decide_tasks(late, force_all=False))
+        self.assertNotIn("racedata", tasks)
+        self.assertIs(tasks["programs(tomorrow)"], scrape_all._scrape_programs_tomorrow)
+
     def test_skip_when_data_all_fresh(self):
         scrape_all._is_fresh_today = lambda path, now: True
         now = datetime.datetime(2026, 5, 17, 14, 0, tzinfo=JST)

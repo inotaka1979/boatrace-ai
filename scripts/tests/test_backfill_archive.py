@@ -294,8 +294,65 @@ class TestSlowSource(unittest.TestCase):
         self.assertIsNotNone(m)
         # 夜間の run は backfill のほかに day_labels（6 時台。13 場 × 約 10 秒）と集計が走る。job の timeout に余裕を残す
         self.assertLessEqual(scrape_all.BACKFILL_TIMEOUT_SEC + 600, int(m.group(1)) * 60)
-        with open(scrape_all.__file__, encoding="utf-8") as fh:
-            self.assertIn('_run_subprocess("backfill_archive.py", timeout_sec=BACKFILL_TIMEOUT_SEC)', fh.read())
+        self.assertGreaterEqual(scrape_all.BACKFILL_MARGIN_SEC, 60, "取得中の 1 件 (最大 15 秒) + 書き出しの余裕")
+        self.assertEqual(scrape_all.BACKFILL_TIMEOUT_SEC - scrape_all.BACKFILL_MARGIN_SEC, bf.BUDGET_SEC,
+                         "時間に余裕のある run（ふだんの夜）は、スクリプトの既定と同じ内部期限")
+
+    def _call_from_scrape_all(self, left):
+        """job の残りが left 秒の時に scrape_all が backfill をどう呼ぶか。呼ばなければ None。"""
+        from unittest import mock
+
+        import scrape_all
+
+        calls = []
+        # 時計を止めて、残りがちょうど left 秒になるようにする
+        with mock.patch.object(scrape_all, "_run_subprocess",
+                               side_effect=lambda script, args=None, timeout_sec=600: calls.append(
+                                   (script, args, timeout_sec)) or 0), \
+             mock.patch.object(scrape_all.time, "monotonic", return_value=50000.0), \
+             mock.patch.object(scrape_all, "_RUN_STARTED", 50000.0 - (scrape_all.JOB_BUDGET_SEC - left)):
+            self.assertEqual(scrape_all._backfill_archive(), 0)
+        return calls[0] if calls else None
+
+    def test_scrape_all_gives_the_full_budget_on_an_ordinary_night(self):
+        import scrape_all
+
+        # 番組表の続きが無い夜（0 時以降の run は、ほかに時間のかかる作業が無い）
+        script, args, timeout = self._call_from_scrape_all(left=scrape_all.JOB_BUDGET_SEC - 5)
+        self.assertEqual(script, "backfill_archive.py")
+        self.assertEqual(args, ["--budget-sec", str(bf.BUDGET_SEC)])
+        self.assertEqual(timeout, scrape_all.BACKFILL_TIMEOUT_SEC)
+
+    def test_scrape_all_fits_backfill_into_what_the_job_has_left(self):
+        import scrape_all
+
+        # 2026-11-28: 同じ run で先に番組表（最大 37 分）を取った後。固定の 22 分を足すと job の timeout (50 分) を
+        #   超え、commit まで届かずにその run の成果（取った番組表を含む）が消える。残り時間に収める
+        after_programs = scrape_all.JOB_BUDGET_SEC - (
+            scrape_all.PROGRAMS_TODAY_AHEAD_BUDGET_SEC + scrape_all.PROGRAMS_AHEAD_MARGIN_SEC)
+        self.assertLess(after_programs, scrape_all.BACKFILL_TIMEOUT_SEC, "この場面は、固定の timeout だと予算を超える")
+        _, args, timeout = self._call_from_scrape_all(left=after_programs)
+        self.assertLessEqual(timeout, after_programs)
+        self.assertEqual(args, ["--budget-sec", str(timeout - scrape_all.BACKFILL_MARGIN_SEC)])
+        self.assertGreaterEqual(int(args[1]), scrape_all.BACKFILL_MIN_BUDGET_SEC)
+        self.assertLess(int(args[1]) + 15, timeout, "内部期限 + 取得中の 1 件 < kill の timeout")
+
+    def test_scrape_all_skips_backfill_when_no_time_is_left(self):
+        import scrape_all
+
+        for left in (-300, 0, 60, scrape_all.BACKFILL_MARGIN_SEC + scrape_all.BACKFILL_MIN_BUDGET_SEC - 1):
+            self.assertIsNone(self._call_from_scrape_all(left=left), left)
+        # 1 レース分の時間があれば行う
+        call = self._call_from_scrape_all(left=scrape_all.BACKFILL_MARGIN_SEC + scrape_all.BACKFILL_MIN_BUDGET_SEC + 5)
+        self.assertIsNotNone(call)
+        self.assertEqual(call[1], ["--budget-sec", str(scrape_all.BACKFILL_MIN_BUDGET_SEC + 5)])
+
+    def test_budget_argument_reaches_run(self):
+        from unittest import mock
+
+        with mock.patch.object(bf, "run", return_value={}) as run:
+            bf.main(["--budget-sec", "345"])
+        self.assertEqual(run.call_args.kwargs.get("budget_sec"), 345)
 
 
 if __name__ == "__main__":

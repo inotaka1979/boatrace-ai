@@ -16,8 +16,11 @@
   - 対象は data/schedule/tomorrow.json（明日の出走。scrape_tomorrow.py）に載っている場のレース。
     まだ公開されていない場は取りに行かない（次の run で取る）。
   - 第 1 レースの締切が早い場から取る（朝の開催を先に確保する。夜の開催は、当日の取得でも間に合う）。
-  - 1 件ずつ・間隔 0.5 秒・内部期限あり（既定 1200 秒）。取り切れなかった分は、次の run が続きから取る
-    （同じ日付の間、取れたレースは消さない）。403 が続いたら止める。応答を速くする細工はしない。
+  - 1 件ずつ・間隔 0.5 秒・内部期限あり（既定 2100 秒。scrape_all は job の残り時間に合わせて短くする）。
+    取り切れなかった分は、次の run が続きから取る（同じ日付の間、取れたレースは消さない）。
+    403 が続いたら止める。応答を速くする細工はしない。
+  - 最初のページが「データがありません」の場（開催が無い / 出走表がまだ出ていない）は、その run では残りの
+    11 ページを取りに行かない（次の run が、また 1 ページだけ確かめる）。
   - 形は data/programs/today.json と同じ（openapi 互換）。partial = まだ取れていないレースがある。
 
   python3 scripts/scrape_programs_tomorrow.py                  翌日分を取る（夕方〜夜の run）
@@ -45,8 +48,10 @@ log = logging.getLogger("programs_tomorrow")
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 INTERVAL = 0.5
-# 1 件 9〜10 秒かかる日（公式サイトが自動取得への応答を遅らせている間）で、1 回に約 120 レース。
-BUDGET_SEC = int(os.environ.get("PROGRAMS_TOMORROW_BUDGET_SEC", "1200"))
+# 1 回の run で 1 日分を取り切れる長さ。1 件 9〜10 秒かかる日（公式サイトが自動取得への応答を遅らせている間）で
+#   約 215 レース（18 場ぶん）。最初の夜 (2026-11-28) は 1200 秒で、16 場 192 レースのうち 1 回に約 120 しか取れない
+#   計算だった（公開の後に届く run が 1 晩に 1〜2 回しか無い。scripts/scrape_all.py の説明）。
+BUDGET_SEC = int(os.environ.get("PROGRAMS_TOMORROW_BUDGET_SEC", "2100"))
 OUT_REL = os.path.join("schedule", "programs_tomorrow.json")
 LIST_REL = os.path.join("schedule", "tomorrow.json")
 SCHEDULE_REL = os.path.join("schedule", "current.json")
@@ -131,9 +136,13 @@ def run(data_dir: str = "data", now: datetime.datetime | None = None, budget_sec
     deadline = clock() + budget_sec
     last = None
     got: dict[tuple[int, int], dict] = {}
+    have = {sid for sid, _ in kept}  # 番組表が 1 レースでも取れている場
+    empty: set[int] = set()  # 最初のページが「データがありません」だった場（この run では、残りを取りに行かない）
     for sid, rno in todo:
         if block.blocked or clock() >= deadline:
             break
+        if sid in empty:
+            continue
         if last is not None:
             wait = INTERVAL - (clock() - last)
             if wait > 0:
@@ -152,10 +161,16 @@ def run(data_dir: str = "data", now: datetime.datetime | None = None, budget_sec
                 prg = None
         if prg:
             got[(sid, rno)] = prg
+            have.add(sid)
         elif status == 200 and is_not_published(html or ""):
             # 「データがありません」のページ（順延・中止で開催が無くなった場など）。読めたページとして数える
             #   （1 件も読めない = ページの形が変わった / 止められた、と区別する。scripts/source_health.py）。
             summary["no_data"] += 1
+            if sid not in have:
+                # まだ 1 レースも取れていない場: 開催が無い（か、出走表がまだ出ていない）。残りの 11 ページも
+                #   同じ答えなので取りに行かない（次の run が、また 1 ページだけ確かめる）。
+                #   月間日程を対象にする時（--target today で一覧が無い時）は、開催の無い場が混ざりうる。
+                empty.add(sid)
         else:
             log.warning("programs_tomorrow: %d-%dR を取れない (HTTP %s)", sid, rno, status)
 
