@@ -180,6 +180,12 @@ function renderStadiums() {
         '</span>' +
         '</div>';
     } else {
+      // 2026-11-28: 今日開催する場なのに番組表が届いていない時は「次節」と出さない（rest: stadium_day.js）
+      var wait = typeof _stadiumWaitingCard === 'function' ? _stadiumWaitingCard(sid, name) : '';
+      if (wait) {
+        html += wait;
+        continue;
+      }
       var iso = typeof _nextOpenMap === 'object' && _nextOpenMap ? _nextOpenMap[sid] || '' : '';
       var dateLabel = _formatNextOpen(iso);
       var dateHtml = dateLabel ? '<span class="stadium-next-date">' + dateLabel + '</span>' : '';

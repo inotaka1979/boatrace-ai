@@ -608,3 +608,74 @@ KV の書込は、時刻の書き直しのぶん増える: 中身が変わらな
 3. **消えた日のデータ**: KV には戻らない（窓を過ぎた展示は取り直さない）。アプリは、開いたレースに展示が無ければ
    そのレースだけ取り直す（`/beforeinfo-proxy`）。日次アーカイブ（`data/previews/`）は GitHub Actions の scraper が
    別に取っているので影響を受けない。
+
+---
+
+## 15. 朝、全場が「次節」と出る / 番組表が届かない（2026-11-28）
+
+**症状**: TOP の場カードが、開催している場も含めてすべて「次節 M/D」になる（レース一覧に入れない）。
+2026-11-28 以降のアプリでは、今日開催すると分かる場は「本日開催 / 番組表待ち」と出る。
+
+### 15.1 何が起きたか（2026-11-28 の朝）
+
+8:43 に報告。Worker の `/api/programs` は 8:44 から 9:21 まで（3 分おきに確認）11/27 の番組表を返していた。
+上流 (openapi) の previews / results は 8:47〜9:15 の間に、programs は 9:21〜9:24 の間に 11/28 の分へ切り替わり、
+9:24 にアプリの表示が戻った（前日は 8:29 の時点で切り替わっていた）。この日は 14 場が開催で、鳴門 1R の締切は 8:35。
+
+当時、朝の番組表は上流だけが頼りだった:
+- 自前の番組表（`scripts/scrape_programs.py` → `data/programs/today.json`）は朝の窓（8:30 以降）の run で取るが、
+  GitHub の定時実行は数時間遅れる（11/27 の実績: 番組表専用の「Scrape Programs (official)」は、7:00〜10:00 の
+  5 回の予定が 12:50〜18:15 に届いた。この日の最初の番組表の commit は 11:39 で、PR のマージで起動した
+  scrape-all によるもの）。
+- アプリは、日付が今日でない番組表の行を使わない。1 場も残らないと、全場を「開催していない場」として描く。
+
+### 15.2 仕組み（2026-11-28 から）
+
+1. **前の晩に翌日の番組表を取る**: scrape-all の夕方〜夜の run（15〜23 時）が、明日の出走の一覧
+   （`data/schedule/tomorrow.json`）に載っているレースの出走表を 1 件ずつ取り、
+   `data/schedule/programs_tomorrow.json` に置く（`scripts/scrape_programs_tomorrow.py`）。
+   - 第 1 レースの締切が早い場から。1 回の run で約 120 レース（1 件 9〜10 秒かかる日。内部期限 20 分）。
+     取り切れなかった分は次の run が続きから取る。0 時を過ぎて届いた run（朝の窓の前まで）も続きを取る。
+   - 公式の出走表は、昼の開催が前日の 18 時ごろまでに、夜の開催が 18〜22 時半の間に公開される
+     （2026-11-26 の観測）。公開前の場は一覧に無いので取りに行かない。
+2. **Worker**: 自前の当日分が無い間は、上流の今日の行 + 前の晩に取った分の今日の行を配る
+   （`cloudflare-worker/README.md` の「番組表の出どころと、日付の違う行」）。0 時を過ぎた最初の定期更新から
+   今日の番組表になる。上流の previews / results が前日のままでも、展示・結果は Worker が公式ページから取る。
+3. **アプリ**: 番組表が届いていない場のうち、今日開催すると分かる場は「本日開催 / 番組表待ち」と出す。
+   根拠は、開催日タブ（`data/schedule/day_labels.json`。今日の分、または前日までの分の日程に今日がある）と、
+   どの場の番組表も届いていない時に限り、次回開催日（`next_open.json`）が今日であること。
+
+### 15.3 確かめる順番
+
+1. **Worker が配っている番組表の日付と出どころ**:
+   ```bash
+   curl -s https://boatrace-scrape-trigger.inotaka1979.workers.dev/api/programs | python3 -c "
+   import json,sys,collections; d=json.load(sys.stdin); r=d.get('programs') or []
+   print(dict(collections.Counter(p.get('race_date') for p in r)), 'base =', d.get('_source_base') or 'openapi', 'updated_at =', d.get('updated_at'))"
+   ```
+   - 今日の日付で `base = official`: 自前の当日分（通常の昼以降）。`official_eve` / `openapi+eve`: 前の晩に取った分を
+     使っている（朝）。`openapi`: 上流の文書そのまま。
+   - 前日の日付のまま: 上流が切り替わっておらず、前の晩の分も無い。2 と 3 を見る。
+2. **前の晩の分があるか**（`race_date` が今日か・何レースか・`partial`）:
+   ```bash
+   curl -s https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/schedule/programs_tomorrow.json | python3 -c "
+   import json,sys; d=json.load(sys.stdin); print(d.get('race_date'), len(d.get('programs') or []), '/', d.get('expected'), 'partial =', d.get('partial'), d.get('updated_at'))"
+   ```
+   - 無い・日付が古い: 前の晩（15〜23 時）に scrape-all の run が 1 回も届かなかったか、取得元に止められた。
+     `data/_status.json` の `tasks.programs_tomorrow`（attempted / updated / races / missing / http_403）と、
+     Actions の「Scrape All」の夕方の run のログを見る。
+   - `partial = True`: まだ取れていないレースがある（夜の開催が後から公開された、時間切れ、など）。
+     0 時以降の run が続きを取る。足りない場は、上流が切り替わるか自前の当日分が届くまで「番組表待ち」。
+3. **すぐ直したい時**: Actions → **「Scrape Programs (official)」** → Run workflow（番組表だけを取る。約 10 分）。
+   終わると `data/programs/today.json` が今日の分になり、Worker が次の定期更新（5 分おき）で配る。
+   「Scrape All」でも取れるが、ほかの取得も走るので 30 分以上かかる。
+
+### 15.4 限界
+
+- 前の晩の run が 1 回も届かず、0 時〜朝の run も届かなかった日は、従来どおり上流の切り替わり待ちになる
+  （その間、今日開催する場は「番組表待ち」と出る）。sentinel に `GH_TOKEN` を登録すると、scrape-all が
+  16:00 / 19:00 / 22:00 の定時に起動するので、前の晩の分が確実に取れる（`cloudflare-worker/sentinel/README.md`）。
+- 前の晩に取った番組表は、その後に変わった項目を含まない（前日の最終レースでの F、当日朝の欠場・選手変更）。
+  上流の今日の行があるレースは上流の行を使い、朝の窓の run が公式ページから取り直した後は、その内容に置き換わる。
+- 0 時を過ぎると、Worker は前日のレースの結果の取り直し（締切後 6 時間まで）をやめる（番組表が今日の分に
+  替わるため）。アプリも 0 時以降は前日の行を使わないので、表示には影響しない。

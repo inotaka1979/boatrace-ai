@@ -10,6 +10,7 @@
 //   1 レースも確定せず 1R から中止なら全日中止（11/20 の津: 開催日タブ取得後に中止が決まり、11・12R は締切前）。
 //
 // Public: _stadiumDayInfo(sid, rdDayLabel, races) → { text, cls, cancelled }
+//         _stadiumWaitingCard(sid, name) → 番組表が届いていない開催場のカード（HTML。分からなければ ''）
 
 'use strict';
 
@@ -70,8 +71,64 @@ function _raceCancelled(sid, rno) {
   return _stadiumDayInfo(sid, '', rns).cancelled;
 }
 
+// 2026-11-28: 今日開催する場なのに、番組表がまだ届いていない時のカード。
+//   renderStadiums（critical）の「番組表に無い場」の枝から typeof guard で呼ぶ。'' を返せば従来どおり「次節」。
+//   この日の朝、番組表がどの経路からも当日分に切り替わっておらず（上流は 9:20 すぎまで前日のまま）、
+//   開催している 14 場すべてが「次節 11/29」と表示された。届いていないことが分かる表示にする。
+//
+//   今日開催すると分かるのは:
+//     1. 公式の開催日タブ (day_labels.json) が今日の分で、その場が載っている
+//     2. 開催日タブが前日までの分でも、その節の日程 (tabs) に今日がある
+//     3. 次回開催日 (next_open.json) が今日。前日までに作られた一覧では、今日開催する場の「次」は今日になる。
+//        月間日程が元なので、どの場の番組表も届いていない時だけ使う（一部の場だけ届いている時にこれを使うと、
+//        日程が古い・ずれた場を「本日開催」と出してしまう: rt-fix3 で直した「次節なのに本日開催」）。
+function _stadiumWaitingCard(sid, name) {
+  var today = typeof todayStr === 'function' ? todayStr() : '';
+  if (!/^\d{8}$/.test(today)) return '';
+  var key = String(sid);
+  var known = false;
+  var label = '';
+  var D = globalThis._dayLabels;
+  var e = D && D.stadiums ? D.stadiums[key] : null;
+  if (e && D.date === today) {
+    known = true;
+    label = e.label || '';
+  } else if (e && Array.isArray(e.tabs)) {
+    for (var i = 0; i < e.tabs.length; i++) {
+      var tab = e.tabs[i];
+      if (tab && tab.date === today) {
+        known = true;
+        label = tab.label || '';
+      }
+    }
+  }
+  if (!known) {
+    var any = typeof programData !== 'undefined' && !!programData && Object.keys(programData).length > 0;
+    var M = typeof _nextOpenMap === 'object' && _nextOpenMap ? _nextOpenMap : null;
+    var iso = today.slice(0, 4) + '-' + today.slice(4, 6) + '-' + today.slice(6, 8);
+    known = !any && !!M && M[key] === iso;
+  }
+  if (!known) return '';
+  label = String(label);
+  var off = /中止|順延/.test(label); // 今日は行われない（公式の表記のまま出す）
+  return (
+    '<div class="stadium-card inactive-stadium" data-waiting="1">' +
+    '<span class="stadium-name">' +
+    name +
+    '</span>' +
+    '<span class="stadium-status">' +
+    (off ? '本日 ' + escText(label) : '本日開催') +
+    '</span>' +
+    '<span class="stadium-next-date">' +
+    (off ? '&nbsp;' : '番組表待ち') +
+    '</span>' +
+    '</div>'
+  );
+}
+
 globalThis._stadiumDayInfo = _stadiumDayInfo;
 globalThis._raceCancelled = _raceCancelled;
+globalThis._stadiumWaitingCard = _stadiumWaitingCard;
 // rest bundle がデータ読込後に届いたとき、場カードを描き直して日目を出す
 try {
   if (typeof programData !== 'undefined' && programData && typeof renderStadiums === 'function') renderStadiums();

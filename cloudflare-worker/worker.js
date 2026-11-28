@@ -41,8 +41,12 @@ const UPSTREAM = {
 //   raw.githubusercontent は commit 即時反映（Pages build lag 無し）。data-freshness-monitor も
 //   data/* を raw で読んでおり「データ真値」URL として既に確立済み。
 //   公式が空/別日/壊れ/取得失敗なら openapi に自動フォールバックし silent 劣化を防ぐ。
+// 2026-11-28: programs_eve = 前の晩に取った「翌日の番組表」（scripts/scrape_programs_tomorrow.py）。
+//   日付が変わると、その日の番組表になる（どの日の分かは中身の race_date）。朝、上流 (openapi) が
+//   当日分に切り替わる前と、自前の当日分 (programs) が届く前（昼前後）に使う。fetchProgramsBase の説明を参照。
 const OFFICIAL = {
   programs: 'https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/programs/today.json',
+  programs_eve: 'https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/schedule/programs_tomorrow.json',
 };
 const KV_KEYS = {
   previews: 'previews:today',
@@ -203,23 +207,94 @@ function _jstDayIso(ms) {
     .slice(0, 10);
 }
 
-// programs ベースを「自前公式 data → openapi」の順で解決する。
-//   公式 data/programs/today.json が「非空の programs 配列 かつ race_date=JST当日」の時だけ
-//   採用し、それ以外（空/別日/壊れ/取得失敗）は openapi にフォールバックする。
-//   これにより番組表パーサが boatrace.jp の HTML 変更で壊れても予測が止まらない。
+// 番組表の文書を取る。文書の先頭に出てくる race_date（自前の文書 = 文書の欄、上流 = 最初の行）が today で
+//   なければ、JSON として読まずに返す（{ day, text }）。番組表は 1 つ 600KB 前後あり、朝は「前日のまま」の
+//   文書が毎回届く。読んでも使わないので、CPU（無料プランは 1 回 10ms）を使わない。
+//   先頭に race_date が見つからない文書は、従来どおり全部読む。
+const PROGRAMS_HEAD_CHARS = 4096;
+async function fetchProgramsDoc(url, today) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'boatrace-scrape-worker/1.1' },
+    cf: { cacheTtl: 10, cacheEverything: true },
+  });
+  if (!res.ok) throw new Error(`upstream ${res.status}: ${url}`);
+  const text = await res.text();
+  const m = /"race_date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/.exec(text.slice(0, PROGRAMS_HEAD_CHARS));
+  if (m && m[1] !== today) return { day: m[1], text };
+  return { day: m ? m[1] : null, doc: JSON.parse(text) };
+}
+
+// doc[key]（programs / previews / results の行）を、today の行と別の日の行に数える。日付の無い行は数えない。
+function rowsByDay(doc, key, today) {
+  const rows = doc && Array.isArray(doc[key]) ? doc[key] : [];
+  let same = 0;
+  let other = 0;
+  for (const r of rows) {
+    if (!r || typeof r !== 'object' || !r.race_date) continue;
+    if (r.race_date === today) same++;
+    else other++;
+  }
+  return { same, other };
+}
+
+// doc[key] から別の日の行を落とし、落とした数を返す（日付の無い行は残す）。
+function dropRowsOfOtherDays(doc, key, today) {
+  if (!doc || !Array.isArray(doc[key])) return 0;
+  const before = doc[key].length;
+  doc[key] = doc[key].filter((r) => !r || typeof r !== 'object' || !r.race_date || r.race_date === today);
+  return before - doc[key].length;
+}
+
+// programs ベースを解決する。
+//   1. 自前の当日分 data/programs/today.json（scrape_programs.py が朝の窓に公式の出走表から取り直したもの）。
+//      「非空の programs 配列 かつ race_date = JST 当日」の時は、これだけを使う（従来どおり）。
+//   2. それが無い間（0 時〜昼前後）は、上流 (openapi) の今日の行を使い、上流に無いレースを
+//      「前の晩に取った分」(OFFICIAL.programs_eve) の今日の行で埋める。
+//      上流が全部持っていれば上流の文書をそのまま返す（従来と同じ）。上流の行を優先するのは、当日に
+//      取られたものだから（前の晩の分は、その後に変わった項目 = 前日の最終レースの F など を含まない）。
+//   3. どこにも今日の行が無ければ、従来どおり上流の文書をそのまま返す（別の日のままでも。アプリは
+//      日付の違う行を使わない）。
+//
+// 2026-11-28: 2 の「前の晩に取った分」を足した。従来は 1 が無い間、上流だけが頼りだった。この日は上流が
+//   9:20 すぎまで前日の番組表のままで、自前の当日分（GitHub の定時実行の遅れで、届くのは昼前後）も
+//   無く、アプリは開催している 14 場すべてを「次節」と表示した（鳴門 1R は 8:35 締切）。
+//   公式の出走表は前日の夕方〜夜に公開されるので、前の晩に取っておけば、日付が変わった時点で配れる。
 async function fetchProgramsBase() {
+  const today = _jstDayIso();
   try {
-    const off = await fetchUpstream(OFFICIAL.programs);
+    const off = (await fetchProgramsDoc(OFFICIAL.programs, today)).doc;
     const arr = off && Array.isArray(off.programs) ? off.programs : [];
-    const dateOk = !off.race_date || off.race_date === _jstDayIso();
+    const dateOk = off && (!off.race_date || off.race_date === today);
     if (arr.length > 0 && dateOk) {
       off._source_base = 'official';
       return off;
     }
   } catch (_) {
-    // fall through to openapi
+    // fall through
   }
-  return await fetchUpstream(UPSTREAM.programs);
+  const [up, eve] = await Promise.allSettled([
+    fetchProgramsDoc(UPSTREAM.programs, today),
+    fetchProgramsDoc(OFFICIAL.programs_eve, today),
+  ]);
+  const upGot = up.status === 'fulfilled' ? up.value : null;
+  const eveDoc = eve.status === 'fulfilled' ? eve.value.doc : null;
+  const isToday = (p) => p && typeof p === 'object' && p.race_date === today;
+  const eveRows = eveDoc && Array.isArray(eveDoc.programs) ? eveDoc.programs.filter(isToday) : [];
+  if (eveRows.length === 0) {
+    if (!upGot) throw up.reason;
+    return upGot.doc || JSON.parse(upGot.text);
+  }
+  const upRows = upGot && upGot.doc && Array.isArray(upGot.doc.programs) ? upGot.doc.programs.filter(isToday) : [];
+  const keyOf = (p) => `${p.race_stadium_number}-${p.race_number}`;
+  const have = new Set(upRows.map(keyOf));
+  const added = eveRows.filter((p) => !have.has(keyOf(p)));
+  if (added.length === 0) return upGot.doc; // 上流が今日の分を全部持っている
+  return {
+    updated_at: eveDoc.updated_at,
+    race_date: today,
+    programs: upRows.concat(added),
+    _source_base: upRows.length ? 'openapi+eve' : 'official_eve',
+  };
 }
 
 // kind 別ベース取得。programs のみ公式優先、previews/results は openapi（値は Worker の
@@ -1139,7 +1214,7 @@ async function mergeBoatraceJpExhibition(programs, previews, nowMs, maxScrapes =
 //   openapi が NEW 情報 (KV に無いレース、または KV では null だが
 //   openapi で finished) を持っていれば取り込む。
 // -----------------------------------------------------------------------
-function mergeKVOverOpenapi(openapiResults, kvResults) {
+function mergeKVOverOpenapi(openapiResults, kvResults, expectDate) {
   if (!kvResults || !Array.isArray(kvResults.results)) return openapiResults;
   if (!openapiResults || !Array.isArray(openapiResults.results)) {
     // openapi が空 / 壊れ → KV のままを返す
@@ -1155,7 +1230,9 @@ function mergeKVOverOpenapi(openapiResults, kvResults) {
   //   呼ぶ側は KV の文書の updated_at で「同じ日か」を見ているが、文書は夜間も時刻だけ書き直されるので、
   //   日付が変わった後は前日の中身でも「今日の文書」に見える。行ごとの race_date でも確かめる
   //   （どちらかに日付が無ければ従来どおり重ねる）。
-  const openDate = (openapiResults.results.find((r) => r && r.race_date) || {}).race_date || null;
+  // 2026-11-28: expectDate = 呼ぶ側が「今日の分だけを扱う」と分かっている時の日付。上流の行が 1 つも無い時
+  //   （朝、上流が前日のままで、その行を落とした後）は、上流の行から日付を読めないので、これで確かめる。
+  const openDate = expectDate || (openapiResults.results.find((r) => r && r.race_date) || {}).race_date || null;
   // KV の finished entries を openapi 側に上書き / 追加
   let preserved = 0, added = 0, rejected = 0;
   for (const kvr of kvResults.results) {
@@ -1251,6 +1328,32 @@ async function refreshAll(env, opts) {
   //   書かない回のスクレイプも行わない（取っても置けない）。次の回（5 分後）に読めれば元どおり続く。
   let pvSafe = true;
   let rsSafe = true;
+  // 2026-11-28: 番組表が今日の分で、上流の previews / results がまだ別の日（前日）のままの時は、その行を使わない。
+  //   番組表は前の晩に取った分から今日のものを出せるようになった（fetchProgramsBase）。上流の 3 つの文書が
+  //   当日分に切り替わる時刻は別々（この日 11/28 は、previews / results が 8:47〜9:15 の間、programs が 9:21〜9:24 の間）。
+  //   前日の行を残すと、同じ場・同じ R の前日の行に今日の展示を足したり（アプリは日付の違う行を捨てる）、
+  //   「前日の展示・結果がある」と見て今日の分を取りに行かなかったりする。
+  //   previews は今日の行が 1 つも無ければ、下で番組表から作る（上流が壊れている時と同じ扱い）。
+  //   results は空から始めて、この Worker が公式ページから取った分を足していく。
+  const today = _jstDayIso();
+  const programsToday = rowsByDay(programs, 'programs', today).same > 0;
+  if (programs) {
+    out.programs.base = programs._source_base || 'openapi';
+    out.programs.today = programsToday;
+  }
+  if (programsToday) {
+    if (isValidPreviewsShape(previews)) {
+      const dropped = dropRowsOfOtherDays(previews, 'previews', today);
+      if (dropped) {
+        out.previews.other_day = dropped;
+        if (!previews.previews.length) previews = null;
+      }
+    }
+    if (results && Array.isArray(results.results)) {
+      const dropped = dropRowsOfOtherDays(results, 'results', today);
+      if (dropped) out.results.other_day = dropped;
+    }
+  }
   const invalidPreviews = !isValidPreviewsShape(previews);
   if (invalidPreviews && programs) {
     out.previews.invalid_shape = !!previews;
@@ -1280,7 +1383,7 @@ async function refreshAll(env, opts) {
         // 日跨ぎ判定: KV の updated_at が昨日 (JST) なら preserve しない
         //   (前日 results を本日 results にマージしてしまう事故防止)
         if (isSameJstDay(kvRs.doc.updated_at, Date.now())) {
-          results = mergeKVOverOpenapi(results, kvRs.doc.data);
+          results = mergeKVOverOpenapi(results, kvRs.doc.data, programsToday ? today : null);
           out.results.kv_preserved = results._kv_merge || null;
         } else {
           out.results.kv_skip = 'day_change';
@@ -1448,6 +1551,10 @@ async function boundedOnDemandExhibition(env, previews, nowMs) {
     _ondemandExhibitionAt = nowMs;
     if (!previews || !Array.isArray(previews.previews)) return;
     const programs = await fetchProgramsBase();
+    // 2026-11-28: 番組表が今日の分なら、別の日の行には足さない（refreshAll と同じ。足して書くと、前日の行で
+    //   KV の今日の分を上書きする）。今日の行が無ければ、足す先が無いので何も書かない。
+    const today = _jstDayIso(nowMs);
+    if (rowsByDay(programs, 'programs', today).same > 0) dropRowsOfOtherDays(previews, 'previews', today);
     const stats = await mergeBoatraceJpExhibition(programs, previews, nowMs, MAX_ONDEMAND_SCRAPES);
     // 何も補完できなければ書かない (KV write 枠の節約 + kvWrite のハッシュ diff も効く)
     if (stats && stats.merged > 0) {
@@ -1475,6 +1582,10 @@ async function boundedOnDemandResults(env, results, nowMs) {
     _ondemandResultsAt = nowMs;
     if (!results || !Array.isArray(results.results)) return;
     const programs = await fetchProgramsBase();
+    // 2026-11-28: 番組表が今日の分なら、別の日の行は落としてから足す（前日の「確定済み」の行があると、今日の
+    //   同じ場・同じ R を取りに行かない。足して書くと、前日の行が今日の結果に混ざる）。
+    const today = _jstDayIso(nowMs);
+    if (rowsByDay(programs, 'programs', today).same > 0) dropRowsOfOtherDays(results, 'results', today);
     const stats = await mergeBoatraceJpResults(programs, results, nowMs, MAX_ONDEMAND_SCRAPES);
     if (stats && stats.merged > 0) {
       if (results._kv_merge) delete results._kv_merge;
@@ -1526,7 +1637,24 @@ async function serveFromKV(env, kind, ctx) {
   try {
     let data = await fetchKindBase(kind);
     const old = kvWrapped && kvWrapped.data ? kvWrapped.data : null;
-    if (kind === 'previews') {
+    // 2026-11-28: 上流がまだ別の日（前日）のままで、KV は今日の分を持っている時は、KV の中身を返す。
+    //   朝、番組表は前の晩に取った分から今日のものを出せるので、cron は previews を番組表から作り、results は
+    //   空から始めて、公式ページから取った分を足している（refreshAll）。そこへ前日の行を返すと、アプリは
+    //   全部捨てる。後ろの補完は「返した文書に足して書く」ので、前日の行で KV の今日の分を上書きしてしまう
+    //   （2026-11-27 に直したのと同じ形）。
+    let upstreamBehind = false;
+    if (old && (kind === 'previews' || kind === 'results')) {
+      const today = _jstDayIso();
+      const up = rowsByDay(data, kind, today);
+      if (up.same === 0 && up.other > 0 && rowsByDay(old, kind, today).same > 0) {
+        data = Object.assign({ updated_at: kvWrapped.updated_at }, old);
+        if (kind === 'previews') normalizePreviewsDoc(data);
+        upstreamBehind = true;
+      }
+    }
+    if (upstreamBehind) {
+      // KV の中身そのもの（引き継ぐものは無い）
+    } else if (kind === 'previews') {
       if (!isValidPreviewsShape(data)) {
         // 2026-07-17: 上流 previews 破損 (previews キー欠落) は programs から合成して返す。
         //   壊れた payload の透過はクライアントの schema 検証 fail =「API取得失敗」バナー貼付きの直因。

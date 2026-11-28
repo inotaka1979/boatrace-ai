@@ -3747,8 +3747,40 @@
     });
     return _stadiumDayInfo(sid, "", rns).cancelled;
   }
+  function _stadiumWaitingCard(sid, name) {
+    var today = typeof todayStr === "function" ? todayStr() : "";
+    if (!/^\d{8}$/.test(today)) return "";
+    var key = String(sid);
+    var known = false;
+    var label = "";
+    var D = globalThis._dayLabels;
+    var e = D && D.stadiums ? D.stadiums[key] : null;
+    if (e && D.date === today) {
+      known = true;
+      label = e.label || "";
+    } else if (e && Array.isArray(e.tabs)) {
+      for (var i = 0; i < e.tabs.length; i++) {
+        var tab = e.tabs[i];
+        if (tab && tab.date === today) {
+          known = true;
+          label = tab.label || "";
+        }
+      }
+    }
+    if (!known) {
+      var any = typeof programData !== "undefined" && !!programData && Object.keys(programData).length > 0;
+      var M = typeof _nextOpenMap === "object" && _nextOpenMap ? _nextOpenMap : null;
+      var iso = today.slice(0, 4) + "-" + today.slice(4, 6) + "-" + today.slice(6, 8);
+      known = !any && !!M && M[key] === iso;
+    }
+    if (!known) return "";
+    label = String(label);
+    var off = /中止|順延/.test(label);
+    return '<div class="stadium-card inactive-stadium" data-waiting="1"><span class="stadium-name">' + name + '</span><span class="stadium-status">' + (off ? "\u672C\u65E5 " + escText(label) : "\u672C\u65E5\u958B\u50AC") + '</span><span class="stadium-next-date">' + (off ? "&nbsp;" : "\u756A\u7D44\u8868\u5F85\u3061") + "</span></div>";
+  }
   globalThis._stadiumDayInfo = _stadiumDayInfo;
   globalThis._raceCancelled = _raceCancelled;
+  globalThis._stadiumWaitingCard = _stadiumWaitingCard;
   try {
     if (typeof programData !== "undefined" && programData && typeof renderStadiums === "function") renderStadiums();
   } catch (_) {

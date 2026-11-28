@@ -274,7 +274,7 @@ step "Post-deploy check of /racer-proxy (scripts/verify_racer_proxy.sh)" \
 # 選手ページのテストを別の日時でも走らせる（書いた日にだけ通るテストを残さない）。
 #   級の適用開始（1/1・7/1）の後、日付が変わる直前、過去の日付。
 step "Racer tests under other dates (no real-clock dependence)" \
-     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js test_fav_push.js test_push_worker.mjs test_push_crypto.mjs test_preview_weather.mjs test_preview_weather_app.js test_worker_serve_stale.mjs; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
+     "( for w in 2027-01-05T09:00:00+09:00 2027-07-02T23:55:00+09:00 2025-03-01T00:10:00+09:00; do for f in test_racer_fav.js test_racer_page.js test_racer_log.js test_tomorrow.js test_fav_notify.js test_fav_push.js test_push_worker.mjs test_push_crypto.mjs test_preview_weather.mjs test_preview_weather_app.js test_worker_serve_stale.mjs test_worker_programs_eve.mjs test_stadium_waiting.js; do FAKE_NOW=\$w node -r ./scripts/tests/_fake_clock.js scripts/tests/\$f >/dev/null 2>&1 || { echo \"FAIL: \$f at \$w\"; exit 1; }; done; done )"
 # 2026-11-25: 意図した見た目の変更の申告（tests/e2e/vrt-baseline-request → VRT の baseline を自動で差し替える）
 step "VRT baseline request (scripts/vrt_request.sh)" \
      "python3 -m unittest scripts.tests.test_vrt_request -v"
@@ -301,6 +301,14 @@ step "App: boats shape / weather from live sources / wind direction meaning" \
 #   （本番で展示 57 レース分が消えた件。cron 稼働中は古いと判定されない / 引き継ぐ / 読めない時は書かない）
 step "Worker: the stale-KV path never drops exhibitions or finished results" \
      "node scripts/tests/test_worker_serve_stale.mjs"
+# 2026-11-28: 朝、上流 (openapi) が当日分に切り替わる前でも、今日の番組表を出す
+#   （この日の朝、番組表がどの経路からも当日分に切り替わらず、開催中の 14 場すべてが「次節」と表示された）
+step "Programs ahead of the day: scrape tomorrow's racelist the evening before (scripts/scrape_programs_tomorrow.py)" \
+     "python3 -m unittest scripts.tests.test_scrape_programs_tomorrow"
+step "Worker: programs from the evening before / rows of another day never mix into today's" \
+     "node scripts/tests/test_worker_programs_eve.mjs"
+step "TOP: a venue racing today without programs shows 'waiting', not 'next series'" \
+     "node scripts/tests/test_stadium_waiting.js"
 
 # 9g2x) 今節成績(racedata)が空のまま一日ロックされない
 step "racedata empty lock-in guard (今節成績)" \
