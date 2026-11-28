@@ -634,10 +634,21 @@ KV の書込は、時刻の書き直しのぶん増える: 中身が変わらな
 1. **前の晩に翌日の番組表を取る**: scrape-all の夕方〜夜の run（15〜23 時）が、明日の出走の一覧
    （`data/schedule/tomorrow.json`）に載っているレースの出走表を 1 件ずつ取り、
    `data/schedule/programs_tomorrow.json` に置く（`scripts/scrape_programs_tomorrow.py`）。
-   - 第 1 レースの締切が早い場から。1 回の run で約 120 レース（1 件 9〜10 秒かかる日。内部期限 20 分）。
+   - 第 1 レースの締切が早い場から。1 回の run で 1 日分を取り切る長さ（job の残り時間まで = 夕方は約 29 分で
+     約 175 レース、1 件 9〜10 秒かかる日。同じ run で racedata も取る時だけ 20 分）。
      取り切れなかった分は次の run が続きから取る。0 時を過ぎて届いた run（朝の窓の前まで）も続きを取る。
-   - 公式の出走表は、昼の開催が前日の 18 時ごろまでに、夜の開催が 18〜22 時半の間に公開される
-     （2026-11-26 の観測）。公開前の場は一覧に無いので取りに行かない。
+   - 公式の出走表（翌日分）が公開される時刻の観測:
+     | 日 | 分かっていること |
+     |---|---|
+     | 11/26 | 18:06 の時点で昼の開催 9 場が公開済み・夜の開催 5 場は未公開。22:25 には全 14 場 |
+     | 11/27 | 18:22 の時点で同じ（9 場 / 5 場）。22:23 には全 14 場 |
+     | 11/28 | 17:41〜17:43 の時点で 16 場すべて未公開。19:07〜19:10 には 14 場が公開済みで、未公開は桐生・蒲郡だけ |
+
+     昼の開催は 17:45〜18:05 の間に公開される。夜の開催は、その日のレースが終わった後（21 時ごろ以降）と読める:
+     11/26・11/27 に 18 時台で未公開だった 5 場は、その晩に開催中の場。11/28 は、そのうち当日が中止・順延だった
+     3 場（丸亀・若松・大村）が 19 時すぎには公開済みで、開催中の 2 場（桐生・蒲郡）だけが未公開だった。
+     公開前の場は一覧に無いので取りに行かない。
+   - 公開の後に届く run は 1 晩に 2〜3 回（§15.4）。11/28 は 1 回目（17:32 着）が公開の前で、1 件も取れなかった。
 2. **Worker**: 自前の当日分が無い間は、上流の今日の行 + 前の晩に取った分の今日の行を配る
    （`cloudflare-worker/README.md` の「番組表の出どころと、日付の違う行」）。0 時を過ぎた最初の定期更新から
    今日の番組表になる。上流の previews / results が前日のままでも、展示・結果は Worker が公式ページから取る。
@@ -661,20 +672,59 @@ KV の書込は、時刻の書き直しのぶん増える: 中身が変わらな
    curl -s https://raw.githubusercontent.com/inotaka1979/boatrace-ai/main/data/schedule/programs_tomorrow.json | python3 -c "
    import json,sys; d=json.load(sys.stdin); print(d.get('race_date'), len(d.get('programs') or []), '/', d.get('expected'), 'partial =', d.get('partial'), d.get('updated_at'))"
    ```
-   - 無い・日付が古い: 前の晩（15〜23 時）に scrape-all の run が 1 回も届かなかったか、取得元に止められた。
-     `data/_status.json` の `tasks.programs_tomorrow`（attempted / updated / races / missing / http_403）と、
-     Actions の「Scrape All」の夕方の run のログを見る。
+   - 無い・日付が古い: 前の晩（公開の後〜23 時台）に scrape-all の run が 1 回も届かなかったか、取得元に
+     止められた。`data/_status.json` の `tasks.tomorrow`（published = 出走が取れた場。0 なら公開の前に着いた）と
+     `tasks.programs_tomorrow`（attempted / updated / races / missing / http_403）、Actions の「Scrape All」の
+     夕方の run のログを見る。届く時刻の目安は §15.4。
    - `partial = True`: まだ取れていないレースがある（夜の開催が後から公開された、時間切れ、など）。
      0 時以降の run が続きを取る。足りない場は、上流が切り替わるか自前の当日分が届くまで「番組表待ち」。
 3. **すぐ直したい時**: Actions → **「Scrape Programs (official)」** → Run workflow（番組表だけを取る。約 10 分）。
    終わると `data/programs/today.json` が今日の分になり、Worker が次の定期更新（5 分おき）で配る。
    「Scrape All」でも取れるが、ほかの取得も走るので 30 分以上かかる。
 
-### 15.4 限界
+### 15.4 GitHub の定時実行が届く時刻（2026-11-25〜28 の実測）
+
+`schedule` は宣言した時刻に動かない。このリポジトリでは、1 日 1 回の cron 行はすべて届くが、5〜12 時間遅れる。
+遅れの大きさは宣言の時刻でほぼ決まり、4 日間・5 本の workflow で同じ傾向だった。
+
+| 宣言 (JST) | 届いた時刻 (JST) | 遅れ | workflow |
+|---|---|---|---|
+| 7:00〜8:30 | 12:39〜14:40 | 5.4〜6.7 時間 | scrape-programs（4 行）・build-db |
+| 8:30 | 13:50〜14:34 | 5.3〜6.1 時間 | scrape-all |
+| 9:15 / 10:20 | 16:55〜18:52 | 7.6〜8.5 時間 | refresh-next-open |
+| 10:00 | 17:32〜18:31 | 7.5〜8.5 時間 | scrape-all・scrape-orig-exhibition・scrape-programs |
+| 11:40（11/28 追加） | 20 時台の見込み | — | scrape-all |
+| 13:00 | 22:18〜22:44 | 9.3〜9.7 時間 | scrape-all・scrape-orig-exhibition |
+| 13:20 | 22:58〜23:32 | 9.6〜10.2 時間 | refresh-next-open |
+| 16:00 | 翌 2:20〜3:46 | 10.3〜11.8 時間 | scrape-all・scrape-orig-exhibition |
+| 17:20 | 翌 3:14〜4:31 | 9.9〜11.2 時間 | refresh-next-open |
+| 19:00 | 翌 4:12〜5:28 | 9.2〜10.5 時間 | scrape-all・scrape-orig-exhibition |
+| 21:00 / 21:15 / 22:00 | 翌 6:03〜7:54 | 8.8〜10.3 時間 | scrape-orig-exhibition・refresh-next-open・scrape-all |
+
+scrape-all は Actions の run の開始時刻、ほかは commit の時刻（開始はその数分前。1 日の最初の番組表取得は約 30 分前）。
+
+- **1 行で何度も発火する cron は、ほとんど届かない**: worker-watchdog（`7 0-13 * * *` = 毎時の 1 行）が届いたのは
+  1 日 2 回（16 時台と翌 3 時ごろ）。前の 1 件が届くまで、同じ行の次の発火が捨てられていると読める
+  （1 件届くのに 8〜10 時間かかるので、1 日 2 回になる）。1 日 1 回の行を 5〜6 本並べた workflow は、全部届いている。
+  回数が要る workflow は、1 日 1 回の行を並べる（`scripts/tests/test_scrape_all_workflow.py` が scrape-all について固定）。
+- 遅れは変わる（11/18〜19 は 3.5〜5 時間だった）。`scrape_all.py` は「着いた時刻」で作業を決めるので、
+  遅れが変わっても動きは正しい。変わるのは、どの時間帯に何回届くか。
+- 夕方（翌日の出走表が公開される 18 時ごろ〜0 時）に scrape-all が届くのは、今の遅れで 3 回: 18 時前後
+  （宣言 10:00。公開の前に着くことがある）・20 時台の見込み（宣言 11:40）・22 時 20 分ごろ（宣言 13:00）。
+- 定時に動かしたい時は sentinel に `GH_TOKEN` を登録する（`workflow_dispatch` は遅れない。
+  `cloudflare-worker/sentinel/README.md`）。
+- **前の run の終了を待ってから始まる run**（マージで起動した run と定時の run が重なった時など）は、ブランチの
+  今の先頭から始める（checkout の `ref`）。2026-11-28 より前は run が作られた時点の commit から始めていたので、
+  前の run と同じ `data/*.json` を作り直して push の rebase が必ず衝突し、5 回とも失敗していた
+  （11/27 の run 1523「push failed after 5 attempts」）。
+
+### 15.5 限界
 
 - 前の晩の run が 1 回も届かず、0 時〜朝の run も届かなかった日は、従来どおり上流の切り替わり待ちになる
   （その間、今日開催する場は「番組表待ち」と出る）。sentinel に `GH_TOKEN` を登録すると、scrape-all が
   16:00 / 19:00 / 22:00 の定時に起動するので、前の晩の分が確実に取れる（`cloudflare-worker/sentinel/README.md`）。
+- 夕方の run が 1 回も取れなかった夜は、0 時以降の最初の run（2 時台）が月間日程の開催場 × 12R を対象に
+  1 日分を取る。それまでの間（0 時〜2 時台）は、前日のままの番組表になる。
 - 前の晩に取った番組表は、その後に変わった項目を含まない（前日の最終レースでの F、当日朝の欠場・選手変更）。
   上流の今日の行があるレースは上流の行を使い、朝の窓の run が公式ページから取り直した後は、その内容に置き換わる。
 - 0 時を過ぎると、Worker は前日のレースの結果の取り直し（締切後 6 時間まで）をやめる（番組表が今日の分に

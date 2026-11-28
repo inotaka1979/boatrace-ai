@@ -111,9 +111,17 @@ def _scrape_tomorrow() -> int:
 # 2026-11-28: 番組表（出走表）を前もって取る（scripts/scrape_programs_tomorrow.py）。
 #   夕方〜夜は翌日分、0 時〜朝の窓の前は今日の分の続き。スクリプト側の内部期限で必ず書き出すので、
 #   subprocess の timeout は kill の最終保険（内部期限 + 取得中の 1 件 (最大 15 秒) + 書き出し より長く）。
-#   0 時〜朝は、この後ろに backfill（最大 22 分）が続くので短くする。値の関係は test_scrape_programs_tomorrow.py で固定。
-PROGRAMS_TOMORROW_BUDGET_SEC = 1200
-PROGRAMS_TODAY_AHEAD_BUDGET_SEC = 600
+#
+#   内部期限は「1 回の run で 1 日分を取り切れる長さ」にしてある（1 件 9〜10 秒の日で 16 場 192 レース = 約 31 分）。
+#   最初の夜（11/28）に分かったこと: 公開（18 時ごろ）から 0 時までに届く run は 1 晩に 2 回で、1 回目は公開の前に
+#   着くことがある（11/28 は 17:41 着で 0 場）。20 分の期限では、残った 1 回で 192 レース中 約 120 しか取れない。
+#   実際に使える時間は job の残り（_remaining_budget_sec）で決まる。夕方は real-time 系に約 11 分かかるので 約 29 分。
+#   この後ろの backfill は、残り時間に収まる分だけ行う（番組表が先。_backfill_archive）。
+#   同じ run の後ろに racedata（今日の今節成績）が控えている時だけは、これまでどおり 20 分で切り上げる。
+#   値の関係は test_scrape_programs_tomorrow.py で固定。
+PROGRAMS_TOMORROW_BUDGET_SEC = 2100
+PROGRAMS_TOMORROW_SHARED_BUDGET_SEC = 1200
+PROGRAMS_TODAY_AHEAD_BUDGET_SEC = 2100
 PROGRAMS_AHEAD_MARGIN_SEC = 120
 
 
@@ -128,6 +136,11 @@ def _scrape_programs_ahead(target: str, budget_cap_sec: int) -> int:
 
 def _scrape_programs_tomorrow() -> int:
     return _scrape_programs_ahead("tomorrow", PROGRAMS_TOMORROW_BUDGET_SEC)
+
+
+def _scrape_programs_tomorrow_shared() -> int:
+    """翌日の番組表（同じ run の後ろに racedata が控えている時の、短い期限）。"""
+    return _scrape_programs_ahead("tomorrow", PROGRAMS_TOMORROW_SHARED_BUDGET_SEC)
 
 
 def _scrape_programs_today_ahead() -> int:
@@ -210,15 +223,26 @@ def _scrape_tide() -> int:
 
 # backfill の subprocess timeout。スクリプト側の内部期限 (backfill_archive.BUDGET_SEC = 1200 秒) で必ず書き出すので、
 #   これは kill の最終保険。内部期限 + 取得中の 1 件 (最大 15 秒) + 書き出し より長く、job の timeout (50 分) より
-#   十分短く。2 つの値の関係は test_backfill_archive.py で固定している。
+#   十分短く。値の関係は test_backfill_archive.py で固定している。
 BACKFILL_TIMEOUT_SEC = 1320
+BACKFILL_MARGIN_SEC = 120
+# 残りがこれより短い run では行わない（1 レース = 最大 3 ページ = 約 30 秒。1 レースも終わらない長さで始めない）
+BACKFILL_MIN_BUDGET_SEC = 60
 
 
 def _backfill_archive() -> int:
     # 2026-11-20: 確定済みレースの展示・オッズを日付付きアーカイブへ後追い（scripts/backfill_archive.py）。
     # 2026-11-26: 内部期限を 150 → 1200 秒に伸ばしたのに合わせて 240 → 1320 秒。
     #   boatrace.jp が夜間に応答を 1 件 8〜10 秒遅らせるため、150 秒では 6〜8 レースしか取れていなかった。
-    return _run_subprocess("backfill_archive.py", timeout_sec=BACKFILL_TIMEOUT_SEC)
+    # 2026-11-28: job の残り時間に収める。同じ run で先に番組表（最大 37 分）を取った時、固定の 22 分を足すと
+    #   job の timeout (50 分) を超え、commit まで届かずにその run の成果がすべて消える。
+    #   番組表に時間を使わなかった run（ふだんの夜）は、これまでどおり 1200 秒。
+    timeout = _remaining_budget_sec(BACKFILL_TIMEOUT_SEC)
+    budget = timeout - BACKFILL_MARGIN_SEC
+    if budget < BACKFILL_MIN_BUDGET_SEC:
+        log.info("  backfill: job の残り時間が無い → この run では行わない")
+        return 0
+    return _run_subprocess("backfill_archive.py", ["--budget-sec", str(budget)], timeout_sec=timeout)
 
 
 def _prerender_top() -> int:
@@ -415,10 +439,15 @@ def _decide_tasks(now: datetime.datetime, force_all: bool) -> list[tuple[str, Ca
         #   朝の番組表は非公式ミラー (openapi) の切り替わり待ちで、自前の取得（下の programs）が届くのは昼前後。
         #   11/28 はミラーが 9:20 すぎまで前日のままで、アプリは全場を「次節」と表示した（鳴門 1R は 8:35 締切）。
         #   日付が変わったら Worker がこのファイルを今日の番組表として配る。上の tomorrow が作る一覧を使うので、その直後。
-        tasks.append(("programs(tomorrow)", _scrape_programs_tomorrow))
+        #   1 回の run で 1 日分を取り切る長さ（job の残り時間まで）。この run で racedata（今日の今節成績）も
+        #   取る時は、その時間を残すために短い期限にする（racedata が夕方まで残る日は少ない）。
+        tasks.append(
+            ("programs(tomorrow)", _scrape_programs_tomorrow_shared if racedata_stale else _scrape_programs_tomorrow)
+        )
 
     # 0 時〜朝の窓の前: 前の晩に取り切れなかった今日の番組表の続きを取る（取り切っていれば何もしない）。
-    #   朝の窓に入ったら、上の programs が data/programs/today.json を取り直す。時間のかかる backfill より先に。
+    #   朝の窓に入ったら、上の programs が data/programs/today.json を取り直す。時間のかかる backfill より先に
+    #   （backfill は残り時間に収まる分だけ）。
     if not racedata_window and h < 9:
         tasks.append(("programs(today)", _scrape_programs_today_ahead))
 
